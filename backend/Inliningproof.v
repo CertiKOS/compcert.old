@@ -350,7 +350,7 @@ Proof.
   exploit INCR; eauto. intros EQ; rewrite H0 in EQ; inv EQ.
   red; intros; eelim B; eauto. eapply PERM; eauto.
   red. destruct (plt b (Mem.nextblock m1)); auto.
-  exploit Mem.mi_freeblocks; eauto. congruence.
+  clear H0. eapply Mem.valid_block_inject_1; eauto.
   exploit SEP; eauto. tauto.
 Qed.
 
@@ -1187,7 +1187,7 @@ Proof.
   intros; red; intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
   destruct (eq_block b stk); intros.
   subst. rewrite D in H9; inv H9. inv H1; xomega.
-  rewrite E in H9; auto. eelim Mem.fresh_block_alloc. eexact A. eapply Mem.mi_mappedblocks; eauto.
+  rewrite E in H9; auto. eelim Mem.fresh_block_alloc. eexact A. eapply Mem.valid_block_inject_2; eauto.
   auto.
   intros. exploit Mem.perm_alloc_inv; eauto. rewrite dec_eq_true. omega.
 

@@ -343,7 +343,10 @@ Definition inj (b: block) :=
 Lemma mem_empty_not_valid_pointer:
   forall b ofs, Mem.valid_pointer Mem.empty b ofs = false.
 Proof.
-  intros. unfold Mem.valid_pointer. destruct (Mem.perm_dec Mem.empty b ofs Cur Nonempty); auto.
+  intros.
+  destruct (Mem.valid_pointer Mem.empty b ofs) eqn:VALID; auto.
+  exfalso.
+  apply Mem.valid_pointer_nonempty_perm in VALID.
   eelim Mem.perm_empty; eauto.
 Qed.
 

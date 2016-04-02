@@ -646,7 +646,7 @@ Proof.
   exists j; exists te; exists tm. simpl.
   split. constructor.
   split. auto. split. auto. split. auto.  split. auto.
-  split. intros. elim H2. eapply Mem.mi_mappedblocks; eauto.
+  split. intros. elim H2. eapply Mem.valid_block_inject_2; eauto.
   split. tauto. auto.
 
   (* inductive case *)
@@ -704,7 +704,7 @@ Proof.
     destruct (eq_block b b1). subst b. rewrite D in H1; inv H1.
     exploit (P id); auto. intros [X Y]. exists id; exists ty.
     rewrite X; rewrite Y. repeat rewrite PTree.gss. auto.
-    rewrite E in H1; auto. elim H3. eapply Mem.mi_mappedblocks; eauto.
+    rewrite E in H1; auto. elim H3. eapply Mem.valid_block_inject_2; eauto.
     eapply Mem.valid_new_block; eauto.
     eapply Q; eauto. unfold Mem.valid_block in *.
     exploit Mem.nextblock_alloc. eexact A. exploit Mem.alloc_result. eexact A.
@@ -1054,13 +1054,13 @@ Proof.
   exploit Mem.storebytes_mapped_inject; eauto. intros [tm' [C D]].
   exists tm'.
   split. eapply assign_loc_copy; try rewrite EQ1; try rewrite EQ2; eauto.
-  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
+  intros; clear D; eapply Mem.aligned_area_inject; eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
+  intros; clear D; eapply Mem.aligned_area_inject; eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
+  clear D. eapply Mem.disjoint_or_equal_inject; eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto.
   split. auto.

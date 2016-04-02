@@ -757,8 +757,13 @@ Lemma static_bool_val_sound:
   forall v t m b, bool_val v t Mem.empty = Some b -> bool_val v t m = Some b.
 Proof.
   intros until b; unfold bool_val. destruct (classify_bool t); destruct v; auto.
-  intros E. unfold Mem.weak_valid_pointer, Mem.valid_pointer, proj_sumbool in E.
-  rewrite ! pred_dec_false in E by (apply Mem.perm_empty). discriminate.
+  intros E.
+  exfalso.
+  destruct (Mem.weak_valid_pointer _ _ _) eqn:EQ; try discriminate.
+  unfold Mem.weak_valid_pointer in EQ.
+  rewrite Bool.orb_true_iff in EQ.
+  repeat rewrite Mem.valid_pointer_nonempty_perm in EQ.
+  destruct EQ; edestruct Mem.perm_empty; eauto.
 Qed.
 
 Lemma step_makeif:

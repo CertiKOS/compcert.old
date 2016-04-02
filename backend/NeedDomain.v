@@ -796,7 +796,9 @@ Let valid_pointer_inj:
   Mem.valid_pointer m2 b2 (Int.unsigned (Int.add ofs (Int.repr delta))) = true.
 Proof.
   unfold inject_id; intros. inv H. rewrite Int.add_zero.
-  rewrite Mem.valid_pointer_nonempty_perm in *. eauto.
+  rewrite Mem.valid_pointer_nonempty_perm.
+  rewrite Mem.valid_pointer_nonempty_perm in H0.
+  eauto.
 Qed.
 
 Let weak_valid_pointer_inj:
@@ -807,7 +809,9 @@ Let weak_valid_pointer_inj:
 Proof.
   unfold inject_id; intros. inv H. rewrite Int.add_zero.
   rewrite Mem.weak_valid_pointer_spec in *.
+  repeat rewrite Mem.weak_valid_pointer_spec in H0.
   rewrite ! Mem.valid_pointer_nonempty_perm in *.
+  repeat rewrite Mem.valid_pointer_nonempty_perm in H0.
   destruct H0; [left|right]; eauto.
 Qed.
 

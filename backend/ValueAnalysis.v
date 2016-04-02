@@ -1822,7 +1822,8 @@ Proof.
   intros.
   assert (A: initial_mem_match bc m ge).
   {
-    apply alloc_globals_match with (m := Mem.empty); auto.
+    apply alloc_globals_match with (m := Mem.empty); try assumption.
+    rewrite Mem.nextblock_empty. reflexivity.
     red. unfold Genv.find_symbol; simpl; intros. rewrite PTree.gempty in H1; discriminate.
   }
   assert (B: romem_consistent (prog_defmap prog) (romem_for cunit)) by (apply romem_for_consistent_2; auto).

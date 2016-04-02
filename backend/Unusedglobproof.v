@@ -1112,72 +1112,120 @@ Proof.
 + apply IHil. intros id [ofs IN]. apply H. exists ofs; auto with coqlib.
 Qed.
 
-Lemma Mem_getN_forall2:
-  forall (P: memval -> memval -> Prop) c1 c2 i n p,
-  list_forall2 P (Mem.getN n p c1) (Mem.getN n p c2) ->
-  p <= i -> i < p + Z.of_nat n ->
-  P (ZMap.get i c1) (ZMap.get i c2).
+Lemma list_forall2_same_prefix_length {A B: Type} (P: A -> B -> Prop) l1:
+  forall l2 r1 r2,
+    list_forall2 P (l1 ++ r1) (l2 ++ r2) ->
+    length l1 = length l2 ->
+    list_forall2 P l1 l2 /\ list_forall2 P r1 r2.
 Proof.
-  induction n; simpl Mem.getN; intros.
-- simpl in H1. omegaContradiction.
-- inv H. rewrite inj_S in H1. destruct (zeq i p0).
-+ congruence.
-+ apply IHn with (p0 + 1); auto. omega. omega.
-Qed. 
-
-Lemma init_mem_inj_1:
-  Mem.mem_inj init_meminj m tm.
-Proof.
-  intros; constructor; intros.
-- exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
-  exploit (Genv.init_mem_characterization_gen p); eauto.
-  exploit (Genv.init_mem_characterization_gen tp); eauto.
-  destruct gd as [f|v].
-+ intros (P2 & Q2) (P1 & Q1).
-  apply Q1 in H0. destruct H0. subst.
-  apply Mem.perm_cur. auto.
-+ intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
-  apply Q1 in H0. destruct H0. subst.
-  apply Mem.perm_cur. eapply Mem.perm_implies; eauto. 
-  apply P2. omega.
-- exploit init_meminj_invert; eauto. intros (A & id & B & C). 
-  subst delta. apply Zdivide_0.
-- exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
-  exploit (Genv.init_mem_characterization_gen p); eauto.
-  exploit (Genv.init_mem_characterization_gen tp); eauto.
-  destruct gd as [f|v].
-+ intros (P2 & Q2) (P1 & Q1).
-  apply Q1 in H0. destruct H0; discriminate.
-+ intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
-  apply Q1 in H0. destruct H0.
-  assert (NO: gvar_volatile v = false).
-  { unfold Genv.perm_globvar in H1. destruct (gvar_volatile v); auto. inv H1. }
-Local Transparent Mem.loadbytes.
-  generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E1; inv E1.
-  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E2; inv E2.
-  rewrite Zplus_0_r.
-  apply Mem_getN_forall2 with (p := 0) (n := nat_of_Z (init_data_list_size (gvar_init v))).
-  rewrite H3, H4. apply bytes_of_init_inject. auto. 
-  omega. 
-  rewrite nat_of_Z_eq by (apply init_data_list_size_pos). omega. 
+  induction l1; destruct l2; simpl; try congruence.
+  + split; auto.
+    constructor.
+  + inversion 1; subst.
+    inversion 1; subst.
+    exploit IHl1; eauto.
+    destruct 1.
+    split; auto.
+    constructor; auto.
 Qed.
 
 Lemma init_mem_inj_2:
   Mem.inject init_meminj m tm.
 Proof.
-  constructor; intros.
-- apply init_mem_inj_1.
-- destruct (init_meminj b) as [[b' delta]|] eqn:INJ; auto.
-  elim H. exploit init_meminj_invert; eauto. intros (A & id & B & C). 
-  eapply Genv.find_symbol_not_fresh; eauto.
-- exploit init_meminj_invert; eauto. intros (A & id & B & C). 
-  eapply Genv.find_symbol_not_fresh; eauto.
-- red; intros.
-  exploit init_meminj_invert. eexact H0. intros (A1 & id1 & B1 & C1).
-  exploit init_meminj_invert. eexact H1. intros (A2 & id2 & B2 & C2).
-  destruct (ident_eq id1 id2). congruence. left; eapply Genv.global_addresses_distinct; eauto.
-- exploit init_meminj_invert; eauto. intros (A & id & B & C). subst delta.
-  split. omega. generalize (Int.unsigned_range_2 ofs). omega.
+  apply Mem.zero_delta_inject.
+- intros b1 b2 delta H.
+  apply init_meminj_invert in H.
+  destruct H; auto.
+- intros b1 b2 H.
+  apply init_meminj_invert in H.
+  destruct H as (_ & id & Hsymb & Htsymb).
+  split; eapply Genv.find_symbol_not_fresh; eauto.
+- intros b1 [] H.
+  apply init_meminj_invert in H.
+  destruct H as (_ & id1 & Hid1 & Htid1).
+  intros b2 H.
+  apply init_meminj_invert in H.
+  destruct H as (_ & id2 & Hid2 & Htid2).
+  cut (id1 = id2); [ congruence | ].
+  eapply Senv.find_symbol_injective with (t := Genv.to_senv tge); eauto.
+- intros b1 b2 H o k p0 H0.
+  apply init_meminj_invert_strong in H.
+  destruct H as (_ & id & def & Hid & Htid & Hdef & Htdef & _).
+  exploit (Genv.init_mem_characterization_gen p); eauto.
+  exploit (Genv.init_mem_characterization_gen tp); eauto.
+  destruct def as [f|v].
+  + destruct 1 as (Htperm & Htperm_impl).
+    destruct 1 as (Hperm & Hperm_impl).
+    apply Hperm_impl in H0.
+    destruct H0; subst.
+    apply Mem.perm_cur; auto.
+  + destruct 1 as (Htperm & Htperm_impl & _).
+    destruct 1 as (Hperm & Hperm_impl & _).
+    apply Hperm_impl in H0.
+    destruct H0 as (LE & ORD).
+    eapply Htperm in LE.
+    apply Mem.perm_cur; auto.
+    eapply Mem.perm_implies; eauto.
+- intros b1 b2 H o v1 H0.
+  apply init_meminj_invert_strong in H.
+  destruct H as (_ & id & def & Hid & Htid & Hdef & Htdef & Hkept).
+  exploit (Genv.init_mem_characterization_gen p); eauto.
+  exploit (Genv.init_mem_characterization_gen tp); eauto.
+  destruct def as [f|v].
+  + intros _.
+    destruct 1 as (_ & Hperm).
+    exfalso.
+    apply Mem.loadbytes_range_perm in H0.
+    assert (o <= o < o + 1) as Hrange by omega.
+    apply H0 in Hrange.
+    apply Hperm in Hrange.
+    destruct Hrange; discriminate.
+  + destruct 1 as (_ & _& _ & TREAD).
+    destruct 1 as (_ & Hperm & _ & READ).
+    generalize H0. intro H0_.
+    apply Mem.loadbytes_range_perm in H0.
+    assert (o <= o < o + 1) as Hrange by omega.
+    apply H0 in Hrange.
+    apply Hperm in Hrange.
+    destruct Hrange as (LE & Hrange).
+    assert (NO: gvar_volatile v = false).
+    { unfold Genv.perm_globvar in Hrange. destruct (gvar_volatile v); auto. inv Hrange. }
+    specialize (READ NO).
+    specialize (TREAD NO).
+    apply bytes_of_init_inject in Hkept.
+    replace (init_data_list_size (gvar_init v))
+    with
+    (o + (init_data_list_size (gvar_init v) - o))
+      in READ, TREAD
+      by omega.
+    apply Mem.loadbytes_split in READ; try omega.
+    destruct READ as (b1l & b1r & Hb1l & Hb1r & EQ1).
+    apply Mem.loadbytes_split in TREAD; try omega.
+    destruct TREAD as (b2l & b2r & Hb2l & Hb2r & EQ2).
+    apply Mem.loadbytes_length in Hb1l.
+    apply Mem.loadbytes_length in Hb2l.
+    fold ge in EQ1.
+    rewrite EQ1 in Hkept.
+    fold tge in EQ2.
+    rewrite EQ2 in Hkept.
+    apply list_forall2_same_prefix_length in Hkept; try congruence.
+    destruct Hkept as (_ & Hkept).
+    rewrite Z.add_0_l in Hb1r, Hb2r.
+    replace (init_data_list_size (gvar_init v) - o)
+    with (1 + (init_data_list_size (gvar_init v) - 1 - o))
+      in Hb1r, Hb2r
+      by omega.
+    apply Mem.loadbytes_split in Hb1r; try omega.
+    destruct Hb1r as (h1 & t1 & LOAD1 & _ & ?); subst.
+    apply Mem.loadbytes_split in Hb2r; try omega.
+    destruct Hb2r as (h2 & t2 & LOAD2 & _ & ?); subst.
+    rewrite H0_ in LOAD1.
+    inversion LOAD1; clear LOAD1; subst.
+    generalize LOAD2. intro LOAD2_.
+    apply Mem.loadbytes_length in LOAD2_.
+    destruct h2 as [ | ? [ | ] ] ; try discriminate.
+    inversion Hkept; subst.
+    eauto.
 Qed.
 
 End INIT_MEM.
