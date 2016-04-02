@@ -3141,7 +3141,7 @@ Qed.
 
 Definition locset := block -> Z -> Prop.
 
-Record magree (m1 m2: mem) (P: locset) : Prop := mk_magree {
+Record magree' (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_perm:
     forall b ofs k p,
     perm m1 b ofs k p ->
@@ -3155,6 +3155,8 @@ Record magree (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_nextblock:
     nextblock m2 = nextblock m1
 }.
+
+Definition magree := magree'.
 
 Lemma magree_monotone:
   forall m1 m2 (P Q: locset),
@@ -4532,7 +4534,7 @@ Section UNCHANGED_ON.
 
 Variable P: block -> Z -> Prop.
 
-Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
+Record unchanged_on' (m_before m_after: mem) : Prop := mk_unchanged_on {
   unchanged_on_nextblock:
     Ple (nextblock m_before) (nextblock m_after);
   unchanged_on_perm:
@@ -4545,6 +4547,8 @@ Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
     ZMap.get ofs (PMap.get b m_after.(mem_contents)) =
     ZMap.get ofs (PMap.get b m_before.(mem_contents))
 }.
+
+Definition unchanged_on := unchanged_on'.
 
 Lemma unchanged_on_refl:
   forall m, unchanged_on m m.
