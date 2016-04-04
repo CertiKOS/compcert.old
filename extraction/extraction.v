@@ -43,7 +43,7 @@ Extract Inlined Constant Coqlib.proj_sumbool => "(fun x -> x)".
 Extraction Inline Wfsimpl.Fix Wfsimpl.Fixm.
 
 (* Memory - work around an extraction bug. *)
-Extraction NoInline Memory.Mem.valid_pointer.
+Extraction NoInline Memimpl.Mem.valid_pointer.
 
 (* Errors *)
 Extraction Inline Errors.bind Errors.bind2.

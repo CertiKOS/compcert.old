@@ -17,7 +17,7 @@ open Camlcoq
 open AST
 open Integers
 open Values
-open Memory
+open Memimpl
 open Globalenvs
 open Events
 open !Ctypes
