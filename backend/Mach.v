@@ -118,11 +118,16 @@ value of the return address that the Asm code generated later will
 store in the reserved location.
 *)
 
+Section WITHMEMORYMODELOPS.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
+
 Definition load_stack (m: mem) (sp: val) (ty: typ) (ofs: int) :=
   Mem.loadv (chunk_of_type ty) m (Val.add sp (Vint ofs)).
 
 Definition store_stack (m: mem) (sp: val) (ty: typ) (ofs: int) (v: val) :=
   Mem.storev (chunk_of_type ty) m (Val.add sp (Vint ofs)) v.
+
+End WITHMEMORYMODELOPS.
 
 Module RegEq.
   Definition t := mreg.
@@ -196,12 +201,6 @@ Proof.
   destruct (is_label lbl a). inv H. auto with coqlib. eauto with coqlib.
 Qed.
 
-Section RELSEM.
-
-Variable return_address_offset: function -> code -> int -> Prop.
-
-Variable ge: genv.
-
 Definition find_function_ptr
         (ge: genv) (ros: mreg + ident) (rs: regset) : option block :=
   match ros with
@@ -216,6 +215,9 @@ Definition find_function_ptr
 
 (** Extract the values of the arguments to an external call. *)
 
+Section WITHMEMORYMODELOPS2.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
+
 Inductive extcall_arg: regset -> mem -> val -> loc -> val -> Prop :=
   | extcall_arg_reg: forall rs m sp r,
       extcall_arg rs m sp (R r) (rs r)
@@ -227,7 +229,7 @@ Definition extcall_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg rs m sp) (loc_arguments sg) args.
 
-(** Mach execution states. *)
+End WITHMEMORYMODELOPS2.
 
 (** Mach execution states. *)
 
@@ -239,7 +241,7 @@ Inductive stackframe: Type :=
              (c: code),       (**r program point in calling function *)
       stackframe.
 
-Inductive state: Type :=
+Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
   | State:
       forall (stack: list stackframe)  (**r call stack *)
              (f: block)                (**r pointer to current function *)
@@ -271,6 +273,15 @@ Definition parent_ra (s: list stackframe) : val :=
   | nil => Vzero
   | Stackframe f sp ra c :: s' => ra
   end.
+
+Section WITHEXTERNALCALLSOPS.
+Context `{external_calls_ops: ExternalCallsOps}.
+
+Section RELSEM.
+
+Variable return_address_offset: function -> code -> int -> Prop.
+
+Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -417,3 +428,5 @@ Inductive final_state: state -> int -> Prop :=
 
 Definition semantics (rao: function -> code -> int -> Prop) (p: program) :=
   Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
+
+End WITHEXTERNALCALLSOPS.

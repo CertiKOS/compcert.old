@@ -327,6 +327,9 @@ Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
   end.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Section RELSEM.
 
 (** Looking up instructions in a code sequence by position. *)
@@ -360,15 +363,13 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
-Variable ge: genv.
-
 (** The semantics is purely small-step and defined as a function
   from the current state (a register set + a memory state)
   to either [Next rs' m'] where [rs'] and [m'] are the updated register
   set and memory state after execution of the instruction at [rs#PC],
   or [Stuck] if the processor is stuck. *)
 
-Inductive outcome: Type :=
+Inductive outcome {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | Next: regset -> mem -> outcome
   | Stuck: outcome.
 
@@ -404,6 +405,8 @@ Definition eval_shift_op (so: shift_op) (rs: regset) :=
   end.
 
 (** Auxiliaries for memory accesses *)
+
+Variable ge: genv.
 
 Definition exec_load (chunk: memory_chunk) (addr: val) (r: preg)
                      (rs: regset) (m: mem) :=
@@ -822,7 +825,7 @@ Definition loc_external_result (sg: signature) : list preg :=
 
 (** Execution of the instruction at [rs#PC]. *)
 
-Inductive state: Type :=
+Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State: regset -> mem -> state.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -925,6 +928,8 @@ Ltac Equalities :=
 (* final states *)
   inv H; inv H0. congruence.
 Qed.
+
+End WITHEXTERNALCALLS.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 

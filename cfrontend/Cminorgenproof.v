@@ -32,6 +32,7 @@ Proof.
 Qed.
 
 Section TRANSLATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: Csharpminor.program.
 Variable tprog: program.
@@ -1943,6 +1944,7 @@ Proof.
 
 (* skip seq *)
   monadInv TR. left.
+  revert memory_model_prf external_calls_ops external_calls_prf.
   dependent induction MK.
   econstructor; split.
   apply plus_one. constructor.
@@ -1950,15 +1952,18 @@ Proof.
   econstructor; split.
   apply plus_one. constructor.
   eapply match_state_seq; eauto.
+  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split. eapply plus_left. constructor. apply plus_star; eauto. traceEq.
   auto.
 (* skip block *)
   monadInv TR. left.
+  revert memory_model_prf external_calls_ops external_calls_prf.
   dependent induction MK.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto.
+  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split. eapply plus_left. constructor. apply plus_star; eauto. traceEq.
   auto.
@@ -2070,32 +2075,39 @@ Opaque PTree.set.
 
 (* exit seq *)
   monadInv TR. left.
+  revert memory_model_prf external_calls_ops external_calls_prf.
   dependent induction MK.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto. simpl. auto.
+  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. eapply plus_left. constructor. apply plus_star; eauto. traceEq.
+  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. eapply plus_left.
   simpl. constructor. apply plus_star; eauto. traceEq.
 
 (* exit block 0 *)
   monadInv TR. left.
+  revert memory_model_prf external_calls_ops external_calls_prf.
   dependent induction MK.
   econstructor; split.
   simpl. apply plus_one. constructor.
   econstructor; eauto.
+  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. simpl.
   eapply plus_left. constructor. apply plus_star; eauto. traceEq.
 
 (* exit block n+1 *)
   monadInv TR. left.
+  revert memory_model_prf external_calls_ops external_calls_prf.
   dependent induction MK.
   econstructor; split.
   simpl. apply plus_one. constructor.
   econstructor; eauto. auto.
+  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. simpl.
   eapply plus_left. constructor. apply plus_star; eauto. traceEq.

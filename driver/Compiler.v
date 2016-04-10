@@ -28,7 +28,6 @@ Require Linear.
 Require Mach.
 Require Asm.
 (** Translation passes. *)
-Require Initializers.
 Require SimplExpr.
 Require SimplLocals.
 Require Cshmgen.
@@ -165,11 +164,6 @@ Definition transf_c_program (p: Csyntax.program) : res Asm.program :=
   OK p
   @@@ time "Clight generation" SimplExpr.transl_program
   @@@ transf_clight_program.
-
-(** Force [Initializers] and [Cexec] to be extracted as well. *)
-
-Definition transl_init := Initializers.transl_init.
-Definition cexec_do_step := Cexec.do_step.
 
 (** The following lemmas help reason over compositions of passes. *)
 
@@ -350,6 +344,10 @@ Proof.
   intros. unfold match_if in *. destruct (flag tt). eauto. subst. apply forward_simulation_identity.
 Qed.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: Events.ExternalCalls}.
+Context {i64_helpers_correct_prf: SelectLongproof.I64HelpersCorrect mem}.
+
 Theorem cstrategy_semantic_preservation:
   forall p tp,
   match_prog p tp ->
@@ -479,3 +477,5 @@ Proof.
   destruct H2 as (asm_program & P & Q).
   exists asm_program; split; auto. apply c_semantic_preservation; auto.
 Qed.
+
+End WITHEXTERNALCALLS.

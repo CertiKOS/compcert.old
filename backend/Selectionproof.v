@@ -128,6 +128,8 @@ Qed.
 (** * Correctness of the instruction selection functions for expressions *)
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
+Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: Cminor.program.
 Variable tprog: CminorSel.program.
@@ -525,17 +527,17 @@ Lemma sel_switch_long_correct:
 Proof.
   intros. eapply sel_switch_correct with (R := Rlong); eauto.
 - intros until n; intros EVAL R RANGE.
-  eapply eval_cmpl. eexact EVAL. apply eval_longconst with (n := Int64.repr n).
+  eapply eval_cmpl. eexact EVAL. apply eval_longconst with (n0 := Int64.repr n).
   inv R. unfold Val.cmpl. simpl. f_equal; f_equal. unfold Int64.eq.
   rewrite Int64.unsigned_repr. destruct (zeq (Int64.unsigned n0) n); auto.
   unfold Int64.max_unsigned; omega.
 - intros until n; intros EVAL R RANGE.
-  eapply eval_cmplu. eexact EVAL. apply eval_longconst with (n := Int64.repr n).
+  eapply eval_cmplu. eexact EVAL. apply eval_longconst with (n0 := Int64.repr n).
   inv R. unfold Val.cmplu. simpl. f_equal; f_equal. unfold Int64.ltu.
   rewrite Int64.unsigned_repr. destruct (zlt (Int64.unsigned n0) n); auto.
   unfold Int64.max_unsigned; omega.
 - intros until n; intros EVAL R RANGE.
-  exploit eval_subl.  eexact EVAL. apply eval_longconst with (n := Int64.repr n).
+  exploit eval_subl.  eexact EVAL. apply eval_longconst with (n0 := Int64.repr n).
   intros (vb & A & B).
   inv R. simpl in B. inv B. econstructor; split; eauto.
   replace ((Int64.unsigned n0 - n) mod Int64.modulus)

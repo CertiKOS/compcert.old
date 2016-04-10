@@ -150,6 +150,7 @@ Ltac Simpl := repeat Simplif.
 (** * Correctness of PowerPC constructor functions *)
 
 Section CONSTRUCTORS.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable fn: function.
@@ -1069,7 +1070,7 @@ Transparent Val.add.
     f_equal. unfold rs3; Simpl. unfold rs3, rs2, rs1; Simpl.
     intros. unfold rs3, rs2, rs1; Simpl.
   intros [rs' [EX' AG']].
-  exists rs'. split. eapply exec_straight_trans with (rs2 := rs3) (m2 := m).
+  exists rs'. split. eapply exec_straight_trans with (rs5 := rs3) (m2 := m).
   apply exec_straight_three with rs1 m rs2 m; auto.
   simpl. unfold rs3. f_equal. f_equal. f_equal. rewrite gpr_or_zero_not_zero by auto.
   unfold rs2; Simpl. apply low_high_half_zero.

@@ -136,6 +136,9 @@ Proof.
   destruct (ident_eq f f1); eauto.
 Qed. 
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 (** * Properties of the translation functions *)
 
 (** Transformation of expressions and statements. *)
@@ -377,6 +380,7 @@ Proof.
   simpl. unfold Val.cmpu, Val.cmpu_bool, Int.cmpu.
   destruct (Int.eq i Int.zero); auto.
   (* pointer -> bool *)
+  rewrite Cop.weak_valid_pointer_eq in H2.
   destruct (Mem.weak_valid_pointer m b (Int.unsigned i)) eqn:VALID; inv H2.
   econstructor; eauto with cshm.
   simpl. unfold Val.cmpu. simpl. rewrite Int.eq_true.
@@ -414,6 +418,7 @@ Proof.
   unfold Val.cmpu, Val.cmpu_bool. simpl.
   destruct (Int.eq i Int.zero); simpl; constructor.
   econstructor; split. econstructor; eauto with cshm. simpl. eauto.
+  rewrite Cop.weak_valid_pointer_eq in H2.
   destruct (Mem.weak_valid_pointer m b0 (Int.unsigned i)) eqn:V; inv H2.
   unfold Val.cmpu, Val.cmpu_bool. simpl.
   unfold Mem.weak_valid_pointer in V; rewrite V. constructor.
@@ -456,6 +461,7 @@ Lemma make_notbool_correct:
 Proof.
   unfold sem_notbool, make_notbool; intros until m; intros SEM MAKE EV1;
   destruct (classify_bool tya); inv MAKE; destruct va; inv SEM; eauto with cshm.
+  rewrite Cop.weak_valid_pointer_eq in H0.
   destruct (Mem.weak_valid_pointer m b (Int.unsigned i)) eqn:V; inv H0.
   econstructor; eauto with cshm. simpl. unfold Val.cmpu, Val.cmpu_bool.
   unfold Mem.weak_valid_pointer in V; rewrite V. auto.
@@ -1437,7 +1443,7 @@ Proof.
   exploit transl_expr_correct; eauto.
   intros [v [A B]].
   econstructor; split.
-  apply plus_one. apply step_ifthenelse with (v := v) (b := b); auto.
+  apply plus_one. apply step_ifthenelse with (v0 := v) (b0 := b); auto.
   destruct b; econstructor; eauto; constructor.
 
 - (* loop *)
@@ -1622,6 +1628,8 @@ Proof.
 Qed.
 
 End CORRECTNESS.
+
+End WITHEXTERNALCALLS.
 
 (** ** Commutation with linking *)
 

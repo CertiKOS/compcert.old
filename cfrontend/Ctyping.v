@@ -1356,6 +1356,9 @@ Qed.
 
 Hint Resolve pres_cast_int_int: ty.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Lemma pres_sem_cast:
   forall m v2 ty2 v1 ty1, wt_val v1 ty1 -> sem_cast v1 ty1 ty2 m = Some v2 -> wt_val v2 ty2.
 Proof.
@@ -2109,3 +2112,7 @@ Proof.
 Qed.
 
 End PRESERVATION.
+
+End WITHEXTERNALCALLS.
+
+Hint Constructors wt_expr_cont wt_stmt_cont wt_stmt wt_state: ty.

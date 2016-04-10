@@ -50,6 +50,8 @@ Definition env := PTree.t (block * type). (* map variable -> location & type *)
 
 Definition empty_env: env := (PTree.empty (block * type)).
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
 
 Section SEMANTICS.
 
@@ -207,7 +209,8 @@ Variable e: env.
 
 (** Head reduction for l-values. *)
 
-Inductive lred: expr -> mem -> expr -> mem -> Prop :=
+Inductive lred {memory_model_ops: Mem.MemoryModelOps mem}
+: expr -> mem -> expr -> mem -> Prop :=
   | red_var_local: forall x ty m b,
       e!x = Some(b, ty) ->
       lred (Evar x ty) m
@@ -501,7 +504,7 @@ Definition is_call_cont (k: cont) : Prop :=
   the symmetrical transition from a function back to its caller
   ([Returnstate]). *)
 
-Inductive state: Type :=
+Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State                               (**r execution of a statement *)
       (f: function)
       (s: statement)
@@ -804,3 +807,5 @@ Proof.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.
+
+End WITHEXTERNALCALLS.

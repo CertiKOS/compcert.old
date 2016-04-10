@@ -783,6 +783,7 @@ Definition default (x: nval) :=
   end.
 
 Section DEFAULT.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable sp: block.
@@ -843,7 +844,7 @@ Lemma default_needs_of_condition_sound:
   vagree_list args1 args2 nil ->
   eval_condition cond args2 m2 = Some b.
 Proof.
-  intros. apply eval_condition_inj with (f := inject_id) (m1 := m1) (vl1 := args1); auto.
+  intros. apply eval_condition_inj with (f := inject_id) (m3 := m1) (vl1 := args1); auto.
   apply val_inject_list_lessdef. apply lessdef_vagree_list. auto.
 Qed.
 
@@ -866,7 +867,8 @@ Proof.
     destruct H0. inv H0; constructor; auto with na.
     inv H0; constructor; auto with na. inv H8; constructor; auto with na.
   }
-  exploit (@eval_operation_inj _ _ _ _ ge ge inject_id).
+  idtac.
+  exploit (eval_operation_inj ge ge (f := inject_id)).
   eassumption. auto. auto. auto.
   instantiate (1 := op). intros. apply val_inject_lessdef; auto.
   apply val_inject_lessdef. instantiate (1 := Vptr sp Int.zero). instantiate (1 := Vptr sp Int.zero). auto.

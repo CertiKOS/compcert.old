@@ -95,6 +95,7 @@ Ltac Simplifs := repeat Simplif.
 (** * Correctness of IA32 constructor functions *)
 
 Section CONSTRUCTORS.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable fn: function.

@@ -138,6 +138,7 @@ Qed.
 (** * Preservation of semantics *)
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
@@ -293,12 +294,12 @@ Proof.
 
   (* Lop *)
   left; simpl; econstructor; split.
-  eapply exec_Lop with (v := v); eauto.
+  eapply exec_Lop with (v0 := v); eauto.
   rewrite <- H. apply eval_operation_preserved. exact symbols_preserved.
   econstructor; eauto.
   (* Lload *)
   left; simpl; econstructor; split.
-  eapply exec_Lload with (a := a).
+  eapply exec_Lload with (a0 := a).
   rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   eauto. eauto.
   econstructor; eauto.
@@ -312,13 +313,13 @@ Proof.
   econstructor; eauto.
   (* Lstore *)
   left; simpl; econstructor; split.
-  eapply exec_Lstore with (a := a).
+  eapply exec_Lstore with (a0 := a).
   rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   eauto. eauto.
   econstructor; eauto.
   (* Lcall *)
   left; simpl; econstructor; split.
-  eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
+  eapply exec_Lcall with (fd0 := tunnel_fundef fd); eauto.
   apply find_function_translated; auto.
   rewrite sig_preserved. auto.
   econstructor; eauto.
@@ -326,7 +327,7 @@ Proof.
   constructor; auto.
   (* Ltailcall *)
   left; simpl; econstructor; split.
-  eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
+  eapply exec_Ltailcall with (fd0 := tunnel_fundef fd); eauto.
   erewrite match_parent_locset; eauto.
   apply find_function_translated; auto.
   apply sig_preserved.

@@ -64,14 +64,16 @@ Inductive tr_expr: temp_env -> destination -> Csyntax.expr -> list statement -> 
       tr_expr le For_effects (Csyntax.Eval v ty) nil any tmp
   | tr_val_value: forall le v ty a tmp,
       typeof a = ty ->
-      (forall tge e le' m,
+      (forall `{memory_model_ops: Mem.MemoryModelOps},
+       forall tge e le' m,
          (forall id, In id tmp -> le'!id = le!id) ->
          eval_expr tge e le' m a v) ->
       tr_expr le For_val (Csyntax.Eval v ty)
                            nil a tmp
   | tr_val_set: forall le sd v ty a any tmp,
       typeof a = ty ->
-      (forall tge e le' m,
+      (forall `{memory_model_ops: Mem.MemoryModelOps},
+       forall tge e le' m,
          (forall id, In id tmp -> le'!id = le!id) ->
          eval_expr tge e le' m a v) ->
       tr_expr le (For_set sd) (Csyntax.Eval v ty)
@@ -369,6 +371,7 @@ Qed.
   state. *)
 
 Section TR_TOP.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable ge: genv.
 Variable e: env.
@@ -389,17 +392,20 @@ End TR_TOP.
 
 Inductive tr_expression: Csyntax.expr -> statement -> expr -> Prop :=
   | tr_expression_intro: forall r sl a tmps,
-      (forall ge e le m, tr_top ge e le m For_val r sl a tmps) ->
+      (forall `{memory_model_ops: Mem.MemoryModelOps},
+        forall ge e le m, tr_top ge e le m For_val r sl a tmps) ->
       tr_expression r (makeseq sl) a.
 
 Inductive tr_expr_stmt: Csyntax.expr -> statement -> Prop :=
   | tr_expr_stmt_intro: forall r sl a tmps,
-      (forall ge e le m, tr_top ge e le m For_effects r sl a tmps) ->
+      (forall `{memory_model_ops: Mem.MemoryModelOps},
+       forall ge e le m, tr_top ge e le m For_effects r sl a tmps) ->
       tr_expr_stmt r (makeseq sl).
 
 Inductive tr_if: Csyntax.expr -> statement -> statement -> statement -> Prop :=
   | tr_if_intro: forall r s1 s2 sl a tmps,
-      (forall ge e le m, tr_top ge e le m For_val r sl a tmps) ->
+      (forall `{memory_model_ops: Mem.MemoryModelOps},
+        forall ge e le m, tr_top ge e le m For_val r sl a tmps) ->
       tr_if r s1 s2 (makeseq (sl ++ makeif a s1 s2 :: nil)).
 
 Inductive tr_stmt: Csyntax.statement -> statement -> Prop :=
@@ -1015,7 +1021,9 @@ Lemma transl_expr_meets_spec:
    forall r dst g sl a g' I,
    transl_expr dst r g = Res (sl, a) g' I ->
    dest_below dst g ->
-   exists tmps, forall ge e le m, tr_top ge e le m dst r sl a tmps.
+   exists tmps,
+     forall `{memory_model_ops: Mem.MemoryModelOps},
+     forall ge e le m, tr_top ge e le m dst r sl a tmps.
 Proof.
   intros. exploit (proj1 transl_meets_spec); eauto. intros [tmps [A B]].
   exists (add_dest dst tmps); intros. apply tr_top_base. auto.

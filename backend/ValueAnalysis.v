@@ -231,6 +231,9 @@ Definition romem_for (p: program) : romem :=
 
 (** * Soundness proof *)
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 (** Properties of the dataflow solution. *)
 
 Lemma analyze_entrypoint:
@@ -905,7 +908,7 @@ Theorem external_call_match:
 Proof.
   intros until am; intros EC GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
-  exploit (@external_call_mem_inject ef _ _ ge vargs m t vres m' (inj_of_bc bc) m vargs).
+  exploit (external_call_mem_inject ef (ge := ge) (vargs := vargs) m t vres m' (f := inj_of_bc bc) m (vargs' := vargs)).
   apply inj_of_bc_preserves_globals; auto.
   exact EC.
   eapply mmatch_inj; eauto. eapply mmatch_below; eauto.
@@ -1978,3 +1981,15 @@ Proof.
   intros. InvSoundState. rewrite AN. exists bc; split; auto.
   eapply aaddr_arg_sound_1; eauto.
 Qed.
+
+End WITHEXTERNALCALLS.
+
+Hint Resolve areg_sound aregs_sound: va.
+
+Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
+
+Ltac InvSoundState :=
+  match goal with
+  | H1: sound_state ?prog ?st, H2: linkorder ?cunit ?prog |- _ =>
+      let S := fresh "S" in generalize (sound_state_inv _ _ _ H1 H2); intros S; inv S
+  end.

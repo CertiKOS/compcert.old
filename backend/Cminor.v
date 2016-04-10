@@ -221,7 +221,7 @@ Inductive cont: Type :=
 
 (** States *)
 
-Inductive state: Type :=
+Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
   | State:                      (**r Execution within a function *)
       forall (f: function)              (**r currently executing function  *)
              (s: stmt)                  (**r statement under consideration *)
@@ -241,6 +241,9 @@ Inductive state: Type :=
              (k: cont)                  (**r what to do next *)
              (m: mem),                  (**r memory state *)
       state.
+
+Section WITHEXTCALLS.
+Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -1171,3 +1174,5 @@ Proof.
 Qed.
 
 End BIGSTEP_TO_TRANSITION.
+
+End WITHEXTCALLS.

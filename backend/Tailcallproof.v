@@ -211,6 +211,7 @@ Proof.
 Qed.
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
@@ -434,7 +435,7 @@ Proof.
   exploit Mem.loadv_extends; eauto.
   intros [v' [LOAD' VLD]].
   left. exists (State s' (transf_function f) (Vptr sp0 Int.zero) pc' (rs'#dst <- v') m'); split.
-  eapply exec_Iload with (a := a'). eauto.  rewrite <- ADDR'.
+  eapply exec_Iload with (a0 := a'). eauto.  rewrite <- ADDR'.
   apply eval_addressing_preserved. exact symbols_preserved. eauto.
   econstructor; eauto. apply set_reg_lessdef; auto.
 
@@ -446,7 +447,7 @@ Proof.
   exploit Mem.storev_extends. 2: eexact H1. eauto. eauto. apply RLD.
   intros [m'1 [STORE' MLD']].
   left. exists (State s' (transf_function f) (Vptr sp0 Int.zero) pc' rs' m'1); split.
-  eapply exec_Istore with (a := a'). eauto.  rewrite <- ADDR'.
+  eapply exec_Istore with (a0 := a'). eauto.  rewrite <- ADDR'.
   apply eval_addressing_preserved. exact symbols_preserved. eauto.
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
@@ -481,7 +482,7 @@ Proof.
 
 - (* builtin *)
   TransfInstr.
-  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
+  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & P & Q).
   exploit external_call_mem_extends; eauto.
   intros [v' [m'1 [A [B [C D]]]]].

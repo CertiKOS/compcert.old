@@ -27,6 +27,7 @@ Proof.
 Qed.
 
 Section INLINING.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: program.
 Variable tprog: program.

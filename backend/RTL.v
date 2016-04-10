@@ -166,7 +166,7 @@ Inductive stackframe : Type :=
              (rs: regset),         (**r register state in calling function *)
       stackframe.
 
-Inductive state : Type :=
+Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
   | State:
       forall (stack: list stackframe) (**r call stack *)
              (f: function)            (**r current function *)
@@ -186,6 +186,9 @@ Inductive state : Type :=
              (v: val)                 (**r return value for the call *)
              (m: mem),                (**r memory state *)
       state.
+
+Section WITHEXTCALLS.
+Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -207,7 +210,7 @@ Definition find_function
   [st1] the initial state, [st2] the final state, and [t] the trace
   of system calls performed during this transition. *)
 
-Inductive step: state -> trace -> state -> Prop :=
+Inductive step : state -> trace -> state -> Prop :=
   | exec_Inop:
       forall s f sp pc rs m pc',
       (fn_code f)!pc = Some(Inop pc') ->
@@ -364,6 +367,8 @@ Proof.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.
+
+End WITHEXTCALLS.
 
 (** * Operations on RTL abstract syntax *)
 

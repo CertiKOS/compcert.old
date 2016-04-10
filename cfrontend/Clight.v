@@ -196,6 +196,9 @@ Definition empty_env: env := (PTree.empty (block * type)).
 
 Definition temp_env := PTree.t val.
 
+Section WITHEXTCALLS.
+Context `{external_calls: ExternalCalls}.
+
 (** [deref_loc ty m b ofs v] computes the value of a datum
   of type [ty] residing in memory [m] at block [b], offset [ofs].
   If the type [ty] indicates an access by value, the corresponding
@@ -475,7 +478,7 @@ Definition is_call_cont (k: cont) : Prop :=
 
 (** States *)
 
-Inductive state: Type :=
+Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State
       (f: function)
       (s: statement)
@@ -743,3 +746,5 @@ Proof.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.
+
+End WITHEXTCALLS.

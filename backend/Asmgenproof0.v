@@ -317,6 +317,9 @@ Qed.
 (** Connection between Mach and Asm calling conventions for external
     functions. *)
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Lemma extcall_arg_match:
   forall ms sp rs m m' l v,
   agree ms sp rs ->
@@ -374,7 +377,7 @@ Lemma builtin_args_match:
 Proof.
   induction 3; intros; simpl.
   exists (@nil val); split; constructor.
-  exploit (@eval_builtin_arg_lessdef _ ge ms (fun r => rs (preg_of r))); eauto.
+  exploit (eval_builtin_arg_lessdef (ge := ge) (e1 := ms) (fun r => rs (preg_of r))); eauto.
   intros; eapply preg_val; eauto.
   intros (v1' & A & B).
   destruct IHlist_forall2 as [vl' [C D]].
@@ -884,3 +887,20 @@ Qed.
 
 End MATCH_STACK.
 
+End WITHEXTERNALCALLS.
+
+Hint Extern 1 (nolabel _) => exact I : labels.
+Hint Resolve tail_nolabel_refl: labels.
+
+Ltac TailNoLabel :=
+  eauto with labels;
+  match goal with
+  | [ |- tail_nolabel _ (_ :: _) ] => apply tail_nolabel_cons; [auto; exact I | TailNoLabel]
+  | [ H: Error _ = OK _ |- _ ] => discriminate
+  | [ H: assertion_failed = OK _ |- _ ] => discriminate
+  | [ H: OK _ = OK _ |- _ ] => inv H; TailNoLabel
+  | [ H: bind _ _ = OK _ |- _ ] => monadInv H;  TailNoLabel
+  | [ H: (if ?x then _ else _) = OK _ |- _ ] => destruct x; TailNoLabel
+  | [ H: match ?x with nil => _ | _ :: _ => _ end = OK _ |- _ ] => destruct x; TailNoLabel
+  | _ => idtac
+  end.

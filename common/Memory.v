@@ -43,14 +43,6 @@ Require Export Memtype.
 Local Unset Elimination Schemes.
 Local Unset Case Analysis Schemes.
 
-Require Memimpl.
-Global Existing Instance Memimpl.Mem.memory_model_ops.
-Global Existing Instance Memimpl.Mem.memory_model_prf.
-
-Notation mem := Memimpl.Mem.mem.
-
-Global Opaque Memimpl.Mem.memory_model_ops.
-
 Hint Resolve
   Mem.valid_not_valid_diff
   Mem.perm_implies

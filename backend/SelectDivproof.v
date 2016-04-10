@@ -329,6 +329,7 @@ Qed.
 (** * Correctness of the smart constructors for division and modulus *)
 
 Section CMCONSTRS.
+Context `{external_calls_ops: ExternalCallsOps}.
 
 Variable ge: genv.
 Variable sp: val.

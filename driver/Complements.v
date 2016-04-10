@@ -38,6 +38,10 @@ Require Import Errors.
   First, every behavior of the generated assembly code is matched by
   a behavior of the source C code. *)
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: Events.ExternalCalls}.
+Context {i64_helpers_correct_prf: SelectLongproof.I64HelpersCorrect mem}.
+
 Theorem transf_c_program_preservation:
   forall p tp beh,
   transf_c_program p = OK tp ->
@@ -204,3 +208,4 @@ Qed.
 
 End LIVENESS_PRESERVED.
 
+End WITHEXTERNALCALLS.

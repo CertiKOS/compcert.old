@@ -31,6 +31,7 @@ Proof.
 Qed.
 
 Section CLEANUP.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
@@ -329,7 +330,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inv H.
   econstructor; split.
-  eapply initial_state_intro with (f := transf_fundef f).
+  eapply initial_state_intro with (f0 := transf_fundef f).
   eapply (Genv.init_mem_transf TRANSL); eauto.
   rewrite (match_program_main TRANSL), symbols_preserved; eauto.
   apply function_ptr_translated; auto.

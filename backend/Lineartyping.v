@@ -220,6 +220,9 @@ Proof.
 - auto.
 Qed.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Inductive wt_state: state -> Prop :=
   | wt_regular_state: forall s f sp c rs m
         (WTSTK: wt_callstack s )
@@ -393,3 +396,5 @@ Lemma wt_callstate_wt_regs:
 Proof.
   intros. inv H. apply WTRS.
 Qed.
+
+End WITHEXTERNALCALLS.

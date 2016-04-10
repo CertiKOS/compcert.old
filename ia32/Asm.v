@@ -296,6 +296,9 @@ Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
   end.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Section RELSEM.
 
 (** Looking up instructions in a code sequence by position. *)
@@ -470,7 +473,7 @@ Definition eval_testcond (c: testcond) (rs: regset) : option bool :=
   set and memory state after execution of the instruction at [rs#PC],
   or [Stuck] if the processor is stuck. *)
 
-Inductive outcome: Type :=
+Inductive outcome {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | Next: regset -> mem -> outcome
   | Stuck: outcome.
 
@@ -873,7 +876,7 @@ Definition loc_external_result (sg: signature) : list preg :=
 
 (** Execution of the instruction at [rs#PC]. *)
 
-Inductive state: Type :=
+Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State: regset -> mem -> state.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -977,6 +980,8 @@ Ltac Equalities :=
 - (* final states *)
   inv H; inv H0. congruence.
 Qed.
+
+End WITHEXTERNALCALLS.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 

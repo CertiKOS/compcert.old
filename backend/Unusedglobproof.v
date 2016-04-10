@@ -442,6 +442,9 @@ Qed.
 
 (** * Semantic preservation *)
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Section SOUNDNESS.
 
 Variable p: program.
@@ -1235,6 +1238,7 @@ Lemma init_mem_exists:
   exists tm, Genv.init_mem tp = Some tm.
 Proof.
   intros. apply Genv.init_mem_exists.
+  assumption.
   intros. 
   assert (P: (prog_defmap tp)!id = Some (Gvar v)).
   { eapply prog_defmap_norepet; eauto. eapply match_prog_unique; eauto. }
@@ -1303,6 +1307,8 @@ Theorem transf_program_correct:
 Proof.
   intros p tp (used & A & B).  apply transf_program_correct_1 with used; auto.
 Qed.
+
+End WITHEXTERNALCALLS.
 
 (** * Commutation with linking *)
 

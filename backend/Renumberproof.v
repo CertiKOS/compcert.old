@@ -27,6 +27,7 @@ Proof.
 Qed.
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
@@ -183,13 +184,13 @@ Proof.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* call *)
   econstructor; split.
-  eapply exec_Icall with (fd := transf_fundef fd); eauto.
+  eapply exec_Icall with (fd0 := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
   constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
   econstructor; split.
-  eapply exec_Itailcall with (fd := transf_fundef fd); eauto.
+  eapply exec_Itailcall with (fd0 := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
   constructor. auto.

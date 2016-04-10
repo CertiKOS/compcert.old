@@ -206,6 +206,9 @@ Definition eval_shift (s: shift) (v: val) : val :=
   | Sror x => Val.ror v (Vint x)
   end.
 
+Section WITHMEMORYMODELOPS.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
+
 Definition eval_condition (cond: condition) (vl: list val) (m: mem):
                option bool :=
   match cond, vl with
@@ -308,6 +311,8 @@ Definition eval_addressing
   | Ainstack ofs, nil => Some (Val.add sp (Vint ofs))
   | _, _ => None
   end.
+
+End WITHMEMORYMODELOPS.
 
 Ltac FuncInv :=
   match goal with
@@ -421,6 +426,7 @@ Definition type_of_addressing (addr: addressing) : list typ :=
   by [type_of_operation]. *)
 
 Section SOUNDNESS.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable A V: Type.
 Variable genv: Genv.t A V.
@@ -566,6 +572,7 @@ Definition negate_condition (cond: condition): condition :=
   end.
 
 Lemma eval_negate_condition:
+  forall `{memory_model_ops: Mem.MemoryModelOps},
   forall cond vl m,
   eval_condition (negate_condition cond) vl m = option_map negb (eval_condition cond vl m).
 Proof.
@@ -622,6 +629,7 @@ Proof.
 Qed.
 
 Lemma eval_shift_stack_operation:
+  forall `{memory_model_ops: Mem.MemoryModelOps},
   forall F V (ge: Genv.t F V) sp op vl m delta,
   eval_operation ge sp (shift_stack_operation delta op) vl m =
   eval_operation ge (Val.add sp (Vint delta)) op vl m.
@@ -670,6 +678,7 @@ Definition op_for_binary_addressing (addr: addressing) : operation :=
   end.
 
 Lemma eval_op_for_binary_addressing:
+  forall `{memory_model_ops: Mem.MemoryModelOps},
   forall (F V: Type) (ge: Genv.t F V) sp addr args v m,
   (length args >= 2)%nat ->
   eval_addressing ge sp addr args = Some v ->
@@ -712,6 +721,7 @@ Definition op_depends_on_memory (op: operation) : bool :=
   end.
 
 Lemma op_depends_on_memory_correct:
+  forall `{memory_model_ops: Mem.MemoryModelOps},
   forall (F V: Type) (ge: Genv.t F V) sp op args m1 m2,
   op_depends_on_memory op = false ->
   eval_operation ge sp op args m1 = eval_operation ge sp op args m2.
@@ -738,6 +748,7 @@ Definition globals_addressing (addr: addressing) : list ident := nil.
   assigns the same addresses to the same symbols. *)
 
 Section GENV_TRANSF.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable F1 F2 V1 V2: Type.
 Variable ge1: Genv.t F1 V1.
@@ -769,6 +780,7 @@ End GENV_TRANSF.
 (** Compatibility of the evaluation functions with value injections. *)
 
 Section EVAL_COMPAT.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable F1 F2 V1 V2: Type.
 Variable ge1: Genv.t F1 V1.
@@ -976,6 +988,7 @@ End EVAL_COMPAT.
 (** Compatibility of the evaluation functions with the ``is less defined'' relation over values. *)
 
 Section EVAL_LESSDEF.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable F V: Type.
 Variable genv: Genv.t F V.
@@ -1029,7 +1042,7 @@ Lemma eval_condition_lessdef:
   eval_condition cond vl1 m1 = Some b ->
   eval_condition cond vl2 m2 = Some b.
 Proof.
-  intros. eapply eval_condition_inj with (f := fun b => Some(b, 0)) (m1 := m1).
+  intros. eapply eval_condition_inj with (f := fun b => Some(b, 0)) (m3 := m1).
   apply valid_pointer_extends; auto.
   apply weak_valid_pointer_extends; auto.
   apply weak_valid_pointer_no_overflow_extends.
@@ -1048,7 +1061,7 @@ Proof.
   assert (exists v2 : val,
           eval_operation genv sp op vl2 m2 = Some v2
           /\ Val.inject (fun b => Some(b, 0)) v1 v2).
-  eapply eval_operation_inj with (m1 := m1) (sp1 := sp).
+  eapply eval_operation_inj with (m3 := m1) (sp1 := sp).
   apply valid_pointer_extends; auto.
   apply weak_valid_pointer_extends; auto.
   apply weak_valid_pointer_no_overflow_extends.
@@ -1081,6 +1094,7 @@ End EVAL_LESSDEF.
 (** Compatibility of the evaluation functions with memory injections. *)
 
 Section EVAL_INJECT.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable F V: Type.
 Variable genv: Genv.t F V.
@@ -1106,7 +1120,7 @@ Lemma eval_condition_inject:
   eval_condition cond vl1 m1 = Some b ->
   eval_condition cond vl2 m2 = Some b.
 Proof.
-  intros. eapply eval_condition_inj with (f := f) (m1 := m1); eauto.
+  intros. eapply eval_condition_inj with (f0 := f) (m3 := m1); eauto.
   intros; eapply Mem.valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
@@ -1138,7 +1152,7 @@ Lemma eval_operation_inject:
 Proof.
   intros.
   rewrite eval_shift_stack_operation. simpl.
-  eapply eval_operation_inj with (sp1 := Vptr sp1 Int.zero) (m1 := m1); eauto.
+  eapply eval_operation_inj with (sp3 := Vptr sp1 Int.zero) (m3 := m1); eauto.
   intros; eapply Mem.valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.

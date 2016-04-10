@@ -98,6 +98,9 @@ Proof.
   destruct s; (left; congruence) || (right; congruence).
 Defined.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 (** * Events, volatile memory accesses, and external functions. *)
 
 Section EXEC.
@@ -404,6 +407,34 @@ Hypothesis do_external_function_complete:
   possible_trace w t w' ->
   do_external_function id sg ge w vargs m = Some(w', t, vres, m').
 
+Variable do_builtin_function:
+  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+
+Hypothesis do_builtin_function_sound:
+  forall id sg ge vargs m t vres m' w w',
+  do_builtin_function id sg ge w vargs m = Some(w', t, vres, m') ->
+  builtin_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+
+Hypothesis do_builtin_function_complete:
+  forall id sg ge vargs m t vres m' w w',
+  builtin_functions_sem id sg ge vargs m t vres m' ->
+  possible_trace w t w' ->
+  do_builtin_function id sg ge w vargs m = Some(w', t, vres, m').
+
+Variable do_runtime_function:
+  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+
+Hypothesis do_runtime_function_sound:
+  forall id sg ge vargs m t vres m' w w',
+  do_runtime_function id sg ge w vargs m = Some(w', t, vres, m') ->
+  runtime_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+
+Hypothesis do_runtime_function_complete:
+  forall id sg ge vargs m t vres m' w w',
+  runtime_functions_sem id sg ge vargs m t vres m' ->
+  possible_trace w t w' ->
+  do_runtime_function id sg ge w vargs m = Some(w', t, vres, m').
+
 Variable do_inline_assembly:
   string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
@@ -535,8 +566,8 @@ Definition do_external (ef: external_function):
        world -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
   | EF_external name sg => do_external_function name sg ge
-  | EF_builtin name sg => do_external_function name sg ge
-  | EF_runtime name sg => do_external_function name sg ge
+  | EF_builtin name sg => do_builtin_function name sg ge
+  | EF_runtime name sg => do_runtime_function name sg ge
   | EF_vload chunk => do_ef_volatile_load chunk
   | EF_vstore chunk => do_ef_volatile_store chunk
   | EF_malloc => do_ef_malloc
@@ -558,9 +589,9 @@ Proof with try congruence.
 (* EF_external *)
   eapply do_external_function_sound; eauto.
 (* EF_builtin *)
-  eapply do_external_function_sound; eauto.
+  eapply do_builtin_function_sound; eauto.
 (* EF_runtime *)
-  eapply do_external_function_sound; eauto.
+  eapply do_runtime_function_sound; eauto.
 (* EF_vload *)
   unfold do_ef_volatile_load. destruct vargs... destruct v... destruct vargs...
   mydestr. destruct p as [[w'' t''] v]; mydestr.
@@ -606,9 +637,9 @@ Proof.
 (* EF_external *)
   eapply do_external_function_complete; eauto.
 (* EF_builtin *)
-  eapply do_external_function_complete; eauto.
+  eapply do_builtin_function_complete; eauto.
 (* EF_runtime *)
-  eapply do_external_function_complete; eauto.
+  eapply do_runtime_function_complete; eauto.
 (* EF_vload *)
   inv H; unfold do_ef_volatile_load.
   exploit do_volatile_load_complete; eauto. intros EQ; rewrite EQ; auto.
@@ -1855,7 +1886,7 @@ Proof.
   exploit imm_safe_imm_safe_t; eauto.
   intros [A | [C1 [a1 [t [a1' [m' [A [B [D E]]]]]]]]]. contradiction.
   right. red. exists t; econstructor; split; auto.
-  left. rewrite B. eapply step_rred with (C := fun x => C(C1 x)). eauto. eauto.
+  left. rewrite B. eapply step_rred with (C0 := fun x => C(C1 x)). eauto. eauto.
   left. left. eapply step_stuck; eauto.
 Qed.
 
@@ -2229,3 +2260,5 @@ Definition at_final_state (S: state): option int :=
   | Returnstate (Vint r) Kstop m => Some r
   | _ => None
   end.
+
+End WITHEXTERNALCALLS.

@@ -45,6 +45,7 @@ Local Notation magree_storebytes_left := Mem.magree_storebytes_left.
 Local Notation mextends_agree := Mem.mextends_agree.
 
 Lemma magree_store_parallel:
+  forall `{memory_model_prf: Mem.MemoryModel},
   forall m1 m2 (P Q: locset) chunk b ofs v1 m1' v2,
   magree m1 m2 P ->
   Mem.store chunk m1 b ofs v1 = Some m1' ->
@@ -169,6 +170,7 @@ Qed.
 (** * Basic properties of the translation *)
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: program.
 Variable tprog: program.
@@ -542,7 +544,7 @@ Ltac UseTransfer :=
   apply eagree_update_dead; auto with na.
 + (* instruction with needs = [I Int.zero], turned into a load immediate of zero. *)
   econstructor; split.
-  eapply exec_Iop with (v := Vint Int.zero); eauto.
+  eapply exec_Iop with (v0 := Vint Int.zero); eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; auto.
   rewrite is_int_zero_sound by auto.
@@ -554,7 +556,7 @@ Ltac UseTransfer :=
   exploit needs_of_operation_sound. eapply ma_perm; eauto.
   eauto. instantiate (1 := nreg ne res). eauto with na. eauto with na. intros [tv [A B]].
   econstructor; split.
-  eapply exec_Iop with (v := tv); eauto.
+  eapply exec_Iop with (v0 := tv); eauto.
   rewrite <- A. apply eval_operation_preserved. exact symbols_preserved.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; auto.
@@ -572,7 +574,7 @@ Ltac UseTransfer :=
   exploit needs_of_operation_sound. eapply ma_perm; eauto. eauto. eauto 2 with na. eauto with na.
   intros [tv [A B]].
   econstructor; split.
-  eapply exec_Iop with (v := tv); eauto.
+  eapply exec_Iop with (v0 := tv); eauto.
   rewrite <- A. apply eval_operation_preserved. exact symbols_preserved.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; eauto 2 with na.
@@ -589,7 +591,7 @@ Ltac UseTransfer :=
   apply eagree_update_dead; auto with na.
 + (* instruction with needs = [I Int.zero], turned into a load immediate of zero. *)
   econstructor; split.
-  eapply exec_Iop with (v := Vint Int.zero); eauto.
+  eapply exec_Iop with (v0 := Vint Int.zero); eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; auto.
   rewrite is_int_zero_sound by auto.

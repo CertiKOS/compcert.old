@@ -128,7 +128,7 @@ Inductive stackframe : Type :=
              (bb: bblock),      (**r continuation in calling function *)
       stackframe.
 
-Inductive state : Type :=
+Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
   | State:
       forall (stack: list stackframe) (**r call stack *)
              (f: function)            (**r function currently executing *)
@@ -157,6 +157,9 @@ Inductive state : Type :=
              (m: mem),                (**r memory state *)
       state.
 
+
+Section WITHEXTERNALCALLSOPS.
+Context `{external_calls_ops: ExternalCallsOps}.
 
 Section RELSEM.
 
@@ -302,6 +305,8 @@ Inductive final_state: state -> int -> Prop :=
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
+
+End WITHEXTERNALCALLSOPS.
 
 (** * Operations over LTL *)
 

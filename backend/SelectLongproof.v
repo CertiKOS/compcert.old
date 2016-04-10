@@ -35,15 +35,22 @@ Open Local Scope string_scope.
 
 (** * Axiomatization of the helper functions *)
 
-Definition external_implements (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
+Definition external_implements
+           `{external_calls_ops: ExternalCallsOps}
+           (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
   forall F V (ge: Genv.t F V) m,
   external_call (EF_runtime name sg) ge vargs m E0 vres m.
 
-Definition builtin_implements (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
+Definition builtin_implements
+           `{external_calls_ops: ExternalCallsOps}
+           (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
   forall F V (ge: Genv.t F V) m,
   external_call (EF_builtin name sg) ge vargs m E0 vres m.
 
-Axiom i64_helpers_correct :
+Class I64HelpersCorrect mem
+      `{external_calls_ops: ExternalCallsOps mem}: Prop :=
+{
+ i64_helpers_correct :
     (forall x z, Val.longoffloat x = Some z -> external_implements "__i64_dtos" sig_f_l (x::nil) z)
  /\ (forall x z, Val.longuoffloat x = Some z -> external_implements "__i64_dtou" sig_f_l (x::nil) z)
  /\ (forall x z, Val.floatoflong x = Some z -> external_implements "__i64_stod" sig_l_f (x::nil) z)
@@ -60,7 +67,8 @@ Axiom i64_helpers_correct :
  /\ (forall x y z, Val.modlu x y = Some z -> external_implements "__i64_umod" sig_ll_l (x::y::nil) z)
  /\ (forall x y, external_implements "__i64_shl" sig_li_l (x::y::nil) (Val.shll x y))
  /\ (forall x y, external_implements "__i64_shr" sig_li_l (x::y::nil) (Val.shrlu x y))
- /\ (forall x y, external_implements "__i64_sar" sig_li_l (x::y::nil) (Val.shrl x y)).
+ /\ (forall x y, external_implements "__i64_sar" sig_li_l (x::y::nil) (Val.shrl x y))
+}.
 
 Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: ident) (name: string) (sg: signature) : Prop :=
   (prog_defmap p)!id = Some (Gfun (External (EF_runtime name sg))).
@@ -83,6 +91,7 @@ Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) 
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
 Section CMCONSTR.
+Context `{i64_helpers_correct_prf: I64HelpersCorrect}.
 
 Variable prog: program.
 Variable hf: helper_functions.

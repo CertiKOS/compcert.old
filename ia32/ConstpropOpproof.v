@@ -33,6 +33,7 @@ Require Import ConstpropOp.
   reduction. *)
 
 Section STRENGTH_REDUCTION.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable bc: block_classification.
 Variable ge: genv.

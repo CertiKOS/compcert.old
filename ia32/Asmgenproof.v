@@ -28,6 +28,7 @@ Proof.
 Qed.
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: Mach.program.
 Variable tprog: Asm.program.

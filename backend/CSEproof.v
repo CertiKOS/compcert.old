@@ -45,6 +45,7 @@ Definition valu_agree (valu1 valu2: valuation) (upto: valnum) :=
   forall v, Plt v upto -> valu2 v = valu1 v.
 
 Section EXTEN.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable valu1: valuation.
 Variable upto: valnum.
@@ -101,6 +102,9 @@ Qed.
 End EXTEN.
 
 Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
+
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
 
 Lemma valnum_reg_holds:
   forall valu1 ge sp rs m n r n' v,
@@ -782,7 +786,7 @@ Proof.
   intros.
   assert (Numbering.ge approx!!pc' (transfer f vapprox pc approx!!pc)).
     eapply Solver.fixpoint_solution; eauto.
-  destruct H2 as [valu NH]. exists valu; apply H3. auto.
+  destruct H2 as [valu NH]. exists valu; apply H3; auto.
 Qed.
 
 Theorem analysis_correct_entry:
@@ -981,7 +985,7 @@ Proof.
   exploit eval_operation_lessdef. eapply regs_lessdef_regs; eauto. eauto. eauto.
   intros [v' [A B]].
   econstructor; split.
-  eapply exec_Iop with (v := v'); eauto.
+  eapply exec_Iop with (v0 := v'); eauto.
   rewrite <- A. apply eval_operation_preserved. exact symbols_preserved.
   econstructor; eauto.
   eapply analysis_correct_1; eauto. simpl; auto.
@@ -1012,7 +1016,7 @@ Proof.
   exploit eval_operation_lessdef. eapply regs_lessdef_regs; eauto. eauto. eauto.
   intros [v' [A B]].
   econstructor; split.
-  eapply exec_Iop with (v := v'); eauto.
+  eapply exec_Iop with (v0 := v'); eauto.
   rewrite <- A. apply eval_operation_preserved. exact symbols_preserved.
   econstructor; eauto.
   eapply analysis_correct_1; eauto. simpl; auto.
@@ -1098,7 +1102,7 @@ Proof.
   apply regs_lessdef_regs; auto.
 
 - (* Ibuiltin *)
-  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
+  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & A & B).
   exploit external_call_mem_extends; eauto.
   intros (v' & m1' & P & Q & R & S).
@@ -1239,3 +1243,5 @@ Proof.
 Qed.
 
 End PRESERVATION.
+
+End WITHEXTERNALCALLS.

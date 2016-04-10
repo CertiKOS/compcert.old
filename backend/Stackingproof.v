@@ -45,6 +45,7 @@ Proof.
 Qed.
 
 Section PRESERVATION.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable return_address_offset: Mach.function -> Mach.code -> int -> Prop.
 
@@ -2904,7 +2905,7 @@ Proof.
 - apply senv_preserved.
 - intros. exploit transf_initial_states; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.
-  apply wt_initial_state with (prog := prog); auto. exact wt_prog.
+  apply wt_initial_state with (prog0 := prog); auto. exact wt_prog.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0.
   exploit transf_step_correct; eauto. intros [s2' [A B]].

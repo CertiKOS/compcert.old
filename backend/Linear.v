@@ -98,11 +98,7 @@ Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
   | i1 :: il => if is_label lbl i1 then Some il else find_label lbl il
   end.
 
-Section RELSEM.
-
-Variable ge: genv.
-
-Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
+Definition find_function (ge: genv) (ros: mreg + ident) (rs: locset) : option fundef :=
   match ros with
   | inl r => Genv.find_funct ge (rs (R r))
   | inr symb =>
@@ -122,7 +118,7 @@ Inductive stackframe: Type :=
              (c: code),            (**r program point in calling function *)
       stackframe.
 
-Inductive state: Type :=
+Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
   | State:
       forall (stack: list stackframe) (**r call stack *)
              (f: function)            (**r function currently executing *)
@@ -150,6 +146,13 @@ Definition parent_locset (stack: list stackframe) : locset :=
   | nil => Locmap.init Vundef
   | Stackframe f sp ls c :: stack' => ls
   end.
+
+Section WITHEXTERNALCALLSOPS.
+Context `{external_calls_ops: ExternalCallsOps}.
+
+Section RELSEM.
+
+Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Lgetstack:
@@ -184,14 +187,14 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b rs' m')
   | exec_Lcall:
       forall s f sp sig ros b rs m f',
-      find_function ros rs = Some f' ->
+      find_function ge ros rs = Some f' ->
       sig = funsig f' ->
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
-      find_function ros rs' = Some f' ->
+      find_function ge ros rs' = Some f' ->
       sig = funsig f' ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Int.zero) (Ltailcall sig ros :: b) rs m)
@@ -275,3 +278,5 @@ Inductive final_state: state -> int -> Prop :=
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
+
+End WITHEXTERNALCALLSOPS.

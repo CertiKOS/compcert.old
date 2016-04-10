@@ -48,6 +48,9 @@ Set Implicit Arguments.
 
 (** Auxiliary function for initialization of global variables. *)
 
+Section WITHMEMORYMODELOPS.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
+
 Function store_zeros (m: mem) (b: block) (p: Z) (n: Z) {wf (Zwf 0) n}: option mem :=
   if zle n 0 then Some m else
     match Mem.store Mint8unsigned m b p Vzero with
@@ -58,6 +61,8 @@ Proof.
   intros. red. omega.
   apply Zwf_well_founded.
 Qed.
+
+End WITHMEMORYMODELOPS.
 
 (* To avoid useless definitions of inductors in extracted code. *)
 Local Unset Elimination Schemes.
@@ -578,6 +583,9 @@ Definition to_senv (ge: t) : Senv.t :=
     (block_is_volatile_below ge).
 
 (** * Construction of the initial memory state *)
+
+Section WITHMEMORYMODEL.
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Section INITMEM.
 
@@ -1601,6 +1609,8 @@ Proof.
   fold ge. rewrite A1. eapply IHl; eauto. 
 Qed. 
 
+End WITHMEMORYMODEL.
+
 End GENV.
 
 (** * Commutation with program transformations *)
@@ -1735,6 +1745,8 @@ Proof.
   inv H2; auto.
 Qed.
 
+Context `{memory_model_prf: Mem.MemoryModel}.
+
 Lemma store_init_data_list_match:
   forall idl m b ofs m',
   store_init_data_list (globalenv p) m b ofs idl = Some m' ->
@@ -1821,6 +1833,8 @@ Proof.
   intros. eapply (senv_match progmatch).
 Qed.
 
+Context `{memory_model_prf: Mem.MemoryModel}.
+
 Theorem init_mem_transf_partial:
   forall m, init_mem p = Some m -> init_mem tp = Some m.
 Proof.
@@ -1867,6 +1881,8 @@ Theorem senv_transf:
 Proof.
   intros. eapply (senv_match progmatch).
 Qed.
+
+Context `{memory_model_prf: Mem.MemoryModel}.
 
 Theorem init_mem_transf:
   forall m, init_mem p = Some m -> init_mem tp = Some m.

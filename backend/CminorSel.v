@@ -128,7 +128,7 @@ Inductive cont: Type :=
 
 (** States *)
 
-Inductive state: Type :=
+Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
   | State:                              (**r execution within a function *)
       forall (f: function)              (**r currently executing function  *)
              (s: stmt)                  (**r statement under consideration *)
@@ -148,6 +148,9 @@ Inductive state: Type :=
              (k: cont)                  (**r what to do next *)
              (m: mem),                  (**r memory state *)
       state.
+
+Section WITHEXTCALLSOPS.
+Context `{external_calls_ops: ExternalCallsOps}.
 
 Section RELSEM.
 
@@ -575,5 +578,9 @@ Proof.
   intros. unfold lift. eapply eval_lift_expr.
   eexact H. apply insert_lenv_0.
 Qed.
+
+End WITHEXTCALLSOPS.
+
+Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
 Hint Resolve eval_lift: evalexpr.

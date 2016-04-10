@@ -23,6 +23,7 @@ Require Import CSEdomain.
 Require Import CombineOp.
 
 Section COMBINE.
+Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable ge: genv.
 Variable sp: val.

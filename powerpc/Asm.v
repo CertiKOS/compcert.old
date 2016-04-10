@@ -413,6 +413,9 @@ Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
   end.
 
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
+
 Section RELSEM.
 
 (** Looking up instructions in a code sequence by position. *)
@@ -452,8 +455,6 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
 Definition gpr_or_zero (rs: regset) (r: ireg) :=
   if ireg_eq r GPR0 then Vzero else rs#r.
 
-Variable ge: genv.
-
 (** The two functions below axiomatize how the linker processes
   symbolic references [symbol + offset] and splits their
   actual values into two 16-bit halves. *)
@@ -466,6 +467,7 @@ Parameter high_half: genv -> ident -> int -> val.
   addition, rebuilding the original address. *)
 
 Axiom low_high_half:
+  forall ge,
   forall id ofs,
   Val.add (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs.
 
@@ -481,11 +483,38 @@ Parameter symbol_is_small_data: ident -> int -> bool.
 Parameter small_data_area_offset: genv -> ident -> int -> val.
 
 Axiom small_data_area_addressing:
+  forall ge,
   forall id ofs,
   symbol_is_small_data id ofs = true ->
   small_data_area_offset ge id ofs = Genv.symbol_address ge id ofs.
 
 Parameter symbol_is_rel_data: ident -> int -> bool.
+
+(** The semantics is purely small-step and defined as a function
+  from the current state (a register set + a memory state)
+  to either [OK rs' m'] where [rs'] and [m'] are the updated register
+  set and memory state after execution of the instruction at [rs#PC],
+  or [Error] if the processor is stuck. *)
+
+Inductive outcome {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
+  | Next: regset -> mem -> outcome
+  | Stuck: outcome.
+
+(** Manipulations over the [PC] register: continuing with the next
+  instruction ([nextinstr]) or branching to a label ([goto_label]). *)
+
+Definition nextinstr (rs: regset) :=
+  rs#PC <- (Val.add rs#PC Vone).
+
+Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
+  match label_pos lbl 0 (fn_code f) with
+  | None => Stuck
+  | Some pos =>
+      match rs#PC with
+      | Vptr b ofs => Next (rs#PC <- (Vptr b (Int.repr pos))) m
+      | _ => Stuck
+    end
+  end.
 
 (** Armed with the [low_half] and [high_half] functions,
   we can define the evaluation of a symbolic constant.
@@ -494,6 +523,8 @@ Parameter symbol_is_rel_data: ident -> int -> bool.
   we assume (as in the [low_high_half] axioms above)
   that the results of [high_half] are already shifted
   (their 16 low bits are equal to 0). *)
+
+Variable ge: genv.
 
 Definition const_low (c: constant) :=
   match c with
@@ -513,32 +544,6 @@ Definition const_high (c: constant) :=
   | Csymbol_sda id ofs => Vundef
   | Csymbol_rel_low id ofs => Vundef
   | Csymbol_rel_high id ofs => high_half ge id ofs
-  end.
-
-(** The semantics is purely small-step and defined as a function
-  from the current state (a register set + a memory state)
-  to either [OK rs' m'] where [rs'] and [m'] are the updated register
-  set and memory state after execution of the instruction at [rs#PC],
-  or [Error] if the processor is stuck. *)
-
-Inductive outcome: Type :=
-  | Next: regset -> mem -> outcome
-  | Stuck: outcome.
-
-(** Manipulations over the [PC] register: continuing with the next
-  instruction ([nextinstr]) or branching to a label ([goto_label]). *)
-
-Definition nextinstr (rs: regset) :=
-  rs#PC <- (Val.add rs#PC Vone).
-
-Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
-  match label_pos lbl 0 (fn_code f) with
-  | None => Stuck
-  | Some pos =>
-      match rs#PC with
-      | Vptr b ofs => Next (rs#PC <- (Vptr b (Int.repr pos))) m
-      | _ => Stuck
-    end
   end.
 
 (** Auxiliaries for memory accesses, in two forms: one operand
@@ -989,7 +994,7 @@ Definition loc_external_result (sg: signature) : list preg :=
 
 (** Execution of the instruction at [rs#PC]. *)
 
-Inductive state: Type :=
+Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State: regset -> mem -> state.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -1092,6 +1097,8 @@ Ltac Equalities :=
 (* final states *)
   inv H; inv H0. congruence.
 Qed.
+
+End WITHEXTERNALCALLS.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 

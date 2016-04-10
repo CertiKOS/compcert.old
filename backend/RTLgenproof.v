@@ -358,6 +358,7 @@ Proof.
 Qed.
 
 Section CORRECTNESS.
+Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: CminorSel.program.
 Variable tprog: RTL.program.
@@ -558,7 +559,7 @@ Proof.
 (* Exec *)
   split. eapply star_right. eexact EX1.
   eapply exec_Iop; eauto.
-  rewrite (@eval_operation_preserved CminorSel.fundef _ _ _ ge tge). eauto.
+  rewrite (eval_operation_preserved ge tge). eauto.
   exact symbols_preserved. traceEq.
 (* Match-env *)
   split. eauto with rtlg.
@@ -1403,7 +1404,7 @@ Proof.
   intros [rs' [tm' [E [F [G [J K]]]]]].
   exploit transl_eval_builtin_args; eauto.
   intros (vargs' & U & V).
-  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs'#r) (fun r => rs'#r)); eauto.
+  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs'#r) (fun r => rs'#r)); eauto.
   intros (vargs'' & X & Y).
   assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
   edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.

@@ -28,6 +28,7 @@ Require Csyntax.
 Require Ctyping.
 Require Clight.
 Require Compiler.
+Require Cexecimpl.
 Require Parser.
 Require Initializers.
 Require Int31.
@@ -129,6 +130,9 @@ Extract Constant Int31.compare31 => "Camlcoq.Int31.compare".
 Extract Constant Int31.On => "0".
 Extract Constant Int31.In => "1".
 
+(* Cexecimpl *)
+Extract Constant Cexecimpl.do_external_function => "InterpExternals.do_external_function".
+
 (* Processor-specific extraction directives *)
 
 Load extractionMachdep.
@@ -152,7 +156,8 @@ Cd "extraction".
 
 Separate Extraction
    Compiler.transf_c_program Compiler.transf_cminor_program
-   Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
+   Cexecimpl.do_initial_state Cexecimpl.do_step Cexecimpl.at_final_state
+   Cexecimpl.step_expr Cexecimpl.init_mem Cexecimpl.state
    Ctypes.merge_attributes Ctypes.remove_attributes Ctypes.build_composite_env
    Initializers.transl_init Initializers.constval
    Csyntax.Eindex Csyntax.Epreincr
