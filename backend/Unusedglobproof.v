@@ -1169,6 +1169,26 @@ Proof.
     eapply Htperm in LE.
     apply Mem.perm_cur; auto.
     eapply Mem.perm_implies; eauto.
+- intros b1 b2 H o k p0 H0.
+  apply init_meminj_invert_strong in H.
+  destruct H as (_ & id & def & Hid & Htid & Hdef & Htdef & _).
+  exploit (Genv.init_mem_characterization_gen p); eauto.
+  exploit (Genv.init_mem_characterization_gen tp); eauto.
+  destruct def as [f|v].
+  + destruct 1 as (Htperm & Htperm_impl).
+    destruct 1 as (Hperm & Hperm_impl).
+    apply Htperm_impl in H0.
+    destruct H0; subst.
+    left.
+    apply Mem.perm_cur; auto.
+  + destruct 1 as (Htperm & Htperm_impl & _).
+    destruct 1 as (Hperm & Hperm_impl & _).
+    apply Htperm_impl in H0.
+    destruct H0 as (LE & ORD).
+    eapply Hperm in LE.
+    left.
+    apply Mem.perm_cur; auto.
+    eapply Mem.perm_implies; eauto.
 - intros b1 b2 H o v1 H0.
   apply init_meminj_invert_strong in H.
   destruct H as (_ & id & def & Hid & Htid & Hdef & Htdef & Hkept).

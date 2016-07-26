@@ -33,6 +33,9 @@ Require Import Setoid Program.Basics.
 Require Import Coqlib Decidableplus.
 Require Import AST Integers Values Memory Events Globalenvs.
 
+Section WITHMEM.
+Context `{memory_model_prf: Mem.MemoryModel}.
+
 (** * Assertions about memory *)
 
 (** An assertion is composed of:
@@ -69,44 +72,44 @@ Qed.
 
 Remark massert_imp_trans: forall p q r, massert_imp p q -> massert_imp q r -> massert_imp p r.
 Proof.
-  unfold massert_imp; intros; firstorder auto.
+  unfold massert_imp; clear; intros; firstorder auto.
 Qed.
 
 Remark massert_eqv_refl: forall p, massert_eqv p p.
 Proof.
-  unfold massert_eqv, massert_imp; intros. tauto.
+  unfold massert_eqv, massert_imp; clear; intros. tauto.
 Qed.
 
 Remark massert_eqv_sym: forall p q, massert_eqv p q -> massert_eqv q p.
 Proof.
-  unfold massert_eqv, massert_imp; intros. tauto.
+  unfold massert_eqv, massert_imp; clear; intros. tauto.
 Qed.
 
 Remark massert_eqv_trans: forall p q r, massert_eqv p q -> massert_eqv q r -> massert_eqv p r.
 Proof.
-  unfold massert_eqv, massert_imp; intros. firstorder auto. 
+  unfold massert_eqv, massert_imp; clear; intros. firstorder auto.
 Qed.
 
 (** Record [massert_eqv] and [massert_imp] as relations so that they can be used by rewriting tactics. *)
-Add Relation massert massert_imp
+Global Add Relation massert massert_imp
   reflexivity proved by massert_imp_refl
   transitivity proved by massert_imp_trans
 as massert_imp_prel.
 
-Add Relation massert massert_eqv
+Global Add Relation massert massert_eqv
   reflexivity proved by massert_eqv_refl
   symmetry proved by massert_eqv_sym
   transitivity proved by massert_eqv_trans
 as massert_eqv_prel.
 
-Add Morphism m_pred
+Global Add Morphism m_pred
   with signature massert_imp ==> eq ==> impl
   as m_pred_morph_1.
 Proof.
   intros P Q [A B]. auto.
 Qed.
 
-Add Morphism m_pred
+Global Add Morphism m_pred
   with signature massert_eqv ==> eq ==> iff
   as m_pred_morph_2.
 Proof.
@@ -133,7 +136,7 @@ Next Obligation.
   destruct H0; [eapply (m_valid P) | eapply (m_valid Q)]; eauto.
 Qed.
 
-Add Morphism sepconj
+Global Add Morphism sepconj
   with signature massert_imp ==> massert_imp ==> massert_imp
   as sepconj_morph_1.
 Proof.
@@ -143,7 +146,7 @@ Proof.
 - intuition auto.
 Qed.
 
-Add Morphism sepconj
+Global Add Morphism sepconj
   with signature massert_eqv ==> massert_eqv ==> massert_eqv
   as sepconj_morph_2.
 Proof.
@@ -178,13 +181,13 @@ Qed.
 Lemma sep_assoc_1:
   forall P Q R, massert_imp ((P ** Q) ** R) (P ** (Q ** R)).
 Proof.
-  intros. unfold massert_imp, sepconj, disjoint_footprint; simpl; firstorder auto.
+  intros. unfold massert_imp, sepconj, disjoint_footprint; simpl. clear. firstorder auto.
 Qed.
 
 Lemma sep_assoc_2:
   forall P Q R, massert_imp (P ** (Q ** R)) ((P ** Q) ** R).
 Proof.
-  intros. unfold massert_imp, sepconj, disjoint_footprint; simpl; firstorder auto.
+  intros. unfold massert_imp, sepconj, disjoint_footprint; simpl; clear; firstorder auto.
 Qed.
 
 Lemma sep_assoc:
@@ -590,7 +593,7 @@ Proof.
   red; simpl; intros. destruct H2. eapply F; eauto. eapply C; simpl; eauto.
 Qed.
 
-Add Morphism mconj
+Global Add Morphism mconj
   with signature massert_imp ==> massert_imp ==> massert_imp
   as mconj_morph_1.
 Proof.
@@ -598,7 +601,7 @@ Proof.
   red; simpl; intuition auto.
 Qed.
 
-Add Morphism mconj
+Global Add Morphism mconj
   with signature massert_eqv ==> massert_eqv ==> massert_eqv
   as mconj_morph_2.
 Proof.
@@ -612,25 +615,7 @@ Program Definition minjection (j: meminj) (m0: mem) : massert := {|
   m_footprint := fun b ofs => exists b0 delta, j b0 = Some(b, delta) /\ Mem.perm m0 b0 (ofs - delta) Max Nonempty
 |}.
 Next Obligation.
-  set (img := fun b' ofs => exists b delta, j b = Some(b', delta) /\ Mem.perm m0 b (ofs - delta) Max Nonempty) in *.
-  assert (IMG: forall b1 b2 delta ofs k p,
-           j b1 = Some (b2, delta) -> Mem.perm m0 b1 ofs k p -> img b2 (ofs + delta)).
-  { intros. red. exists b1, delta; split; auto. 
-    replace (ofs + delta - delta) with ofs by omega. 
-    eauto with mem. }
-  destruct H. constructor.
-- destruct mi_inj. constructor; intros.
-+ eapply Mem.perm_unchanged_on; eauto. eapply IMG; eauto.
-+ eauto.
-+ rewrite (Mem.unchanged_on_contents _ _ _ H0); eauto.
-- assumption.
-- intros. eapply Mem.valid_block_unchanged_on; eauto. 
-- assumption.
-- assumption.
-- intros. destruct (Mem.perm_dec m0 b1 ofs Max Nonempty); auto.
-  eapply mi_perm_inv; eauto. 
-  eapply Mem.perm_unchanged_on_2; eauto.
-  eapply IMG; eauto. 
+  eapply Mem.inject_unchanged_on; eauto.
 Qed.
 Next Obligation.
   eapply Mem.valid_block_inject_2; eauto.
@@ -848,6 +833,9 @@ Proof.
 - eauto.
 Qed.
 
+Context `{external_calls_ops: !ExternalCallsOps mem}.
+Context `{external_calls_prf: !ExternalCalls mem}.
+
 Lemma external_call_parallel_rule:
   forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
   external_call ef ge vargs1 m1 t vres1 m1' ->
@@ -918,3 +906,11 @@ Proof.
 - red; unfold j1; intros. destruct (eq_block b b1). congruence. rewrite D; auto.
 - red; unfold j1; intros. destruct (eq_block b0 b1). congruence. rewrite D in H9 by auto. congruence.
 Qed.
+
+End WITHMEM.
+
+Notation "m |= p" := (m_pred p m) (at level 74, no associativity) : sep_scope.
+
+Hint Resolve massert_imp_refl massert_eqv_refl.
+
+Infix "**" := sepconj (at level 60, right associativity) : sep_scope.

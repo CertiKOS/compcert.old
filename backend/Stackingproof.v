@@ -16,6 +16,7 @@
 
 Require Import Coqlib Errors.
 Require Import Integers AST Linking.
+Require Import Setoid.
 Require Import Values Memory Separation Events Globalenvs Smallstep.
 Require Import LTL Op Locations Linear Mach.
 Require Import Bounds Conventions Stacklayout Lineartyping.
@@ -327,6 +328,18 @@ Fixpoint contains_callee_saves (j: meminj) (sp: block) (pos: Z) (rl: list mreg) 
       contains (chunk_of_type ty) sp pos1 (fun v => Val.inject j (ls (R r)) v)
       ** contains_callee_saves j sp (pos1 + sz) rl ls
   end.
+
+(** Record [massert_eqv] and [massert_imp] as relations so that they can be used by rewriting tactics. *)
+Local Add Relation massert massert_imp
+  reflexivity proved by massert_imp_refl
+  transitivity proved by massert_imp_trans
+as massert_imp_prel.
+
+Local Add Relation massert massert_eqv
+  reflexivity proved by massert_eqv_refl
+  symmetry proved by massert_eqv_sym
+  transitivity proved by massert_eqv_trans
+as massert_eqv_prel.
 
 Lemma contains_callee_saves_incr:
   forall j j' sp ls,
@@ -1376,7 +1389,7 @@ Proof.
 Local Opaque sepconj.
   induction cs as [ | [] cs]; destruct cs' as [ | [] cs']; simpl; intros; auto.
   destruct sp0; auto.
-  rewrite sep_assoc in *.
+  rewrite sep_assoc in H0 |- * .
   apply frame_contents_incr with (j := j); auto.
   rewrite sep_swap. apply IHcs. rewrite sep_swap. assumption.
 Qed.
@@ -1823,6 +1836,18 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
                  ** globalenv_inject ge j),
       match_states (Linear.Returnstate cs ls m)
                   (Mach.Returnstate cs' rs m').
+
+(** Record [massert_eqv] and [massert_imp] as relations so that they can be used by rewriting tactics. *)
+Local Add Relation massert massert_imp
+  reflexivity proved by massert_imp_refl
+  transitivity proved by massert_imp_trans
+as massert_imp_prel2.
+
+Local Add Relation massert massert_eqv
+  reflexivity proved by massert_eqv_refl
+  symmetry proved by massert_eqv_sym
+  transitivity proved by massert_eqv_trans
+as massert_eqv_prel2.
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step ge s1 t s2 ->

@@ -55,6 +55,7 @@ Definition make_env (b: bounds) :=
 Local Open Scope sep_scope.
 
 Lemma frame_env_separated:
+  forall `{memory_model_prf: Mem.MemoryModel},
   forall b sp m P,
   let fe := make_env b in
   m |= range sp 0 (fe_stack_data fe) ** range sp (fe_stack_data fe + bound_stack_data b) (fe_size fe) ** P ->

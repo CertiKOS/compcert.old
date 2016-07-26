@@ -4288,6 +4288,11 @@ Lemma zero_delta_inject f m1 m2:
        Mem.perm m2 b2 o k p) ->
   (forall b1 b2,
      f b1 = Some (b2, 0) ->
+     forall o k p,
+       Mem.perm m2 b2 o k p ->
+       Mem.perm m1 b1 o k p \/ ~ Mem.perm m1 b1 o Max Nonempty) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
      forall o v1,
        loadbytes m1 b1 o 1 = Some (v1 :: nil) ->
        exists v2,
@@ -4295,7 +4300,7 @@ Lemma zero_delta_inject f m1 m2:
          memval_inject f v1 v2) ->
   Mem.inject f m1 m2.
 Proof.
-  intros H H0 NODUP H1 H2.
+  intros H H0 NODUP H1 H1INV H2.
   constructor.
   {
     constructor.
@@ -4355,6 +4360,11 @@ Proof.
     split.
     * omega.
     * rewrite Z.add_0_r. apply Int.unsigned_range_2.
+  + intros b1 ofs b2 delta k p H3 H4.
+    exploit H; eauto. intro; subst.
+    eapply H1INV; eauto.
+    replace ofs with (ofs + 0) by omega.
+    assumption.
 Qed.
 
 (** The following is a consequence of the above. It is needed by
@@ -4383,6 +4393,8 @@ Proof.
     destruct (H b1); destruct (H b2); congruence.
   + intros b1 b2 H2 o k p H3.
     destruct (H b1); congruence.
+  + intros b1 b2 H2 o k p H3.
+    destruct (H b1); intuition congruence.
   + intros b1 b2 H2 o v1 H3.
     destruct (H b1); try congruence.
     replace b2 with b1 by congruence.
@@ -4544,7 +4556,7 @@ Lemma extends_extends_compose:
   forall m1 m2 m3,
   extends m1 m2 -> extends m2 m3 -> extends m1 m3.
 Proof.
-  intros. inv H; inv H0; constructor; intros.
+  intros. inversion H; inversion H0; constructor; intros.
   (* nextblock *)
   congruence.
   (* meminj *)
@@ -4876,6 +4888,38 @@ Proof.
   apply H0; auto. eapply perm_valid_block; eauto. 
 Qed.
 
+(** The following property is needed by Separation, to prove minjection. *)
+
+Lemma inject_unchanged_on j m0 m m' :
+   inject j m0 m ->
+   unchanged_on
+     (fun (b : block) (ofs : Z) =>
+        exists (b0 : block) (delta : Z),
+          j b0 = Some (b, delta) /\
+          perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
+   inject j m0 m' .
+Proof.
+  intro INJ.
+  set (img := fun b' ofs => exists b delta, j b = Some(b', delta) /\ Mem.perm m0 b (ofs - delta) Max Nonempty) in *.
+  assert (IMG: forall b1 b2 delta ofs k p,
+           j b1 = Some (b2, delta) -> Mem.perm m0 b1 ofs k p -> img b2 (ofs + delta)).
+  { intros. red. exists b1, delta; split; auto. 
+    replace (ofs + delta - delta) with ofs by omega. 
+    eauto with mem. }
+  inversion INJ; constructor.
+- destruct mi_inj0. constructor; intros.
++ eapply perm_unchanged_on; eauto. eapply IMG; eauto.
++ eauto.
++ rewrite (unchanged_on_contents _ _ _ H); eauto.
+- assumption.
+- intros. eapply valid_block_unchanged_on; eauto.
+- assumption.
+- assumption.
+- intros. destruct (Mem.perm_dec m0 b1 ofs Max Nonempty); auto.
+  eapply mi_perm_inv; eauto. 
+  eapply perm_unchanged_on_2; eauto.
+  eapply IMG; eauto. 
+Qed.
 
 Local Instance memory_model_ops:
   MemoryModelOps mem.
@@ -5062,6 +5106,7 @@ Proof.
   exact valid_pointer_inject.
   exact weak_valid_pointer_inject.
   exact address_inject.
+  exact address_inject' .
   exact valid_pointer_inject_no_overflow.
   exact weak_valid_pointer_inject_no_overflow.
   exact valid_pointer_inject_val.
@@ -5098,6 +5143,7 @@ Proof.
   exact alloc_inject_neutral.
   exact store_inject_neutral.
   exact drop_inject_neutral.
+  exact unchanged_on_nextblock.
   exact unchanged_on_refl.
   exact unchanged_on_trans.
   exact perm_unchanged_on.
@@ -5112,6 +5158,7 @@ Proof.
   exact free_unchanged_on.
   exact drop_perm_unchanged_on.
   exact unchanged_on_implies.
+  exact inject_unchanged_on.
 Qed.
 
 End Mem.

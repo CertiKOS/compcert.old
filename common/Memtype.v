@@ -1169,6 +1169,14 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   f b1 = Some (b2, delta) ->
   Int.unsigned (Int.add ofs1 (Int.repr delta)) = Int.unsigned ofs1 + delta;
 
+ (** The following is needed by Separation, to prove storev_parallel_rule *)
+ address_inject':
+  forall f m1 m2 chunk b1 ofs1 b2 delta,
+  inject f m1 m2 ->
+  valid_access m1 chunk b1 (Int.unsigned ofs1) Nonempty ->
+  f b1 = Some (b2, delta) ->
+  Int.unsigned (Int.add ofs1 (Int.repr delta)) = Int.unsigned ofs1 + delta;
+
  valid_pointer_inject_no_overflow:
   forall f m1 m2 b ofs b' delta,
   inject f m1 m2 ->
@@ -1443,6 +1451,11 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
        Mem.perm m2 b2 o k p) ->
   (forall b1 b2,
      f b1 = Some (b2, 0) ->
+     forall o k p,
+       perm m2 b2 o k p ->
+       perm m1 b1 o k p \/ ~ perm m1 b1 o Max Nonempty) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
      forall o v1,
        loadbytes m1 b1 o 1 = Some (v1 :: nil) ->
        exists v2,
@@ -1495,6 +1508,9 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
 (** ** Properties of [unchanged_on] *)
 
+ unchanged_on_nextblock P m1 m2:
+  unchanged_on P m1 m2 ->
+  Ple (nextblock m1) (nextblock m2);
  unchanged_on_refl:
   forall P m, unchanged_on P m m;
  unchanged_on_trans:
@@ -1560,6 +1576,18 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
      unchanged_on P m m' ->
      (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
      unchanged_on Q m m'
+ ;
+
+(** The following property is needed by Separation, to prove minjection. *)
+
+ inject_unchanged_on j m0 m m' :
+   inject j m0 m ->
+   unchanged_on
+     (fun (b : block) (ofs : Z) =>
+        exists (b0 : block) (delta : Z),
+          j b0 = Some (b, delta) /\
+          perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
+   inject j m0 m'
 }.
 
 Section WITHMEMORYMODEL.
