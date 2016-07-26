@@ -1528,11 +1528,11 @@ Qed.
 Theorem loadbytes_storebytes_same:
   loadbytes m2 b ofs (Z_of_nat (length bytes)) = Some bytes.
 Proof.
-  intros. unfold storebytes in STORE. unfold loadbytes.
+  intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes. 
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   try discriminate.
   rewrite pred_dec_true.
-  decEq. inv STORE; simpl. rewrite PMap.gss. rewrite nat_of_Z_of_nat.
+  decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite nat_of_Z_of_nat.
   apply getN_setN_same.
   red; eauto with mem.
 Qed.
@@ -3105,12 +3105,12 @@ Proof.
     eapply perm_inj with (b1 := b); eauto.
     eapply free_range_perm; eauto.
   destruct X as [m2' FREE]. exists m2'; split; auto.
-  inv H. constructor.
+  constructor.
   rewrite (nextblock_free _ _ _ _ _ H0).
   rewrite (nextblock_free _ _ _ _ _ FREE). auto.
   eapply free_right_inj with (m1 := m1'); eauto.
   eapply free_left_inj; eauto.
-  unfold inject_id; intros. inv H.
+  unfold inject_id; intros. inv H1.
   eapply perm_free_2. eexact H0. instantiate (1 := ofs); omega. eauto.
   intros. exploit mext_perm_inv0; eauto using perm_free_3. intros [A|A].
   eapply perm_free_inv in A; eauto. destruct A as [[A B]|A]; auto.
@@ -3308,8 +3308,7 @@ Proof.
 + subst b0. apply SETN with (access := fun ofs => perm m1' b ofs Cur Readable /\ Q b ofs); auto.
   intros. destruct H5. eapply ma_memval; eauto.
   eapply perm_storebytes_2; eauto.
-  apply H1; auto.
-+ eapply ma_memval; eauto. eapply perm_storebytes_2; eauto. apply H1; auto.
++ eapply ma_memval; eauto. eapply perm_storebytes_2; eauto.
 - rewrite (nextblock_storebytes _ _ _ _ _ H0).
   rewrite (nextblock_storebytes _ _ _ _ _ ST2).
   eapply ma_nextblock; eauto.
@@ -4556,7 +4555,7 @@ Lemma extends_extends_compose:
   forall m1 m2 m3,
   extends m1 m2 -> extends m2 m3 -> extends m1 m3.
 Proof.
-  intros. inversion H; inversion H0; constructor; intros.
+  intros. inversion H; subst; inv H0; constructor; intros.
   (* nextblock *)
   congruence.
   (* meminj *)
@@ -4906,19 +4905,19 @@ Proof.
   { intros. red. exists b1, delta; split; auto. 
     replace (ofs + delta - delta) with ofs by omega. 
     eauto with mem. }
-  inversion INJ; constructor.
+  intro H0.
+  inversion INJ. constructor.
 - destruct mi_inj0. constructor; intros.
-+ eapply perm_unchanged_on; eauto. eapply IMG; eauto.
++ eapply Mem.perm_unchanged_on; eauto.
 + eauto.
-+ rewrite (unchanged_on_contents _ _ _ H); eauto.
++ rewrite (Mem.unchanged_on_contents _ _ _ H0); eauto.
 - assumption.
-- intros. eapply valid_block_unchanged_on; eauto.
+- intros. eapply Mem.valid_block_unchanged_on; eauto. 
 - assumption.
 - assumption.
 - intros. destruct (Mem.perm_dec m0 b1 ofs Max Nonempty); auto.
   eapply mi_perm_inv; eauto. 
-  eapply perm_unchanged_on_2; eauto.
-  eapply IMG; eauto. 
+  eapply Mem.perm_unchanged_on_2; eauto.
 Qed.
 
 Local Instance memory_model_ops:
