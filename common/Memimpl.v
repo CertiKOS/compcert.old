@@ -2877,7 +2877,10 @@ Qed.
 Record extends' (m1 m2: mem) : Prop :=
   mk_extends {
     mext_next: nextblock m1 = nextblock m2;
-    mext_inj:  mem_inj inject_id m1 m2
+    mext_inj:  mem_inj inject_id m1 m2;
+    mext_perm_inv: forall b ofs k p,
+      perm m2 b ofs k p ->
+      perm m1 b ofs k p \/ ~perm m1 b ofs Max Nonempty
   }.
 
 Definition extends := extends'.
@@ -2890,6 +2893,7 @@ Proof.
   intros. unfold inject_id in H; inv H. apply Z.divide_0_r.
   intros. unfold inject_id in H; inv H. replace (ofs + 0) with ofs by omega.
   apply memval_lessdef_refl.
+  tauto.
 Qed.
 
 Theorem load_extends:
@@ -2944,10 +2948,11 @@ Proof.
   intros [m2' [A B]].
   exists m2'; split.
   replace (ofs + 0) with ofs in A by omega. auto.
-  split; auto.
+  constructor; auto.
   rewrite (nextblock_store _ _ _ _ _ _ H0).
   rewrite (nextblock_store _ _ _ _ _ _ A).
   auto.
+  intros. exploit mext_perm_inv0; intuition eauto using perm_store_1, perm_store_2.
 Qed.
 
 Theorem store_outside_extends:
@@ -2961,6 +2966,7 @@ Proof.
   rewrite (nextblock_store _ _ _ _ _ _ H0). auto.
   eapply store_outside_inj; eauto.
   unfold inject_id; intros. inv H2. eapply H1; eauto. omega.
+  intros. eauto using perm_store_2. 
 Qed.
 
 Theorem storev_extends:
@@ -2994,10 +3000,11 @@ Proof.
   intros [m2' [A B]].
   exists m2'; split.
   replace (ofs + 0) with ofs in A by omega. auto.
-  split; auto.
+  constructor; auto.
   rewrite (nextblock_storebytes _ _ _ _ _ H0).
   rewrite (nextblock_storebytes _ _ _ _ _ A).
   auto.
+  intros. exploit mext_perm_inv0; intuition eauto using perm_storebytes_1, perm_storebytes_2.
 Qed.
 
 Theorem storebytes_outside_extends:
@@ -3011,6 +3018,7 @@ Proof.
   rewrite (nextblock_storebytes _ _ _ _ _ H0). auto.
   eapply storebytes_outside_inj; eauto.
   unfold inject_id; intros. inv H2. eapply H1; eauto. omega.
+  intros. eauto using perm_storebytes_2. 
 Qed.
 
 Theorem alloc_extends:
@@ -3042,6 +3050,15 @@ Proof.
   eapply perm_implies with Freeable; auto with mem.
   eapply perm_alloc_2; eauto.
   omega.
+  intros. eapply perm_alloc_inv in H; eauto.
+  generalize (perm_alloc_inv _ _ _ _ _ H0 b0 ofs Max Nonempty); intros PERM.
+  destruct (eq_block b0 b).
+  subst b0. 
+  assert (EITHER: lo1 <= ofs < hi1 \/ ~(lo1 <= ofs < hi1)) by omega.
+  destruct EITHER.
+  left. apply perm_implies with Freeable; auto with mem. eapply perm_alloc_2; eauto.
+  right; tauto.
+  exploit mext_perm_inv0; intuition eauto using perm_alloc_1, perm_alloc_4.
 Qed.
 
 Theorem free_left_extends:
@@ -3053,6 +3070,10 @@ Proof.
   intros. inv H. constructor.
   rewrite (nextblock_free _ _ _ _ _ H0). auto.
   eapply free_left_inj; eauto.
+  intros. exploit mext_perm_inv0; eauto. intros [A|A]. 
+  eapply perm_free_inv in A; eauto. destruct A as [[A B]|A]; auto.
+  subst b0. right; eapply perm_free_2; eauto.
+  intuition eauto using perm_free_3.
 Qed.
 
 Theorem free_right_extends:
@@ -3066,6 +3087,7 @@ Proof.
   rewrite (nextblock_free _ _ _ _ _ H0). auto.
   eapply free_right_inj; eauto.
   unfold inject_id; intros. inv H. eapply H1; eauto. omega.
+  intros. eauto using perm_free_3. 
 Qed.
 
 Theorem free_parallel_extends:
@@ -3090,6 +3112,10 @@ Proof.
   eapply free_left_inj; eauto.
   unfold inject_id; intros. inv H.
   eapply perm_free_2. eexact H0. instantiate (1 := ofs); omega. eauto.
+  intros. exploit mext_perm_inv0; eauto using perm_free_3. intros [A|A].
+  eapply perm_free_inv in A; eauto. destruct A as [[A B]|A]; auto.
+  subst b0. right; eapply perm_free_2; eauto.
+  right; intuition eauto using perm_free_3.
 Qed.
 
 Theorem valid_block_extends:
@@ -3106,6 +3132,13 @@ Theorem perm_extends:
 Proof.
   intros. inv H. replace ofs with (ofs + 0) by omega.
   eapply perm_inj; eauto.
+Qed.
+
+Theorem perm_extends_inv:
+  forall m1 m2 b ofs k p,
+  extends m1 m2 -> perm m2 b ofs k p -> perm m1 b ofs k p \/ ~perm m1 b ofs Max Nonempty.
+Proof.
+  intros. inv H; eauto.
 Qed.
 
 Theorem valid_access_extends:
@@ -3145,8 +3178,10 @@ Definition locset := block -> Z -> Prop.
 Record magree' (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_perm:
     forall b ofs k p,
-    perm m1 b ofs k p ->
-    perm m2 b ofs k p;
+    Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p;
+  ma_perm_inv:
+    forall b ofs k p,
+    Mem.perm m2 b ofs k p -> Mem.perm m1 b ofs k p \/ ~Mem.perm m1 b ofs Max Nonempty;
   ma_memval:
     forall b ofs,
     perm m1 b ofs Cur Readable ->
@@ -3173,6 +3208,7 @@ Lemma mextends_agree:
 Proof.
   intros. destruct H. destruct mext_inj0. constructor; intros.
 - replace ofs with (ofs + 0) by omega. eapply mi_perm0; eauto. auto.
+- eauto.
 - exploit mi_memval0; eauto. unfold inject_id; eauto.
   rewrite Zplus_0_r. auto.
 - auto.
@@ -3264,6 +3300,8 @@ Proof.
   constructor; intros.
 - eapply perm_storebytes_1; eauto. eapply ma_perm; eauto.
   eapply perm_storebytes_2; eauto.
+- exploit ma_perm_inv; eauto using perm_storebytes_2.
+  intuition eauto using perm_storebytes_1, perm_storebytes_2.
 - rewrite (storebytes_mem_contents _ _ _ _ _ H0).
   rewrite (storebytes_mem_contents _ _ _ _ _ ST2).
   rewrite ! PMap.gsspec. destruct (peq b0 b).
@@ -3286,6 +3324,8 @@ Lemma magree_storebytes_left:
 Proof.
   intros. constructor; intros.
 - eapply ma_perm; eauto. eapply perm_storebytes_2; eauto.
+- exploit ma_perm_inv; eauto.
+  intuition eauto using perm_storebytes_1, perm_storebytes_2.
 - rewrite (storebytes_mem_contents _ _ _ _ _ H0).
   rewrite PMap.gsspec. destruct (peq b0 b).
 + subst b0. rewrite setN_outside. eapply ma_memval; eauto. eapply perm_storebytes_2; eauto.
@@ -3327,6 +3367,11 @@ Proof.
   assert (perm m2 b0 ofs k p). { eapply ma_perm; eauto. eapply perm_free_3; eauto. }
   exploit perm_free_inv; eauto. intros [[A B] | A]; auto.
   subst b0. eelim perm_free_2. eexact H0. eauto. eauto.
+- (* inverse permissions *)
+  exploit ma_perm_inv; eauto using perm_free_3. intros [A|A].
+  eapply perm_free_inv in A; eauto. destruct A as [[A B] | A]; auto.
+  subst b0; right; eapply perm_free_2; eauto.
+  right; intuition eauto using perm_free_3.
 - (* contents *)
   rewrite (free_result _ _ _ _ _ H0).
   rewrite (free_result _ _ _ _ _ FREE).
@@ -3380,7 +3425,12 @@ Record inject' (f: meminj) (m1 m2: mem) : Prop :=
       forall b b' delta ofs,
       f b = Some(b', delta) ->
       perm m1 b (Int.unsigned ofs) Max Nonempty \/ perm m1 b (Int.unsigned ofs - 1) Max Nonempty ->
-      delta >= 0 /\ 0 <= Int.unsigned ofs + delta <= Int.max_unsigned
+      delta >= 0 /\ 0 <= Int.unsigned ofs + delta <= Int.max_unsigned;
+    mi_perm_inv:
+      forall b1 ofs b2 delta k p,
+      f b1 = Some(b2, delta) ->
+      perm m2 b2 (ofs + delta) k p ->
+      perm m1 b1 ofs k p \/ ~perm m1 b1 ofs Max Nonempty
   }.
 Definition inject := inject'.
 
@@ -3416,6 +3466,16 @@ Theorem perm_inject:
   perm m1 b1 ofs k p -> perm m2 b2 (ofs + delta) k p.
 Proof.
   intros. inv H0. eapply perm_inj; eauto.
+Qed.
+
+Theorem perm_inject_inv:
+  forall f m1 m2 b1 ofs b2 delta k p,
+  inject f m1 m2 ->
+  f b1 = Some(b2, delta) ->
+  perm m2 b2 (ofs + delta) k p ->
+  perm m1 b1 ofs k p \/ ~perm m1 b1 ofs Max Nonempty.
+Proof.
+  intros. eapply mi_perm_inv; eauto.
 Qed.
 
 Theorem range_perm_inject:
@@ -3703,6 +3763,9 @@ Proof.
 (* representable *)
   intros. eapply mi_representable; try eassumption.
   destruct H4; eauto with mem.
+(* perm inv *)
+  intros. exploit mi_perm_inv0; eauto using perm_store_2. 
+  intuition eauto using perm_store_1, perm_store_2.
 Qed.
 
 Theorem store_unmapped_inject:
@@ -3725,6 +3788,9 @@ Proof.
 (* representable *)
   intros. eapply mi_representable; try eassumption.
   destruct H3; eauto with mem.
+(* perm inv *)
+  intros. exploit mi_perm_inv0; eauto using perm_store_2. 
+  intuition eauto using perm_store_1, perm_store_2.
 Qed.
 
 Theorem store_outside_inject:
@@ -3748,6 +3814,8 @@ Proof.
   auto.
 (* representable *)
   eauto with mem.
+(* perm inv *)
+  intros. eauto using perm_store_2.
 Qed.
 
 Theorem storev_mapped_inject:
@@ -3791,6 +3859,9 @@ Proof.
 (* representable *)
   intros. eapply mi_representable0; eauto.
   destruct H4; eauto using perm_storebytes_2.
+(* perm inv *)
+  intros. exploit mi_perm_inv0; eauto using perm_storebytes_2. 
+  intuition eauto using perm_storebytes_1, perm_storebytes_2.
 Qed.
 
 Theorem storebytes_unmapped_inject:
@@ -3813,6 +3884,9 @@ Proof.
 (* representable *)
   intros. eapply mi_representable0; eauto.
   destruct H3; eauto using perm_storebytes_2.
+(* perm inv *)
+  intros. exploit mi_perm_inv0; eauto.
+  intuition eauto using perm_storebytes_1, perm_storebytes_2.
 Qed.
 
 Theorem storebytes_outside_inject:
@@ -3836,6 +3910,8 @@ Proof.
   auto.
 (* representable *)
   auto.
+(* perm inv *)
+  intros. eapply mi_perm_inv0; eauto using perm_storebytes_2.
 Qed.
 
 Theorem storebytes_empty_inject:
@@ -3857,6 +3933,9 @@ Proof.
 (* representable *)
   intros. eapply mi_representable0; eauto.
   destruct H3; eauto using perm_storebytes_2.
+(* perm inv *)
+  intros. exploit mi_perm_inv0; eauto using perm_storebytes_2. 
+  intuition eauto using perm_storebytes_1, perm_storebytes_2.
 Qed.
 
 (* Preservation of allocations *)
@@ -3879,6 +3958,10 @@ Proof.
   auto.
 (* representable *)
   auto.
+(* perm inv *)
+  intros. eapply perm_alloc_inv in H2; eauto. destruct (eq_block b0 b2).
+  subst b0. eelim fresh_block_alloc; eauto. 
+  eapply mi_perm_inv0; eauto.
 Qed.
 
 Theorem alloc_left_unmapped_inject:
@@ -3922,6 +4005,10 @@ Proof.
   destruct (eq_block b b1); try discriminate.
   eapply mi_representable0; try eassumption.
   destruct H4; eauto using perm_alloc_4.
+(* perm inv *)
+  intros. unfold f' in H3; destruct (eq_block b0 b1); try discriminate.
+  exploit mi_perm_inv0; eauto. 
+  intuition eauto using perm_alloc_1, perm_alloc_4.
 (* incr *)
   split. auto.
 (* image *)
@@ -4004,6 +4091,14 @@ Proof.
    generalize (Int.unsigned_range_2 ofs). omega.
   eapply mi_representable0; try eassumption.
   destruct H10; eauto using perm_alloc_4.
+(* perm inv *)
+  intros. unfold f' in H9; destruct (eq_block b0 b1).
+  inversion H9; clear H9; subst b0 b3 delta0.
+  assert (EITHER: lo <= ofs < hi \/ ~(lo <= ofs < hi)) by omega.
+  destruct EITHER.
+  left. apply perm_implies with Freeable; auto with mem. eapply perm_alloc_2; eauto.
+  right; intros A. eapply perm_alloc_inv in A; eauto. rewrite dec_eq_true in A. tauto.
+  exploit mi_perm_inv0; eauto. intuition eauto using perm_alloc_1, perm_alloc_4.
 (* incr *)
   split. auto.
 (* image of b1 *)
@@ -4060,6 +4155,10 @@ Proof.
 (* representable *)
   intros. eapply mi_representable0; try eassumption.
   destruct H2; eauto with mem.
+(* perm inv *)
+  intros. exploit mi_perm_inv0; eauto. intuition eauto using perm_free_3.
+  eapply perm_free_inv in H4; eauto. destruct H4 as [[A B] | A]; auto.
+  subst b1. right; eapply perm_free_2; eauto. 
 Qed.
 
 Lemma free_list_left_inject:
@@ -4095,6 +4194,8 @@ Proof.
   auto.
 (* representable *)
   auto.
+(* perm inv *)
+  intros. eauto using perm_free_3.
 Qed.
 
 Lemma perm_free_list:
@@ -4170,6 +4271,7 @@ Proof.
   intros. destruct H. constructor; eauto.
   eapply drop_outside_inj; eauto.
   intros. unfold valid_block in *. erewrite nextblock_drop; eauto.
+  intros. eapply mi_perm_inv0; eauto using perm_drop_4.
 Qed.
 
 (** The following property is needed by Unusedglobproof, to prove
@@ -4366,6 +4468,15 @@ Proof.
     ((Int.unsigned ofs - 1) + delta1) by omega.
   destruct H0; eauto using perm_inj.
   rewrite H. omega.
+(* perm inv *)
+  intros. 
+  destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
+  destruct (f' b') as [[b'' delta''] |] eqn:?; try discriminate.
+  inversion H; clear H; subst b'' delta.
+  replace (ofs + (delta' + delta'')) with ((ofs + delta') + delta'') in H0 by omega.
+  exploit mi_perm_inv1; eauto. intros [A|A].
+  eapply mi_perm_inv0; eauto.
+  right; red; intros. elim A. eapply perm_inj; eauto.
 Qed.
 
 Lemma val_lessdef_inject_compose:
@@ -4400,6 +4511,10 @@ Proof.
 (* representable *)
   eapply mi_representable0; eauto.
   destruct H1; eauto using perm_extends.
+(* perm inv *)
+  exploit mi_perm_inv0; eauto. intros [A|A].
+  eapply mext_perm_inv0; eauto.
+  right; red; intros; elim A. eapply perm_extends; eauto.
 Qed.
 
 Lemma inject_extends_compose:
@@ -4419,6 +4534,10 @@ Proof.
   red; intros. eapply mi_no_overlap0; eauto.
 (* representable *)
   eapply mi_representable0; eauto.
+(* perm inv *)
+  exploit mext_perm_inv0; eauto. intros [A|A].
+  eapply mi_perm_inv0; eauto.
+  right; red; intros; elim A. eapply perm_inj; eauto.
 Qed.
 
 Lemma extends_extends_compose:
@@ -4432,6 +4551,10 @@ Proof.
   replace inject_id with (compose_meminj inject_id inject_id).
   eapply mem_inj_compose; eauto.
   apply extensionality; intros. unfold compose_meminj, inject_id. auto.
+  (* perm inv *)
+  exploit mext_perm_inv1; eauto. intros [A|A]. 
+  eapply mext_perm_inv0; eauto.
+  right; red; intros; elim A. eapply perm_extends; eauto.
 Qed.
 
 (** Injecting a memory into itself. *)
@@ -4468,6 +4591,10 @@ Proof.
 (* range *)
   unfold flat_inj; intros.
   destruct (plt b (nextblock m)); inv H0. generalize (Int.unsigned_range_2 ofs); omega.
+(* perm inv *)
+  unfold flat_inj; intros.
+  destruct (plt b1 (nextblock m)); inv H0.
+  rewrite Zplus_0_r in H1; auto.
 Qed.
 
 Theorem empty_inject_neutral:

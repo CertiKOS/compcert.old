@@ -19,7 +19,7 @@ open Format
 open Camlcoq
 open AST
 open !Ctypes
-open Cop
+open !Cop
 open !Clight
 
 (* Options, lists, pairs *)
@@ -473,11 +473,11 @@ let print_assertions p =
 
 (* The prologue *)
 
-let prologue = "\
-Require Import Clightdefs.
-
-Local Open Scope Z_scope.
-
+let prologue = "\n\
+Require Import Clightdefs.\n\
+\
+Local Open Scope Z_scope.\n\
+\
 "
 
 (* Naming the compiler-generated temporaries occurring in the program *)

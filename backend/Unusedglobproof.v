@@ -1229,6 +1229,52 @@ Proof.
     destruct h2 as [ | ? [ | ] ] ; try discriminate.
     inversion Hkept; subst.
     eauto.
+(*
+  destruct gd as [f|v].
++ intros (P2 & Q2) (P1 & Q1).
+  apply Q1 in H0. destruct H0; discriminate.
++ intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+  apply Q1 in H0. destruct H0.
+  assert (NO: gvar_volatile v = false).
+  { unfold Genv.perm_globvar in H1. destruct (gvar_volatile v); auto. inv H1. }
+Local Transparent Mem.loadbytes.
+  generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E1; inv E1.
+  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E2; inv E2.
+  rewrite Zplus_0_r.
+  apply Mem_getN_forall2 with (p := 0) (n := nat_of_Z (init_data_list_size (gvar_init v))).
+  rewrite H3, H4. apply bytes_of_init_inject. auto. 
+  omega. 
+  rewrite nat_of_Z_eq by (apply init_data_list_size_pos). omega. 
+Qed.
+
+Lemma init_mem_inj_2:
+  Mem.inject init_meminj m tm.
+Proof.
+  constructor; intros.
+- apply init_mem_inj_1.
+- destruct (init_meminj b) as [[b' delta]|] eqn:INJ; auto.
+  elim H. exploit init_meminj_invert; eauto. intros (A & id & B & C). 
+  eapply Genv.find_symbol_not_fresh; eauto.
+- exploit init_meminj_invert; eauto. intros (A & id & B & C). 
+  eapply Genv.find_symbol_not_fresh; eauto.
+- red; intros.
+  exploit init_meminj_invert. eexact H0. intros (A1 & id1 & B1 & C1).
+  exploit init_meminj_invert. eexact H1. intros (A2 & id2 & B2 & C2).
+  destruct (ident_eq id1 id2). congruence. left; eapply Genv.global_addresses_distinct; eauto.
+- exploit init_meminj_invert; eauto. intros (A & id & B & C). subst delta.
+  split. omega. generalize (Int.unsigned_range_2 ofs). omega.
+- exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
+  exploit (Genv.init_mem_characterization_gen p); eauto.
+  exploit (Genv.init_mem_characterization_gen tp); eauto.
+  destruct gd as [f|v].
++ intros (P2 & Q2) (P1 & Q1).
+  apply Q2 in H0. destruct H0. subst. replace ofs with 0 by omega.
+  left; apply Mem.perm_cur; auto.
++ intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+  apply Q2 in H0. destruct H0. subst.
+  left. apply Mem.perm_cur. eapply Mem.perm_implies; eauto. 
+  apply P1. omega.
+*)
 Qed.
 
 End INIT_MEM.

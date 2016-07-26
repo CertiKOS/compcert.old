@@ -19,7 +19,6 @@ toolprefix=''
 target=''
 has_runtime_lib=true
 has_standard_headers=true
-advanced_debug=false
 clightgen=false
 
 usage='Usage: ./configure [options] target
@@ -119,7 +118,7 @@ case "$target" in
         asm_supports_cfi=false
         clinker="${toolprefix}dcc"
         libmath="-lm"
-        advanced_debug=true;;
+        ;;
       *)
         system="linux"
         cc="${toolprefix}gcc"
@@ -130,7 +129,6 @@ case "$target" in
         casmruntime="${toolprefix}gcc -c -Wa,-mregnames"
         clinker="${toolprefix}gcc"
         libmath="-lm"
-        advanced_debug=true;;
     esac;;
   arm*-*)
     arch="arm"
@@ -193,6 +191,8 @@ case "$target" in
     clinker_options="-m32"
     libmath="-lm";;
   ia32-macosx)
+    # kernel major versions count upwards from 4 for OSX 10.0 to 15 for OSX 10.11
+    kernel_major=`uname -r | cut -d "." -f 1`
     arch="ia32"
     model="sse2"
     abi="macosx"
@@ -205,12 +205,14 @@ case "$target" in
     casm="${toolprefix}gcc"
     casm_options="-arch i386 -c"
     clinker="${toolprefix}gcc"
-    case `uname -r` in
-      [1-9].*|10.*|11.*)    # up to MacOS 10.7 included
-        clinker_option="-arch i386";;
-      *)                    # MacOS 10.8 and up
-        clinker_option="-arch i386 -Wl,-no_pie";;
-    esac
+    if [[ $kernel_major -gt 11 ]]
+    then
+      # OSX >= 10.8
+      clinker_options="-arch i386 -Wl,-no_pie"
+    else
+      # OSX <= 10.7
+      clinker_options="-arch i386"
+    fi
     libmath="";;
   ia32-cygwin)
     arch="ia32"
@@ -267,7 +269,7 @@ fi
 missingtools=false
 
 echo "Testing Coq... " | tr -d '\n'
-coq_ver=`coqc -v 2>/dev/null | sed -n -e 's/The Coq Proof Assistant, version \([^ ]*\).*$/\1/p'`
+coq_ver=$(${COQBIN}coqc -v 2>/dev/null | sed -n -e 's/The Coq Proof Assistant, version \([^ ]*\).*$/\1/p')
 case "$coq_ver" in
   8.4pl*)
         echo "version $coq_ver -- good!";;
@@ -310,7 +312,7 @@ else
   ocaml_opt_comp=false
 fi
 
-MENHIR_REQUIRED=20151110
+MENHIR_REQUIRED=20160303
 echo "Testing Menhir... " | tr -d '\n'
 menhir_ver=`menhir --version 2>/dev/null | sed -n -e 's/^.*version \([0-9]*\).*$/\1/p'`
 case "$menhir_ver" in
@@ -383,7 +385,6 @@ LIBMATH=$libmath
 HAS_RUNTIME_LIB=$has_runtime_lib
 HAS_STANDARD_HEADERS=$has_standard_headers
 ASM_SUPPORTS_CFI=$asm_supports_cfi
-ADVANCED_DEBUG=$advanced_debug
 CLIGHTGEN=$clightgen
 EOF
 else

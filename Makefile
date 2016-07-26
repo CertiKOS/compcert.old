@@ -52,14 +52,15 @@ FLOCQ=\
 VLIB=Axioms.v Coqlib.v Intv.v Maps.v Heaps.v Lattice.v Ordered.v \
   Iteration.v Integers.v Archi.v Fappli_IEEE_extra.v Floats.v \
   Parmov.v UnionFind.v Wfsimpl.v \
-  Postorder.v FSetAVLplus.v IntvSets.v
+  Postorder.v FSetAVLplus.v IntvSets.v Decidableplus.v
 
 # Parts common to the front-ends and the back-end (in common/)
 
 COMMON=Errors.v AST.v Linking.v \
   Events.v Globalenvs.v Memdata.v Memtype.v Memory.v \
   Memimpl.v \
-  Values.v Smallstep.v Behaviors.v Switch.v Determinism.v Unityping.v
+  Values.v Smallstep.v Behaviors.v Switch.v Determinism.v Unityping.v \
+  Separation.v
 
 # Back-end modules (in backend/, $(ARCH)/)
 
@@ -207,7 +208,6 @@ compcert.ini: Makefile.config
          echo "has_runtime_lib=$(HAS_RUNTIME_LIB)"; \
          echo "has_standard_headers=$(HAS_STANDARD_HEADERS)"; \
          echo "asm_supports_cfi=$(ASM_SUPPORTS_CFI)"; \
-         echo "advanced_debug=$(ADVANCED_DEBUG)"; \
          echo "struct_passing_style=$(STRUCT_PASSING)"; \
          echo "struct_return_style=$(STRUCT_RETURN)";) \
         > compcert.ini
