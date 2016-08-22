@@ -52,7 +52,8 @@ notion of splitting a memory state into two disjoint halves).  *)
 Record massert : Type := {
   m_pred : mem -> Prop;
   m_footprint: block -> Z -> Prop;
-  m_invar: forall m m', m_pred m -> Mem.unchanged_on m_footprint m m' -> m_pred m';
+  m_invar_weak: bool;
+  m_invar: forall m m', m_pred m -> (if m_invar_weak then Mem.strong_unchanged_on else Mem.unchanged_on) m_footprint m m' -> m_pred m';
   m_valid: forall m b ofs, m_pred m -> m_footprint b ofs -> Mem.valid_block m b
 }.
 
@@ -61,6 +62,7 @@ Notation "m |= p" := (m_pred p m) (at level 74, no associativity) : sep_scope.
 (** Implication and logical equivalence between memory predicates *)
 
 Definition massert_imp (P Q: massert) : Prop :=
+  (m_invar_weak Q = true -> m_invar_weak P = true) /\
   (forall m, m_pred P m -> m_pred Q m) /\ (forall b ofs, m_footprint Q b ofs -> m_footprint P b ofs).
 Definition massert_eqv (P Q: massert) : Prop :=
   massert_imp P Q /\ massert_imp Q P.
@@ -106,14 +108,14 @@ Global Add Morphism m_pred
   with signature massert_imp ==> eq ==> impl
   as m_pred_morph_1.
 Proof.
-  intros P Q [A B]. auto.
+  intros P Q [? [A B]]. auto.
 Qed.
 
 Global Add Morphism m_pred
   with signature massert_eqv ==> eq ==> iff
   as m_pred_morph_2.
 Proof.
-  intros P Q [[A B] [C D]]. split; auto.
+  intros P Q [[? [A B]] [? [C D]]]. split; auto.
 Qed.
 
 Hint Resolve massert_imp_refl massert_eqv_refl.
@@ -126,11 +128,25 @@ Definition disjoint_footprint (P Q: massert) : Prop :=
 Program Definition sepconj (P Q: massert) : massert := {|
   m_pred := fun m => m_pred P m /\ m_pred Q m /\ disjoint_footprint P Q;
   m_footprint := fun b ofs => m_footprint P b ofs \/ m_footprint Q b ofs
+  ;
+  m_invar_weak := m_invar_weak P || m_invar_weak Q
 |}.
 Next Obligation.
   repeat split; auto.
-  apply (m_invar P) with m; auto. eapply Mem.unchanged_on_implies; eauto. simpl; auto.
-  apply (m_invar Q) with m; auto. eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+  + apply (m_invar P) with m; auto.
+    destruct (m_invar_weak P); simpl in *.
+    - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+    - destruct (m_invar_weak Q).
+      * apply Mem.strong_unchanged_on_weak.
+        eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+      * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+  + apply (m_invar Q) with m; auto.
+    destruct (m_invar_weak Q); try rewrite orb_true_r in *.
+    - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+    - destruct (m_invar_weak P); simpl in *.
+      * apply Mem.strong_unchanged_on_weak.
+        eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+      * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
 Qed.
 Next Obligation.
   destruct H0; [eapply (m_valid P) | eapply (m_valid Q)]; eauto.
@@ -140,8 +156,9 @@ Global Add Morphism sepconj
   with signature massert_imp ==> massert_imp ==> massert_imp
   as sepconj_morph_1.
 Proof.
-  intros P1 P2 [A B] Q1 Q2 [C D].
-  red; simpl; split; intros.
+  intros P1 P2 [I [A B]] Q1 Q2 [J [C D]].
+  red; simpl; split; [ | split ] ; intros.
+- rewrite Bool.orb_true_iff in * |- * . tauto.
 - intuition auto. red; intros. apply (H2 b ofs); auto. 
 - intuition auto.
 Qed.
@@ -167,7 +184,8 @@ Qed.
 Lemma sep_comm_1:
   forall P Q,  massert_imp (P ** Q) (Q ** P).
 Proof.
-  unfold massert_imp; simpl; split; intros.
+  unfold massert_imp; simpl; split; [ | split] ; intros.
+- rewrite Bool.orb_true_iff in * |- * . tauto.
 - intuition auto. red; intros; eapply H2; eauto.
 - intuition auto.
 Qed.
@@ -182,12 +200,14 @@ Lemma sep_assoc_1:
   forall P Q R, massert_imp ((P ** Q) ** R) (P ** (Q ** R)).
 Proof.
   intros. unfold massert_imp, sepconj, disjoint_footprint; simpl. clear. firstorder auto.
+  repeat rewrite Bool.orb_true_iff in * |- * ; tauto.
 Qed.
 
 Lemma sep_assoc_2:
   forall P Q R, massert_imp (P ** (Q ** R)) ((P ** Q) ** R).
 Proof.
   intros. unfold massert_imp, sepconj, disjoint_footprint; simpl; clear; firstorder auto.
+  repeat rewrite Bool.orb_true_iff in * |- * ; tauto.
 Qed.
 
 Lemma sep_assoc:
@@ -307,6 +327,8 @@ Qed.
 Program Definition pure (P: Prop) : massert := {|
   m_pred := fun m => P;
   m_footprint := fun b ofs => False
+  ;
+  m_invar_weak := false
 |}.
 Next Obligation.
   tauto.
@@ -325,6 +347,8 @@ Program Definition range (b: block) (lo hi: Z) : massert := {|
        0 <= lo /\ hi <= Int.modulus
     /\ (forall i k p, lo <= i < hi -> Mem.perm m b i k p);
   m_footprint := fun b' ofs' => b' = b /\ lo <= ofs' < hi
+  ;
+  m_invar_weak := false
 |}.
 Next Obligation.
   split; auto. split; auto. intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
@@ -344,7 +368,10 @@ Proof.
 - split; auto. split; auto. intros.
   apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.perm_alloc_2; eauto.
-- apply (m_invar P) with m; auto. eapply Mem.alloc_unchanged_on; eauto.
+- apply (m_invar P) with m; auto.
+  destruct (m_invar_weak P).
+  + eapply Mem.alloc_strong_unchanged_on; eauto.
+  + eapply Mem.alloc_unchanged_on; eauto.
 - red; simpl. intros. destruct H3; subst b0.
   eelim Mem.fresh_block_alloc; eauto. eapply (m_valid P); eauto.
 Qed.
@@ -356,7 +383,8 @@ Lemma range_split:
   m |= range b lo mid ** range b mid hi ** P.
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto. 
-  split; simpl; intros.
+  split; [ | split]; simpl; intros.
+- assumption.
 - intuition auto.
 + omega.
 + apply H5; omega.
@@ -393,7 +421,8 @@ Lemma range_split_2:
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto.
   assert (mid <= align mid al) by (apply align_le; auto).
-  split; simpl; intros.
+  split; [ | split ] ; simpl; intros.
+- assumption.
 - intuition auto.
 + omega.
 + apply H7; omega.
@@ -420,6 +449,8 @@ Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (spec: val
     /\ Mem.valid_access m chunk b ofs Freeable
     /\ exists v, Mem.load chunk m b ofs = Some v /\ spec v;
   m_footprint := fun b' ofs' => b' = b /\ ofs <= ofs' < ofs + size_chunk chunk
+  ;
+  m_invar_weak := false
 |}.
 Next Obligation.
   rename H2 into v. split;[|split].
@@ -471,8 +502,11 @@ Proof.
 - eapply Mem.store_valid_access_1; eauto.
 - exists (Val.load_result chunk v); split; auto. eapply Mem.load_store_same; eauto. 
 - apply (m_invar P) with m; auto. 
-  eapply Mem.store_unchanged_on; eauto. 
-  intros; red; intros. apply (C b i); simpl; auto. 
+  destruct (m_invar_weak P).
+  + eapply Mem.store_strong_unchanged_on; eauto.
+    intros; red; intros. apply (C b i); simpl; auto.
+  + eapply Mem.store_unchanged_on; eauto.
+    intros; red; intros. apply (C b i); simpl; auto.
 Qed.
 
 Lemma storev_rule:
@@ -510,7 +544,8 @@ Lemma contains_imp:
   (forall v, spec1 v -> spec2 v) ->
   massert_imp (contains chunk b ofs spec1) (contains chunk b ofs spec2).
 Proof.
-  intros; split; simpl; intros.
+  intros; split; [| split] ; simpl; intros.
+- assumption.
 - intuition auto. destruct H4 as (v & A & B). exists v; auto.
 - auto.
 Qed.
@@ -543,11 +578,25 @@ Qed.
 Program Definition mconj (P Q: massert) : massert := {|
   m_pred := fun m => m_pred P m /\ m_pred Q m;
   m_footprint := fun b ofs => m_footprint P b ofs \/ m_footprint Q b ofs
+  ;
+  m_invar_weak := m_invar_weak P || m_invar_weak Q
 |}.
 Next Obligation.
-  split. 
-  apply (m_invar P) with m; auto. eapply Mem.unchanged_on_implies; eauto. simpl; auto.
-  apply (m_invar Q) with m; auto. eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+  repeat split; auto.
+  + apply (m_invar P) with m; auto.
+    destruct (m_invar_weak P); simpl in *.
+    - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+    - destruct (m_invar_weak Q).
+      * apply Mem.strong_unchanged_on_weak.
+        eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+      * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+  + apply (m_invar Q) with m; auto.
+    destruct (m_invar_weak Q); try rewrite orb_true_r in *.
+    - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+    - destruct (m_invar_weak P); simpl in *.
+      * apply Mem.strong_unchanged_on_weak.
+        eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
+      * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
 Qed.
 Next Obligation.
   destruct H0; [eapply (m_valid P) | eapply (m_valid Q)]; eauto.
@@ -597,8 +646,9 @@ Global Add Morphism mconj
   with signature massert_imp ==> massert_imp ==> massert_imp
   as mconj_morph_1.
 Proof.
-  intros P1 P2 [A B] Q1 Q2 [C D].
+  intros P1 P2 [I [A B]] Q1 Q2 [J [C D]].
   red; simpl; intuition auto.
+  repeat rewrite Bool.orb_true_iff in * |- * . tauto.
 Qed.
 
 Global Add Morphism mconj
@@ -613,9 +663,11 @@ Qed.
 Program Definition minjection (j: meminj) (m0: mem) : massert := {|
   m_pred := fun m => Mem.inject j m0 m;
   m_footprint := fun b ofs => exists b0 delta, j b0 = Some(b, delta) /\ Mem.perm m0 b0 (ofs - delta) Max Nonempty
+  ;
+  m_invar_weak := true
 |}.
 Next Obligation.
-  eapply Mem.inject_unchanged_on; eauto.
+  eapply Mem.inject_strong_unchanged_on; eauto.
 Qed.
 Next Obligation.
   eapply Mem.valid_block_inject_2; eauto.
@@ -650,7 +702,11 @@ Proof.
   split; [|split].
 - exact INJ.
 - apply (m_invar P) with m2; auto.
-  eapply Mem.store_unchanged_on; eauto.
+  cut (Mem.strong_unchanged_on (m_footprint P) m2 m2').
+  {
+    destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
+  }
+  eapply Mem.store_strong_unchanged_on; eauto.
   intros; red; intros. eelim C; eauto. simpl.
   exists b1, delta; split; auto. destruct VALID as [V1 V2]. 
   apply Mem.perm_cur_max. apply Mem.perm_implies with Writable; auto with mem. 
@@ -709,7 +765,12 @@ Proof.
   destruct (eq_block b0 b1).
   subst b0. rewrite J2 in D. inversion D; clear D; subst delta0. xomega.
   rewrite J3 in D by auto. elim FRESH2. eapply Mem.valid_block_inject_2; eauto. 
-+ apply (m_invar P) with m2; auto. eapply Mem.alloc_unchanged_on; eauto. 
++ apply (m_invar P) with m2; auto.
+  cut (Mem.strong_unchanged_on (m_footprint P) m2 m2').
+  {
+    destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
+  }
+  eapply Mem.alloc_strong_unchanged_on; eauto.
 + red; simpl; intros.
   assert (VALID: Mem.valid_block m2 b) by (eapply (m_valid P); eauto).
   destruct H as [A | (b0 & delta0 & A & B)].
@@ -766,8 +827,12 @@ Proof.
   replace (ofs + delta0 - delta0) with ofs by omega.
   apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem. 
   eapply Mem.perm_free_3; eauto.
-- apply (m_invar P) with m2; auto. 
-  eapply Mem.free_unchanged_on; eauto. 
+- apply (m_invar P) with m2; auto.
+  cut (Mem.strong_unchanged_on (m_footprint P) m2 m2').
+  {
+    destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
+  }
+  eapply Mem.free_strong_unchanged_on; eauto.
   intros; red; intros. eelim C; eauto. simpl. 
   destruct (zlt i lo). intuition auto.
   destruct (zle hi i). intuition auto.
@@ -793,6 +858,8 @@ Inductive globalenv_preserved {F V: Type} (ge: Genv.t F V) (j: meminj) (bound: b
 Program Definition globalenv_inject {F V: Type} (ge: Genv.t F V) (j: meminj) : massert := {|
   m_pred := fun m => exists bound, Ple bound (Mem.nextblock m) /\ globalenv_preserved ge j bound;
   m_footprint := fun b ofs => False
+  ;
+  m_invar_weak := false
 |}.
 Next Obligation.
   rename H into bound. exists bound; split; auto. eapply Ple_trans; eauto. eapply Mem.unchanged_on_nextblock; eauto.
@@ -838,6 +905,7 @@ Context `{external_calls_prf: !ExternalCalls mem}.
 
 Lemma external_call_parallel_rule:
   forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
+  m_invar_weak P = false ->
   external_call ef ge vargs1 m1 t vres1 m1' ->
   m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
@@ -848,7 +916,7 @@ Lemma external_call_parallel_rule:
   /\ inject_incr j j'
   /\ inject_separated j j' m1 m2.
 Proof.
-  intros until vargs2; intros CALL SEP ARGS.
+  intros until vargs2; intros INV_STRONG CALL SEP ARGS.
   destruct SEP as (A & B & C). simpl in A. 
   exploit external_call_mem_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_pick1; eauto.
@@ -861,9 +929,10 @@ Proof.
 - exact INJ'.
 - apply m_invar with (m0 := m2).
 + apply globalenv_inject_incr with j m1; auto.
-+ eapply Mem.unchanged_on_implies; eauto.
++ simpl. rewrite INV_STRONG.
+  eapply Mem.unchanged_on_implies; eauto.
   intros; red; intros; red; intros.
-  eelim C; eauto. simpl. exists b0, delta; auto.
+  eelim C; simpl; eauto.
 - red; intros. destruct H as (b0 & delta & J' & E).
   destruct (j b0) as [[b' delta'] | ] eqn:J.
 + erewrite INCR in J' by eauto. inv J'. 

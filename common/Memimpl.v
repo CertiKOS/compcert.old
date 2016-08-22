@@ -4941,6 +4941,7 @@ Proof.
   exact inject.
   exact inject_neutral.
   exact unchanged_on.
+  exact unchanged_on.
 Defined.
 
 Local Instance memory_model_prf:
@@ -5143,8 +5144,10 @@ Proof.
   exact alloc_inject_neutral.
   exact store_inject_neutral.
   exact drop_inject_neutral.
+  tauto.
   exact unchanged_on_nextblock.
   exact unchanged_on_refl.
+  exact unchanged_on_trans.
   exact unchanged_on_trans.
   exact perm_unchanged_on.
   exact perm_unchanged_on_2.
@@ -5157,6 +5160,7 @@ Proof.
   exact alloc_unchanged_on.
   exact free_unchanged_on.
   exact drop_perm_unchanged_on.
+  exact unchanged_on_implies.
   exact unchanged_on_implies.
   exact inject_unchanged_on.
 Qed.

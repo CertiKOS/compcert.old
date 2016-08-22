@@ -193,6 +193,8 @@ Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl
            /\ Val.inject j (ls (S sl ofs ty)) v;
   m_footprint := fun b ofs =>
     b = sp /\ pos <= ofs < pos + 4 * bound
+  ;
+  m_invar_weak := false
 |}.
 Next Obligation.
   intuition auto. 
@@ -271,7 +273,11 @@ Proof.
   eapply valid_access_location; eauto.
   exists v''; auto.
 + apply (m_invar P) with m; auto. 
-  eapply Mem.store_unchanged_on; eauto. 
+  cut (Mem.strong_unchanged_on (m_footprint P) m m').
+  {
+    destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
+  }
+  eapply Mem.store_strong_unchanged_on; eauto.
   intros i; rewrite size_type_chunk, typesize_typesize. intros; red; intros.
   eelim C; eauto. simpl. split; auto. omega.
 Qed.
@@ -328,6 +334,13 @@ Fixpoint contains_callee_saves (j: meminj) (sp: block) (pos: Z) (rl: list mreg) 
       contains (chunk_of_type ty) sp pos1 (fun v => Val.inject j (ls (R r)) v)
       ** contains_callee_saves j sp (pos1 + sz) rl ls
   end.
+
+Lemma contains_callee_saves_invar_weak rl :
+  forall j sp pos ls,
+    m_invar_weak (contains_callee_saves j sp pos rl ls) = false.
+Proof.
+  induction rl; simpl; auto.
+Qed.
 
 (** Record [massert_eqv] and [massert_imp] as relations so that they can be used by rewriting tactics. *)
 Local Add Relation massert massert_imp
@@ -388,6 +401,14 @@ Definition frame_contents (j: meminj) (sp: block) (ls ls0: locset) (parent retad
   mconj (frame_contents_1 j sp ls ls0 parent retaddr)
         (range sp 0 fe.(fe_stack_data) **
          range sp (fe.(fe_stack_data) + b.(bound_stack_data)) fe.(fe_size)).
+
+Lemma frame_contents_invar_weak j sp ls ls0 parent retaddr:
+  m_invar_weak (frame_contents j sp ls ls0 parent retaddr) = false.
+Proof.
+  simpl.
+  rewrite contains_callee_saves_invar_weak.
+  reflexivity.
+Qed.
 
 (** Accessing components of the frame. *)
 
@@ -1353,6 +1374,25 @@ Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach
   | _, _ => pure False
   end.
 
+Lemma stack_contents_invar_weak cs :
+  forall j cs' , m_invar_weak (stack_contents j cs cs') = false.
+Proof.
+  induction cs; destruct cs' ; simpl; auto.
+  + destruct a; auto.
+  + destruct a; auto.
+    destruct s; auto.
+    destruct sp0; auto.
+    match goal with
+        [ |- context [m_invar_weak (?U ** ?V)] ] =>
+        replace (m_invar_weak (U ** V))
+                with (m_invar_weak U || m_invar_weak V)
+          by reflexivity
+    end.
+    rewrite frame_contents_invar_weak.
+    simpl.
+    auto.
+Qed.
+
 (** [match_stacks] captures additional properties (not related to memory)
   of the Linear and Mach call stacks. *)
 
@@ -2028,6 +2068,18 @@ Proof.
   intros [vargs' [P Q]].
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
+  {
+    repeat
+    match goal with
+        [ |- context [m_invar_weak (?U ** ?V)] ] =>
+        replace (m_invar_weak (U ** V))
+                with (m_invar_weak U || m_invar_weak V)
+          by reflexivity
+    end.
+    rewrite frame_contents_invar_weak.
+    rewrite stack_contents_invar_weak.
+    reflexivity.
+  }
   clear SEP; intros (j' & res' & m1' & EC & RES & SEP & INCR & ISEP).
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
@@ -2123,6 +2175,9 @@ Proof.
   exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   rewrite sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
+  {
+    apply stack_contents_invar_weak.
+  }
   intros (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.

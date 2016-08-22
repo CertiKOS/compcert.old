@@ -219,6 +219,14 @@ that we now axiomatize. *)
 (** ** Invariance properties between two memory states *)
 
  unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop
+ ;
+
+ (** Necessary to distinguish from [unchanged_on], used as
+ postconditions to external function calls, whereas
+ [strong_unchanged_on] will be used for ordinary memory operations. *)
+
+ strong_unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop
+
 
 }.
 
@@ -1506,15 +1514,20 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   Plt b thr ->
   inject_neutral thr m';
 
-(** ** Properties of [unchanged_on] *)
+(** ** Properties of [unchanged_on] and [strong_unchanged_on] *)
 
+ strong_unchanged_on_weak P m1 m2:
+  strong_unchanged_on P m1 m2 ->
+  unchanged_on P m1 m2;
  unchanged_on_nextblock P m1 m2:
   unchanged_on P m1 m2 ->
   Ple (nextblock m1) (nextblock m2);
- unchanged_on_refl:
-  forall P m, unchanged_on P m m;
+ strong_unchanged_on_refl:
+  forall P m, strong_unchanged_on P m m;
  unchanged_on_trans:
   forall P m1 m2 m3, unchanged_on P m1 m2 -> unchanged_on P m2 m3 -> unchanged_on P m1 m3;
+ strong_unchanged_on_trans:
+  forall P m1 m2 m3, strong_unchanged_on P m1 m2 -> strong_unchanged_on P m2 m3 -> strong_unchanged_on P m1 m3;
  perm_unchanged_on:
   forall P m m' b ofs k p,
   unchanged_on P m m' -> P b ofs ->
@@ -1547,42 +1560,50 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
      (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
      load chunk m b ofs = Some v ->
      load chunk m' b ofs = Some v;
- store_unchanged_on:
+ store_strong_unchanged_on:
   forall P chunk m b ofs v m',
     store chunk m b ofs v = Some m' ->
     (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
-    unchanged_on P m m';
- storebytes_unchanged_on:
+    strong_unchanged_on P m m';
+ storebytes_strong_unchanged_on:
   forall P m b ofs bytes m',
   storebytes m b ofs bytes = Some m' ->
   (forall i, ofs <= i < ofs + Z_of_nat (length bytes) -> ~ P b i) ->
-  unchanged_on P m m';
- alloc_unchanged_on:
+  strong_unchanged_on P m m';
+ alloc_strong_unchanged_on:
    forall P m lo hi m' b,
      alloc m lo hi = (m', b) ->
-     unchanged_on P m m';
- free_unchanged_on:
+     strong_unchanged_on P m m';
+ free_strong_unchanged_on:
   forall P m b lo hi m',
   free m b lo hi = Some m' ->
   (forall i, lo <= i < hi -> ~ P b i) ->
-  unchanged_on P m m';
- drop_perm_unchanged_on:
+  strong_unchanged_on P m m';
+ drop_perm_strong_unchanged_on:
    forall P m b lo hi p m',
      drop_perm m b lo hi p = Some m' ->
      (forall i, lo <= i < hi -> ~ P b i) ->
-     unchanged_on P m m';
+     strong_unchanged_on P m m';
  unchanged_on_implies:
    forall (P Q: block -> Z -> Prop) m m',
      unchanged_on P m m' ->
      (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
      unchanged_on Q m m'
  ;
+ strong_unchanged_on_implies:
+   forall (P Q: block -> Z -> Prop) m m',
+     strong_unchanged_on P m m' ->
+     (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
+     strong_unchanged_on Q m m'
+ ;
 
-(** The following property is needed by Separation, to prove minjection. *)
+(** The following property is needed by Separation, to prove
+minjection. HINT: it can be used only for [strong_unchanged_on], not
+for [unchanged_on]. *)
 
- inject_unchanged_on j m0 m m' :
+ inject_strong_unchanged_on j m0 m m' :
    inject j m0 m ->
-   unchanged_on
+   strong_unchanged_on
      (fun (b : block) (ofs : Z) =>
         exists (b0 : block) (delta : Z),
           j b0 = Some (b, delta) /\
@@ -1661,6 +1682,56 @@ Proof.
   intros. destruct H1. inv H1.
   elim (perm_free_2 _ _ _ _ _ E ofs k p). auto. auto.
   eauto.
+Qed.
+
+Lemma unchanged_on_refl:
+  forall P m, unchanged_on P m m.
+Proof.
+  intros. apply strong_unchanged_on_weak. apply strong_unchanged_on_refl.
+Qed.
+
+Lemma store_unchanged_on:
+  forall P chunk m b ofs v m',
+    store chunk m b ofs v = Some m' ->
+    (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
+    unchanged_on P m m'.
+Proof.
+  intros. apply strong_unchanged_on_weak. eapply store_strong_unchanged_on; eauto.
+Qed.
+
+Lemma storebytes_unchanged_on:
+  forall P m b ofs bytes m',
+  storebytes m b ofs bytes = Some m' ->
+  (forall i, ofs <= i < ofs + Z_of_nat (length bytes) -> ~ P b i) ->
+  unchanged_on P m m'.
+Proof.
+  intros. apply strong_unchanged_on_weak. eapply storebytes_strong_unchanged_on; eauto.
+Qed.
+
+Lemma alloc_unchanged_on:
+   forall P m lo hi m' b,
+     alloc m lo hi = (m', b) ->
+     unchanged_on P m m'.
+Proof.
+  intros. apply strong_unchanged_on_weak. eapply alloc_strong_unchanged_on; eauto.
+Qed.
+
+Lemma free_unchanged_on:
+  forall P m b lo hi m',
+  free m b lo hi = Some m' ->
+  (forall i, lo <= i < hi -> ~ P b i) ->
+  unchanged_on P m m'.
+Proof.
+  intros. apply strong_unchanged_on_weak. eapply free_strong_unchanged_on; eauto.
+Qed.
+
+Lemma drop_perm_unchanged_on:
+   forall P m b lo hi p m',
+     drop_perm m b lo hi p = Some m' ->
+     (forall i, lo <= i < hi -> ~ P b i) ->
+     unchanged_on P m m'.
+Proof.
+  intros. apply strong_unchanged_on_weak. eapply drop_perm_strong_unchanged_on; eauto.
 Qed.
 
 End WITHMEMORYMODEL.
