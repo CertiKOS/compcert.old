@@ -20,6 +20,7 @@ Local Existing Instance Memimpl.Mem.memory_model_prf.
 
 (** Axiomatize over external function calls. *)
 
+Local Existing Instance Events.symbols_inject_instance.
 Parameter external_calls_ops: Events.ExternalCallsOps Memimpl.Mem.mem.
 Axiom external_calls_prf: Events.ExternalCalls Memimpl.Mem.mem.
 Axiom i64_helpers_correct_prf:

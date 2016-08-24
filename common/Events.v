@@ -615,6 +615,59 @@ Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
+Definition meminj_preserves_globals' (ge: Senv.t) (f: block -> option (block * Z)) : Prop :=
+     (forall id b, Senv.find_symbol ge id = Some b -> f b = Some(b, 0)) /\
+     (forall b1 b2 delta, f b1 = Some (b2, delta) -> Senv.block_is_volatile ge b2 = Senv.block_is_volatile ge b1).
+
+Lemma meminj_preserves_globals'_symbols_inject (ge: Senv.t) (f: block -> option (block * Z)):
+  meminj_preserves_globals' ge f ->
+  symbols_inject f ge ge.
+Proof.
+  unfold meminj_preserves_globals'.
+  intros (A & B).
+  repeat split; intros.
+  + simpl in H0. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
+  + simpl in H0. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
+  + simpl in H0. exists b1; split; eauto.
+  + eauto.
+Qed.
+
+Class SymbolsInject: Type :=
+  {
+    symbols_inject' (f: block -> option (block * Z)) (ge1 ge2: Senv.t):
+      Prop;
+    meminj_preserves_globals'_symbols_inject' ge f:
+      meminj_preserves_globals' ge f ->
+      symbols_inject' f ge ge;
+    symbols_inject'_symbols_inject f ge1 ge2:
+      symbols_inject' f ge1 ge2 ->
+      symbols_inject f ge1 ge2
+  }.
+
+Program Definition meminj_preserves_globals'_instance:
+  SymbolsInject :=
+  {|
+    symbols_inject' f ge1 ge2 :=
+      meminj_preserves_globals' ge1 f /\ ge1 = ge2
+  |}.
+Next Obligation.
+  apply meminj_preserves_globals'_symbols_inject.
+  assumption.
+Qed.
+
+(* Needed by Unusedglobproof. *)
+Program Definition symbols_inject_instance:
+  SymbolsInject :=
+  {|
+    symbols_inject' := symbols_inject
+  |}.
+Next Obligation.
+  apply meminj_preserves_globals'_symbols_inject.
+  assumption.
+Qed.
+
+Context `{symbols_inject'_instance: SymbolsInject}.
+
 Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
   mk_extcall_properties {
 
@@ -669,7 +722,7 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
   in the following sense. *)
   ec_mem_inject:
     forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
-    symbols_inject f ge1 ge2 ->
+    symbols_inject' f ge1 ge2 ->
     sem ge1 vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
@@ -789,7 +842,8 @@ Proof.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
   exists v'; exists m1'; intuition. constructor; auto.
 (* mem injects *)
-- inv H0. inv H2. inv H7. inversion H5; subst.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0. inv H2. inv H7. inversion H5; subst.
   exploit volatile_load_inject; eauto. intros [v' [A B]].
   exists f; exists v'; exists m1'; intuition. constructor; auto.
   red; intros. congruence.
@@ -939,7 +993,8 @@ Proof.
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
   exists Vundef; exists m2'; intuition. constructor; auto.
 (* mem inject *)
-- inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
   exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
 (* trace length *)
@@ -1005,7 +1060,8 @@ Proof.
   econstructor; eauto.
   eapply UNCHANGED; eauto.
 (* mem injects *)
-- inv H0. inv H2. inv H6. inv H8.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0. inv H2. inv H6. inv H8.
   exploit Mem.alloc_parallel_inject; eauto. apply Zle_refl. apply Zle_refl.
   intros [f' [m3' [b' [ALLOC [A [B [C D]]]]]]].
   exploit Mem.store_mapped_inject. eexact A. eauto. eauto.
@@ -1079,7 +1135,8 @@ Proof.
     eapply Mem.free_range_perm. eexact H4. eauto. }
   tauto.
 (* mem inject *)
-- inv H0. inv H2. inv H7. inv H9.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0. inv H2. inv H7. inv H9.
   exploit Mem.load_inject; eauto. intros [vsz [A B]]. inv B.
   assert (Mem.range_perm m1 b (Int.unsigned lo - 4) (Int.unsigned lo + Int.unsigned sz) Cur Freeable).
     eapply Mem.free_range_perm; eauto.
@@ -1161,6 +1218,8 @@ Proof.
   erewrite list_forall2_length; eauto.
   tauto.
 - (* injections *)
+  intros until 1.
+  apply symbols_inject'_symbols_inject in H.
   intros. inv H0. inv H2. inv H14. inv H15. inv H11. inv H12.
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
@@ -1260,7 +1319,8 @@ Proof.
   econstructor; eauto.
   eapply eventval_list_match_lessdef; eauto.
 (* mem injects *)
-- inv H0.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
@@ -1305,7 +1365,8 @@ Proof.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
 (* mem inject *)
-- inv H0. inv H2. inv H7.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0. inv H2. inv H7.
   exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
@@ -1347,7 +1408,8 @@ Proof.
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
 (* mem injects *)
-- inv H0.
+- apply symbols_inject'_symbols_inject in H.
+  inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   red; intros; congruence.
@@ -1379,6 +1441,7 @@ Class ExternalCallsOps (mem: Type) {memory_model_ops: Mem.MemoryModelOps mem}: T
 Global Arguments ExternalCallsOps _ {_}.
 
 Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
+      {symbols_inject'_instance: SymbolsInject}
       {memory_model_prf: Mem.MemoryModel mem}
 : Prop :=
 {
@@ -1396,7 +1459,7 @@ Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
   inline_assembly_properties:
     forall id sg, extcall_properties (inline_assembly_sem id sg) sg
 }.
-Global Arguments ExternalCalls _ {_ _ _}.
+Global Arguments ExternalCalls _ {_ _ _ _}.
 
 
 (** ** Combined semantics of external calls *)
@@ -1482,6 +1545,23 @@ Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> op
   /\ (forall b gv, Genv.find_var_info ge b = Some gv -> f b = Some(b, 0))
   /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
 
+Lemma meminj_preserves_globals_symbols_inject'
+ (F V: Type) (ge: Genv.t F V)  (f: block -> option (block * Z)):
+  meminj_preserves_globals ge f ->
+  symbols_inject' f ge ge.
+Proof.
+  intros H.
+  apply meminj_preserves_globals'_symbols_inject'.
+  destruct H as (A & B & C).
+  split; auto.
+  simpl; unfold Genv.block_is_volatile.
+  intros b1 b2 delta H.
+  destruct (Genv.find_var_info ge b1) as [gv1|] eqn:V1.
+  * exploit B; eauto. intros EQ; rewrite EQ in H; inv H. rewrite V1; auto.
+  * destruct (Genv.find_var_info ge b2) as [gv2|] eqn:V2; auto.
+    exploit C; eauto. intros EQ; subst b2. congruence.
+Qed.
+
 Lemma external_call_mem_inject:
   forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
@@ -1497,16 +1577,8 @@ Lemma external_call_mem_inject:
     /\ inject_incr f f'
     /\ inject_separated f f' m1 m1'.
 Proof.
-  intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
-  repeat split; intros.
-  + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
-  + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
-  + simpl in H3. exists b1; split; eauto.
-  + simpl; unfold Genv.block_is_volatile.
-    destruct (Genv.find_var_info ge b1) as [gv1|] eqn:V1.
-    * exploit B; eauto. intros EQ; rewrite EQ in H; inv H. rewrite V1; auto.
-    * destruct (Genv.find_var_info ge b2) as [gv2|] eqn:V2; auto.
-      exploit C; eauto. intros EQ; subst b2. congruence.
+  intros. eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
+  eapply meminj_preserves_globals_symbols_inject' ; eauto.
 Qed.
 
 (** Corollaries of [external_call_determ]. *)

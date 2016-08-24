@@ -345,7 +345,8 @@ Proof.
 Qed.
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: Events.ExternalCalls}.
+Local Existing Instance Events.symbols_inject_instance.
+Context `{external_calls_prf: Events.ExternalCalls (symbols_inject'_instance := Events.symbols_inject_instance) }.
 Context {i64_helpers_correct_prf: SelectLongproof.I64HelpersCorrect mem}.
 
 Theorem cstrategy_semantic_preservation:

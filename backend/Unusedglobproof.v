@@ -443,7 +443,8 @@ Qed.
 (** * Semantic preservation *)
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
+Local Existing Instance symbols_inject_instance.
+Context `{external_calls_prf: ExternalCalls (symbols_inject'_instance := symbols_inject_instance) }.
 
 Section SOUNDNESS.
 

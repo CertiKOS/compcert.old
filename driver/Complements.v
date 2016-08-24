@@ -39,7 +39,8 @@ Require Import Errors.
   a behavior of the source C code. *)
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: Events.ExternalCalls}.
+Local Existing Instance Events.symbols_inject_instance.
+Context `{external_calls_prf: Events.ExternalCalls (symbols_inject'_instance := Events.symbols_inject_instance) }.
 Context {i64_helpers_correct_prf: SelectLongproof.I64HelpersCorrect mem}.
 
 Theorem transf_c_program_preservation:

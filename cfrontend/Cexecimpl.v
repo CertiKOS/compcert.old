@@ -73,6 +73,8 @@ Proof.
   eapply do_external_function_possible_trace; eauto.
 Qed.
 
+Local Existing Instance Events.symbols_inject_instance.
+
 Axiom external_functions_properties:
   forall id sg, Events.extcall_properties (external_functions_sem id sg) sg.
 
