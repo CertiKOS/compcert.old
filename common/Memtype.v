@@ -1445,32 +1445,6 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
     perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
   inject f m1 m2';
 
-(** The following property is needed by Unusedglobproof, to prove
-    injection between the initial memory states. *)
-
- zero_delta_inject f m1 m2:
-  (forall b1 b2 delta, f b1 = Some (b2, delta) -> delta = 0) ->
-  (forall b1 b2, f b1 = Some (b2, 0) -> Mem.valid_block m1 b1 /\ Mem.valid_block m2 b2) ->
-  (forall b1 p, f b1 = Some p -> forall b2, f b2 = Some p -> b1 = b2) ->
-  (forall b1 b2,
-     f b1 = Some (b2, 0) ->
-     forall o k p,
-       Mem.perm m1 b1 o k p ->
-       Mem.perm m2 b2 o k p) ->
-  (forall b1 b2,
-     f b1 = Some (b2, 0) ->
-     forall o k p,
-       perm m2 b2 o k p ->
-       perm m1 b1 o k p \/ ~ perm m1 b1 o Max Nonempty) ->
-  (forall b1 b2,
-     f b1 = Some (b2, 0) ->
-     forall o v1,
-       loadbytes m1 b1 o 1 = Some (v1 :: nil) ->
-       exists v2,
-         loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
-         memval_inject f v1 v2) ->
-  Mem.inject f m1 m2;
-
 (** The following property is needed by ValueDomain, to prove mmatch_inj. *)
 
  self_inject f m:

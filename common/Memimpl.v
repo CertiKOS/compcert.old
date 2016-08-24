@@ -5137,7 +5137,6 @@ Proof.
   exact free_right_inject.
   exact free_parallel_inject.
   exact drop_outside_inject.
-  exact zero_delta_inject.
   exact self_inject.
   exact neutral_inject.
   exact empty_inject_neutral.

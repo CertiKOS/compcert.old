@@ -42,6 +42,7 @@ Section WITHEXTERNALCALLS.
 Local Existing Instance Events.symbols_inject_instance.
 Context `{external_calls_prf: Events.ExternalCalls (symbols_inject'_instance := Events.symbols_inject_instance) }.
 Context {i64_helpers_correct_prf: SelectLongproof.I64HelpersCorrect mem}.
+Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
 
 Theorem transf_c_program_preservation:
   forall p tp beh,

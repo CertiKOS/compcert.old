@@ -21,6 +21,40 @@ Require Import Unusedglob.
 Module ISF := FSetFacts.Facts(IS).
 Module ISP := FSetProperties.Properties(IS).
 
+
+(** The following property is needed by Unusedglobproof, to prove
+    injection between the initial memory states. *)
+Module Mem.
+Export Memtype.Mem.
+
+Class MemoryModelX (mem: Type) `{memory_model_prf: MemoryModel mem}: Prop :=
+{
+ zero_delta_inject f m1 m2:
+  (forall b1 b2 delta, f b1 = Some (b2, delta) -> delta = 0) ->
+  (forall b1 b2, f b1 = Some (b2, 0) -> valid_block m1 b1 /\ valid_block m2 b2) ->
+  (forall b1 p, f b1 = Some p -> forall b2, f b2 = Some p -> b1 = b2) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
+     forall o k p,
+       perm m1 b1 o k p ->
+       perm m2 b2 o k p) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
+     forall o k p,
+       perm m2 b2 o k p ->
+       perm m1 b1 o k p \/ ~ perm m1 b1 o Max Nonempty) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
+     forall o v1,
+       loadbytes m1 b1 o 1 = Some (v1 :: nil) ->
+       exists v2,
+         loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
+         memval_inject f v1 v2) ->
+  inject f m1 m2
+}.
+
+End Mem.
+
 (** * Relational specification of the transformation *)
 
 (** The transformed program is obtained from the original program
@@ -445,6 +479,7 @@ Qed.
 Section WITHEXTERNALCALLS.
 Local Existing Instance symbols_inject_instance.
 Context `{external_calls_prf: ExternalCalls (symbols_inject'_instance := symbols_inject_instance) }.
+Context `{memory_model_x_prf: !Mem.MemoryModelX mem}.
 
 Section SOUNDNESS.
 

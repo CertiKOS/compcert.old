@@ -1,5 +1,6 @@
 Require Compiler.
 Require Memimpl.
+Require Unusedglobproofimpl.
 
 (** * Instantiate the compiler correctness proofs
       with a memory model and external functions.
@@ -17,6 +18,7 @@ Require Memimpl.
 
 Local Existing Instance Memimpl.Mem.memory_model_ops.
 Local Existing Instance Memimpl.Mem.memory_model_prf.
+Local Existing Instance Unusedglobproofimpl.Mem.memory_model_x_prf.
 
 (** Axiomatize over external function calls. *)
 
