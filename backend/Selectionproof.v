@@ -145,6 +145,12 @@ Lemma senv_preserved:
   Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma function_ptr_translated:
   forall (b: block) (f: Cminor.fundef),
   Genv.find_funct_ptr ge b = Some f ->
@@ -184,6 +190,10 @@ Proof.
     destruct H4 as (cu & A & B). monadInv B. auto. }
   unfold helper_functions_declared; intros. decompose [Logic.and] H; clear H. auto 20. 
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
 
 Section CMCONSTR.
 
@@ -238,6 +248,7 @@ Lemma eval_store:
   eval_expr tge sp e m nil a1 v1 ->
   eval_expr tge sp e m nil a2 v2 ->
   Mem.storev chunk m v1 v2 = Some m' ->
+  forall WRITABLE: forall b o, v1 = Vptr b o -> writable_block tge b,
   step tge (State f (store chunk a1 a2) k sp e m)
         E0 (State f Sskip k sp e m').
 Proof.
@@ -953,6 +964,11 @@ Proof.
   exploit Mem.storev_extends; eauto. intros [m2' [P Q]].
   left; econstructor; split.
   eapply eval_store; eauto.
+  {
+    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
+    destruct vaddr; try discriminate. inv B. intros ? ? K. inv K.
+    eapply writable_block_genv_next; [ |  eauto ]. apply genv_next_preserved.
+  }
   econstructor; eauto.
 - (* Scall *)
   exploit classify_call_correct; eauto.
@@ -1001,7 +1017,10 @@ Proof.
   exploit external_call_mem_extends; eauto.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
-  econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor. eauto.
+  eapply external_call_writable_block_weak.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto. apply sel_builtin_res_correct; auto.
 - (* Seq *)
   left; econstructor; split.
@@ -1079,13 +1098,19 @@ Proof.
   exploit external_call_mem_extends; eauto.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
-  econstructor. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor.
+  eapply external_call_writable_block_weak.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
   exploit external_call_mem_extends; eauto.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
-  econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor. eauto.
+  eapply external_call_writable_block_weak.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto.
 - (* return *)
   apply match_call_cont_cont in MC. destruct MC as (cunit0 & hf0 & MC). 
@@ -1097,6 +1122,13 @@ Proof.
   right; split. simpl; omega. split. auto. econstructor; eauto.
   apply sel_builtin_res_correct; auto.
 Qed.
+
+End WITHWRITABLEBLOCK.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
+all blocks are always writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Lemma sel_initial_states:
   forall S, Cminor.initial_state prog S ->

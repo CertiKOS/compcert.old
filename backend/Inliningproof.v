@@ -43,6 +43,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: fundef),
   Genv.find_funct ge v = Some f ->
@@ -219,6 +225,8 @@ Qed.
 (** ** Executing sequences of moves *)
 
 Lemma tr_moves_init_regs:
+(** [CompCertX:test-compcert-protect-stack-arg] We parameterize on the `writable block' predicate for store operations. *)
+  forall `{Hwritable_block: WritableBlock},
   forall F stk f sp m ctx1 ctx2, context_below ctx1 ctx2 ->
   forall rdsts rsrcs vl pc1 pc2 rs1,
   tr_moves f.(fn_code) pc1 (sregs ctx1 rsrcs) (sregs ctx2 rdsts) pc2 ->
@@ -357,13 +365,61 @@ Qed.
 
 (** ** Relating global environments *)
 
+(** [CompCertX:test-compcert-protect-stack-arg] We parameterize the semantics of both Csharpminor and Cminor with a predicate indicating writable blocks. However, this predicate has to be "preserved by injection", in the sense that, even though there is an injection between Csharpminor and Cminor, there is a common "initial memory" whose blocks are preserved between Csharpminor and Cminor, and non-writable blocks must be among those preserved blocks. *)
+
+Section WITHWRITABLEBLOCK.
+Context {WB}
+        `{writable_block_with_init_mem_ops: !WritableBlockWithInitMemOps WB}
+        `{Hwritable_block_with_init_mem: !WritableBlockWithInitMem WB}.
+
+(** [CompCertX:test-compcert-protect-stack-arg] We have to prove that
+the memory injection introduced by the compilation pass is independent
+of the initial memory i.e. it does not inject new blocks into blocks
+already existing in the initial memory. This is stronger than
+[meminj_preserves_globals], which only preserves blocks associated to
+the global environment. *)
+
+Section WITHMEMINIT.
+Variable m_init: mem.
+Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init).
+
 Inductive match_globalenvs (F: meminj) (bound: block): Prop :=
   | mk_match_globalenvs
+      (NEXT: Ple (Mem.nextblock m_init) bound)
       (DOMAIN: forall b, Plt b bound -> F b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, F b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
       (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
       (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
+
+Lemma match_globalenvs_inject_incr:
+  forall j bound,
+    match_globalenvs j bound ->
+    inject_incr (Mem.flat_inj (Mem.nextblock m_init)) j.
+Proof.
+  inversion 1; subst.
+  unfold inject_incr, Mem.flat_inj.
+  intros.
+  destruct (plt b (Mem.nextblock m_init)); try discriminate.
+  inv H0.
+  eapply DOMAIN.
+  xomega.
+Qed.
+
+Lemma match_globalenvs_inject_separated:
+  forall j bound,
+    match_globalenvs j bound ->
+    inject_separated (Mem.flat_inj (Mem.nextblock m_init)) j m_init m_init.
+Proof.
+  inversion 1; subst.
+  unfold inject_separated, Mem.flat_inj, Mem.valid_block.
+  intros.
+  destruct (plt b1 (Mem.nextblock m_init)); try discriminate.
+  split; auto.
+  destruct (plt b2 bound).
+   exploit IMAGE; eauto. congruence.
+  xomega.
+Qed.
 
 Lemma find_function_agree:
   forall ros rs fd F ctx rs' bound,
@@ -532,6 +588,50 @@ with match_stacks_inside_globalenvs:
 Proof.
   induction 1; eauto.
   induction 1; eauto.
+Qed.
+
+Lemma match_stacks_inject_incr:
+  forall stk stk' bound,
+    match_stacks F m m' stk stk' bound ->
+    inject_incr (Mem.flat_inj (Mem.nextblock m_init)) F.
+Proof.
+  intros.
+  exploit match_stacks_globalenvs; eauto.
+  destruct 1.
+  eapply match_globalenvs_inject_incr; eauto.
+Qed.
+
+Lemma match_stacks_inject_separated:
+  forall stk stk' bound,
+    match_stacks F m m' stk stk' bound ->
+    inject_separated (Mem.flat_inj (Mem.nextblock m_init)) F m_init m_init.
+Proof.
+  intros.
+  exploit match_stacks_globalenvs; eauto.
+  destruct 1.
+  eapply match_globalenvs_inject_separated; eauto.
+Qed.
+
+Lemma match_stacks_inside_inject_incr:
+  forall stk stk' f ctx sp rs', 
+    match_stacks_inside F m m' stk stk' f ctx sp rs' ->
+    inject_incr (Mem.flat_inj (Mem.nextblock m_init)) F.
+Proof.
+  intros.
+  exploit match_stacks_inside_globalenvs; eauto.
+  destruct 1.
+  eapply match_globalenvs_inject_incr; eauto.
+Qed.
+
+Lemma match_stacks_inside_inject_separated:
+  forall stk stk' f ctx sp rs', 
+    match_stacks_inside F m m' stk stk' f ctx sp rs' ->
+    inject_separated (Mem.flat_inj (Mem.nextblock m_init)) F m_init m_init.
+Proof.
+  intros.
+  exploit match_stacks_inside_globalenvs; eauto.
+  destruct 1.
+  eapply match_globalenvs_inject_separated; eauto.
 Qed.
 
 Lemma match_globalenvs_preserves_globals:
@@ -926,6 +1026,13 @@ Proof.
   intros. inv H. eauto.
 Qed.
 
+Local Instance: WritableBlockOps (writable_block_with_init_mem m_init).
+Proof. typeclasses eauto. Defined.
+Hint Unfold writable_block.
+
+Local Instance: WritableBlock (WB m_init).
+Proof. typeclasses eauto. Defined.
+
 Theorem step_simulation:
   forall S1 t S2,
   step ge S1 t S2 ->
@@ -987,6 +1094,16 @@ Proof.
     rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
   left; econstructor; split.
   eapply plus_one. eapply exec_Istore; eauto.
+  {
+    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
+    destruct a; try discriminate. inv Q. inversion 1; subst.
+    unfold writable_block. eapply writable_block_with_init_mem_inject.
+    eapply match_stacks_inside_inject_incr; eauto.
+    eapply match_stacks_inside_inject_separated; eauto.
+    eassumption.
+    rewrite <- genv_next_preserved in genv_next_le_m_init_next. assumption.
+    eapply writable_block_genv_next;  [ | eauto ]. apply genv_next_preserved.
+  }
   destruct a; simpl in H1; try discriminate.
   destruct a'; simpl in U; try discriminate.
   econstructor; eauto.
@@ -1079,10 +1196,22 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
+    {
+      instantiate (1 := writable_block ge).
+      unfold writable_block.
+      intros. eapply writable_block_with_init_mem_inject.
+      eapply match_stacks_inside_inject_incr; eauto.
+      eapply match_stacks_inside_inject_separated; eauto.
+      eassumption.
+      assumption.
+      assumption.
+    }
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
+  eapply external_call_writable_block_weak.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor.
     eapply match_stacks_inside_set_res.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1232,11 +1361,23 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
+    {
+      instantiate (1 := writable_block ge). 
+      unfold writable_block.
+      intros. eapply writable_block_with_init_mem_inject.
+      eapply match_stacks_inject_incr; eauto.
+      eapply match_stacks_inject_separated; eauto.
+      eassumption.
+      assumption.
+      assumption.
+    }
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
+  eapply external_call_writable_block_weak.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    apply writable_block_genv_next. apply genv_next_preserved.
   econstructor.
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1283,8 +1424,26 @@ Proof.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
 Qed.
 
+End WITHMEMINIT.
+
+End WITHWRITABLEBLOCK.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For the whole-program
+setting, we have to embed the initial memory into a new
+[match_states'] predicate, which will be the new simulation
+relation. *)
+
+Inductive match_states'
+          (s: RTL.state) (s': RTL.state): Prop :=
+| match_states'_intro
+    m_init
+    (M_INIT: Genv.init_mem prog = Some m_init)    
+    (genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init))
+    (MATCH: match_states m_init s s')
+.
+
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.
+  forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states' st1 st2.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & FIND & TR & LINK).
@@ -1295,9 +1454,12 @@ Proof.
     symmetry; eapply match_program_main; eauto.
     rewrite <- H3. eapply sig_function_translated; eauto.
   econstructor; eauto.
+  unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
+  econstructor; eauto.
   instantiate (1 := Mem.flat_inj (Mem.nextblock m0)).
   apply match_stacks_nil with (Mem.nextblock m0).
   constructor; intros.
+    apply Ple_refl.
     unfold Mem.flat_inj. apply pred_dec_true; auto.
     unfold Mem.flat_inj in H. destruct (plt b1 (Mem.nextblock m0)); congruence.
     eapply Genv.find_symbol_not_fresh; eauto.
@@ -1309,12 +1471,17 @@ Qed.
 
 Lemma transf_final_states:
   forall st1 st2 r,
-  match_states st1 st2 -> final_state st1 r -> final_state st2 r.
+  match_states' st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H.
+  intros. inv H. inv H0. inv MATCH.
   exploit match_stacks_empty; eauto. intros EQ; subst. inv VINJ. constructor.
   exploit match_stacks_inside_empty; eauto. intros [A B]. congruence.
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
+all blocks are always writable. *)
+Local Existing Instance writable_block_with_init_mem_always_ops.
+Local Existing Instance writable_block_with_init_mem_always.
 
 Theorem transf_program_correct:
   forward_simulation (semantics prog) (semantics tprog).
@@ -1323,7 +1490,11 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  eexact step_simulation.
+  instantiate (1 := measure). intros. inv H0.
+  exploit step_simulation; eauto.
+  destruct 1.
+   destruct H0. destruct H0. left. esplit. split. eassumption. econstructor; eauto.
+  destruct H0. destruct H1. right. split. assumption. split. assumption. econstructor; eauto.
 Qed.
 
 End INLINING.

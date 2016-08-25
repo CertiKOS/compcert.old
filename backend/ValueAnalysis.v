@@ -888,9 +888,27 @@ Qed.
 
 (** Construction 6: external call *)
 
-Theorem external_call_match:
-  forall ef (ge: genv) vargs m t vres m' bc rm am,
-  external_call ef ge vargs m t vres m' ->
+Theorem external_call_match' :
+  forall (ge: genv) vargs m vres m' bc rm am,
+  forall (external_call_mem_inject:
+            meminj_preserves_globals ge (inj_of_bc bc) ->
+            Mem.inject (inj_of_bc bc) m m ->
+            Val.inject_list (inj_of_bc bc) vargs vargs ->
+            exists f', exists vres', exists m2',
+                                       Val.inject f' vres vres'
+                                       /\ Mem.inject f' m' m2'
+                                       /\ Mem.unchanged_on (loc_unmapped (inj_of_bc bc)) m m'
+                                       /\ inject_incr (inj_of_bc bc) f'
+                                       /\ inject_separated (inj_of_bc bc) f' m m)
+         (external_call_readonly:
+            Mem.unchanged_on (loc_not_writable m) m m')
+         (external_call_max_perm: forall (b : block) (ofs : Z)
+                                         (p : Memtype.permission),
+                                    Mem.valid_block m b ->
+                                    Mem.perm m' b ofs Memtype.Max p ->
+                                    Mem.perm m b ofs Memtype.Max p)
+         (external_call_nextblock:
+            Ple (Mem.nextblock m) (Mem.nextblock m')),
   genv_match bc ge ->
   (forall v, In v vargs -> vmatch bc v Vtop) ->
   romatch bc m rm ->
@@ -906,16 +924,15 @@ Theorem external_call_match:
   /\ bc_nostack bc'
   /\ (forall b ofs n, Mem.valid_block m b -> bc b = BCinvalid -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n).
 Proof.
-  intros until am; intros EC GENV ARGS RO MM NOSTACK.
+  intros until am. intros until 4. intros GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
-  exploit (external_call_mem_inject ef (ge := ge) (vargs := vargs) m t vres m' (f := inj_of_bc bc) m (vargs' := vargs)).
+  exploit external_call_mem_inject.
   apply inj_of_bc_preserves_globals; auto.
-  exact EC.
   eapply mmatch_inj; eauto. eapply mmatch_below; eauto.
   revert ARGS. generalize vargs.
   induction vargs0; simpl; intros; constructor.
   eapply vmatch_inj; eauto. auto.
-  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP).
+  intros (j' & vres' & m'' & IRES & IMEM & UNCH1 & IINCR & ISEP).
   assert (JBELOW: forall b, Plt b (Mem.nextblock m) -> j' b = inj_of_bc bc b).
   {
     intros. destruct (inj_of_bc bc b) as [[b' delta] | ] eqn:EQ.
@@ -997,7 +1014,7 @@ Proof.
   intros. eapply Mem.loadbytes_unchanged_on_1. eapply external_call_readonly; eauto.
   auto. intros; red. apply Q.
   intros; red; intros; elim (Q ofs).
-  eapply external_call_max_perm with (m2 := m'); eauto.
+  eapply external_call_max_perm; eauto.
   destruct (j' b); congruence.
 - (* mmatch top *)
   constructor; simpl; intros.
@@ -1019,6 +1036,37 @@ Proof.
   apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
 Qed.
 
+Theorem external_call_match:
+  forall WB,
+  forall ef (ge: genv) vargs m t vres m' bc rm am,
+  external_call ef WB ge vargs m t vres m' ->
+  genv_match bc ge ->
+  (forall v, In v vargs -> vmatch bc v Vtop) ->
+  romatch bc m rm ->
+  mmatch bc m am ->
+  bc_nostack bc ->
+  exists bc',
+     bc_incr bc bc'
+  /\ (forall b, Plt b (Mem.nextblock m) -> bc' b = bc b)
+  /\ vmatch bc' vres Vtop
+  /\ genv_match bc' ge
+  /\ romatch bc' m' rm
+  /\ mmatch bc' m' mtop
+  /\ bc_nostack bc'
+  /\ (forall b ofs n, Mem.valid_block m b -> bc b = BCinvalid -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n).
+Proof.
+  intros.
+  eapply external_call_match'; eauto.
+  intros.
+  exploit external_call_mem_inject; eauto.
+  instantiate (1 := WB).
+  unfold inj_of_bc. intros. destruct (bc b1); congruence.
+  destruct 1 as [? [? [? [? [? [? [? [? [? ?]]]]]]]]]; eauto 8.
+  eapply external_call_readonly; eauto.
+  intros; eapply external_call_max_perm; eauto.
+  eapply external_call_nextblock; eauto.
+Qed.
+
 Remark list_forall2_in_l:
   forall (A B: Type) (P: A -> B -> Prop) x1 l1 l2,
   list_forall2 P l1 l2 -> In x1 l1 -> exists x2, In x2 l2 /\ P x1 x2.
@@ -1033,6 +1081,9 @@ Qed.
 (** ** Semantic invariant *)
 
 Section SOUNDNESS.
+
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{Hwritable_block: WritableBlock}.
 
 Variable prog: program.
 Variable ge: genv.
@@ -1476,6 +1527,9 @@ End SOUNDNESS.
   whole program.  *)
 
 Section LINKING.
+
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{Hwritable_block: WritableBlock}.
 
 Variable prog: program.
 Let ge := Genv.globalenv prog.

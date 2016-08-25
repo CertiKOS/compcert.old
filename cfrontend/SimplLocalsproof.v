@@ -32,6 +32,10 @@ Proof.
   split; auto. apply match_transform_partial_program. rewrite EQ. destruct x; auto.
 Qed.
 
+(** [CompCertX:test-compcert-protect-stack-arg] For now, regarding this pass, we only care about whole-program compilation, so we do not protect any locations, and we consider that all blocks are writable. *)
+Existing Instance writable_block_always_ops.
+Local Hint Unfold writable_block.
+
 Section PRESERVATION.
 Context `{external_calls_prf: ExternalCalls}.
 
@@ -2050,6 +2054,7 @@ Proof.
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
+  instantiate (1 := writable_block tge). eauto.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -2211,6 +2216,7 @@ Proof.
   monadInv TRFD. inv FUNTY.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
   eapply match_cont_globalenv. eexact (MCONT VSet.empty).
+  instantiate (1 := writable_block tge). eauto.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.

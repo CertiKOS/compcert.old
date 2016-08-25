@@ -186,6 +186,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
   Genv.find_funct ge v = Some f ->
@@ -469,13 +475,14 @@ Qed.
 (** Properties of volatile memory accesses *)
 
 Lemma transf_volatile_store:
+  forall WB,
   forall v1 v2 v1' v2' m tm chunk sp nm t v m',
-  volatile_store_sem chunk ge (v1::v2::nil) m t v m' ->
+  volatile_store_sem chunk WB ge (v1::v2::nil) m t v m' ->
   Val.lessdef v1 v1' ->
   vagree v2 v2' (store_argument chunk) ->
   magree m tm (nlive ge sp nm) ->
   v = Vundef /\
-  exists tm', volatile_store_sem chunk ge (v1'::v2'::nil) tm t Vundef tm'
+  exists tm', volatile_store_sem chunk WB ge (v1'::v2'::nil) tm t Vundef tm'
            /\ magree m' tm' (nlive ge sp nm).
 Proof.
   intros. inv H. split; auto.
@@ -497,6 +504,10 @@ Proof.
 Qed.
 
 (** * The simulation diagram *)
+
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
 
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
@@ -630,6 +641,9 @@ Ltac UseTransfer :=
   eapply exec_Istore with (a := Vptr b i). eauto.
   rewrite <- U. apply eval_addressing_preserved. exact symbols_preserved.
   eauto.
+  { (* writable block *)
+    intros. eapply writable_block_genv_next; [ | eauto ] . apply genv_next_preserved.
+  }
   eapply match_succ_states; eauto. simpl; auto.
   eauto 3 with na.
 + (* dead instruction, turned into a nop *)
@@ -716,8 +730,10 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl; eauto.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy *)
@@ -756,8 +772,10 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy eliminated *)
@@ -823,7 +841,9 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
   eapply mextends_agree; eauto.
@@ -874,7 +894,9 @@ Ltac UseTransfer :=
   simpl in FUN. inv FUN.
   econstructor; split.
   econstructor; eauto.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto.
 
 - (* return *)
@@ -883,6 +905,8 @@ Ltac UseTransfer :=
   constructor.
   econstructor; eauto. apply mextends_agree; auto.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -908,6 +932,10 @@ Proof.
 Qed.
 
 (** * Semantic preservation *)
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).

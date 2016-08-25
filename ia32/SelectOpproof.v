@@ -75,6 +75,7 @@ Ltac TrivialExists :=
 
 Section CMCONSTR.
 Context `{external_call_ops: Events.ExternalCallsOps}.
+Context `{writable_block_ops: Events.WritableBlockOps}.
 
 Variable ge: genv.
 Variable sp: val.

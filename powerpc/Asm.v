@@ -1020,7 +1020,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Int.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs GPR1) m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (fun _ => True) ge vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
@@ -1029,7 +1029,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall b ef args res rs m t rs' m',
       rs PC = Vptr b Int.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      external_call ef ge args m t res m' ->
+      external_call ef (fun _ => True) ge args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) ->
       step (State rs m) t (State rs' m').

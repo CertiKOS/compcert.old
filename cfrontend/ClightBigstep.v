@@ -34,6 +34,9 @@ Context `{external_calls_prf: ExternalCalls}.
 
 Section BIGSTEP.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{writable_block_ops: WritableBlockOps}.
+
 Variable ge: genv.
 
 (** ** Big-step semantics for terminating statements and functions *)
@@ -103,7 +106,7 @@ Inductive exec_stmt: env -> temp_env -> mem -> statement -> trace -> temp_env ->
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e le m al tyargs vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       exec_stmt e le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sseq_1:   forall e le m s1 s2 t1 le1 m1 t2 le2 m2 out,
@@ -175,7 +178,7 @@ with eval_funcall: mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
       eval_funcall m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall m ef targs tres cconv vargs t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       eval_funcall m (External ef targs tres cconv) vargs t m' vres.
 
 Scheme exec_stmt_ind2 := Minimality for exec_stmt Sort Prop
@@ -245,6 +248,10 @@ End BIGSTEP.
 
 (** Big-step execution of a whole program.  *)
 
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Section WHOLE_PROGRAM.
+Local Existing Instance writable_block_always_ops.
+
 Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
   | bigstep_program_terminates_intro: forall b f m0 m1 t r,
       let ge := globalenv p in
@@ -268,12 +275,17 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
 Definition bigstep_semantics (p: program) :=
   Bigstep_semantics (bigstep_program_terminates p) (bigstep_program_diverges p).
 
+End WHOLE_PROGRAM.
+
 (** * Implication from big-step semantics to transition semantics *)
 
 Section BIGSTEP_TO_TRANSITIONS.
 
 Variable prog: program.
 Let ge : genv := globalenv prog.
+
+Section WITHWRITABLEBLOCK.
+Context `{writable_block_ops: WritableBlockOps}.
 
 Inductive outcome_state_match
        (e: env) (le: temp_env) (m: mem) (f: function) (k: cont): outcome -> state -> Prop :=
@@ -566,6 +578,10 @@ Proof.
   apply H; eauto.
   traceEq.
 Qed.
+
+End WITHWRITABLEBLOCK.
+
+Local Existing Instance writable_block_always_ops.
 
 Theorem bigstep_semantics_sound:
   bigstep_sound (bigstep_semantics prog) (semantics1 prog).

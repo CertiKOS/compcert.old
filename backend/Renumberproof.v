@@ -55,6 +55,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma sig_preserved:
   forall f, funsig (transf_fundef f) = funsig f.
 Proof.
@@ -156,6 +162,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
       match_states (Returnstate stk v m)
                    (Returnstate stk' v m).
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
+
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
   forall S1', match_states S1 S1' ->
@@ -181,6 +191,9 @@ Proof.
   assert (eval_addressing tge sp addr rs ## args = Some a).
   rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
   eapply exec_Istore; eauto.
+  {
+    intros; subst. eapply writable_block_genv_next; [ | eauto ] . apply genv_next_preserved.
+  }
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* call *)
   econstructor; split.
@@ -198,7 +211,9 @@ Proof.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+    eapply external_call_writable_block_weak.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    apply writable_block_genv_next. apply genv_next_preserved.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* cond *)
   econstructor; split.
@@ -222,7 +237,9 @@ Proof.
 (* external function *)
   econstructor; split.
   eapply exec_function_external; eauto.
+    eapply external_call_writable_block_weak.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    apply writable_block_genv_next. apply genv_next_preserved.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.
@@ -230,6 +247,8 @@ Proof.
   eapply exec_return; eauto.
   constructor; auto.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Lemma transf_initial_states:
   forall S1, RTL.initial_state prog S1 ->
@@ -249,6 +268,10 @@ Lemma transf_final_states:
 Proof.
   intros. inv H0. inv H. inv STACKS. constructor.
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).

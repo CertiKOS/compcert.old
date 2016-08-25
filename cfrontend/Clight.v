@@ -199,6 +199,10 @@ Definition temp_env := PTree.t val.
 Section WITHEXTCALLS.
 Context `{external_calls: ExternalCalls}.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{writable_block_ops: WritableBlockOps}.
+
 (** [deref_loc ty m b ofs v] computes the value of a datum
   of type [ty] residing in memory [m] at block [b], offset [ofs].
   If the type [ty] indicates an access by value, the corresponding
@@ -223,12 +227,19 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: int) : val -> Prop :=
   This is allowed only if [ty] indicates an access by value or by copy.
   [m'] is the updated memory state. *)
 
-Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: int):
+(** [CompCertX:test-compcert-protect-stack-arg] As we now need to protect some locations against writing, this protection may need the global environment. *)
+
+Section SEMANTICS.
+
+Variable ge: genv.
+
+Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (ofs: int):
                                             val -> mem -> Prop :=
   | assign_loc_value: forall v chunk m',
       access_mode ty = By_value chunk ->
       Mem.storev chunk m (Vptr b ofs) v = Some m' ->
-      assign_loc ce ty m b ofs v m'
+      forall WRITABLE: writable_block ge b,
+      assign_loc ty m b ofs v m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
       (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Int.unsigned ofs')) ->
@@ -238,11 +249,8 @@ Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: in
               \/ Int.unsigned ofs + sizeof ce ty <= Int.unsigned ofs' ->
       Mem.loadbytes m b' (Int.unsigned ofs') (sizeof ce ty) = Some bytes ->
       Mem.storebytes m b (Int.unsigned ofs) bytes = Some m' ->
-      assign_loc ce ty m b ofs (Vptr b' ofs') m'.
-
-Section SEMANTICS.
-
-Variable ge: genv.
+      forall WRITABLE: writable_block ge b,
+      assign_loc ty m b ofs (Vptr b' ofs') m'.
 
 (** Allocation of function-local variables.
   [alloc_variables e1 m1 vars e2 m2] allocates one memory block
@@ -277,7 +285,7 @@ Inductive bind_parameters (e: env):
   | bind_parameters_cons:
       forall m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
-      assign_loc ge ty m b Int.zero v1 m1 ->
+      assign_loc ty m b Int.zero v1 m1 ->
       bind_parameters e m1 params vl m2 ->
       bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
 
@@ -553,7 +561,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_lvalue e le m a1 loc ofs ->
       eval_expr e le m a2 v2 ->
       sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      assign_loc ge (typeof a1) m loc ofs v m' ->
+      assign_loc (typeof a1) m loc ofs v m' ->
       step (State f (Sassign a1 a2) k e le m)
         E0 (State f Sskip k e le m')
 
@@ -573,7 +581,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
 
@@ -657,7 +665,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m')
 
@@ -715,6 +723,11 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
 Definition step2 (ge: genv) := step ge (function_entry2 ge).
 
 (** Wrapping up these definitions in two small-step semantics. *)
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+End WITHWRITABLEBLOCK.
+
+Local Existing Instance writable_block_always_ops.
 
 Definition semantics1 (p: program) :=
   let ge := globalenv p in

@@ -192,6 +192,9 @@ Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{writable_block_ops: WritableBlockOps}.
+
 Variable ge: genv.
 
 Definition find_function
@@ -234,6 +237,7 @@ Inductive step : state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Istore chunk addr args src pc') ->
       eval_addressing ge sp addr rs##args = Some a ->
       Mem.storev chunk m a rs#src = Some m' ->
+      forall WRITABLE: forall b o, a = Vptr b o -> writable_block ge b,
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
@@ -255,7 +259,7 @@ Inductive step : state -> trace -> state -> Prop :=
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -290,7 +294,7 @@ Inductive step : state -> trace -> state -> Prop :=
                   m')
   | exec_function_external:
       forall s ef args res t m m',
-      external_call ef ge args m t res m' ->
+      external_call ef (writable_block ge) ge args m t res m' ->
       step (Callstate s (External ef) args m)
          t (Returnstate s res m')
   | exec_return:
@@ -345,6 +349,10 @@ Inductive final_state: state -> int -> Prop :=
 
 (** The small-step semantics for a program. *)
 
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Section WRITABLEBLOCKALWAYS.
+Local Existing Instance writable_block_always_ops.
+
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
 
@@ -367,6 +375,8 @@ Proof.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.
+
+End WRITABLEBLOCKALWAYS.
 
 End WITHEXTCALLS.
 

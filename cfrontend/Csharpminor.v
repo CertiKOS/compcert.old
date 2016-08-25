@@ -291,6 +291,9 @@ Definition blocks_of_env (e: env) : list (block * Z * Z) :=
 
 Section RELSEM.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{writable_block_ops: WritableBlockOps}.
+
 Variable ge: genv.
 
 (* Evaluation of the address of a variable:
@@ -382,6 +385,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_expr e le m addr vaddr ->
       eval_expr e le m a v ->
       Mem.storev chunk m vaddr v = Some m' ->
+      forall WRITABLE: forall b o, vaddr = Vptr b o -> writable_block ge b,
       step (State f (Sstore chunk addr a) k e le m)
         E0 (State f Sskip k e le m')
 
@@ -395,7 +399,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e le m bl vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
 
@@ -461,7 +465,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
@@ -492,6 +496,10 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate (Vint r) Kstop m) r.
 
 (** Wrapping up these definitions in a small-step semantics. *)
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
+all blocks are always writable. *)
+Local Existing Instance writable_block_always_ops.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).

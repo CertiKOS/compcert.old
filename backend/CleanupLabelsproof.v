@@ -47,6 +47,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma functions_translated:
   forall v f,
   Genv.find_funct ge v = Some f ->
@@ -230,6 +236,10 @@ Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
+
 Theorem transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
@@ -261,6 +271,9 @@ Proof.
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   left; econstructor; split.
   econstructor; eauto.
+  {
+    intros. eapply writable_block_genv_next; [ | eauto ]. apply genv_next_preserved.
+  }
   econstructor; eauto with coqlib.
 (* Lcall *)
   left; econstructor; split.
@@ -277,7 +290,9 @@ Proof.
   left; econstructor; split.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eauto.
   econstructor; eauto with coqlib.
 (* Llabel *)
@@ -316,13 +331,18 @@ Proof.
   econstructor; eauto with coqlib.
 (* external function *)
   left; econstructor; split.
-  econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor; eauto.
+  eapply external_call_writable_block_weak.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto with coqlib.
 (* return *)
   inv H3. inv H1. left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -344,6 +364,10 @@ Lemma transf_final_states:
 Proof.
   intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Theorem transf_program_correct:
   forward_simulation (Linear.semantics prog) (Linear.semantics tprog).

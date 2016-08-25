@@ -22,6 +22,8 @@ Local Existing Instance Memimpl.Mem.memory_model_prf.
     externals, builtins, and runtime. We axiomatize it here.
   *)
 
+Local Existing Instance Events.writable_block_always_ops.
+
 Parameter do_external_function:
   String.string -> AST.signature -> Globalenvs.Senv.t ->
   Determinism.world -> list Values.val -> Memimpl.Mem.mem ->
@@ -40,7 +42,7 @@ Axiom do_external_function_possible_trace:
 
 Definition external_functions_sem:
   String.string -> AST.signature -> Events.extcall_sem :=
-  fun id sg ge vargs m t vres m' =>
+  fun id sg WB ge vargs m t vres m' =>
     exists w w',
       do_external_function id sg ge w vargs m = Some (w', t, vres, m').
 
@@ -50,7 +52,7 @@ Lemma do_external_function_sound:
      (m : Memimpl.Mem.mem) (t : Events.trace) (vres : Values.val)
      (m' : Memimpl.Mem.mem) (w w' : Determinism.world),
    do_external_function id sg ge0 w vargs m = Some (w', t, vres, m') ->
-   external_functions_sem id sg ge0 vargs m t vres m' /\
+   external_functions_sem id sg (Events.writable_block ge0) ge0 vargs m t vres m' /\
    Determinism.possible_trace w t w'.
 Proof.
   intros id sg ge0 vargs m t vres m' w w' H.
@@ -64,7 +66,7 @@ Lemma do_external_function_complete:
      (ge0 : Globalenvs.Senv.t) (vargs : list Values.val)
      (m : Memimpl.Mem.mem) (t : Events.trace) (vres : Values.val)
      (m' : Memimpl.Mem.mem) (w w' : Determinism.world),
-   external_functions_sem id sg ge0 vargs m t vres m' ->
+   external_functions_sem id sg (Events.writable_block ge0) ge0 vargs m t vres m' ->
    Determinism.possible_trace w t w' ->
    do_external_function id sg ge0 w vargs m = Some (w', t, vres, m').
 Proof.
@@ -90,13 +92,14 @@ Definition do_inline_assembly:
 
 Definition inline_assembly_sem:
   String.string -> AST.signature -> Events.extcall_sem :=
-  fun id sg ge vargs m t vres m' =>
+  fun id sg WB ge vargs m t vres m' =>
     exists w w',
       do_inline_assembly id sg ge w vargs m = Some (w', t, vres, m').
 
 Lemma inline_assembly_sem_empty
+      WB
       id sg ge vargs m t vres m':
-  inline_assembly_sem id sg ge vargs m t vres m' ->
+  inline_assembly_sem id sg WB ge vargs m t vres m' ->
   False.
 Proof.
   destruct 1 as (w & w' & INL); discriminate.
@@ -108,7 +111,7 @@ Lemma do_inline_assembly_sound:
      (m : Memimpl.Mem.mem) (t : Events.trace) (vres : Values.val)
      (m' : Memimpl.Mem.mem) (w w' : Determinism.world),
    do_inline_assembly txt sg ge0 w vargs m = Some (w', t, vres, m') ->
-   inline_assembly_sem txt sg ge0 vargs m t vres m' /\
+   inline_assembly_sem txt sg (Events.writable_block ge0) ge0 vargs m t vres m' /\
    Determinism.possible_trace w t w'.
 Proof.
   intros; discriminate.
@@ -119,7 +122,7 @@ Lemma do_inline_assembly_complete:
    (ge0 : Globalenvs.Senv.t) (vargs : list Values.val) 
    (m : Memimpl.Mem.mem) (t : Events.trace) (vres : Values.val)
    (m' : Memimpl.Mem.mem) (w w' : Determinism.world),
-   inline_assembly_sem txt sg ge0 vargs m t vres m' ->
+   inline_assembly_sem txt sg (Events.writable_block ge0) ge0 vargs m t vres m' ->
    Determinism.possible_trace w t w' ->
    do_inline_assembly txt sg ge0 w vargs m = Some (w', t, vres, m').
 Proof.

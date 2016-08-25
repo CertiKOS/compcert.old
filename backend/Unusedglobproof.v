@@ -815,13 +815,15 @@ Inductive match_states: state -> state -> Prop :=
                    (Returnstate ts tres tm).
 
 Lemma external_call_inject:
+  forall WB1 WB2: _ -> Prop,
   forall ef vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals f ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef WB1 ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
+  forall WRITABLE_INJ: forall b1 b2 o, f b1 = Some (b2, o) -> WB1 b1 -> WB2 b2,
   exists f', exists vres', exists m2',
-    external_call ef tge vargs' m1' t vres' m2'
+    external_call ef WB2 tge vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -914,6 +916,9 @@ Proof.
   exists (v1' :: vl'); split; constructor; auto.
 Qed.
 
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
+
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -972,6 +977,7 @@ Proof.
   destruct A as (ta & B & C).
   exploit Mem.storev_mapped_inject; eauto. intros (tm' & D & E).
   econstructor; split. eapply exec_Istore; eauto.
+  constructor.
   econstructor; eauto.
 
 - (* call *)
@@ -1007,7 +1013,7 @@ Proof.
   eapply match_stacks_preserves_globals; eauto.
   intros. apply KEPT. red. econstructor; econstructor; eauto.
   intros (vargs' & P & Q).
-  exploit external_call_inject; eauto.
+  exploit (fun WB => external_call_inject WB (fun _ => True)); eauto.
   eapply match_stacks_preserves_globals; eauto.
   intros (j' & tv & tm' & A & B & C & D & E & F & G).
   econstructor; split.
@@ -1062,7 +1068,7 @@ Proof.
   apply init_regs_inject; auto. apply val_inject_list_incr with j; auto.
 
 - (* external function *)
-  exploit external_call_inject; eauto.
+  exploit (fun WB => external_call_inject WB (fun _ => True)); eauto.
   eapply match_stacks_preserves_globals; eauto.
   intros (j' & tres & tm' & A & B & C & D & E & F & G).
   econstructor; split.

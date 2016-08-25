@@ -802,11 +802,15 @@ Proof.
   rewrite H in MKLOAD. inv MKLOAD. auto.
 Qed.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{Hwritable_block: WritableBlock}.
+
 Lemma make_memcpy_correct:
+  forall (SGE_NEXTBLOCK: Genv.genv_next ge = Genv.genv_next (Clight.globalenv prog)),
   forall f dst src ty k e le m b ofs v m' s,
   eval_expr ge e le m dst (Vptr b ofs) ->
   eval_expr ge e le m src v ->
-  assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
+  assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
   step ge (State f s k e le m) E0 (State f Sskip k e le m').
@@ -821,14 +825,17 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
+  eapply writable_block_genv_next; [ | eassumption ] .
+  assumption.
 Qed.
 
 Lemma make_store_correct:
+  forall (SGE_NEXTBLOCK: Genv.genv_next ge = Genv.genv_next (Clight.globalenv prog)),
   forall addr ty rhs code e le m b ofs v m' f k,
   make_store cunit.(prog_comp_env) addr ty rhs = OK code ->
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
-  assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
+  assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   step ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
@@ -836,6 +843,7 @@ Proof.
   (* nonvolatile scalar *)
   rewrite H in MKSTORE; inv MKSTORE.
   econstructor; eauto.
+  injection 1; intros; subst. eapply writable_block_genv_next; [ | eassumption ]. assumption.
   (* by copy *)
   rewrite H in MKSTORE.
   eapply make_memcpy_correct with (b := b) (v := Vptr b' ofs'); eauto.
@@ -857,6 +865,10 @@ Let tge := Genv.globalenv tprog.
 Lemma symbols_preserved:
   forall s, Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSL).
+
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof (Genv.genv_next_match TRANSL).
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
@@ -1156,6 +1168,11 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
   | match_transl_1: forall ts tk,
       match_transl (Sblock ts) tk ts (Kblock tk).
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
+
 Lemma match_transl_step:
   forall ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
@@ -1379,6 +1396,7 @@ Proof.
   destruct SAME; subst ts' tk'.
   econstructor; split.
   apply plus_one. eapply make_store_correct; eauto.
+  apply genv_next_preserved.
   eapply transl_lvalue_correct; eauto. eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
   eapply match_states_skip; eauto.
@@ -1410,6 +1428,8 @@ Proof.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
+  eapply external_call_writable_block_weak; eauto.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_states_skip; eauto.
 
 - (* seq *)
@@ -1586,6 +1606,8 @@ Proof.
   econstructor; split.
   apply plus_one. constructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_writable_block_weak; eauto.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_returnstate with (ce := ce); eauto.
 
 - (* returnstate *)
@@ -1594,6 +1616,8 @@ Proof.
   apply plus_one. constructor.
   econstructor; eauto. simpl; reflexivity. constructor.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Lemma transl_initial_states:
   forall S, Clight.initial_state prog S ->
@@ -1616,6 +1640,11 @@ Lemma transl_final_states:
 Proof.
   intros. inv H0. inv H. inv MK. constructor.
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
+all blocks are always writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Theorem transl_program_correct:
   forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).

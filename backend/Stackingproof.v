@@ -1399,7 +1399,7 @@ Qed.
 Inductive match_stacks (j: meminj):
        list Linear.stackframe -> list stackframe -> signature -> Prop :=
   | match_stacks_empty: forall sg,
-      tailcall_possible sg ->
+      tailcall_possible sg -> (* assumes entrypoint has no arguments *)
       match_stacks j nil nil sg
   | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg trf
         (TAIL: is_tail c (Linear.fn_code f))
@@ -1812,6 +1812,25 @@ Qed.
 
 End BUILTIN_ARGUMENTS.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We have to prove that
+the memory injection introduced by the compilation pass is independent
+of the initial memory i.e. it does not inject new blocks into blocks
+already existing in the initial memory. This is stronger than
+[meminj_preserves_globals], which only preserves blocks associated to
+the global environment. *)
+
+Section WITHWB.
+
+Context {WB} `{writable_block_with_init_mem_ops: !WritableBlockWithInitMemOps WB}
+`{Hwritable_block_with_init_mem: !WritableBlockWithInitMem WB}.
+
+Section WITHMEMINIT.
+Variable m_init: mem.
+Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init).
+
+Local Instance: WritableBlockOps (writable_block_with_init_mem m_init).
+Proof. typeclasses eauto. Defined.
+
 (** The proof of semantic preservation relies on simulation diagrams
   of the following form:
 <<
@@ -1916,7 +1935,9 @@ Proof.
   unfold slot_valid in SV. InvBooleans.
   exploit incoming_slot_in_parameters; eauto. intros IN_ARGS.
   inversion STACKS; clear STACKS.
+  { (* arguments to entrypoint: currently, there are none. *)
   elim (H1 _ IN_ARGS).
+  }
   subst s cs'.
   exploit frame_get_outgoing.
   apply sep_proj2 in SEP. simpl in SEP. rewrite sep_assoc in SEP. eexact SEP.
@@ -2067,7 +2088,7 @@ Proof.
     exact BND2.
   intros [vargs' [P Q]].
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
-  exploit external_call_parallel_rule; eauto.
+  exploit (fun WB => external_call_parallel_rule WB (fun _ => True)); eauto.
   {
     repeat
     match goal with
@@ -2174,7 +2195,7 @@ Proof.
   simpl in TRANSL. inversion TRANSL; subst tf.
   exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   rewrite sep_comm, sep_assoc in SEP.
-  exploit external_call_parallel_rule; eauto.
+  exploit (fun WB => external_call_parallel_rule WB (fun _ => True)); eauto.
   {
     apply stack_contents_invar_weak.
   }
@@ -2197,6 +2218,10 @@ Proof.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto. 
 Qed.
+
+End WITHMEMINIT.
+
+End WITHWB.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
@@ -2248,6 +2273,9 @@ Proof.
 - auto.
 Qed.
 
+Local Existing Instance writable_block_with_init_mem_always_ops.
+Local Existing Instance writable_block_with_init_mem_always.
+
 Theorem transf_program_correct:
   forward_simulation (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
 Proof.
@@ -2263,6 +2291,7 @@ Proof.
   exists s2'; split. exact A. split.
   eapply step_type_preservation; eauto. eexact wt_prog. eexact H.
   auto.
+Grab Existential Variables. exact Mem.empty. exact Mem.empty.
 Qed.
 
 End PRESERVATION.

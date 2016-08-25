@@ -1405,6 +1405,7 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_eval:
+  forall WB,
   forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
   wt_regset env rs ->
   match ef with
@@ -1414,11 +1415,11 @@ Lemma add_equations_builtin_eval:
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef WB ge vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
-  /\ external_call ef ge vargs' m1' t vres' m2'
+  /\ external_call ef WB ge vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
 Proof.
@@ -1427,7 +1428,7 @@ Proof.
     satisf rs ls e1 /\
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
-    /\ external_call ef ge vargs' m1' t vres' m2'
+    /\ external_call ef WB ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
   {
@@ -1583,6 +1584,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
   Genv.find_funct ge v = Some f ->
@@ -1625,6 +1632,10 @@ Proof.
   rewrite symbols_preserved. rewrite Heqo.
   eapply function_ptr_translated; eauto.
 Qed.
+
+Section WITHWRITABLEBLOCK.
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Context `{Hwritable_block: WritableBlock}.
 
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
@@ -2009,6 +2020,11 @@ Proof.
   eapply star_trans. eexact X.
   eapply star_two. econstructor. instantiate (1 := a'). rewrite <- F.
   apply eval_addressing_preserved. exact symbols_preserved. eauto. eauto.
+  {
+    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
+    destruct a; try discriminate. inv G. intros.
+    eapply writable_block_genv_next; [ | eauto ] . apply genv_next_preserved.
+  }
   constructor. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf; eauto. eapply add_equations_satisf; eauto. intros [enext [U V]].
@@ -2052,9 +2068,19 @@ Proof.
   eapply star_trans. eexact X.
   eapply star_left.
   econstructor. eexact F1'. eexact STORE1'. instantiate (1 := ls2). auto.
+  {
+    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
+    destruct a; try discriminate. inv G1. intros.
+    eapply writable_block_genv_next; [ | eauto ] . apply genv_next_preserved.
+  }
   eapply star_trans. eexact U.
   eapply star_two.
   econstructor. eexact F2''. eexact STORE2'. eauto.
+  {
+    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
+    destruct a; try discriminate. inv G2. intros. inv H2.
+    eapply writable_block_genv_next; [ | eauto ] . apply genv_next_preserved.
+  }
   constructor. eauto. eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf. eauto.
@@ -2131,7 +2157,9 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  apply writable_block_genv_next. apply genv_next_preserved.
   instantiate (1 := ls2); auto.
   eapply star_right. eexact A3.
   econstructor.
@@ -2225,8 +2253,10 @@ Proof.
   simpl in FUN; inv FUN.
   econstructor; split.
   apply plus_one. econstructor; eauto.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved with (ge1 := ge); eauto. apply senv_preserved.
-  econstructor; eauto. 
+  apply writable_block_genv_next. apply genv_next_preserved.
+  econstructor; eauto.
   simpl. destruct (loc_result (ef_sig ef)) eqn:RES; simpl.
   rewrite Locmap.gss; auto.
   generalize (loc_result_pair (ef_sig ef)); rewrite RES; intros (A & B & C & D). 
@@ -2248,6 +2278,12 @@ Proof.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
 Qed.
+
+End WITHWRITABLEBLOCK.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

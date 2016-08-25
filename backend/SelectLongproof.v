@@ -38,14 +38,16 @@ Open Local Scope string_scope.
 Definition external_implements
            `{external_calls_ops: ExternalCallsOps}
            (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
-  forall F V (ge: Genv.t F V) m,
-  external_call (EF_runtime name sg) ge vargs m E0 vres m.
+  forall WB,
+  forall (ge: Senv.t) m,
+  external_call (EF_runtime name sg) WB ge vargs m E0 vres m.
 
 Definition builtin_implements
            `{external_calls_ops: ExternalCallsOps}
            (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
-  forall F V (ge: Genv.t F V) m,
-  external_call (EF_builtin name sg) ge vargs m E0 vres m.
+  forall WB,
+  forall (ge: Senv.t) m,
+  external_call (EF_builtin name sg) WB ge vargs m E0 vres m.
 
 Class I64HelpersCorrect mem
       `{external_calls_ops: ExternalCallsOps mem}: Prop :=
@@ -92,6 +94,7 @@ Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) 
 
 Section CMCONSTR.
 Context `{i64_helpers_correct_prf: I64HelpersCorrect}.
+Context `{writable_block_ops: Events.WritableBlockOps}.
 
 Variable prog: program.
 Variable hf: helper_functions.

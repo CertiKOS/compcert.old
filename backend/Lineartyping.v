@@ -267,6 +267,10 @@ Proof.
   destruct X as [i IN]. eapply wt_prog; eauto.
 Qed.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{writable_block_ops: WritableBlockOps}.
+
 Theorem step_type_preservation:
   forall S1 t S2, step ge S1 t S2 -> wt_state S1 -> wt_state S2.
 Proof.
@@ -346,6 +350,8 @@ Proof.
 - (* return *)
   inv WTSTK. econstructor; eauto.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Theorem wt_initial_state:
   forall S, initial_state prog S -> wt_state S.

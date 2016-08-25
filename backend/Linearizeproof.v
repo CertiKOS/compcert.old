@@ -64,6 +64,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf_partial TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma sig_preserved:
   forall f tf,
   transf_fundef f = OK tf ->
@@ -244,6 +250,10 @@ Proof.
   inversion TAIL. congruence. apply IHc2. auto.
   destruct a; simpl in UNIQ; tauto.
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
 
 (** Correctness of the [starts_with] test. *)
 
@@ -615,6 +625,9 @@ Proof.
   apply plus_one. econstructor.
   instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
   exact symbols_preserved. eauto. eauto.
+  {
+    intros. eapply writable_block_genv_next; [ | eauto ]. apply genv_next_preserved.
+  }
   econstructor; eauto.
 
   (* Lcall *)
@@ -638,7 +651,9 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto.
 
   (* Lbranch *)
@@ -695,7 +710,9 @@ Proof.
   (* external function *)
   monadInv H8. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto.
 
   (* return *)
@@ -704,6 +721,8 @@ Proof.
   apply plus_one. econstructor.
   econstructor; eauto.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Lemma transf_initial_states:
   forall st1, LTL.initial_state prog st1 ->
@@ -725,6 +744,10 @@ Lemma transf_final_states:
 Proof.
   intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
 
 Theorem transf_program_correct:
   forward_simulation (LTL.semantics prog) (Linear.semantics tprog).

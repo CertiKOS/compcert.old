@@ -51,6 +51,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: fundef),
   Genv.find_funct ge v = Some f ->
@@ -249,19 +255,20 @@ Proof.
 Qed.
 
 Lemma builtin_strength_reduction_correct:
+  forall WB,
   forall sp bc ae rs ef args vargs m t vres m',
   ematch bc rs ae ->
   eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-  external_call ef ge vargs m t vres m' ->
+  external_call ef WB ge vargs m t vres m' ->
   exists vargs',
      eval_builtin_args ge (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
-  /\ external_call ef ge vargs' m t vres m'.
+  /\ external_call ef WB ge vargs' m t vres m'.
 Proof.
   intros.
   assert (DEFAULT: forall cl,
     exists vargs',
        eval_builtin_args ge (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
-    /\ external_call ef ge vargs' m t vres m').
+    /\ external_call ef WB ge vargs' m t vres m').
   { exists vargs; split; auto. eapply builtin_args_strength_reduction_correct; eauto. }
   unfold builtin_strength_reduction.
   destruct ef; auto.
@@ -361,6 +368,10 @@ Ltac TransfInstr :=
 
 (** The proof of simulation proceeds by case analysis on the transition
   taken in the source code. *)
+
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{Hwritable_block: WritableBlock}.
 
 Lemma transf_step_correct:
   forall s1 t s2,
@@ -465,6 +476,11 @@ Proof.
   intros (m2' & X & Y).
   left; econstructor; econstructor; split.
   eapply exec_Istore; eauto.
+  {
+    destruct a; try discriminate. inv Q. inv V.
+    inversion 1; subst. eapply writable_block_genv_next; [ | eauto ] .
+    eapply genv_next_preserved.
+  }
   eapply match_states_succ; eauto.
 
 - (* Icall *)
@@ -498,7 +514,9 @@ Opaque builtin_strength_reduction.
   left; econstructor; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved. eexact symbols_preserved. eauto.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_states_succ; eauto.
   apply set_res_lessdef; auto.
 
@@ -561,7 +579,9 @@ Opaque builtin_strength_reduction.
   intros [v' [m2' [A [B [C D]]]]].
   simpl. left; econstructor; econstructor; split.
   eapply exec_function_external; eauto.
+  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply writable_block_genv_next. apply genv_next_preserved.
   constructor; auto.
 
 - (* return *)
@@ -570,6 +590,8 @@ Opaque builtin_strength_reduction.
   eapply exec_return; eauto.
   econstructor; eauto. constructor. apply set_reg_lessdef; auto.
 Qed.
+
+End WITHWRITABLEBLOCK.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -596,6 +618,11 @@ Qed.
 
 (** The preservation of the observable behavior of the program then
   follows. *)
+
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Local Existing Instance writable_block_always_ops.
+Local Existing Instance writable_block_always.
+Local Hint Unfold writable_block.
 
 Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).

@@ -152,6 +152,10 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
 Section WITHEXTCALLSOPS.
 Context `{external_calls_ops: ExternalCallsOps}.
 
+(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
+Section WITHWRITABLEBLOCK.
+Context `{writable_block_ops: WritableBlockOps}.
+
 Section RELSEM.
 
 Variable ge: genv.
@@ -192,14 +196,14 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_expr le (Eletvar n) v
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
+      external_call ef (writable_block ge) ge vl m E0 v m ->
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
+      external_call ef (writable_block ge) ge vl m E0 v m ->
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -354,6 +358,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_expr sp e m nil b v ->
       eval_addressing ge sp addr vl = Some vaddr ->
       Mem.storev chunk m vaddr v = Some m' ->
+      forall WRITABLE: forall b o, vaddr = Vptr b o -> writable_block ge b,
       step (State f (Sstore chunk addr al b) k sp e m)
         E0 (State f Sskip k sp e m')
 
@@ -376,7 +381,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin: forall f res ef al k sp e m vl t v m',
       list_forall2 (eval_builtin_arg sp e m) al vl ->
-      external_call ef ge vl m t v m' ->
+      external_call ef (writable_block ge) ge vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
 
@@ -437,7 +442,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Int.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef (writable_block ge) ge vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
@@ -446,6 +451,8 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f Sskip k sp (set_optvar optid v e) m).
 
 End RELSEM.
+
+End WITHWRITABLEBLOCK.
 
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall b f m0,
@@ -460,8 +467,14 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate (Vint r) Kstop m) r.
 
+(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
+Section WRITABLEBLOCKALWAYS.
+Local Existing Instance writable_block_always_ops.
+
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
+
+End WRITABLEBLOCKALWAYS.
 
 Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
@@ -539,6 +552,9 @@ Proof.
   apply IHinsert_lenv. exact H0. omega.
 Qed.
 
+Section WITHWRITABLEBLOCK2.
+Context `{writable_block_ops: WritableBlockOps}.
+
 Lemma eval_lift_expr:
   forall ge sp e m w le a v,
   eval_expr ge sp e m le a v ->
@@ -578,6 +594,8 @@ Proof.
   intros. unfold lift. eapply eval_lift_expr.
   eexact H. apply insert_lenv_0.
 Qed.
+
+End WITHWRITABLEBLOCK2.
 
 End WITHEXTCALLSOPS.
 
