@@ -750,7 +750,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pcall_r r sg =>
       Next (rs#RA <- (Val.add rs#PC Vone) #PC <- (rs r)) m
   | Pret =>
-      Next (rs#PC <- (rs#RA)) m
+  (** [CompCertX:test-compcert-ra-vundef] We need to erase the value of RA,
+      which is actually popped away from the stack in reality. *)
+      Next (rs#PC <- (rs#RA) #RA <- Vundef) m
   (** Saving and restoring registers *)
   | Pmov_rm_a rd a =>
       exec_load Many32 m a rs rd
