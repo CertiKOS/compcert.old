@@ -91,13 +91,13 @@ Proof.
   intuition auto.
   eapply forward_simulation_behavior_improves; eauto.
     apply (proj1 (cstrategy_semantic_preservation _ _ MATCH)).
-  exploit backward_simulation_behavior_improves.
+  exploit @backward_simulation_behavior_improves.
     apply (proj2 (cstrategy_semantic_preservation _ _ MATCH)).
     eauto.
   intros [beh1 [A B]]. exists beh1; split; auto. rewrite atomic_behaviors; auto.
   eapply forward_simulation_same_safe_behavior; eauto.
     apply (proj1 (cstrategy_semantic_preservation _ _ MATCH)).
-  exploit backward_simulation_same_safe_behavior.
+  exploit @backward_simulation_same_safe_behavior.
     apply (proj2 (cstrategy_semantic_preservation _ _ MATCH)).
     intros. rewrite <- atomic_behaviors in H2; eauto. eauto.
     intros. rewrite atomic_behaviors; auto.
@@ -140,7 +140,7 @@ Qed.
 
 Section SPECS_PRESERVED.
 
-Variable spec: program_behavior -> Prop.
+Variable spec: program_behavior int -> Prop.
 
 Hypothesis spec_stable:
   forall beh1 beh2, behavior_improves beh1 beh2 -> spec beh1 -> spec beh2.
@@ -163,7 +163,7 @@ End SPECS_PRESERVED.
 
 Section SAFETY_PRESERVED.
 
-Variable spec: program_behavior -> Prop.
+Variable spec: program_behavior int -> Prop.
 
 Hypothesis spec_safety:
   forall beh, spec beh -> not_wrong beh.
@@ -189,7 +189,7 @@ Section LIVENESS_PRESERVED.
 
 Variable spec: trace -> Prop.
 
-Definition liveness_spec_satisfied (b: program_behavior) : Prop :=
+Definition liveness_spec_satisfied {RETVAL: Type} (b: program_behavior RETVAL) : Prop :=
   exists t, behavior_prefix t b /\ spec t.
 
 Theorem transf_c_program_preserves_liveness_spec:

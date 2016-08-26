@@ -40,15 +40,20 @@ Set Implicit Arguments.
   performed before the program gets stuck.
 *)
 
-Inductive program_behavior: Type :=
-  | Terminates: trace -> int -> program_behavior
-  | Diverges: trace -> program_behavior
-  | Reacts: traceinf -> program_behavior
-  | Goes_wrong: trace -> program_behavior.
+Inductive program_behavior (RETVAL: Type): Type :=
+  | Terminates: trace -> RETVAL -> program_behavior RETVAL
+  | Diverges: trace -> program_behavior RETVAL
+  | Reacts: traceinf -> program_behavior RETVAL
+  | Goes_wrong: trace -> program_behavior RETVAL.
+
+Arguments Terminates {_} _ _.
+Arguments Diverges {_} _.
+Arguments Reacts {_} _.
+Arguments Goes_wrong {_} _.
 
 (** Operations and relations on behaviors *)
 
-Definition not_wrong (beh: program_behavior) : Prop :=
+Definition not_wrong {RETVAL: Type} (beh: program_behavior RETVAL) : Prop :=
   match beh with
   | Terminates _ _ => True
   | Diverges _ => True
@@ -56,7 +61,7 @@ Definition not_wrong (beh: program_behavior) : Prop :=
   | Goes_wrong _ => False
   end.
 
-Definition behavior_app (t: trace) (beh: program_behavior): program_behavior :=
+Definition behavior_app {RETVAL: Type} (t: trace) (beh: program_behavior RETVAL): program_behavior RETVAL :=
   match beh with
   | Terminates t1 r => Terminates (t ** t1) r
   | Diverges t1 => Diverges (t ** t1)
@@ -65,32 +70,36 @@ Definition behavior_app (t: trace) (beh: program_behavior): program_behavior :=
   end.
 
 Lemma behavior_app_assoc:
-  forall t1 t2 beh,
+  forall {RETVAL: Type},
+  forall t1 t2 (beh: _ RETVAL),
   behavior_app (t1 ** t2) beh = behavior_app t1 (behavior_app t2 beh).
 Proof.
   intros. destruct beh; simpl; f_equal; traceEq.
 Qed.
 
 Lemma behavior_app_E0:
-  forall beh, behavior_app E0 beh = beh.
+  forall {RETVAL: Type},
+  forall beh: _ RETVAL, behavior_app E0 beh = beh.
 Proof.
   destruct beh; auto.
 Qed.
 
-Definition behavior_prefix (t: trace) (beh: program_behavior) : Prop :=
+Definition behavior_prefix {RETVAL: Type} (t: trace) (beh: program_behavior RETVAL) : Prop :=
   exists beh', beh = behavior_app t beh'.
 
-Definition behavior_improves (beh1 beh2: program_behavior) : Prop :=
+Definition behavior_improves {RETVAL: Type} (beh1 beh2: program_behavior RETVAL) : Prop :=
   beh1 = beh2 \/ exists t, beh1 = Goes_wrong t /\ behavior_prefix t beh2.
 
 Lemma behavior_improves_refl:
-  forall beh, behavior_improves beh beh.
+  forall {RETVAL: Type},
+  forall beh: _ RETVAL, behavior_improves beh beh.
 Proof.
   intros; red; auto.
 Qed.
 
 Lemma behavior_improves_trans:
-  forall beh1 beh2 beh3,
+  forall {RETVAL: Type},
+  forall beh1 beh2 beh3: _ RETVAL,
   behavior_improves beh1 beh2 -> behavior_improves beh2 beh3 ->
   behavior_improves beh1 beh3.
 Proof.
@@ -102,13 +111,15 @@ Proof.
 Qed.
 
 Lemma behavior_improves_bot:
-  forall beh, behavior_improves (Goes_wrong E0) beh.
+  forall {RETVAL: Type},
+  forall beh: _ RETVAL, behavior_improves (Goes_wrong E0) beh.
 Proof.
   intros. right. exists E0; split; auto. exists beh. rewrite behavior_app_E0; auto.
 Qed.
 
 Lemma behavior_improves_app:
-  forall t beh1 beh2,
+  forall {RETVAL: Type},
+  forall t (beh1 beh2: _ RETVAL),
   behavior_improves beh1 beh2 ->
   behavior_improves (behavior_app t beh1) (behavior_app t beh2).
 Proof.
@@ -121,9 +132,10 @@ Qed.
 
 Section PROGRAM_BEHAVIORS.
 
-Variable L: semantics.
+Context {RETVAL: Type}.
+Variable L: semantics RETVAL.
 
-Inductive state_behaves (s: state L): program_behavior -> Prop :=
+Inductive state_behaves (s: state L): program_behavior RETVAL -> Prop :=
   | state_terminates: forall t s' r,
       Star L s t s' ->
       final_state L s' r ->
@@ -140,7 +152,7 @@ Inductive state_behaves (s: state L): program_behavior -> Prop :=
       (forall r, ~final_state L s' r) ->
       state_behaves s (Goes_wrong t).
 
-Inductive program_behaves: program_behavior -> Prop :=
+Inductive program_behaves: program_behavior RETVAL -> Prop :=
   | program_runs: forall s beh,
       initial_state L s -> state_behaves s beh ->
       program_behaves beh
@@ -281,7 +293,7 @@ End PROGRAM_BEHAVIORS.
 
 Section FORWARD_SIMULATIONS.
 
-Context L1 L2 index order match_states (S: fsim_properties L1 L2 index order match_states).
+Context {RETVAL: Type} (L1 L2: _ RETVAL) index order match_states (S: fsim_properties L1 L2 index order match_states).
 
 Lemma forward_simulation_state_behaves:
   forall i s1 s2 beh1,
@@ -290,12 +302,12 @@ Lemma forward_simulation_state_behaves:
 Proof.
   intros. inv H0.
 - (* termination *)
-  exploit simulation_star; eauto. intros [i' [s2' [A B]]].
+  exploit @simulation_star; eauto. intros [i' [s2' [A B]]].
   exists (Terminates t r); split.
   econstructor; eauto. eapply fsim_match_final_states; eauto.
   apply behavior_improves_refl.
 - (* silent divergence *)
-  exploit simulation_star; eauto. intros [i' [s2' [A B]]].
+  exploit @simulation_star; eauto. intros [i' [s2' [A B]]].
   exists (Diverges t); split.
   econstructor; eauto. eapply simulation_forever_silent; eauto.
   apply behavior_improves_refl.
@@ -304,11 +316,11 @@ Proof.
   econstructor. eapply simulation_forever_reactive; eauto.
   apply behavior_improves_refl.
 - (* going wrong *)
-  exploit simulation_star; eauto. intros [i' [s2' [A B]]].
+  exploit @simulation_star; eauto. intros [i' [s2' [A B]]].
   destruct (state_behaves_exists L2 s2') as [beh' SB].
   exists (behavior_app t beh'); split.
   eapply state_behaves_app; eauto.
-  replace (Goes_wrong t) with (behavior_app t (Goes_wrong E0)).
+  replace (Goes_wrong (RETVAL := RETVAL) t) with (behavior_app t (Goes_wrong (RETVAL := RETVAL) E0)).
   apply behavior_improves_app. apply behavior_improves_bot.
   simpl. decEq. traceEq.
 Qed.
@@ -316,14 +328,16 @@ Qed.
 End FORWARD_SIMULATIONS.
 
 Theorem forward_simulation_behavior_improves:
-  forall L1 L2, forward_simulation L1 L2 ->
+  forall {RETVAL: Type},
+  forall L1 L2: _ RETVAL, forward_simulation L1 L2 ->
   forall beh1, program_behaves L1 beh1 ->
   exists beh2, program_behaves L2 beh2 /\ behavior_improves beh1 beh2.
 Proof.
+  intro RETVAL.
   intros L1 L2 FS. destruct FS as [init order match_states S]. intros. inv H.
 - (* initial state defined *)
   exploit (fsim_match_initial_states S); eauto. intros [i [s' [INIT MATCH]]].
-  exploit forward_simulation_state_behaves; eauto. intros [beh2 [A B]].
+  exploit @forward_simulation_state_behaves; eauto. intros [beh2 [A B]].
   exists beh2; split; auto. econstructor; eauto.
 - (* initial state undefined *)
   destruct (classic (exists s', initial_state L2 s')).
@@ -337,12 +351,13 @@ Proof.
 Qed.
 
 Corollary forward_simulation_same_safe_behavior:
-  forall L1 L2, forward_simulation L1 L2 ->
+  forall {RETVAL: Type},
+  forall L1 L2: _ RETVAL, forward_simulation L1 L2 ->
   forall beh,
   program_behaves L1 beh -> not_wrong beh ->
   program_behaves L2 beh.
 Proof.
-  intros. exploit forward_simulation_behavior_improves; eauto.
+  intros. exploit @forward_simulation_behavior_improves; eauto.
   intros [beh' [A B]]. destruct B.
   congruence.
   destruct H2 as [t [C D]]. subst. contradiction.
@@ -352,9 +367,9 @@ Qed.
 
 Section BACKWARD_SIMULATIONS.
 
-Context L1 L2 index order match_states (S: bsim_properties L1 L2 index order match_states).
+Context {RETVAL} (L1 L2: _ RETVAL) index order match_states (S: bsim_properties L1 L2 index order match_states).
 
-Definition safe_along_behavior (s: state L1) (b: program_behavior) : Prop :=
+Definition safe_along_behavior (s: state L1) (b: program_behavior RETVAL) : Prop :=
   forall t1 s' b2, Star L1 s t1 s' -> b = behavior_app t1 b2 ->
      (exists r, final_state L1 s' r)
   \/ (exists t2, exists s'', Step L1 s' t2 s'').
@@ -462,7 +477,7 @@ Proof.
   intros [s1'' [C D]].
   econstructor. eapply star_trans; eauto. traceEq. auto.
 + (* silent divergence *)
-  assert (Diverges t = behavior_app t (Diverges E0)).
+  assert (Diverges (RETVAL := RETVAL) t = behavior_app t (Diverges E0)).
     simpl. rewrite E0_right; auto.
   rewrite H0 in H1.
   exploit backward_simulation_star; eauto.
@@ -472,7 +487,7 @@ Proof.
 + (* reactive divergence *)
   econstructor. eapply backward_simulation_forever_reactive; eauto.
 + (* goes wrong *)
-  assert (Goes_wrong t = behavior_app t (Goes_wrong E0)).
+  assert (Goes_wrong (RETVAL := RETVAL) t = behavior_app t (Goes_wrong E0)).
     simpl. rewrite E0_right; auto.
   rewrite H0 in H1.
   exploit backward_simulation_star; eauto.
@@ -493,16 +508,18 @@ Qed.
 End BACKWARD_SIMULATIONS.
 
 Theorem backward_simulation_behavior_improves:
-  forall L1 L2, backward_simulation L1 L2 ->
+  forall {RETVAL: Type},
+  forall L1 L2: _ RETVAL, backward_simulation L1 L2 ->
   forall beh2, program_behaves L2 beh2 ->
   exists beh1, program_behaves L1 beh1 /\ behavior_improves beh1 beh2.
 Proof.
+  intro RETVAL.
   intros L1 L2 S beh2 H. destruct S as [index order match_states S]. inv H.
 - (* L2's initial state is defined. *)
   destruct (classic (exists s1, initial_state L1 s1)) as [[s1 INIT] | NOINIT].
 + (* L1's initial state is defined too. *)
   exploit (bsim_match_initial_states S); eauto. intros [i [s1' [INIT1' MATCH]]].
-  exploit backward_simulation_state_behaves; eauto. intros [beh1 [A B]].
+  exploit @backward_simulation_state_behaves; eauto. intros [beh1 [A B]].
   exists beh1; split; auto. econstructor; eauto.
 + (* L1 has no initial state *)
   exists (Goes_wrong E0); split.
@@ -519,11 +536,12 @@ Proof.
 Qed.
 
 Corollary backward_simulation_same_safe_behavior:
-  forall L1 L2, backward_simulation L1 L2 ->
+  forall {RETVAL: Type},
+  forall L1 L2: _ RETVAL, backward_simulation L1 L2 ->
   (forall beh, program_behaves L1 beh -> not_wrong beh) ->
   (forall beh, program_behaves L2 beh -> program_behaves L1 beh).
 Proof.
-  intros. exploit backward_simulation_behavior_improves; eauto.
+  intros. exploit @backward_simulation_behavior_improves; eauto.
   intros [beh' [A B]]. destruct B.
   congruence.
   destruct H2 as [t [C D]]. subst. elim (H0 (Goes_wrong t)). auto.
@@ -533,7 +551,8 @@ Qed.
 
 Section ATOMIC.
 
-Variable L: semantics.
+Context {RETVAL: Type}.
+Variable L: semantics RETVAL.
 Hypothesis Lwb: well_behaved_traces L.
 
 Remark atomic_finish: forall s t, output_trace t -> Star (atomic L) (t, s) t (E0, s).
@@ -636,7 +655,7 @@ Theorem atomic_behaviors:
 Proof.
   intros; split; intros.
 - (* L -> atomic L *)
-  exploit forward_simulation_behavior_improves. eapply atomic_forward_simulation. eauto.
+  exploit @forward_simulation_behavior_improves. eapply atomic_forward_simulation. eauto.
   intros [beh2 [A B]]. red in B. destruct B as [EQ | [t [C D]]].
   congruence.
   subst beh. inv H. inv H1.
@@ -821,8 +840,9 @@ Set Implicit Arguments.
 
 Section BIGSTEP_BEHAVIORS.
 
-Variable B: bigstep_semantics.
-Variable L: semantics.
+Context {RETVAL: Type}.
+Variable B: bigstep_semantics RETVAL.
+Variable L: semantics RETVAL.
 Hypothesis sound: bigstep_sound B L.
 
 Lemma behavior_bigstep_terminates:

@@ -326,7 +326,8 @@ Qed.
 *)
 
 Remark forward_simulation_identity:
-  forall sem, forward_simulation sem sem.
+  forall {RETVAL: Type},
+  forall sem: _ RETVAL, forward_simulation sem sem.
 Proof.
   intros. apply forward_simulation_step with (fun s1 s2 => s2 = s1); intros.
 - auto.
@@ -336,7 +337,8 @@ Proof.
 Qed.
 
 Lemma match_if_simulation:
-  forall (A: Type) (sem: A -> semantics) (flag: unit -> bool) (transf: A -> A -> Prop) (prog tprog: A),
+  forall {RETVAL: Type},
+  forall (A: Type) (sem: A -> semantics RETVAL) (flag: unit -> bool) (transf: A -> A -> Prop) (prog tprog: A),
   match_if flag transf prog tprog ->
   (forall p tp, transf p tp -> forward_simulation (sem p) (sem tp)) ->
   forward_simulation (sem prog) (sem tprog).
