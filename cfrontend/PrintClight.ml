@@ -264,8 +264,9 @@ let print_fundef p id fd =
 
 let print_globdef p (id, gd) =
   match gd with
-  | Gfun f -> print_fundef p id f
-  | Gvar v -> print_globvar p id v  (* from PrintCsyntax *)
+  | Some(Gfun f) -> print_fundef p id f
+  | Some(Gvar v) -> print_globvar p id v  (* from PrintCsyntax *)
+  | None -> ()
 
 let print_program p prog =
   fprintf p "@[<v 0>";

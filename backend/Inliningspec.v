@@ -41,16 +41,27 @@ Proof.
   }
   assert (ADD: forall dm fenv idg,
              P dm fenv ->
-             P (PTree.set (fst idg) (snd idg) dm) (add_globdef fenv idg)).
+             P (match snd idg with
+                  | Some g => PTree.set (fst idg) g dm
+                  | _ => PTree.remove (fst idg) dm
+                end) (add_globdef fenv idg)).
   { intros dm fenv [id g]; simpl; intros.
-    destruct g as [ [f|ef] | v]; auto.
+    destruct g as [ [ [f|ef] | v] | ] ; auto.
     destruct (should_inline id f); auto.
     red; intros. rewrite ! PTree.gsspec in *.
     destruct (peq id0 id); auto. inv H0; auto.
+    unfold P. intros ? ? .
+    rewrite ! PTree.grspec.
+    destruct (PTree.elt_eq id0 id); auto.
+    discriminate.
   }
   assert (REC: forall l dm fenv,
             P dm fenv ->
-            P (fold_left (fun x idg => PTree.set (fst idg) (snd idg) x) l dm)
+            P (fold_left (fun x idg =>
+                            match snd idg with
+                              | Some g => PTree.set (fst idg) g x
+                              | None => PTree.remove (fst idg) x
+                            end) l dm)
               (fold_left add_globdef l fenv)).
   { induction l; simpl; intros. 
   - auto.

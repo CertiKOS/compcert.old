@@ -417,12 +417,12 @@ global_declaration:
       { $1 }
   | VAR STRINGLIT LBRACKET INTLIT RBRACKET  /* old style */
       { (intern_string $2,
-         Gvar{gvar_info = (); gvar_init = [Init_space(Z.of_sint32 $4)];
-              gvar_readonly = false; gvar_volatile = false}) }
+         Some(Gvar{gvar_info = (); gvar_init = [Init_space(Z.of_sint32 $4)];
+              gvar_readonly = false; gvar_volatile = false})) }
   | VAR STRINGLIT is_readonly is_volatile LBRACE init_data_list RBRACE
        { (intern_string $2,
-          Gvar{gvar_info = (); gvar_init = List.rev $6;
-               gvar_readonly = $3; gvar_volatile = $4; } ) }
+          Some(Gvar{gvar_info = (); gvar_init = List.rev $6;
+               gvar_readonly = $3; gvar_volatile = $4; } )) }
 ;
 
 is_readonly:
@@ -472,15 +472,15 @@ proc:
         temporaries := [];
         temp_counter := 0;
         (intern_string $1,
-        Gfun(Internal { fn_sig = $6;
+        Some(Gfun(Internal { fn_sig = $6;
                         fn_params = List.rev $3;
                         fn_vars = List.rev (tmp @ $9);
                         fn_stackspace = $8;
-                        fn_body = $10 })) }
+                        fn_body = $10 }))) }
   | EXTERN STRINGLIT COLON signature
-      { (intern_string $2, Gfun(External(EF_external(coqstring_of_camlstring $2,$4)))) }
+      { (intern_string $2, Some(Gfun(External(EF_external(coqstring_of_camlstring $2,$4))))) }
   | EXTERN STRINGLIT EQUAL eftoks COLON signature
-      { (intern_string $2, Gfun(External(mkef $6 $4))) }
+      { (intern_string $2, Some(Gfun(External(mkef $6 $4)))) }
 ;
 
 signature:

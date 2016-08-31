@@ -216,11 +216,13 @@ Definition definitive_initializer (init: list init_data) : bool :=
   | _ => true
   end.
 
-Definition alloc_global (rm: romem) (idg: ident * globdef fundef unit): romem :=
+Definition alloc_global (rm: romem) (idg: ident * option (globdef fundef unit)): romem :=
   match idg with
-  | (id, Gfun f) =>
+  | (id, None) =>
       PTree.remove id rm
-  | (id, Gvar v) =>
+  | (id, Some (Gfun f)) =>
+      PTree.remove id rm
+  | (id, Some (Gvar v)) =>
       if v.(gvar_readonly) && negb v.(gvar_volatile) && definitive_initializer v.(gvar_init)
       then PTree.set id (store_init_data_list (ablock_init Pbot) 0 v.(gvar_init)) rm
       else PTree.remove id rm
@@ -1746,7 +1748,7 @@ Lemma alloc_global_match:
   Genv.alloc_global ge m idg = Some m' ->
   initial_mem_match bc m' (Genv.add_global g idg).
 Proof.
-  intros; red; intros. destruct idg as [id1 [fd | gv]]; simpl in *.
+  intros; red; intros. destruct idg as [id1 [[fd | gv]|]]; simpl in *.
 - destruct (Mem.alloc m 0 1) as [m1 b1] eqn:ALLOC.
   unfold Genv.find_symbol in H2; simpl in H2.
   unfold Genv.find_var_info, Genv.find_def in H3; simpl in H3.
@@ -1792,6 +1794,27 @@ Proof.
   eapply H0; eauto.
   intros. eapply Mem.loadbytes_alloc_unchanged; eauto.
   intros. eapply Mem.loadbytes_drop; eauto.
+- destruct (Mem.alloc m 0 0) as [m1 b1] eqn:ALLOC.
+  inv H1.
+  unfold Genv.find_symbol in H2; simpl in H2.
+  unfold Genv.find_var_info, Genv.find_def in H3; simpl in H3.
+  rewrite PTree.gsspec in H2. destruct (peq id id1).
+  inv H2.
+  {
+    destruct ((Genv.genv_defs g) ! (Genv.genv_next g)) eqn:EQ; try discriminate.
+    apply Genv.genv_defs_range in EQ.
+    xomega.
+  }
+  assert (Plt b (Genv.genv_next g)) by (eapply Genv.genv_symb_range; eauto).
+  destruct ((Genv.genv_defs g) ! b) as [ [ | ] | ] eqn:EQ; try discriminate.
+  inv H3.
+  assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
+  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
+  apply bmatch_inv with m.
+  eapply H0; eauto.
+  unfold Genv.find_var_info. unfold Genv.find_def. rewrite EQ. reflexivity.
+  intros.
+  eapply Mem.loadbytes_alloc_unchanged; eauto.
 Qed.
 
 Lemma alloc_globals_match:
@@ -1822,9 +1845,13 @@ Definition romem_consistent (defmap: PTree.t (globdef fundef unit)) (rm: romem) 
 Lemma alloc_global_consistent:
   forall dm rm idg,
   romem_consistent dm rm ->
-  romem_consistent (PTree.set (fst idg) (snd idg) dm) (alloc_global rm idg).
+  romem_consistent (match snd idg with
+                      | Some g => PTree.set (fst idg) g dm
+                      | None => PTree.remove (fst idg) dm
+                    end)
+                   (alloc_global rm idg).
 Proof.
-  intros; red; intros. destruct idg as [id1 [f1 | v1]]; simpl in *.
+  intros; red; intros. destruct idg as [id1 [[f1 | v1] | ]]; simpl in *.
 - rewrite PTree.grspec in H0. destruct (PTree.elt_eq id id1); try discriminate.
   rewrite PTree.gso by auto. apply H; auto. 
 - destruct (gvar_readonly v1 && negb (gvar_volatile v1) && definitive_initializer (gvar_init v1)) eqn:RO.
@@ -1833,7 +1860,10 @@ Proof.
 * inv H0. exists v1; auto.
 * apply H; auto.
 + rewrite PTree.grspec in H0. destruct (PTree.elt_eq id id1); try discriminate.
-  rewrite PTree.gso by auto. apply H; auto. 
+  rewrite PTree.gso by auto. apply H; auto.
+- rewrite ! PTree.grspec in * |- *.
+  destruct (PTree.elt_eq id id1); try discriminate.
+  eauto.
 Qed.
 
 Lemma romem_for_consistent:
@@ -1841,7 +1871,11 @@ Lemma romem_for_consistent:
 Proof.
   assert (REC: forall l dm rm,
             romem_consistent dm rm ->
-            romem_consistent (fold_left (fun m idg => PTree.set (fst idg) (snd idg) m) l dm)
+            romem_consistent (fold_left (fun m idg =>
+                                           match snd idg with
+                                             | Some g => PTree.set (fst idg) g m
+                                             | None => PTree.remove (fst idg) m
+                                           end) l dm)
                              (fold_left alloc_global l rm)).
   { induction l; intros; simpl; auto. apply IHl. apply alloc_global_consistent; auto. }
   intros. apply REC.

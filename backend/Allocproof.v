@@ -2320,8 +2320,10 @@ Proof.
   red; intros. 
   exploit list_forall2_in_left. eexact (proj1 TRANSF). eauto. 
   intros ([i' gd] & A & B & C). simpl in *; subst i'.
-  inv C. destruct f; simpl in *.
-- monadInv H2.  
+  inv C.
+  inv H1.
+  destruct f; simpl in *.
+- monadInv H3.
   unfold transf_function in EQ.
   destruct (type_function f) as [env|] eqn:TF; try discriminate.
   econstructor. eapply type_function_correct; eauto.

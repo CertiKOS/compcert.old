@@ -186,7 +186,7 @@ Inductive wt_fundef: fundef -> Prop :=
       wt_fundef (Internal f).
 
 Definition wt_program (p: program): Prop :=
-  forall i f, In (i, Gfun f) (prog_defs p) -> wt_fundef f.
+  forall i f, In (i, Some (Gfun f)) (prog_defs p) -> wt_fundef f.
 
 (** * Type inference *)
 

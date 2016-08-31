@@ -80,16 +80,16 @@ let print_event p = function
 let name_of_fundef prog fd =
   let rec find_name = function
   | [] -> "<unknown function>"
-  | (id, Gfun fd') :: rem ->
+  | (id, Some(Gfun fd')) :: rem ->
       if fd == fd' then extern_atom id else find_name rem
-  | (id, Gvar v) :: rem ->
+  | _ :: rem ->
       find_name rem
   in find_name prog.Ctypes.prog_defs
 
 let name_of_function prog fn =
   let rec find_name = function
   | [] -> "<unknown function>"
-  | (id, Gfun(Ctypes.Internal fn')) :: rem ->
+  | (id, Some(Gfun(Ctypes.Internal fn'))) :: rem ->
       if fn == fn' then extern_atom id else find_name rem
   | (id, _) :: rem ->
       find_name rem
@@ -436,14 +436,14 @@ let rec explore_all p prog ge time states =
 let world_program prog =
   let change_def (id, gd) =
     match gd with
-    | Gvar gv ->
+    | Some(Gvar gv) ->
         let gv' =
           if gv.gvar_volatile then
             {gv with gvar_readonly = false; gvar_volatile = false}
           else
             {gv with gvar_init = []} in
-        (id, Gvar gv')
-    | Gfun fd ->
+        (id, Some(Gvar gv'))
+    | _ ->
         (id, gd) in
  {prog with Ctypes.prog_defs = List.map change_def prog.Ctypes.prog_defs}
 
@@ -460,15 +460,15 @@ let change_main_function p old_main old_main_ty =
       fn_params = []; fn_vars = []; fn_body = body } in
   let new_main_id = intern_string "___main" in
   { prog_main = new_main_id;
-    Ctypes.prog_defs = (new_main_id, Gfun(Internal new_main_fn)) :: p.Ctypes.prog_defs;
+    Ctypes.prog_defs = (new_main_id, Some(Gfun(Internal new_main_fn))) :: p.Ctypes.prog_defs;
     prog_public = p.prog_public;
     prog_types = p.prog_types;
     prog_comp_env = p.prog_comp_env }
 
 let rec find_main_function name = function
   | [] -> None
-  | (id, Gfun fd) :: gdl -> if id = name then Some fd else find_main_function name gdl
-  | (id, Gvar v) :: gdl -> find_main_function name gdl
+  | (id, Some(Gfun fd)) :: gdl -> if id = name then Some fd else find_main_function name gdl
+  | _ :: gdl -> find_main_function name gdl
 
 let fixup_main p =
   match find_main_function p.Ctypes.prog_main p.prog_defs with

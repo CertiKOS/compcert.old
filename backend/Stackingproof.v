@@ -2263,12 +2263,14 @@ Proof.
 Qed.
 
 Lemma wt_prog:
-  forall i fd, In (i, Gfun fd) prog.(prog_defs) -> wt_fundef fd.
+  forall i fd, In (i, Some (Gfun fd)) prog.(prog_defs) -> wt_fundef fd.
 Proof.
   intros.
   exploit list_forall2_in_left. eexact (proj1 TRANSF). eauto.
-  intros ([i' g] & P & Q & R). simpl in *. inv R. destruct fd; simpl in *.
-- monadInv H2. unfold transf_function in EQ.
+  intros ([i' g] & P & Q & R). simpl in *. inv R.
+  inv H1.
+  destruct fd; simpl in *.
+- monadInv H3. unfold transf_function in EQ.
   destruct (wt_function f). auto. discriminate.
 - auto.
 Qed.

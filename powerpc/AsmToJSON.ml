@@ -357,8 +357,8 @@ let p_vardef oc (name,v) =
 let p_program oc prog =
   let prog_vars,prog_funs = List.fold_left (fun (vars,funs) (ident,def) ->
     match def with
-    | Gfun (Internal f) -> vars,(ident,f)::funs
-    | Gvar v -> (ident,v)::vars,funs
+    | Some (Gfun (Internal f)) -> vars,(ident,f)::funs
+    | Some (Gvar v) -> (ident,v)::vars,funs
     | _ -> vars,funs) ([],[]) prog.prog_defs in
   fprintf oc "{\"Global Variables\":%a,\n\"Functions\":%a}"
     (p_jarray p_vardef) prog_vars
