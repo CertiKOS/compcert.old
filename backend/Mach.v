@@ -271,22 +271,23 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
              (m: mem),                 (**r memory state *)
       state.
 
+Section WITHEXTERNALCALLSOPS.
+Context `{external_calls_ops: ExternalCallsOps}.
+
+Section RELSEM.
+Variables init_sp init_ra: val.
+
 Definition parent_sp (s: list stackframe) : val :=
   match s with
-  | nil => Vzero
+  | nil => init_sp
   | Stackframe f sp ra c :: s' => sp
   end.
 
 Definition parent_ra (s: list stackframe) : val :=
   match s with
-  | nil => Vzero
+  | nil => init_ra
   | Stackframe f sp ra c :: s' => ra
   end.
-
-Section WITHEXTERNALCALLSOPS.
-Context `{external_calls_ops: ExternalCallsOps}.
-
-Section RELSEM.
 
 Variable return_address_offset: function -> code -> int -> Prop.
 
@@ -436,6 +437,6 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (rao: function -> code -> int -> Prop) (p: program) :=
-  Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step Vzero Vzero rao) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.

@@ -958,7 +958,8 @@ Lemma alloc_parallel_rule_2:
   exists j',
      m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
-  /\ j' b1 = Some(b2, delta).
+  /\ j' b1 = Some(b2, delta)
+  /\ inject_separated j j' m1 m2 .
 Proof.
   intros. 
   set (j1 := fun b => if eq_block b b1 then Some(b2, delta) else j b).
@@ -978,6 +979,14 @@ Proof.
   rewrite sep_swap4 in A. rewrite sep_swap4. apply globalenv_inject_incr with j1 m1; auto.
 - red; unfold j1; intros. destruct (eq_block b b1). congruence. rewrite D; auto.
 - red; unfold j1; intros. destruct (eq_block b0 b1). congruence. rewrite D in H9 by auto. congruence.
+- split; auto.
+  split; auto.
+  red. intros b0 b3 delta0 H8 H9.
+  destruct (peq b0 b1).
+  + subst.
+    rewrite C in H9. inversion H9. subst delta0 b3.
+    eauto with mem.
+  + rewrite D in H9; congruence.
 Qed.
 
 End WITHMEM.

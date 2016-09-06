@@ -872,9 +872,12 @@ Proof.
   intros. inv H. eauto.
 Qed.
 
+Section WITHRESTYP.
+Variable (restyp: option typ).
+
 Inductive wt_stackframes: list stackframe -> signature -> Prop :=
   | wt_stackframes_nil: forall sg,
-      sg.(sig_res) = Some Tint ->
+      Some sg.(sig_res) = Some restyp ->
       wt_stackframes nil sg
   | wt_stackframes_cons:
       forall s res f sp pc rs env sg,
@@ -912,6 +915,8 @@ Proof.
 - econstructor; eauto. rewrite H3. unfold proj_sig_res. rewrite H. auto.
 Qed.
 
+End WITHRESTYP.
+
 Section SUBJECT_REDUCTION.
 
 Variable p: program.
@@ -924,9 +929,11 @@ Section WITHWRITABLEBLOCK.
 (** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
 Context `{writable_block_ops: WritableBlockOps}.
 
+Variable restyp: option typ.
+
 Lemma subject_reduction:
   forall st1 t st2, step ge st1 t st2 ->
-  forall (WT: wt_state st1), wt_state st2.
+  forall (WT: wt_state restyp st1), wt_state restyp st2.
 Proof.
   induction 1; intros; inv WT;
   try (generalize (wt_instrs _ _ WT_FN pc _ H); intros WTI).
@@ -986,7 +993,7 @@ Qed.
 End WITHWRITABLEBLOCK.
 
 Lemma wt_initial_state:
-  forall S, initial_state p S -> wt_state S.
+  forall S, initial_state p S -> wt_state (Some Tint) S.
 Proof.
   intros. inv H. constructor. constructor. rewrite H3; auto.
   pattern f. apply Genv.find_funct_ptr_prop with fundef unit p b.
@@ -995,8 +1002,9 @@ Proof.
 Qed.
 
 Lemma wt_instr_inv:
+  forall restyp,
   forall s f sp pc rs m i,
-  wt_state (State s f sp pc rs m) ->
+  wt_state restyp (State s f sp pc rs m) ->
   f.(fn_code)!pc = Some i ->
   exists env, wt_instr f env i /\ wt_regset env rs.
 Proof.

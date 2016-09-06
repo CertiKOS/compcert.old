@@ -163,6 +163,17 @@ Section RELSEM.
 (** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
 Context `{writable_block_ops: WritableBlockOps}.
 
+(** [parent_locset cs] returns the mapping of values for locations
+  of the caller function. *)
+
+Variable init_ls: locset.
+
+Definition parent_locset (stack: list stackframe) : locset :=
+  match stack with
+  | nil => init_ls
+  | Stackframe f sp ls bb :: stack' => ls
+  end.
+
 Variable ge: genv.
 
 Definition reglist (rs: locset) (rl: list mreg) : list val :=
@@ -188,15 +199,6 @@ Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
       | None => None
       | Some b => Genv.find_funct_ptr ge b
       end
-  end.
-
-(** [parent_locset cs] returns the mapping of values for locations
-  of the caller function. *)
-
-Definition parent_locset (stack: list stackframe) : locset :=
-  match stack with
-  | nil => Locmap.init Vundef
-  | Stackframe f sp ls bb :: stack' => ls
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -308,7 +310,7 @@ Section WRITABLEBLOCKALWAYS.
 Local Existing Instance writable_block_always_ops.
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
 
 End WRITABLEBLOCKALWAYS.
 

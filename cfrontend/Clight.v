@@ -551,7 +551,7 @@ with find_label_ls (lbl: label) (sl: labeled_statements) (k: cont)
   parameter binding semantics, then instantiate it later to give the two
   semantics described above. *)
 
-Variable function_entry: function -> list val -> mem -> env -> temp_env -> mem -> Prop.
+Variable function_entry: genv -> function -> list val -> mem -> env -> temp_env -> mem -> Prop.
 
 (** Transition relation *)
 
@@ -660,7 +660,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s' k' e le m)
 
   | step_internal_function: forall f vargs k m e le m1,
-      function_entry f vargs m e le m1 ->
+      function_entry ge f vargs m e le m1 ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
 
@@ -707,7 +707,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
-Definition step1 (ge: genv) := step ge (function_entry1 ge).
+Definition step1 (ge: genv) := step ge (function_entry1).
 
 (** Second, parameters as temporaries. *)
 
@@ -720,7 +720,7 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 
-Definition step2 (ge: genv) := step ge (function_entry2 ge).
+Definition step2 (ge: genv) := step ge (function_entry2).
 
 (** Wrapping up these definitions in two small-step semantics. *)
 

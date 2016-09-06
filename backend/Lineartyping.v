@@ -205,8 +205,12 @@ Definition wt_fundef (fd: fundef) :=
   | External ef => True
   end.
 
+Section WITHINITLS.
+Variable init_ls: locset.
+
 Inductive wt_callstack: list stackframe -> Prop :=
   | wt_callstack_nil:
+      wt_locset init_ls ->
       wt_callstack nil
   | wt_callstack_cons: forall f sp rs c s
         (WTSTK: wt_callstack s)
@@ -216,17 +220,14 @@ Inductive wt_callstack: list stackframe -> Prop :=
       wt_callstack (Stackframe f sp rs c :: s).
 
 Lemma wt_parent_locset:
-  forall s, wt_callstack s -> wt_locset (parent_locset s).
+  forall s, wt_callstack s -> wt_locset (parent_locset init_ls s).
 Proof.
   induction 1; simpl.
-- apply wt_init.
+- auto.
 - auto.
 Qed.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
-Inductive wt_state: state -> Prop :=
+Inductive wt_state `{memory_model_ops: Mem.MemoryModelOps}: state -> Prop :=
   | wt_regular_state: forall s f sp c rs m
         (WTSTK: wt_callstack s )
         (WTF: wt_function f = true)
@@ -243,7 +244,12 @@ Inductive wt_state: state -> Prop :=
         (WTRS: wt_locset rs),
       wt_state (Returnstate s rs m).
 
+End WITHINITLS.
+
 (** Preservation of state typing by transitions *)
+
+Section WITHEXTERNALCALLS.
+Context `{external_calls_prf: ExternalCalls}.
 
 Section SOUNDNESS.
 
@@ -271,8 +277,10 @@ Qed.
 Section WITHWRITABLEBLOCK.
 Context `{writable_block_ops: WritableBlockOps}.
 
+Variable init_ls: locset.
+
 Theorem step_type_preservation:
-  forall S1 t S2, step ge S1 t S2 -> wt_state S1 -> wt_state S2.
+  forall S1 t S2, step init_ls ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
 Proof.
   induction 1; intros WTS; inv WTS.
 - (* getstack *)
@@ -354,9 +362,10 @@ Qed.
 End WITHWRITABLEBLOCK.
 
 Theorem wt_initial_state:
-  forall S, initial_state prog S -> wt_state S.
+  forall S, initial_state prog S -> wt_state (Locmap.init Vundef) S.
 Proof.
   induction 1. econstructor. constructor.
+  apply wt_init.
   unfold ge0 in H1. exploit Genv.find_funct_ptr_inversion; eauto.
   intros [id IN]. eapply wt_prog; eauto.
   apply wt_init.
@@ -366,9 +375,11 @@ End SOUNDNESS.
 
 (** Properties of well-typed states that are used in [Stackingproof]. *)
 
+Variable init_ls: locset.
+
 Lemma wt_state_getstack:
   forall s f sp sl ofs ty rd c rs m,
-  wt_state (State s f sp (Lgetstack sl ofs ty rd :: c) rs m) ->
+  wt_state init_ls (State s f sp (Lgetstack sl ofs ty rd :: c) rs m) ->
   slot_valid f sl ofs ty = true.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. auto.
@@ -376,7 +387,7 @@ Qed.
 
 Lemma wt_state_setstack:
   forall s f sp sl ofs ty r c rs m,
-  wt_state (State s f sp (Lsetstack r sl ofs ty :: c) rs m) ->
+  wt_state init_ls (State s f sp (Lsetstack r sl ofs ty :: c) rs m) ->
   slot_valid f sl ofs ty = true /\ slot_writable sl = true.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. intuition.
@@ -384,7 +395,7 @@ Qed.
 
 Lemma wt_state_tailcall:
   forall s f sp sg ros c rs m,
-  wt_state (State s f sp (Ltailcall sg ros :: c) rs m) ->
+  wt_state init_ls (State s f sp (Ltailcall sg ros :: c) rs m) ->
   size_arguments sg = 0.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. auto.
@@ -392,7 +403,7 @@ Qed.
 
 Lemma wt_state_builtin:
   forall s f sp ef args res c rs m,
-  wt_state (State s f sp (Lbuiltin ef args res :: c) rs m) ->
+  wt_state init_ls (State s f sp (Lbuiltin ef args res :: c) rs m) ->
   forallb (loc_valid f) (params_of_builtin_args args) = true.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. auto.
@@ -400,7 +411,7 @@ Qed.
 
 Lemma wt_callstate_wt_regs:
   forall s f rs m,
-  wt_state (Callstate s f rs m) ->
+  wt_state init_ls (Callstate s f rs m) ->
   forall r, Val.has_type (rs (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTRS.

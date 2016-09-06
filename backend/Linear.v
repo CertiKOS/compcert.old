@@ -139,14 +139,6 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
              (m: mem),                (**r memory state *)
       state.
 
-(** [parent_locset cs] returns the mapping of values for locations
-  of the caller function. *)
-Definition parent_locset (stack: list stackframe) : locset :=
-  match stack with
-  | nil => Locmap.init Vundef
-  | Stackframe f sp ls c :: stack' => ls
-  end.
-
 Section WITHEXTERNALCALLSOPS.
 Context `{external_calls_ops: ExternalCallsOps}.
 
@@ -154,6 +146,17 @@ Section RELSEM.
 
 (** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
 Context `{writable_block_ops: WritableBlockOps}.
+
+(** [parent_locset cs] returns the mapping of values for locations
+  of the caller function. *)
+
+Variable parent_lm: locset.
+
+Definition parent_locset (stack: list stackframe) : locset :=
+  match stack with
+  | nil => parent_lm
+  | Stackframe f sp ls c :: stack' => ls
+  end.
 
 Variable ge: genv.
 
@@ -283,6 +286,6 @@ Inductive final_state: state -> int -> Prop :=
 Local Existing Instance writable_block_always_ops.
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.

@@ -861,6 +861,10 @@ End STRAIGHTLINE.
 
 Section MATCH_STACK.
 
+Variables init_sp init_ra: val.
+Hypothesis init_sp_not_vundef: init_sp <> Vundef.
+Hypothesis init_ra_not_vundef: init_ra <> Vundef.
+
 Variable ge: Mach.genv.
 
 Inductive match_stack: list Mach.stackframe -> Prop :=
@@ -873,22 +877,22 @@ Inductive match_stack: list Mach.stackframe -> Prop :=
       match_stack s ->
       match_stack (Stackframe fb sp ra c :: s).
 
-Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
-Proof. induction 1; simpl. unfold Vzero; congruence. auto. Qed.
+Lemma parent_sp_def: forall s, match_stack s -> parent_sp init_sp s <> Vundef.
+Proof. induction 1; simpl; congruence. Qed.
 
-Lemma parent_ra_def: forall s, match_stack s -> parent_ra s <> Vundef.
-Proof. induction 1; simpl. unfold Vzero; congruence. inv H0. congruence. Qed.
+Lemma parent_ra_def: forall s, match_stack s -> parent_ra init_ra s <> Vundef.
+Proof. induction 1; simpl; try congruence. inv H0. congruence. Qed.
 
 Lemma lessdef_parent_sp:
   forall s v,
-  match_stack s -> Val.lessdef (parent_sp s) v -> v = parent_sp s.
+  match_stack s -> Val.lessdef (parent_sp init_sp s) v -> v = parent_sp init_sp s.
 Proof.
   intros. inv H0. auto. exploit parent_sp_def; eauto. tauto.
 Qed.
 
 Lemma lessdef_parent_ra:
   forall s v,
-  match_stack s -> Val.lessdef (parent_ra s) v -> v = parent_ra s.
+  match_stack s -> Val.lessdef (parent_ra init_ra s) v -> v = parent_ra init_ra s.
 Proof.
   intros. inv H0. auto. exploit parent_ra_def; eauto. tauto.
 Qed.
