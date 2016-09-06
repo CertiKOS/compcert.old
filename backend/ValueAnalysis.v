@@ -228,8 +228,21 @@ Definition alloc_global (rm: romem) (idg: ident * option (globdef fundef unit)):
       else PTree.remove id rm
   end.
 
-Definition romem_for (p: program) : romem :=
+(* [CompCertX] We parameterize over [romem_for], since we may not be able
+   to use it in the per-module setting. *)
+
+Class ROMemFor: Type :=
+  {
+    romem_for: program -> romem
+  }.
+
+Definition romem_for_wp (p: program) : romem :=
   List.fold_left alloc_global p.(prog_defs) (PTree.empty _).
+
+Program Definition romem_for_wp_instance: ROMemFor :=
+  {|
+    romem_for := romem_for_wp
+  |}.
 
 (** * Soundness proof *)
 
@@ -1086,6 +1099,7 @@ Section SOUNDNESS.
 
 (** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
 Context `{Hwritable_block: WritableBlock}.
+Context `{romem_for_instance: ROMemFor}.
 
 Variable prog: program.
 Variable ge: genv.
@@ -1532,6 +1546,7 @@ Section LINKING.
 
 (** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
 Context `{Hwritable_block: WritableBlock}.
+Context {romem_for_instance: ROMemFor}.
 
 Variable prog: program.
 Let ge := Genv.globalenv prog.
@@ -1867,7 +1882,7 @@ Proof.
 Qed.
 
 Lemma romem_for_consistent:
-  forall cunit, romem_consistent (prog_defmap cunit) (romem_for cunit).
+  forall cunit, romem_consistent (prog_defmap cunit) (romem_for_wp cunit).
 Proof.
   assert (REC: forall l dm rm,
             romem_consistent dm rm ->
@@ -1883,7 +1898,7 @@ Proof.
 Qed.
 
 Lemma romem_for_consistent_2:
-  forall cunit, linkorder cunit prog -> romem_consistent (prog_defmap prog) (romem_for cunit).
+  forall cunit, linkorder cunit prog -> romem_consistent (prog_defmap prog) (romem_for_wp cunit).
 Proof.
   intros; red; intros.
   exploit (romem_for_consistent cunit); eauto. intros (v & DM & RO & VO & DEFN & AB).
@@ -1904,7 +1919,7 @@ Theorem initial_mem_matches:
      genv_match bc ge
   /\ bc_below bc (Mem.nextblock m)
   /\ bc_nostack bc
-  /\ (forall cunit, linkorder cunit prog -> romatch bc m (romem_for cunit))
+  /\ (forall cunit, linkorder cunit prog -> romatch bc m (romem_for_wp cunit))
   /\ (forall b, Mem.valid_block m b -> bc b <> BCinvalid).
 Proof.
   intros.
@@ -1917,7 +1932,7 @@ Proof.
     rewrite Mem.nextblock_empty. reflexivity.
     red. unfold Genv.find_symbol; simpl; intros. rewrite PTree.gempty in H1; discriminate.
   }
-  assert (B: romem_consistent (prog_defmap prog) (romem_for cunit)) by (apply romem_for_consistent_2; auto).
+  assert (B: romem_consistent (prog_defmap prog) (romem_for_wp cunit)) by (apply romem_for_consistent_2; auto).
   red; intros.
   exploit B; eauto. intros (v & DM & RO & NVOL & DEFN & EQ).
   rewrite Genv.find_def_symbol in DM. destruct DM as (b1 & FS & FD).
@@ -1935,6 +1950,9 @@ Qed.
 End INITIAL.
 
 Require Import Axioms.
+
+Section WITHROMEMWP.
+Local Existing Instance romem_for_wp_instance.
 
 Theorem sound_initial:
   forall prog st, initial_state prog st -> sound_state prog st.
@@ -1956,6 +1974,8 @@ Proof.
 - exact NOSTACK.
 Qed.
 
+End WITHROMEMWP.
+
 Hint Resolve areg_sound aregs_sound: va.
 
 (** * Interface with other optimizations *)
@@ -1971,6 +1991,8 @@ Definition avalue (a: VA.t) (r: reg) : aval :=
   | VA.Bot => Vbot
   | VA.State ae am => AE.get r ae
   end.
+
+Context `{romem_for_instance: ROMemFor}.
 
 Lemma avalue_sound:
   forall cunit prog s f sp pc e m r,

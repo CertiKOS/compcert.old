@@ -220,6 +220,11 @@ Definition transf_function (rm: romem) (f: function) : function :=
 Definition transf_fundef (rm: romem) (fd: fundef) : fundef :=
   AST.transf_fundef (transf_function rm) fd.
 
+Section WITHROMEMFOR.
+Context `{romem_for_instance: ROMemFor}.
+
 Definition transf_program (p: program) : program :=
   let rm := romem_for p in
   transform_program (transf_fundef rm) p.
+
+End WITHROMEMFOR.
