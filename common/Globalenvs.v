@@ -1353,7 +1353,7 @@ Proof.
   eapply IHgl; eauto.
 Qed.
 
-Definition globals_initialized_strong (g: t) (m: mem) :=
+Definition globals_initialized_strong (g: t F V) (m: mem) :=
   (forall b,
      find_def g b = None ->
      forall ofs k p, ~ Mem.perm m b ofs k p) /\
