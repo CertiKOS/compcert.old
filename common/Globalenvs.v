@@ -582,14 +582,19 @@ Definition to_senv (ge: t) : Senv.t :=
     ge.(genv_symb_range)
     (block_is_volatile_below ge).
 
+End GENV.
+
 (** * Construction of the initial memory state *)
 
 Section WITHMEMORYMODEL.
 Context `{memory_model_prf: Mem.MemoryModel}.
 
+Variable F: Type.  (**r The type of function descriptions *)
+Variable V: Type.  (**r The type of information attached to variables *)
+
 Section INITMEM.
 
-Variable ge: t.
+Variable ge: t F V.
 
 Definition store_init_data (m: mem) (b: block) (p: Z) (id: init_data) : option mem :=
   match id with
@@ -1115,7 +1120,7 @@ Proof.
   rewrite ! H. destruct a; intuition. red; intros; rewrite H; auto.
 Qed.
 
-Definition globals_initialized (g: t) (m: mem) :=
+Definition globals_initialized (g: t F V) (m: mem) :=
   forall b gd,
   find_def g b = Some gd ->
   match gd with
@@ -1221,7 +1226,7 @@ Lemma init_mem_genv_next: forall p m,
 Proof.
   unfold init_mem; intros.
   exploit alloc_globals_nextblock; eauto. rewrite Mem.nextblock_empty. intro.
-  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p))).
+  generalize (genv_next_add_globals (prog_defs p) (empty_genv F V (prog_public p))).
   fold (globalenv p). simpl genv_next. intros. congruence.
 Qed.
 
@@ -1301,7 +1306,7 @@ Qed.
 
 Section INITMEM_INJ.
 
-Variable ge: t.
+Variable ge: t F V.
 Variable thr: block.
 Hypothesis symb_inject: forall id b, find_symbol ge id = Some b -> Plt b thr.
 
@@ -1373,7 +1378,7 @@ Proof.
   eapply Mem.alloc_inject_neutral; eauto.
 Qed.
 
-Remark advance_next_le: forall gl x, Ple x (advance_next gl x).
+Remark advance_next_le: forall gl x, Ple x (advance_next (F:=F) (V:=V) gl x).
 Proof.
   induction gl; simpl; intros.
   apply Ple_refl.
@@ -1436,7 +1441,7 @@ Fixpoint init_data_list_aligned (p: Z) (il: list init_data) {struct il} : Prop :
 
 Section INITMEM_INVERSION.
 
-Variable ge: t.
+Variable ge: t F V.
 
 Lemma store_init_data_aligned:
   forall m b p i m',
@@ -1505,7 +1510,7 @@ Qed.
 
 Section INITMEM_EXISTS.
 
-Variable ge: t.
+Variable ge: t F V.
 
 Lemma store_zeros_exists:
   forall m b p n,
@@ -1610,8 +1615,6 @@ Proof.
 Qed. 
 
 End WITHMEMORYMODEL.
-
-End GENV.
 
 (** * Commutation with program transformations *)
 
