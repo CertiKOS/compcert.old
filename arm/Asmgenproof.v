@@ -403,6 +403,10 @@ Qed.
 - Mach register values and ARM register values agree.
 *)
 
+Section WITHINITSP.
+Variable init_sp: val.
+Variable init_ra: val.
+
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s fb sp c ep ms m m' rs f tf tc
@@ -411,24 +415,24 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
-        (DXP: ep = true -> rs#IR12 = parent_sp s),
+        (DXP: ep = true -> rs#IR12 = parent_sp init_sp s),
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
       forall s fb ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
-        (AG: agree ms (parent_sp s) rs)
+        (AG: agree ms (parent_sp init_sp s) rs)
         (ATPC: rs PC = Vptr fb Int.zero)
-        (ATLR: rs RA = parent_ra s),
+        (ATLR: rs RA = parent_ra init_ra s),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
       forall s ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
-        (AG: agree ms (parent_sp s) rs)
-        (ATPC: rs PC = parent_ra s),
+        (AG: agree ms (parent_sp init_sp s) rs)
+        (ATPC: rs PC = parent_ra init_ra s),
       match_states (Mach.Returnstate s ms m)
                    (Asm.State rs m').
 
@@ -442,7 +446,7 @@ Lemma exec_straight_steps:
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
-    /\ (it1_is_parent ep i = true -> rs2#IR12 = parent_sp s)) ->
+    /\ (it1_is_parent ep i = true -> rs2#IR12 = parent_sp init_sp s)) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
@@ -515,8 +519,11 @@ Qed.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
+Hypothesis init_sp_not_Vundef: init_sp <> Vundef.
+Hypothesis init_ra_not_Vundef: init_ra <> Vundef.
+
 Theorem step_simulation:
-  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
+  forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
@@ -554,7 +561,7 @@ Proof.
   unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto.
   intros [parent' [A B]]. rewrite (sp_val _ _ _ AG) in A.
-  exploit lessdef_parent_sp; eauto. clear B; intros B; subst parent'.
+  exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'.
   exploit Mem.loadv_extends. eauto. eexact H1. auto.
   intros [v' [C D]].
 Opaque loadind.
@@ -667,16 +674,16 @@ Opaque loadind.
   unfold chunk_of_type. rewrite (sp_val _ _ _ AG). intros [parent' [A B]].
   exploit Mem.loadv_extends. eauto. eexact H2. auto.
   unfold chunk_of_type. rewrite (sp_val _ _ _ AG). intros [ra' [C D]].
-  exploit lessdef_parent_sp; eauto. intros. subst parent'. clear B.
-  exploit lessdef_parent_ra; eauto. intros. subst ra'. clear D.
+  exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
+  exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
   assert (X: forall k, exists rs2,
     exec_straight tge tf
        (loadind_int IR13 (fn_retaddr_ofs f) IR14
            (Pfreeframe (fn_stacksize f) (fn_link_ofs f) :: k)) rs0 m'0
        k rs2 m2'
-    /\ rs2#SP = parent_sp s
-    /\ rs2#RA = parent_ra s
+    /\ rs2#SP = parent_sp init_sp s
+    /\ rs2#RA = parent_ra init_ra s
     /\ forall r, if_preg r = true -> r <> SP -> r <> IR14 -> rs2#r = rs0#r).
   {
     intros.
@@ -811,9 +818,9 @@ Opaque loadind.
     eapply transf_function_no_overflow; eauto.
   rewrite (sp_val _ _ _ AG) in *. unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto. simpl. intros [parent' [A B]].
-  exploit lessdef_parent_sp; eauto. intros. subst parent'. clear B.
+  exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
-  exploit lessdef_parent_ra; eauto. intros. subst ra'. clear D.
+  exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
   monadInv H6.
   assert (X: forall k, exists rs2,
@@ -821,8 +828,8 @@ Opaque loadind.
        (loadind_int IR13 (fn_retaddr_ofs f) IR14
            (Pfreeframe (fn_stacksize f) (fn_link_ofs f) :: k)) rs0 m'0
        k rs2 m2'
-    /\ rs2#SP = parent_sp s
-    /\ rs2#RA = parent_ra s
+    /\ rs2#SP = parent_sp init_sp s
+    /\ rs2#RA = parent_ra init_ra s
     /\ forall r, if_preg r = true -> r <> SP -> r <> IR14 -> rs2#r = rs0#r).
   {
     intros.
@@ -861,7 +868,7 @@ Opaque loadind.
   exploit Mem.storev_extends. eexact G. eexact H2. eauto. eauto.
   intros [m3' [P Q]].
   (* Execution of function prologue *)
-  set (rs2 := nextinstr (rs0#IR12 <- (parent_sp s) #IR13 <- (Vptr stk Int.zero))).
+  set (rs2 := nextinstr (rs0#IR12 <- (parent_sp init_sp s) #IR13 <- (Vptr stk Int.zero))).
   set (rs3 := nextinstr rs2).
   assert (EXEC_PROLOGUE:
             exec_straight tge x
@@ -908,6 +915,10 @@ Opaque loadind.
   rewrite <- ATPC in H5. econstructor; eauto. congruence.
 Qed.
 
+End WITHINITSP.
+
+Let match_states := match_states Vzero Vzero.
+
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
   exists st2, Asm.initial_state tprog st2 /\ match_states st1 st2.
@@ -945,7 +956,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  exact step_simulation.
+  apply step_simulation; unfold Vzero; congruence.
 Qed.
 
 End PRESERVATION.

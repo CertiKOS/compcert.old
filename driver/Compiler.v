@@ -116,6 +116,8 @@ Definition partial_if {A: Type}
   RTL program.  The three translations produce Asm programs ready for
   pretty-printing and assembling. *)
 
+Local Existing Instance ValueAnalysis.romem_for_wp_instance.
+
 Definition transf_rtl_program (f: RTL.program) : res Asm.program :=
    OK f
    @@ print (print_RTL 0)

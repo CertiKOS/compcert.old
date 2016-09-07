@@ -363,9 +363,11 @@ Qed.
 Section WITHWRITABLEBLOCK.
 Context `{writable_block_prf: WritableBlock}.
 
+Variable init_ls: locset.
+
 Lemma eval_add_delta_ranges:
   forall s f sp c rs m before after,
-  star step tge (State s f sp (add_delta_ranges before after c) rs m)
+  star (step init_ls) tge (State s f sp (add_delta_ranges before after c) rs m)
              E0 (State s f sp c rs m).
 Proof.
   intros. unfold add_delta_ranges.
@@ -423,7 +425,7 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
 Lemma parent_locset_match:
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  parent_locset ts = parent_locset s.
+  parent_locset init_ls ts = parent_locset init_ls s.
 Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
@@ -431,9 +433,9 @@ Qed.
 (** The simulation diagram. *)
 
 Theorem transf_step_correct:
-  forall s1 t s2, step ge s1 t s2 ->
+  forall s1 t s2, step init_ls ge s1 t s2 ->
   forall ts1 (MS: match_states s1 ts1),
-  exists ts2, plus step tge ts1 t ts2 /\ match_states s2 ts2.
+  exists ts2, plus (step init_ls) tge ts1 t ts2 /\ match_states s2 ts2.
 Proof.
   induction 1; intros ts1 MS; inv MS; try (inv TRC).
 - (* getstack *)
@@ -577,7 +579,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  eexact transf_step_correct.
+  apply transf_step_correct.
 Qed.
 
 End PRESERVATION.

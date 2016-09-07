@@ -376,6 +376,11 @@ Qed.
 - Mach register values and PPC register values agree.
 *)
 
+Section WITHINITSP.
+Variables init_sp init_ra: val.
+Hypothesis init_sp_not_Vundef: init_sp <> Vundef.
+Hypothesis init_ra_not_Vundef: init_ra <> Vundef.
+
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s fb sp c ep ms m m' rs f tf tc
@@ -384,24 +389,24 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
-        (DXP: ep = true -> rs#GPR11 = parent_sp s),
+        (DXP: ep = true -> rs#GPR11 = parent_sp init_sp s),
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
       forall s fb ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
-        (AG: agree ms (parent_sp s) rs)
+        (AG: agree ms (parent_sp init_sp s) rs)
         (ATPC: rs PC = Vptr fb Int.zero)
-        (ATLR: rs RA = parent_ra s),
+        (ATLR: rs RA = parent_ra init_ra s),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
       forall s ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
-        (AG: agree ms (parent_sp s) rs)
-        (ATPC: rs PC = parent_ra s),
+        (AG: agree ms (parent_sp init_sp s) rs)
+        (ATPC: rs PC = parent_ra init_ra s),
       match_states (Mach.Returnstate s ms m)
                    (Asm.State rs m').
 
@@ -415,7 +420,7 @@ Lemma exec_straight_steps:
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
-    /\ (it1_is_parent ep i = true -> rs2#GPR11 = parent_sp s)) ->
+    /\ (it1_is_parent ep i = true -> rs2#GPR11 = parent_sp init_sp s)) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
@@ -488,7 +493,7 @@ Qed.
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
-  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
+  forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
@@ -526,7 +531,7 @@ Proof.
   unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto.
   intros [parent' [A B]]. rewrite (sp_val _ _ _ AG) in A.
-  exploit lessdef_parent_sp; eauto. clear B; intros B; subst parent'.
+  exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'.
   exploit Mem.loadv_extends. eauto. eexact H1. auto.
   intros [v' [C D]].
 Opaque loadind.
@@ -643,8 +648,8 @@ Opaque loadind.
   assert (NOOV: list_length_z tf.(fn_code) <= Int.max_unsigned).
     eapply transf_function_no_overflow; eauto.  exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [parent' [A B]].
   exploit Mem.loadv_extends. eauto. eexact H2. auto. simpl. intros [ra' [C D]].
-  exploit lessdef_parent_sp; eauto. intros. subst parent'. clear B.
-  exploit lessdef_parent_ra; eauto. intros. subst ra'. clear D.
+  exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
+  exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
@@ -654,9 +659,9 @@ Opaque loadind.
   assert (rs0 x0 = Vptr f' Int.zero).
     exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
   set (rs2 := nextinstr (rs0#CTR <- (Vptr f' Int.zero))).
-  set (rs3 := nextinstr (rs2#GPR0 <- (parent_ra s))).
-  set (rs4 := nextinstr (rs3#LR <- (parent_ra s))).
-  set (rs5 := nextinstr (rs4#GPR1 <- (parent_sp s))).
+  set (rs3 := nextinstr (rs2#GPR0 <- (parent_ra init_ra s))).
+  set (rs4 := nextinstr (rs3#LR <- (parent_ra init_ra s))).
+  set (rs5 := nextinstr (rs4#GPR1 <- (parent_sp init_sp s))).
   set (rs6 := rs5#PC <- (rs5 CTR)).
   assert (exec_straight tge tf
             (Pmtctr x0 :: Plwz GPR0 (Cint (fn_retaddr_ofs f)) GPR1 :: Pmtlr GPR0
@@ -690,14 +695,14 @@ Opaque loadind.
 Hint Resolve agree_nextinstr agree_set_other: asmgen.
   assert (AG4: agree rs (Vptr stk soff) rs4).
     unfold rs4, rs3, rs2; auto 10 with asmgen.
-  assert (AG5: agree rs (parent_sp s) rs5).
+  assert (AG5: agree rs (parent_sp init_sp s) rs5).
     unfold rs5. apply agree_nextinstr. eapply agree_change_sp. eauto.
     eapply parent_sp_def; eauto.
   unfold rs6, rs5; auto 10 with asmgen.
 + (* Direct call *)
-  set (rs2 := nextinstr (rs0#GPR0 <- (parent_ra s))).
-  set (rs3 := nextinstr (rs2#LR <- (parent_ra s))).
-  set (rs4 := nextinstr (rs3#GPR1 <- (parent_sp s))).
+  set (rs2 := nextinstr (rs0#GPR0 <- (parent_ra init_ra s))).
+  set (rs3 := nextinstr (rs2#LR <- (parent_ra init_ra s))).
+  set (rs4 := nextinstr (rs3#GPR1 <- (parent_sp init_sp s))).
   set (rs5 := rs4#PC <- (Vptr f' Int.zero)).
   assert (exec_straight tge tf
             (Plwz GPR0 (Cint (fn_retaddr_ofs f)) GPR1 :: Pmtlr GPR0
@@ -726,7 +731,7 @@ Hint Resolve agree_nextinstr agree_set_other: asmgen.
   econstructor; eauto.
   assert (AG3: agree rs (Vptr stk soff) rs3).
     unfold rs3, rs2; auto 10 with asmgen.
-  assert (AG4: agree rs (parent_sp s) rs4).
+  assert (AG4: agree rs (parent_sp init_sp s) rs4).
     unfold rs4. apply agree_nextinstr. eapply agree_change_sp. eauto.
     eapply parent_sp_def; eauto.
   unfold rs5; auto 10 with asmgen.
@@ -829,15 +834,15 @@ Local Transparent destroyed_by_jumptable.
     eapply transf_function_no_overflow; eauto.
   rewrite (sp_val _ _ _ AG) in *. unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto. simpl. intros [parent' [A B]].
-  exploit lessdef_parent_sp; eauto. intros. subst parent'. clear B.
+  exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
   exploit lessdef_parent_ra; eauto. intros. subst ra'. clear D.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
   monadInv H6.
-  set (rs2 := nextinstr (rs0#GPR0 <- (parent_ra s))).
-  set (rs3 := nextinstr (rs2#LR <- (parent_ra s))).
-  set (rs4 := nextinstr (rs3#GPR1 <- (parent_sp s))).
-  set (rs5 := rs4#PC <- (parent_ra s)).
+  set (rs2 := nextinstr (rs0#GPR0 <- (parent_ra init_ra s))).
+  set (rs3 := nextinstr (rs2#LR <- (parent_ra init_ra s))).
+  set (rs4 := nextinstr (rs3#GPR1 <- (parent_sp init_sp s))).
+  set (rs5 := rs4#PC <- (parent_ra init_ra s)).
   assert (exec_straight tge tf
            (Plwz GPR0 (Cint (fn_retaddr_ofs f)) GPR1
            :: Pmtlr GPR0
@@ -866,7 +871,7 @@ Local Transparent destroyed_by_jumptable.
   econstructor; eauto.
   assert (AG3: agree rs (Vptr stk soff) rs3).
     unfold rs3, rs2; auto 10 with asmgen.
-  assert (AG4: agree rs (parent_sp s) rs4).
+  assert (AG4: agree rs (parent_sp init_sp s) rs4).
     unfold rs4. apply agree_nextinstr. eapply agree_change_sp; eauto.
     eapply parent_sp_def; eauto.
   unfold rs5; auto with asmgen.
@@ -943,6 +948,10 @@ Local Transparent destroyed_by_jumptable.
   econstructor; eauto. congruence.
 Qed.
 
+End WITHINITSP.
+
+Let match_states := match_states Vzero Vzero.
+
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
   exists st2, Asm.initial_state tprog st2 /\ match_states st1 st2.
@@ -979,7 +988,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  exact step_simulation.
+  apply step_simulation; unfold Vzero; congruence.
 Qed.
 
 End PRESERVATION.
