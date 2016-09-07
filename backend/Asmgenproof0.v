@@ -150,6 +150,7 @@ Qed.
 Record agree (ms: Mach.regset) (sp: val) (rs: Asm.regset) : Prop := mkagree {
   agree_sp: rs#SP = sp;
   agree_sp_def: sp <> Vundef;
+  agree_sp_type: Val.has_type sp Tint;
   agree_mregs: forall r: mreg, Val.lessdef (ms r) (rs#(preg_of r))
 }.
 
@@ -302,6 +303,7 @@ Qed.
 Lemma agree_change_sp:
   forall ms sp rs sp',
   agree ms sp rs -> sp' <> Vundef ->
+  forall TYPE: Val.has_type sp' Tint,
   agree ms sp' (rs#SP <- sp').
 Proof.
   intros. inv H. split; auto.
@@ -864,6 +866,8 @@ Section MATCH_STACK.
 Variables init_sp init_ra: val.
 Hypothesis init_sp_not_vundef: init_sp <> Vundef.
 Hypothesis init_ra_not_vundef: init_ra <> Vundef.
+Hypothesis init_sp_type: Val.has_type init_sp Tint.
+Hypothesis init_ra_type: Val.has_type init_ra Tint.
 
 Variable ge: Mach.genv.
 
@@ -874,6 +878,7 @@ Inductive match_stack: list Mach.stackframe -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge ra fb f c false tf tc ->
       sp <> Vundef ->
+      forall SP_TYPE: Val.has_type sp Tint,
       match_stack s ->
       match_stack (Stackframe fb sp ra c :: s).
 
@@ -882,6 +887,12 @@ Proof. induction 1; simpl; congruence. Qed.
 
 Lemma parent_ra_def: forall s, match_stack s -> parent_ra init_ra s <> Vundef.
 Proof. induction 1; simpl; try congruence. inv H0. congruence. Qed.
+
+Lemma parent_sp_type: forall s, match_stack s -> Val.has_type (parent_sp init_sp s) Tint.
+Proof. induction 1; simpl; congruence. Qed.
+
+Lemma parent_ra_type: forall s, match_stack s -> Val.has_type (parent_ra init_ra s) Tint.
+Proof. induction 1; simpl; try congruence. inv H0. constructor. Qed.
 
 Lemma lessdef_parent_sp:
   forall s v,

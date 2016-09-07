@@ -412,6 +412,16 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb rs m t rs' ef args res m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
+      forall (* CompCertX: BEGIN additional conditions for calling convention *)
+         (SP_VALID:
+            forall (b : Values.block) (o : Integers.Int.int),
+              (parent_sp s) = Values.Vptr b o ->
+              Mem.valid_block m b)
+         (SP_NOT_GLOBAL:
+            forall (b : Values.block) (o : Integers.Int.int),
+              (parent_sp s) = Values.Vptr b o ->
+              Ple (Genv.genv_next ge) b)
+      ,      (* CompCertX: END additional conditions for calling convention *)
       external_call ef (fun _ => True) ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->
       step (Callstate s fb rs m)

@@ -44,6 +44,10 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof. apply senv_preserved. Qed.
+
 Lemma functions_translated:
   forall b f,
   Genv.find_funct_ptr ge b = Some f ->
@@ -466,6 +470,9 @@ Definition measure (s: Mach.state) : nat :=
 Hypothesis init_sp_not_vundef: init_sp <> Vundef.
 Hypothesis init_ra_not_vundef: init_ra <> Vundef.
 
+Hypothesis init_sp_type: Val.has_type init_sp Tint.
+Hypothesis init_ra_type: Val.has_type init_ra Tint.
+
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -594,6 +601,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
 + (* Direct call *)
@@ -608,6 +616,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
 
@@ -641,6 +650,7 @@ Opaque loadind.
   econstructor; eauto.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   Simplifs. rewrite Pregmap.gso; auto.
   generalize (preg_of_not_SP rf). rewrite (ireg_of_eq _ _ EQ1). congruence.
 + (* Direct call *)
@@ -656,6 +666,7 @@ Opaque loadind.
   econstructor; eauto.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   rewrite Pregmap.gss. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
 - (* Mbuiltin *)
@@ -815,6 +826,7 @@ Transparent destroyed_by_jumptable.
   apply agree_set_other; auto.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
 
 - (* internal function *)
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
@@ -843,6 +855,7 @@ Transparent destroyed_at_function_entry.
   apply agree_undef_regs with rs0; eauto.
   simpl; intros. apply Pregmap.gso; auto with asmgen. tauto.
   congruence.
+  constructor.
   intros. Simplifs. eapply agree_sp; eauto.
 
 - (* external function *)
@@ -854,6 +867,31 @@ Transparent destroyed_at_function_entry.
   intros [res' [m2' [P [Q [R S]]]]].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
+  { (* rs SP valid *)
+    erewrite agree_sp by eauto.
+    intros.
+    erewrite <- Mem.valid_block_extends; eauto.
+  }
+  { (* rs SP not global *)
+    rewrite genv_next_preserved.
+    erewrite agree_sp; eauto.
+  }
+  { (* rs SP Tint *)
+    erewrite agree_sp by eauto.
+    eapply parent_sp_type; eauto.
+  }
+  { (* rs RA Tint *)
+    rewrite ATLR.
+    eapply parent_ra_type; eauto.
+  }
+  { (* rs SP not Vundef *)
+    erewrite agree_sp by eauto.
+    eapply parent_sp_def; eauto.
+  }
+  { (* rs RA not Vundef *)
+    rewrite ATLR.
+    eapply parent_ra_def; eauto.
+  }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   unfold loc_external_result.
@@ -881,7 +919,9 @@ Proof.
   econstructor; eauto.
   constructor.
   apply Mem.extends_refl.
-  split. auto. simpl. unfold Vzero; congruence. intros. rewrite Regmap.gi. auto.
+  split. auto. simpl. unfold Vzero; congruence.
+  simpl; auto.
+  intros. rewrite Regmap.gi. auto.
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
@@ -904,7 +944,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  apply step_simulation; unfold Vzero; congruence.
+  apply step_simulation; (try now (unfold Vzero; congruence)); simpl; auto.
 Qed.
 
 End PRESERVATION.

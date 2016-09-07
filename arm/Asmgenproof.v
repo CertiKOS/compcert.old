@@ -522,6 +522,8 @@ Qed.
 Hypothesis init_sp_not_Vundef: init_sp <> Vundef.
 Hypothesis init_ra_not_Vundef: init_ra <> Vundef.
 
+Hypothesis init_sp_type: Val.has_type init_sp Tint.
+
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -648,6 +650,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
 + (* Direct call *)
@@ -662,6 +665,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
 
@@ -712,6 +716,7 @@ Opaque loadind.
   traceEq.
   econstructor; eauto.
   split. Simpl. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   intros. Simpl. rewrite S; auto with asmgen. eapply preg_val; eauto.
   Simpl. rewrite S; auto with asmgen.
   rewrite <- (ireg_of_eq _ _ EQ1); auto with asmgen.
@@ -728,6 +733,7 @@ Opaque loadind.
   traceEq.
   econstructor; eauto.
   split. Simpl. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   intros. Simpl. rewrite S; auto with asmgen. eapply preg_val; eauto.
 
 - (* Mbuiltin *)
@@ -853,6 +859,7 @@ Opaque loadind.
   traceEq.
   econstructor; eauto.
   split. Simpl. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   intros. Simpl. rewrite S; auto with asmgen. eapply preg_val; eauto.
 
 - (* internal function *)
@@ -894,6 +901,7 @@ Opaque loadind.
   eapply agree_change_sp.
   apply agree_undef_regs with rs0; eauto.
   intros. Simpl. congruence.
+  simpl; auto.
 
 - (* external function *)
   exploit functions_translated; eauto.
@@ -932,7 +940,7 @@ Proof.
   econstructor; eauto.
   constructor.
   apply Mem.extends_refl.
-  split. auto. simpl. unfold Vzero; congruence. intros. rewrite Regmap.gi. auto.
+  split. auto. simpl. unfold Vzero; congruence. simpl; auto. intros. rewrite Regmap.gi. auto.
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
@@ -956,7 +964,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  apply step_simulation; unfold Vzero; congruence.
+  apply step_simulation; (try now (unfold Vzero; congruence)); simpl; auto.
 Qed.
 
 End PRESERVATION.

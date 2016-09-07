@@ -1436,6 +1436,7 @@ Inductive match_stacks (j: meminj):
            In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
            slot_within_bounds (function_bounds f) Outgoing ofs ty)
         (SP_NOT_INIT: forall b o, init_sp = Vptr b o -> b <> sp)
+        (SP'_NOT_GLOBAL: Ple (Genv.genv_next tge) sp')
         (STK: match_stacks j cs cs' (Linear.fn_sig f) isg),
       match_stacks j
                    (Linear.Stackframe f (Vptr sp Int.zero) ls c :: cs)
@@ -1506,6 +1507,51 @@ Lemma match_stacks_type_retaddr:
   Val.has_type (parent_ra init_ra cs') Tint.
 Proof.
   induction 1; simpl; auto.
+Qed.
+
+(** Validity of memory blocks *)
+
+Lemma match_stacks_sp_valid:
+  forall m,
+    (forall b o,
+       init_sp' = Vptr b o ->
+       Mem.valid_block m b) ->
+  forall
+    j cs cs' sg isg,
+    match_stacks j cs cs' sg isg ->
+    m |= stack_contents j cs cs' ->
+    forall b o,
+      parent_sp init_sp' cs' = Vptr b o ->
+      Mem.valid_block m b.
+Proof.
+  induction 2; eauto.
+  simpl stack_contents.
+  intros H1 b o H2.
+  simpl in H2.
+  inv H2.
+  exploit frame_get_retaddr; eauto.
+  unfold load_stack, Val.add, Mem.loadv.
+  intros.
+  eapply Mem.valid_access_valid_block.
+  eapply Mem.valid_access_implies.
+  + eapply Mem.load_valid_access; eauto.
+  + constructor.
+Qed.
+
+Hypothesis init_sp'_not_global:
+  forall b o,
+    init_sp' = Vptr b o ->
+    Ple (Genv.genv_next tge) b.
+
+Lemma match_stacks_sp_not_global:
+  forall
+    j cs cs' sg isg,
+    match_stacks j cs cs' sg isg ->
+    forall b o,
+      parent_sp init_sp' cs' = Vptr b o ->
+      Ple (Genv.genv_next tge) b.
+Proof.
+  induction 1; simpl; eauto; intros; congruence.
 Qed.
 
 (** * Syntactic properties of the translation *)
@@ -1637,6 +1683,10 @@ Proof (Genv.find_symbol_match TRANSF).
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
+
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof. apply senv_preserved. Qed.
 
 Lemma functions_translated:
   forall v f,
@@ -1957,6 +2007,7 @@ Hypothesis init_sp_not_writable:
 Variable init_j: meminj.
 
 Variable init_m' : mem.
+Hypothesis genv_next_le_m_init_next': Ple (Genv.genv_next tge) (Mem.nextblock init_m').
 
 Inductive match_states: Linear.state -> Mach.state -> Prop :=
   | match_states_intro:
@@ -1977,6 +2028,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (TAIL: is_tail c (Linear.fn_code f))
         (SP_NOT_INIT: forall b o, init_sp = Vptr b o -> b <> sp)
         (SP_VALID: forall b o, init_sp = Vptr b o -> Mem.valid_block m b)
+        (SP'_NOT_GLOBAL: Ple (Genv.genv_next tge) sp')
         (SEP: m' |= frame_contents f j sp' ls (parent_locset init_ls cs) (parent_sp init_sp' cs') (parent_ra init_ra cs')
                  ** stack_contents j cs cs'
                  ** minjection j m
@@ -2033,6 +2085,24 @@ Local Add Relation massert massert_eqv
   symmetry proved by massert_eqv_sym
   transitivity proved by massert_eqv_trans
 as massert_eqv_prel2.
+
+Hypothesis init_sp_not_Vundef: init_sp <> Vundef.
+
+Lemma Ple_Plt:
+  forall a b,
+    (forall c, Plt c a -> Plt c b) ->
+    Ple a b.
+Proof.
+  intros a b H.
+  destruct (peq a xH).
+  + subst a. xomega.
+  + exploit Ppred_Plt; eauto.
+    intros H0.
+    specialize (H _ H0).
+    exploit Pos.succ_pred; eauto.
+    intro K.
+    xomega.
+Qed.
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step init_ls ge s1 t s2 ->
@@ -2160,6 +2230,7 @@ Proof.
   eauto with coqlib. eauto.
   eauto.
   eauto.
+  eauto.
 
 - (* Lop *)
   assert (exists v',
@@ -2248,6 +2319,7 @@ Proof.
     destruct a; try discriminate.
     eauto with mem.
   }
+  eauto.
   eapply frame_undef_regs; eauto.
 
 - (* Lcall *)
@@ -2401,6 +2473,7 @@ Proof.
   eapply find_label_tail; eauto.
   auto.
   auto.
+  auto.
   apply frame_undef_regs; auto.
 
 - (* Lcond, false *)
@@ -2417,6 +2490,7 @@ Proof.
   auto.
   auto.
   auto. eauto with coqlib.
+  auto.
   auto.
   auto.
   apply frame_undef_regs; auto.
@@ -2436,6 +2510,7 @@ Proof.
   auto.
   auto.
   auto. eapply find_label_tail; eauto.
+  auto.
   auto.
   auto.
   apply frame_undef_regs; auto.
@@ -2514,6 +2589,12 @@ Proof.
     intro ABSURD. subst b.
     eapply Mem.fresh_block_alloc. eexact H. assumption.
   }
+  { (* new stack not global *)
+    apply Mem.alloc_result in A. subst sp' .
+    etransitivity.
+    + eexact genv_next_le_m_init_next' .
+    + apply Ple_Plt; auto.
+  }
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
 
 - (* external function *)
@@ -2541,6 +2622,39 @@ Proof.
   intros (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
+  { (* sp valid *)
+    eapply match_stacks_sp_valid; eauto.
+    +
+    intros b o H.
+    generalize INJ_INIT_SP. rewrite H. intro INJ.
+    inversion INJ; try congruence.
+    eapply Mem.valid_block_inject_2; eauto.
+    instantiate (1 := m).
+    repeat
+      match goal with
+        | _ => assumption
+        | K : ?m' |= _ ** _ |- Mem.inject _ _ ?m' =>
+          generalize K;
+            let  L := fresh in
+            intro L;
+              apply sep_proj1 in K;
+              apply sep_proj2 in L
+      end.
+    +
+    repeat
+      match goal with
+        | _ => assumption
+        | K : ?m' |= _ ** _ |- ?m' |= _ =>
+          generalize K;
+            let  L := fresh in
+            intro L;
+              apply sep_proj1 in K;
+              apply sep_proj2 in L
+      end.
+  }
+  { (* sp not global *)
+    eapply match_stacks_sp_not_global; eauto.
+  }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
@@ -2594,7 +2708,7 @@ End WITHWB.
 
 End WITHINITSP.
 
-Let match_states s s' := exists j init_m init_m', match_states Vzero Vzero (Locmap.init Vundef) (signature_main) Vzero init_m j init_m' s s' .
+Let match_states s s' := exists j init_m init_m', match_states Vzero Vzero (Locmap.init Vundef) (signature_main) Vzero init_m j init_m' s s' /\ Ple (Genv.genv_next tge) (Mem.nextblock init_m').
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
@@ -2609,6 +2723,8 @@ Proof.
   rewrite symbols_preserved. eauto.
   set (j := Mem.flat_inj (Mem.nextblock m0)).
   exists j. exists m0. exists m0.
+  split.
+{
   eapply match_states_call with (j := j); (try now (red; eauto)); eauto.
   constructor; (try now (red; eauto)); eauto. constructor.
   red; intros; congruence.
@@ -2623,13 +2739,17 @@ Proof.
     change (Mem.valid_block m0 b0). eapply Genv.find_funct_ptr_not_fresh; eauto.
     change (Mem.valid_block m0 b0). eapply Genv.find_var_info_not_fresh; eauto.
   red; simpl; tauto.
+}
+  rewrite genv_next_preserved.
+  unfold ge. erewrite Genv.init_mem_genv_next by eauto.
+  apply Ple_refl.
 Qed.
 
 Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> Linear.final_state st1 r -> Mach.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H0. inv H. inv H0. inv STACKS.
+  intros. inv H0. inv H. inv H0. inv H. inv H0. inv H. inv STACKS.
   assert (R: exists r, loc_result signature_main = One r) by (econstructor; reflexivity). 
   destruct R as [rres EQ]. rewrite EQ in H1. simpl in H1.
   generalize (AGREGS rres). rewrite H1. intros A; inv A.
@@ -2664,7 +2784,9 @@ Proof.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0.
   inv H1. inv H2. inv H1.
-  exploit transf_step_correct; eauto. unfold Vzero; red; auto. unfold Vzero; red; auto. discriminate. eassumption. intros [s2' [A B]].
+  inv H2.
+  exploit transf_step_correct; eauto. unfold Vzero; red; auto. unfold Vzero; red; auto. discriminate. discriminate. discriminate.
+  eassumption. intros [s2' [A B]].
   exists s2'; split. exact A. split.
   eapply step_type_preservation; eauto. eexact wt_prog. eexact H.
   red; eauto.

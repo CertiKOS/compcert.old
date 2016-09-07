@@ -492,6 +492,8 @@ Qed.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
+Hypothesis init_sp_type: Val.has_type init_sp Tint.
+
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -625,6 +627,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
 + (* Direct call *)
@@ -639,6 +642,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
 
@@ -698,6 +702,7 @@ Hint Resolve agree_nextinstr agree_set_other: asmgen.
   assert (AG5: agree rs (parent_sp init_sp s) rs5).
     unfold rs5. apply agree_nextinstr. eapply agree_change_sp. eauto.
     eapply parent_sp_def; eauto.
+    eapply parent_sp_type; eauto.
   unfold rs6, rs5; auto 10 with asmgen.
 + (* Direct call *)
   set (rs2 := nextinstr (rs0#GPR0 <- (parent_ra init_ra s))).
@@ -734,6 +739,7 @@ Hint Resolve agree_nextinstr agree_set_other: asmgen.
   assert (AG4: agree rs (parent_sp init_sp s) rs4).
     unfold rs4. apply agree_nextinstr. eapply agree_change_sp. eauto.
     eapply parent_sp_def; eauto.
+    eapply parent_sp_type; eauto.
   unfold rs5; auto 10 with asmgen.
 
 - (* Mbuiltin *)
@@ -874,6 +880,7 @@ Local Transparent destroyed_by_jumptable.
   assert (AG4: agree rs (parent_sp init_sp s) rs4).
     unfold rs4. apply agree_nextinstr. eapply agree_change_sp; eauto.
     eapply parent_sp_def; eauto.
+    eapply parent_sp_type; eauto.
   unfold rs5; auto with asmgen.
 
 - (* internal function *)
@@ -925,6 +932,7 @@ Local Transparent destroyed_by_jumptable.
   apply agree_set_other; auto. apply agree_set_other; auto.
   apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. unfold sp; congruence.
+  destruct sp; try discriminate. simpl; auto.
   congruence.
 
 - (* external function *)
@@ -965,7 +973,7 @@ Proof.
   econstructor; eauto.
   constructor.
   apply Mem.extends_refl.
-  split. auto. simpl. unfold Vzero; congruence. intros. rewrite Regmap.gi. auto.
+  split. auto. simpl. unfold Vzero; congruence. simpl; auto. intros. rewrite Regmap.gi. auto.
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
@@ -988,7 +996,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  apply step_simulation; unfold Vzero; congruence.
+  apply step_simulation; (try (now unfold Vzero; congruence)); simpl; auto.
 Qed.
 
 End PRESERVATION.
