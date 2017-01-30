@@ -2028,7 +2028,7 @@ Proof.
 (* skip seq *)
   monadInv TR. left.
   revert memory_model_prf external_calls_ops external_calls_prf.
-  dependent induction MK.
+  dependent induction MK; subst.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto.
@@ -2042,7 +2042,7 @@ Proof.
 (* skip block *)
   monadInv TR. left.
   revert memory_model_prf external_calls_ops external_calls_prf.
-  dependent induction MK.
+  dependent induction MK; subst.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto.
@@ -2180,7 +2180,7 @@ Opaque PTree.set.
 (* exit seq *)
   monadInv TR. left.
   revert memory_model_prf external_calls_ops external_calls_prf.
-  dependent induction MK.
+  dependent induction MK; subst.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto. simpl. auto.
@@ -2195,7 +2195,7 @@ Opaque PTree.set.
 (* exit block 0 *)
   monadInv TR. left.
   revert memory_model_prf external_calls_ops external_calls_prf.
-  dependent induction MK.
+  dependent induction MK; subst.
   econstructor; split.
   simpl. apply plus_one. constructor.
   econstructor; eauto.
@@ -2207,7 +2207,7 @@ Opaque PTree.set.
 (* exit block n+1 *)
   monadInv TR. left.
   revert memory_model_prf external_calls_ops external_calls_prf.
-  dependent induction MK.
+  dependent induction MK; subst.
   econstructor; split.
   simpl. apply plus_one. constructor.
   econstructor; eauto. auto.

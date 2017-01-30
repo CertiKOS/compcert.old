@@ -1528,11 +1528,11 @@ Qed.
 Theorem loadbytes_storebytes_same:
   loadbytes m2 b ofs (Z_of_nat (length bytes)) = Some bytes.
 Proof.
-  intros. unfold storebytes in STORE. unfold loadbytes.
+  intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes. 
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   try discriminate.
   rewrite pred_dec_true.
-  decEq. inv STORE; simpl. rewrite PMap.gss. rewrite nat_of_Z_of_nat.
+  decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite nat_of_Z_of_nat.
   apply getN_setN_same.
   red; eauto with mem.
 Qed.
@@ -3308,8 +3308,7 @@ Proof.
 + subst b0. apply SETN with (access := fun ofs => perm m1' b ofs Cur Readable /\ Q b ofs); auto.
   intros. destruct H5. eapply ma_memval; eauto.
   eapply perm_storebytes_2; eauto.
-  apply H1; auto.
-+ eapply ma_memval; eauto. eapply perm_storebytes_2; eauto. apply H1; auto.
++ eapply ma_memval; eauto. eapply perm_storebytes_2; eauto. 
 - rewrite (nextblock_storebytes _ _ _ _ _ H0).
   rewrite (nextblock_storebytes _ _ _ _ _ ST2).
   eapply ma_nextblock; eauto.
@@ -4908,7 +4907,7 @@ Proof.
     eauto with mem. }
   inversion INJ; constructor.
 - destruct mi_inj0. constructor; intros.
-+ eapply perm_unchanged_on; eauto. eapply IMG; eauto.
++ eapply perm_unchanged_on; eauto.
 + eauto.
 + rewrite (unchanged_on_contents _ _ _ H); eauto.
 - assumption.
@@ -4918,7 +4917,6 @@ Proof.
 - intros. destruct (Mem.perm_dec m0 b1 ofs Max Nonempty); auto.
   eapply mi_perm_inv; eauto. 
   eapply perm_unchanged_on_2; eauto.
-  eapply IMG; eauto. 
 Qed.
 
 Local Instance memory_model_ops:

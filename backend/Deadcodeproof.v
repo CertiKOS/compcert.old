@@ -358,7 +358,7 @@ Proof.
   intros. exploit analyze_successors; eauto. rewrite ANPC; simpl. intros [A B].
   econstructor; eauto.
   eapply eagree_ge; eauto.
-  eapply magree_monotone; eauto. intros; apply B; auto.
+  eapply magree_monotone; eauto.
 Qed.
 
 (** Builtin arguments and results *)
@@ -971,5 +971,3 @@ Proof.
 Qed.
 
 End PRESERVATION.
-
-
