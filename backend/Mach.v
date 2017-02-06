@@ -357,7 +357,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
@@ -422,7 +422,7 @@ Inductive step: state -> trace -> state -> Prop :=
               (parent_sp s) = Values.Vptr b o ->
               Ple (Genv.genv_next ge) b)
       ,      (* CompCertX: END additional conditions for calling convention *)
-      external_call ef (fun _ => True) ge args m t res m' ->
+      external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')

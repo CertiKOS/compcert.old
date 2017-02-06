@@ -154,30 +154,9 @@ Proof.
   eapply Mem.nextblock_store; eauto.
 Qed.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We parameterize the semantics of both Csharpminor and Cminor with a predicate indicating writable blocks. However, this predicate has to be "preserved by injection", in the sense that, even though there is an injection between Csharpminor and Cminor, there is a common "initial memory" whose blocks are preserved between Csharpminor and Cminor, and non-writable blocks must be among those preserved blocks. *)
-
-Section WITHWRITABLEBLOCK.
-Context {WB}
-        `{writable_block_with_init_mem_ops: !WritableBlockWithInitMemOps WB}
-        `{Hwritable_block_with_init_mem: !WritableBlockWithInitMem WB}.
-
-(** [CompCertX:test-compcert-protect-stack-arg] We have to prove that
-the memory injection introduced by the compilation pass is independent
-of the initial memory i.e. it does not inject new blocks into blocks
-already existing in the initial memory. This is stronger than
-[meminj_preserves_globals], which only preserves blocks associated to
-the global environment. *)
-
 Section WITHMEMINIT.
 Variable m_init: mem.
 Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init).
-
-Local Instance: WritableBlockOps (writable_block_with_init_mem m_init).
-Proof. typeclasses eauto. Defined.
-Hint Unfold writable_block.
-
-Local Instance: WritableBlock (WB m_init).
-Proof. typeclasses eauto. Defined.
 
 (** * Correspondence between C#minor's and Cminor's environments and memory states *)
 
@@ -2075,17 +2054,6 @@ Proof.
   exploit Mem.storev_mapped_inject; eauto. intros [tm' [STORE' MINJ']].
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
-  {
-    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
-    destruct vaddr; try discriminate. inv VINJ1. inversion 1; subst.
-    unfold writable_block. eapply writable_block_with_init_mem_inject.
-    eapply match_callstack_inject_incr; eauto.
-    eapply match_callstack_inject_separated; eauto.
-    eassumption.
-    rewrite <- genv_next_preserved in genv_next_le_m_init_next. assumption.
-    eapply writable_block_genv_next; [ | eapply WRITABLE; reflexivity ].
-    apply genv_next_preserved.
-  }
   econstructor; eauto.
   inv VINJ1; simpl in H1; try discriminate. unfold Mem.storev in STORE'.
   rewrite (Mem.nextblock_store _ _ _ _ _ _ H1).
@@ -2118,20 +2086,10 @@ Proof.
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  {
-    intros. eapply writable_block_with_init_mem_inject.
-    eapply match_globalenvs_inject_incr; eauto.
-    eapply match_globalenvs_inject_separated; eauto.
-    eassumption.
-    2: eassumption.
-    assumption.
-  }
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
-  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  apply writable_block_genv_next. apply genv_next_preserved.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).
@@ -2289,20 +2247,10 @@ Opaque PTree.set.
   exploit match_callstack_match_globalenvs; eauto. intros [hi MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  {
-    intros. eapply writable_block_with_init_mem_inject.
-    eapply match_globalenvs_inject_incr; eauto.
-    eapply match_globalenvs_inject_separated; eauto.
-    eassumption.
-    2: eassumption.
-    assumption.
-  }
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor.
-  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
@@ -2320,8 +2268,6 @@ Opaque PTree.set.
 Qed.
 
 End WITHMEMINIT.
-
-End WITHWRITABLEBLOCK.
 
 (** [CompCertX:test-compcert-protect-stack-arg] For the whole-program
 setting, we have to embed the initial memory into a new
@@ -2383,11 +2329,6 @@ Lemma transl_final_states:
 Proof.
   intros. inv H0. inv H. inv MATCH. inv MK. inv RESINJ. constructor.
 Qed.
-
-(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
-all blocks are always writable. *)
-Local Existing Instance writable_block_with_init_mem_always_ops.
-Local Existing Instance writable_block_with_init_mem_always.
 
 Theorem transl_program_correct:
   forward_simulation (Csharpminor.semantics prog) (Cminor.semantics tprog).

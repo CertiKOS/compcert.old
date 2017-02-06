@@ -33,10 +33,6 @@ Proof.
   intros. apply transl_fundef_spec; auto. 
 Qed.
 
-(** [CompCertX:test-compcert-protect-stack-arg] For now, regarding this pass, we only care about whole-program compilation, so we do not protect any locations, and we consider that all blocks are writable. *)
-Existing Instance writable_block_always_ops.
-Local Hint Unfold writable_block.
-
 (** ** Semantic preservation *)
 
 Section PRESERVATION.
@@ -163,7 +159,7 @@ Remark assign_loc_translated:
   Csem.assign_loc ge ty m b ofs v t m' ->
   match chunk_for_volatile_type ty with
   | None => t = E0 /\ Clight.assign_loc tge ty m b ofs v m'
-  | Some chunk => volatile_store (fun _ => True) tge chunk m b ofs v t m'
+  | Some chunk => volatile_store tge chunk m b ofs v t m'
   end.
 Proof.
   intros. unfold chunk_for_volatile_type. inv H.

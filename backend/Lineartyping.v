@@ -273,9 +273,7 @@ Proof.
   destruct X as [i IN]. eapply wt_prog; eauto.
 Qed.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Section WITHWRITABLEBLOCK.
-Context `{writable_block_ops: WritableBlockOps}.
+Section WITHINITLS.
 
 Variable init_ls: locset.
 
@@ -359,7 +357,7 @@ Proof.
   inv WTSTK. econstructor; eauto.
 Qed.
 
-End WITHWRITABLEBLOCK.
+End WITHINITLS.
 
 Theorem wt_initial_state:
   forall S, initial_state prog S -> wt_state (Locmap.init Vundef) S.

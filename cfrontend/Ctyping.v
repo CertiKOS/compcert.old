@@ -1829,7 +1829,7 @@ Let gtenv := bind_globdef (PTree.empty _) prog.(prog_defs).
 Hypothesis WT_EXTERNAL:
   forall id ef args res cc vargs m t vres m',
   In (id, Some (Gfun (External ef args res cc))) prog.(prog_defs) ->
-  external_call ef (fun _ => True) ge vargs m t vres m' ->
+  external_call ef ge vargs m t vres m' ->
   wt_val vres res.
 
 Inductive wt_expr_cont: typenv -> function -> cont -> Prop :=

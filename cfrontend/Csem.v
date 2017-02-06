@@ -98,7 +98,7 @@ Inductive assign_loc (ty: type) (m: mem) (b: block) (ofs: int):
       assign_loc ty m b ofs v E0 m'
   | assign_loc_volatile: forall v chunk t m',
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
-      volatile_store (fun _ => True) ge chunk m b ofs v t m' ->
+      volatile_store ge chunk m b ofs v t m' ->
       assign_loc ty m b ofs v t m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
@@ -311,7 +311,7 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
         E0 (Eval v ty) m
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 
@@ -751,7 +751,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (State f f.(fn_body) k e m2)
 
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       sstep (Callstate (External ef targs tres cc) vargs k m)
           t (Returnstate vres k m')
 

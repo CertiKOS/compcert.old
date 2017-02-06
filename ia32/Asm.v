@@ -904,7 +904,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Int.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs ESP) m args vargs ->
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rs' = nextinstr_nf
              (set_res res vres
                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
@@ -928,7 +928,7 @@ Inductive step: state -> trace -> state -> Prop :=
          (SP_NOT_VUNDEF: rs ESP <> Vundef)
          (RA_NOT_VUNDEF: rs RA <> Vundef)
       ,      (* CompCertX: END additional conditions for calling convention *)
-      external_call ef (fun _ => True) ge args m t res m' ->
+      external_call ef ge args m t res m' ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) #RA <- Vundef ->
       step (State rs m) t (State rs' m').
 

@@ -199,10 +199,6 @@ Definition temp_env := PTree.t val.
 Section WITHEXTCALLS.
 Context `{external_calls: ExternalCalls}.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Section WITHWRITABLEBLOCK.
-Context `{writable_block_ops: WritableBlockOps}.
-
 (** [deref_loc ty m b ofs v] computes the value of a datum
   of type [ty] residing in memory [m] at block [b], offset [ofs].
   If the type [ty] indicates an access by value, the corresponding
@@ -238,7 +234,6 @@ Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (o
   | assign_loc_value: forall v chunk m',
       access_mode ty = By_value chunk ->
       Mem.storev chunk m (Vptr b ofs) v = Some m' ->
-      forall WRITABLE: writable_block ge b,
       assign_loc ty m b ofs v m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
@@ -249,7 +244,6 @@ Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (o
               \/ Int.unsigned ofs + sizeof ce ty <= Int.unsigned ofs' ->
       Mem.loadbytes m b' (Int.unsigned ofs') (sizeof ce ty) = Some bytes ->
       Mem.storebytes m b (Int.unsigned ofs) bytes = Some m' ->
-      forall WRITABLE: writable_block ge b,
       assign_loc ty m b ofs (Vptr b' ofs') m'.
 
 (** Allocation of function-local variables.
@@ -581,7 +575,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
-      external_call ef (writable_block ge) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
 
@@ -665,7 +659,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef (writable_block ge) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m')
 
@@ -723,11 +717,6 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
 Definition step2 (ge: genv) := step ge (function_entry2).
 
 (** Wrapping up these definitions in two small-step semantics. *)
-
-(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
-End WITHWRITABLEBLOCK.
-
-Local Existing Instance writable_block_always_ops.
 
 Definition semantics1 (p: program) :=
   let ge := globalenv p in

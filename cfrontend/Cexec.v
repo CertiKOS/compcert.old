@@ -101,8 +101,6 @@ Defined.
 Section WITHEXTERNALCALLS.
 Context `{external_calls_prf: ExternalCalls}.
 
-Local Existing Instance writable_block_always_ops.
-
 (** * Events, volatile memory accesses, and external functions. *)
 
 Section EXEC.
@@ -257,19 +255,18 @@ Qed.
 Lemma do_volatile_store_sound:
   forall w chunk m b ofs v w' t m',
   do_volatile_store w chunk m b ofs v = Some(w', t, m') ->
-  volatile_store (writable_block ge) ge chunk m b ofs v t m' /\ possible_trace w t w'.
+  volatile_store ge chunk m b ofs v t m' /\ possible_trace w t w'.
 Proof.
   intros until m'. unfold do_volatile_store. mydestr.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.
   apply eventval_of_val_sound; auto.
   econstructor. constructor; eauto. constructor.
   split. constructor; auto. constructor.
-  constructor.
 Qed.
 
 Lemma do_volatile_store_complete:
   forall w chunk m b ofs v w' t m',
-  volatile_store (writable_block ge) ge chunk m b ofs v t m' -> possible_trace w t w' ->
+  volatile_store ge chunk m b ofs v t m' -> possible_trace w t w' ->
   do_volatile_store w chunk m b ofs v = Some(w', t, m').
 Proof.
   unfold do_volatile_store; intros. inv H; simpl in *.
@@ -402,11 +399,11 @@ Variable do_external_function:
 Hypothesis do_external_function_sound:
   forall id sg ge vargs m t vres m' w w',
   do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg (writable_block ge) ge vargs m t vres m' /\ possible_trace w t w'.
+  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
   forall id sg ge vargs m t vres m' w w',
-  external_functions_sem id sg (writable_block ge) ge vargs m t vres m' ->
+  external_functions_sem id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
   do_external_function id sg ge w vargs m = Some(w', t, vres, m').
 
@@ -416,11 +413,11 @@ Variable do_builtin_function:
 Hypothesis do_builtin_function_sound:
   forall id sg ge vargs m t vres m' w w',
   do_builtin_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  builtin_functions_sem id sg (writable_block ge) ge vargs m t vres m' /\ possible_trace w t w'.
+  builtin_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_builtin_function_complete:
   forall id sg ge vargs m t vres m' w w',
-  builtin_functions_sem id sg (writable_block ge) ge vargs m t vres m' ->
+  builtin_functions_sem id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
   do_builtin_function id sg ge w vargs m = Some(w', t, vres, m').
 
@@ -430,11 +427,11 @@ Variable do_runtime_function:
 Hypothesis do_runtime_function_sound:
   forall id sg ge vargs m t vres m' w w',
   do_runtime_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  runtime_functions_sem id sg (writable_block ge) ge vargs m t vres m' /\ possible_trace w t w'.
+  runtime_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_runtime_function_complete:
   forall id sg ge vargs m t vres m' w w',
-  runtime_functions_sem id sg (writable_block ge) ge vargs m t vres m' ->
+  runtime_functions_sem id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
   do_runtime_function id sg ge w vargs m = Some(w', t, vres, m').
 
@@ -444,11 +441,11 @@ Variable do_inline_assembly:
 Hypothesis do_inline_assembly_sound:
   forall txt sg ge vargs m t vres m' w w',
   do_inline_assembly txt sg ge w vargs m = Some(w', t, vres, m') ->
-  inline_assembly_sem txt sg (writable_block ge) ge vargs m t vres m' /\ possible_trace w t w'.
+  inline_assembly_sem txt sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_inline_assembly_complete:
   forall txt sg ge vargs m t vres m' w w',
-  inline_assembly_sem txt sg (writable_block ge) ge vargs m t vres m' ->
+  inline_assembly_sem txt sg ge vargs m t vres m' ->
   possible_trace w t w' ->
   do_inline_assembly txt sg ge w vargs m = Some(w', t, vres, m').
 
@@ -585,7 +582,7 @@ Definition do_external (ef: external_function):
 Lemma do_ef_external_sound:
   forall ef w vargs m w' t vres m',
   do_external ef w vargs m = Some(w', t, vres, m') ->
-  external_call ef (writable_block ge) ge vargs m t vres m' /\ possible_trace w t w'.
+  external_call ef ge vargs m t vres m' /\ possible_trace w t w'.
 Proof with try congruence.
   intros until m'.
   destruct ef; simpl.
@@ -613,11 +610,10 @@ Proof with try congruence.
   unfold do_ef_free. destruct vargs... destruct v... destruct vargs...
   mydestr. destruct v... mydestr.
   split. econstructor; eauto. omega. constructor.
-  constructor.
 (* EF_memcpy *)
   unfold do_ef_memcpy. destruct vargs... destruct v... destruct vargs...
   destruct v... destruct vargs... mydestr. red in m0.
-  split. econstructor; eauto; try (revert m0; clear; tauto). constructor. constructor.
+  split. econstructor; eauto; try (revert m0; clear; tauto). constructor.
 (* EF_annot *)
   unfold do_ef_annot. mydestr.
   split. constructor. apply list_eventval_of_val_sound; auto.
@@ -634,7 +630,7 @@ Qed.
 
 Lemma do_ef_external_complete:
   forall ef w vargs m w' t vres m',
-  external_call ef (writable_block ge) ge vargs m t vres m' -> possible_trace w t w' ->
+  external_call ef ge vargs m t vres m' -> possible_trace w t w' ->
   do_external ef w vargs m = Some(w', t, vres, m').
 Proof.
   intros. destruct ef; simpl in *.
@@ -1032,7 +1028,7 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
          cast_arguments m rargs tyargs vargs
-      /\ external_call ef (writable_block ge) ge vargs m t vres m'
+      /\ external_call ef ge vargs m t vres m'
       /\ possible_trace w t w'
   | _ => True
   end.

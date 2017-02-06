@@ -330,7 +330,6 @@ Qed.
 
 Section CMCONSTRS.
 Context `{external_calls_ops: ExternalCallsOps}.
-Context `{writable_block_ops: Events.WritableBlockOps}.
 
 Variable ge: genv.
 Variable sp: val.

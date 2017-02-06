@@ -562,26 +562,19 @@ Inductive volatile_load (ge: Senv.t):
       Mem.load chunk m b (Int.unsigned ofs) = Some v ->
       volatile_load ge chunk m b ofs E0 v.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We have to
-parameterize the semantics of those external functions that may write
-on memory, over a predicate [WB] indicating whether a block is
-writable. (Contrary to memory permissions, [WB] is a property of the
-semantics of the language rather than a property of the memory.) *)
-
-Inductive volatile_store (WB: block -> Prop) (ge: Senv.t):
+Inductive volatile_store (ge: Senv.t):
                   memory_chunk -> mem -> block -> int -> val -> trace -> mem -> Prop :=
   | volatile_store_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
       eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v) ->
-      volatile_store WB ge chunk m b ofs v
+      volatile_store ge chunk m b ofs v
                       (Event_vstore chunk id ofs ev :: nil)
                       m
   | volatile_store_nonvol: forall chunk m b ofs v m',
       Senv.block_is_volatile ge b = false ->
       Mem.store chunk m b (Int.unsigned ofs) v = Some m' ->
-      forall WRITABLE: WB b,
-      volatile_store WB ge chunk m b ofs v E0 m'.
+      volatile_store ge chunk m b ofs v E0 m'.
 
 End WITHMEMORYMODELOPS.
 
@@ -597,7 +590,6 @@ End WITHMEMORYMODELOPS.
 *)
 
 Definition extcall_sem `{memory_model_ops: Mem.MemoryModelOps} : Type :=
-  (block -> Prop) ->
   Senv.t -> list val -> mem -> trace -> val -> mem -> Prop.
 
 (** We now specify the expected properties of this predicate. *)
@@ -681,53 +673,47 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** The return value of an external call must agree with its signature. *)
   ec_well_typed:
-    forall WB,
     forall ge vargs m1 t vres m2,
-    sem WB ge vargs m1 t vres m2 ->
+    sem ge vargs m1 t vres m2 ->
     Val.has_type vres (proj_sig_res sg);
 
 (** The semantics is invariant under change of global environment that preserves symbols. *)
   ec_symbols_preserved:
-    forall WB,
     forall ge1 ge2 vargs m1 t vres m2,
     Senv.equiv ge1 ge2 ->
-    sem WB ge1 vargs m1 t vres m2 ->
-    sem WB ge2 vargs m1 t vres m2;
+    sem ge1 vargs m1 t vres m2 ->
+    sem ge2 vargs m1 t vres m2;
 
 (** External calls cannot invalidate memory blocks.  (Remember that
   freeing a block does not invalidate its block identifier.) *)
   ec_valid_block:
-    forall WB,
     forall ge vargs m1 t vres m2 b,
-    sem WB ge vargs m1 t vres m2 ->
+    sem ge vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.valid_block m2 b;
 
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
   ec_max_perm:
-    forall WB,
     forall ge vargs m1 t vres m2 b ofs p,
-    sem WB ge vargs m1 t vres m2 ->
+    sem ge vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p;
 
 (** External call cannot modify memory unless they have [Max, Writable]
    permissions. *)
   ec_readonly:
-    forall WB,
     forall ge vargs m1 t vres m2,
-    sem WB ge vargs m1 t vres m2 ->
+    sem ge vargs m1 t vres m2 ->
     Mem.unchanged_on (loc_not_writable m1) m1 m2;
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
   ec_mem_extends:
-    forall WB,
     forall ge vargs m1 t vres m2 m1' vargs',
-    sem WB ge vargs m1 t vres m2 ->
+    sem ge vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
     Val.lessdef_list vargs vargs' ->
     exists vres', exists m2',
-       sem WB ge vargs' m1' t vres' m2'
+       sem ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2'
     /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2';
@@ -735,15 +721,13 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 (** External calls must commute with memory injections,
   in the following sense. *)
   ec_mem_inject:
-    forall (WB1 WB2: _ -> Prop),
     forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
     symbols_inject' f ge1 ge2 ->
-    sem WB1 ge1 vargs m1 t vres m2 ->
+    sem ge1 vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
-    forall WRITABLE_INJ: forall b1 b2 o, f b1 = Some (b2, o) -> WB1 b1 -> WB2 b2,
     exists f', exists vres', exists m2',
-       sem WB2 ge2 vargs' m1' t vres' m2'
+       sem ge2 vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -753,52 +737,29 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** External calls produce at most one event. *)
   ec_trace_length:
-    forall WB,
     forall ge vargs m t vres m',
-    sem WB ge vargs m t vres m' -> (length t <= 1)%nat;
+    sem ge vargs m t vres m' -> (length t <= 1)%nat;
 
 (** External calls must be receptive to changes of traces by another, matching trace. *)
   ec_receptive:
-    forall WB,
     forall ge vargs m t1 vres1 m1 t2,
-    sem WB ge vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
-    exists vres2, exists m2, sem WB ge vargs m t2 vres2 m2;
+    sem ge vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
+    exists vres2, exists m2, sem ge vargs m t2 vres2 m2;
 
 (** External calls must be deterministic up to matching between traces. *)
   ec_determ:
-    forall WB,
     forall ge vargs m t1 vres1 m1 t2 vres2 m2,
-    sem WB ge vargs m t1 vres1 m1 -> sem WB ge vargs m t2 vres2 m2 ->
+    sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
     match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
-  ; 
-(** [CompCertX:test-compcert-protect-stack-arg] External calls must
-commute on weakening the "writable block" predicate *)
-  ec_writable_block_weak:
-    forall WB1 (WB2: _ -> Prop) ge vargs m1 t vres m2,
-      sem WB1 ge vargs m1 t vres m2 ->
-      (forall b, WB1 b -> WB2 b) ->
-      sem WB2 ge vargs m1 t vres m2
-  ;
-
-(** [CompCertX:test-compcert-protect-stack-arg] External calls must
-not modify non-writable blocks. *)
-  ec_not_writable:
-    forall WB ge vargs m t vres m',
-      sem WB ge vargs m t vres m' ->
-      forall b,
-        Mem.valid_block m b ->
-        ~ WB b ->
-        forall chunk o,
-          Mem.load chunk m' b o = Mem.load chunk m b o
 }.
 
 (** ** Semantics of volatile loads *)
 
-Inductive volatile_load_sem (chunk: memory_chunk) (WB: block -> Prop) (ge: Senv.t):
+Inductive volatile_load_sem (chunk: memory_chunk) (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | volatile_load_sem_intro: forall b ofs m t v,
       volatile_load ge chunk m b ofs t v ->
-      volatile_load_sem chunk WB ge (Vptr b ofs :: nil) m t v m.
+      volatile_load_sem chunk ge (Vptr b ofs :: nil) m t v m.
 
 Lemma volatile_load_preserved:
   forall ge1 ge2 chunk m b ofs t v,
@@ -902,26 +863,21 @@ Proof.
   assert (v = v0) by (eapply eventval_match_determ_1; eauto). subst v0.
   auto.
   split. constructor. intuition congruence.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H; auto.
 Qed.
 
 (** ** Semantics of volatile stores *)
 
-Inductive volatile_store_sem (chunk: memory_chunk) (WB: block -> Prop) (ge: Senv.t):
+Inductive volatile_store_sem (chunk: memory_chunk) (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | volatile_store_sem_intro: forall b ofs m1 v t m2,
-      volatile_store WB ge chunk m1 b ofs v t m2 ->
-      volatile_store_sem chunk WB ge (Vptr b ofs :: v :: nil) m1 t Vundef m2.
+      volatile_store ge chunk m1 b ofs v t m2 ->
+      volatile_store_sem chunk ge (Vptr b ofs :: v :: nil) m1 t Vundef m2.
 
 Lemma volatile_store_preserved:
-  forall WB: _ -> Prop,
   forall ge1 ge2 chunk m1 b ofs v t m2,
   Senv.equiv ge1 ge2 ->
-  volatile_store WB ge1 chunk m1 b ofs v t m2 ->
-  volatile_store WB ge2 chunk m1 b ofs v t m2.
+  volatile_store ge1 chunk m1 b ofs v t m2 ->
+  volatile_store ge2 chunk m1 b ofs v t m2.
 Proof.
   intros. destruct H as (_ & A & B & C). inv H0; constructor; auto.
   rewrite C; auto.
@@ -931,9 +887,8 @@ Proof.
 Qed.
 
 Lemma volatile_store_readonly:
-  forall WB: block -> Prop,
   forall ge chunk1 m1 b1 ofs1 v t m2,
-  volatile_store WB ge chunk1 m1 b1 ofs1 v t m2 ->
+  volatile_store ge chunk1 m1 b1 ofs1 v t m2 ->
   Mem.unchanged_on (loc_not_writable m1) m1 m2.
 Proof.
   intros. inv H.
@@ -945,13 +900,12 @@ Proof.
 Qed.
 
 Lemma volatile_store_extends:
-  forall WB: block -> Prop,
   forall ge chunk m1 b ofs v t m2 m1' v',
-  volatile_store WB ge chunk m1 b ofs v t m2 ->
+  volatile_store ge chunk m1 b ofs v t m2 ->
   Mem.extends m1 m1' ->
   Val.lessdef v v' ->
   exists m2',
-     volatile_store WB ge chunk m1' b ofs v' t m2'
+     volatile_store ge chunk m1' b ofs v' t m2'
   /\ Mem.extends m2 m2'
   /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2'.
 Proof.
@@ -971,22 +925,19 @@ Proof.
 Qed.
 
 Lemma volatile_store_inject:
-  forall WB1 WB2: block -> Prop,
   forall ge1 ge2 f chunk m1 b ofs v t m2 m1' b' ofs' v',
   symbols_inject f ge1 ge2 ->
-  volatile_store WB1 ge1 chunk m1 b ofs v t m2 ->
+  volatile_store ge1 chunk m1 b ofs v t m2 ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Val.inject f v v' ->
   Mem.inject f m1 m1' ->
-  forall (WRITABLE_INJECT: forall b b' o, f b = Some (b', o) -> WB1 b -> WB2 b'),
   exists m2',
-       volatile_store WB2 ge2 chunk m1' b' ofs' v' t m2'
+       volatile_store ge2 chunk m1' b' ofs' v' t m2'
     /\ Mem.inject f m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'.
 Proof.
   intros until v'; intros SI VS AI VI MI.
-  intro WRITABLE_INJECT.
   generalize SI; intros (P & Q & R & S).
   inv VS.
 - (* volatile store *)
@@ -1001,7 +952,6 @@ Proof.
   exploit Mem.storev_mapped_inject; eauto. intros [m2' [A B]].
   exists m2'; repeat (split; auto).
 + constructor; auto. erewrite S; eauto.
-  eauto.
 + eapply Mem.store_unchanged_on; eauto.
   unfold loc_unmapped; intros. inv AI; congruence.
 + eapply Mem.store_unchanged_on; eauto.
@@ -1016,9 +966,8 @@ Proof.
 Qed.
 
 Lemma volatile_store_receptive:
-  forall WB: block -> Prop,
   forall ge chunk m b ofs v t1 m1 t2,
-  volatile_store WB ge chunk m b ofs v t1 m1 -> match_traces ge t1 t2 -> t1 = t2.
+  volatile_store ge chunk m b ofs v t1 m1 -> match_traces ge t1 t2 -> t1 = t2.
 Proof.
   intros. inv H; inv H0; auto.
 Qed.
@@ -1059,22 +1008,16 @@ Proof.
   assert (ev = ev0) by (eapply eventval_match_determ_2; eauto). subst ev0.
   split. constructor. auto.
   split. constructor. intuition congruence.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; inv H1;
-  econstructor; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H; inv H2; eauto.
-  eapply Mem.load_store_other; eauto. left; congruence.
 Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
 
-Inductive extcall_malloc_sem (WB: block -> Prop) (ge: Senv.t):
+Inductive extcall_malloc_sem (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_malloc_sem_intro: forall n m m' b m'',
       Mem.alloc m (-4) (Int.unsigned n) = (m', b) ->
       Mem.store Mint32 m' b (-4) (Vint n) = Some m'' ->
-      extcall_malloc_sem WB ge (Vint n :: nil) m E0 (Vptr b Int.zero) m''.
+      extcall_malloc_sem ge (Vint n :: nil) m E0 (Vptr b Int.zero) m''.
 
 Lemma extcall_malloc_ok:
   extcall_properties extcall_malloc_sem
@@ -1144,29 +1087,17 @@ Proof.
   exists vres1; exists m1; auto.
 (* determ *)
 - inv H; inv H0. split. constructor. intuition congruence.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H.
-  etransitivity.
-  eapply Mem.load_store_other.
-  eassumption.
-  left.
-  generalize (Mem.fresh_block_alloc _ _ _ _ _ H2).
-  congruence.
-  eapply Mem.load_alloc_unchanged; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
 
-Inductive extcall_free_sem (WB: block -> Prop) (ge: Senv.t):
+Inductive extcall_free_sem (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_free_sem_intro: forall b lo sz m m',
       Mem.load Mint32 m b (Int.unsigned lo - 4) = Some (Vint sz) ->
       Int.unsigned sz > 0 ->
       Mem.free m b (Int.unsigned lo - 4) (Int.unsigned lo + Int.unsigned sz) = Some m' ->
-      forall WRITABLE: WB b,
-      extcall_free_sem WB ge (Vptr b lo :: nil) m E0 Vundef m'.
+      extcall_free_sem ge (Vptr b lo :: nil) m E0 Vundef m'.
 
 Lemma extcall_free_ok:
   extcall_properties extcall_free_sem
@@ -1236,17 +1167,11 @@ Proof.
   exists vres1; exists m1; auto.
 (* determ *)
 - inv H; inv H0. split. constructor. intuition congruence.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H.
-  eapply Mem.load_free. eassumption.
-  left; congruence.
 Qed.
 
 (** ** Semantics of [memcpy] operations. *)
 
-Inductive extcall_memcpy_sem (sz al: Z) (WB: block -> Prop) (ge: Senv.t):
+Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
                         list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_memcpy_sem_intro: forall bdst odst bsrc osrc m bytes m',
       al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz >= 0 -> (al | sz) ->
@@ -1257,8 +1182,7 @@ Inductive extcall_memcpy_sem (sz al: Z) (WB: block -> Prop) (ge: Senv.t):
                    \/ Int.unsigned odst + sz <= Int.unsigned osrc ->
       Mem.loadbytes m bsrc (Int.unsigned osrc) sz = Some bytes ->
       Mem.storebytes m bdst (Int.unsigned odst) bytes = Some m' ->
-      forall WRITABLE: WB bdst,
-      extcall_memcpy_sem sz al WB ge (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
+      extcall_memcpy_sem sz al ge (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
 Lemma extcall_memcpy_ok:
   forall sz al,
@@ -1363,21 +1287,15 @@ Proof.
   exists vres1; exists m1; auto.
 - (* determ *)
   intros; inv H; inv H0. split. constructor. intros; split; congruence.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  intros; inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  intros. inv H.
-  eapply Mem.load_storebytes_other. eassumption.
-  left. congruence.
 Qed.
 
 (** ** Semantics of annotations. *)
 
-Inductive extcall_annot_sem (text: string) (targs: list typ) (WB: block -> Prop) (ge: Senv.t):
+Inductive extcall_annot_sem (text: string) (targs: list typ) (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_sem_intro: forall vargs m args,
       eventval_list_match ge args targs vargs ->
-      extcall_annot_sem text targs WB ge vargs m (Event_annot text args :: E0) Vundef m.
+      extcall_annot_sem text targs ge vargs m (Event_annot text args :: E0) Vundef m.
 
 Lemma extcall_annot_ok:
   forall text targs,
@@ -1417,17 +1335,13 @@ Proof.
 - inv H; inv H0.
   assert (args = args0). eapply eventval_list_match_determ_2; eauto. subst args0.
   split. constructor. auto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H; eauto.
 Qed.
 
-Inductive extcall_annot_val_sem (text: string) (targ: typ) (WB: block -> Prop) (ge: Senv.t):
+Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_val_sem_intro: forall varg m arg,
       eventval_match ge arg targ varg ->
-      extcall_annot_val_sem text targ WB ge (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
+      extcall_annot_val_sem text targ ge (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
 
 Lemma extcall_annot_val_ok:
   forall text targ,
@@ -1467,16 +1381,12 @@ Proof.
 - inv H; inv H0.
   assert (arg = arg0). eapply eventval_match_determ_2; eauto. subst arg0.
   split. constructor. auto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H; eauto.
 Qed.
 
-Inductive extcall_debug_sem (WB: block -> Prop) (ge: Senv.t):
+Inductive extcall_debug_sem (ge: Senv.t):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_debug_sem_intro: forall vargs m,
-      extcall_debug_sem WB ge vargs m E0 Vundef m.
+      extcall_debug_sem ge vargs m E0 Vundef m.
 
 Lemma extcall_debug_ok:
   forall targs,
@@ -1511,10 +1421,6 @@ Proof.
 (* determ *)
 - inv H; inv H0.
   split. constructor. auto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Writable block weakening *)
-  inv H; econstructor; eauto.
-- (** [CompCertX:test-compcert-protect-stack-arg] Non-writable blocks unchanged *)
-  inv H; eauto.
 Qed.
 
 End WITHMEMORYMODEL.
@@ -1619,15 +1525,12 @@ Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec 
 Definition external_call_trace_length ef := ec_trace_length (external_call_spec ef).
 Definition external_call_receptive ef := ec_receptive (external_call_spec ef).
 Definition external_call_determ ef := ec_determ (external_call_spec ef).
-Definition external_call_writable_block_weak ef := ec_writable_block_weak (external_call_spec ef).
-Definition external_call_not_writable ef := ec_not_writable (external_call_spec ef).
 
 (** Corollary of [external_call_valid_block]. *)
 
 Lemma external_call_nextblock:
-  forall WB: block -> Prop,
   forall ef ge vargs m1 t vres m2,
-  external_call ef WB ge vargs m1 t vres m2 ->
+  external_call ef ge vargs m1 t vres m2 ->
   Ple (Mem.nextblock m1) (Mem.nextblock m2).
 Proof.
   intros. destruct (plt (Mem.nextblock m2) (Mem.nextblock m1)).
@@ -1661,15 +1564,13 @@ Proof.
 Qed.
 
 Lemma external_call_mem_inject:
-  forall WB1 WB2: block -> Prop,
   forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
-  external_call ef WB1 ge vargs m1 t vres m2 ->
+  external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
-  forall WRITABLE_INJ: forall b1 b2 o, f b1 = Some (b2, o) -> WB1 b1 -> WB2 b2,
   exists f', exists vres', exists m2',
-     external_call ef WB2 ge vargs' m1' t vres' m2'
+     external_call ef ge vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -1684,19 +1585,18 @@ Qed.
 (** Corollaries of [external_call_determ]. *)
 
 Lemma external_call_match_traces:
-  forall WB: block -> Prop,
   forall ef ge vargs m t1 vres1 m1 t2 vres2 m2,
-  external_call ef WB ge vargs m t1 vres1 m1 ->
-  external_call ef WB ge vargs m t2 vres2 m2 ->
+  external_call ef ge vargs m t1 vres1 m1 ->
+  external_call ef ge vargs m t2 vres2 m2 ->
   match_traces ge t1 t2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. tauto.
 Qed.
 
 Lemma external_call_deterministic:
-  forall ef WB ge vargs m t vres1 m1 vres2 m2,
-  external_call ef WB ge vargs m t vres1 m1 ->
-  external_call ef WB ge vargs m t vres2 m2 ->
+  forall ef ge vargs m t vres1 m1 vres2 m2,
+  external_call ef ge vargs m t vres1 m1 ->
+  external_call ef ge vargs m t vres2 m2 ->
   vres1 = vres2 /\ m1 = m2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. intuition.
@@ -1835,98 +1735,3 @@ End EVAL_BUILTIN_ARG_LESSDEF.
 End WITHEXTERNALCALLS.
 
 Hint Constructors eval_builtin_arg: barg.
-
-(** [CompCertX:test-compcert-protect-stack-arg] Now we propose several
-ways of parameterizing the semantics of a language over a predicate
-[WB] indicating whether a block is writable. *)
-
-Unset Implicit Arguments.
-
-(** First case: "writable block" depends only on the global
-    environment.  This version will be used for the whole-program
-    definition of a language, and also for all compilation passes
-    which do not involve memory injections (indeed, for such simple
-    compilation passes, including memory extensions, block identifiers
-    are preserved).  *)
-
-(** This empty class is used as a tag (to correctly infer the right
-one when using a language semantics) and also to introduce a notation
-for [WB] with implicit arguments. *)
-
-Class WritableBlockOps
-      (WB: Senv.t -> block -> Prop)
-: Type :=
-  {
-    writable_block := WB
-  }.
-
-(** We provide an instantiation for the whole-program case. *)
-Local Instance writable_block_always_ops : WritableBlockOps (fun _ _ => True).
-Proof.
-  constructor.
-Defined.
-
-Class WritableBlock WB
-      `{writable_block_ops: WritableBlockOps WB}
-: Prop :=
-  {
-    writable_block_genv_next : 
-      forall (ge1 ge2: Senv.t),
-          (Senv.nextblock ge2 = Senv.nextblock ge1) ->
-          forall b, writable_block ge1 b -> writable_block ge2 b
-  }.
-
-Local Instance writable_block_always : WritableBlock (fun _ _ => True).
-Proof.
-  constructor.
-  tauto.
-Qed.
-
-(** Second case: "writable block" also depends on the initial memory.
-This version will be used for each compilation pass where a memory
-injection is involved. The initial memory will then be instantiated
-with Genv.init_mem for the whole-program case. *)
-
-Class WritableBlockWithInitMemOps
-      `{memory_model_ops: Mem.MemoryModelOps}
-      (WBIM: mem -> Senv.t -> block -> Prop)
-: Type :=
-  {
-    writable_block_with_init_mem := WBIM;
-    writable_block_with_init_mem_writable_block_ops :> forall m, WritableBlockOps (writable_block_with_init_mem m)
-  }.
-
-Local Instance writable_block_with_init_mem_always_ops
-      `{memory_ops: Mem.MemoryModelOps}
-: WritableBlockWithInitMemOps (fun _ _ _ => True).
-Proof.
-  constructor.
-  intros. typeclasses eauto.
-Defined.
-
-Class WritableBlockWithInitMem
-      `{memory_model_ops: Mem.MemoryModelOps}
-      WBIM
-      `{writable_block_with_init_mem_ops: !WritableBlockWithInitMemOps WBIM}
-: Prop := 
-  {
-    writable_block_with_init_mem_writable_block :> forall m, WritableBlock (writable_block_with_init_mem m);
-    writable_block_with_init_mem_inject :
-      forall m f,
-        inject_incr (Mem.flat_inj (Mem.nextblock m)) f ->
-        inject_separated (Mem.flat_inj (Mem.nextblock m)) f m m ->
-        forall b1 b2 o, f b1 = Some (b2, o) ->
-                        forall (ge: Senv.t),
-                          Ple (Senv.nextblock ge) (Mem.nextblock m) ->
-                          writable_block_with_init_mem m ge b1 ->
-                          writable_block_with_init_mem m ge b2
-  }.
-
-Local Instance writable_block_with_init_mem_always
-      `{memory_ops: Mem.MemoryModelOps}
-: WritableBlockWithInitMem (fun _ _ _ => True).
-Proof.
-  constructor.
-  intros. typeclasses eauto.
-  tauto.
-Qed.

@@ -403,10 +403,6 @@ Ltac EliminatedInstr :=
 (** The proof of semantic preservation, then, is a simulation diagram
   of the ``option'' kind. *)
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Section WITHWRITABLEBLOCK.
-Context `{Hwritable_block: WritableBlock}.
-
 Lemma transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
@@ -459,9 +455,6 @@ Proof.
   left. exists (State s' (transf_function f) (Vptr sp0 Int.zero) pc' rs' m'1); split.
   eapply exec_Istore with (a0 := a'). eauto.  rewrite <- ADDR'.
   apply eval_addressing_preserved. exact symbols_preserved. eauto.
-  { (* writable block *)
-    inv ALD; try discriminate. intros. eapply writable_block_genv_next; [ | eauto ]. apply genv_next_preserved.
-  }
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
 
@@ -502,9 +495,7 @@ Proof.
   left. exists (State s' (transf_function f) (Vptr sp0 Int.zero) pc' (regmap_setres res v' rs') m'1); split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor; eauto. apply set_res_lessdef; auto.
 
 - (* cond *)
@@ -564,9 +555,7 @@ Proof.
   intros [res' [m2' [A [B [C D]]]]].
   left. exists (Returnstate s' res' m2'); split.
   simpl. econstructor; eauto.
-  eapply external_call_writable_block_weak.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  apply writable_block_genv_next. apply genv_next_preserved.
   constructor; auto.
 
 - (* returnstate *)
@@ -584,8 +573,6 @@ Proof.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
 Qed.
-
-End WITHWRITABLEBLOCK.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -612,9 +599,6 @@ Qed.
 
 (** The preservation of the observable behavior of the program then
   follows. *)
-
-Local Existing Instance writable_block_always_ops.
-Local Existing Instance writable_block_always.
 
 Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).

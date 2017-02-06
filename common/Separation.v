@@ -905,22 +905,19 @@ Context `{symbols_inject'_instance: !SymbolsInject}.
 Context `{external_calls_prf: !ExternalCalls mem}.
 
 Lemma external_call_parallel_rule:
-  forall (WB1 WB2: _ -> Prop),
   forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
   m_invar_weak P = false ->
-  external_call ef WB1 ge vargs1 m1 t vres1 m1' ->
+  external_call ef ge vargs1 m1 t vres1 m1' ->
   m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
-  forall WB_INJ: forall (b1 b2 : block) (o : Z), j b1 = Some (b2, o) -> WB1 b1 -> WB2 b2,
   exists j' vres2 m2',
-     external_call ef WB2 ge vargs2 m2 t vres2 m2'
+     external_call ef ge vargs2 m2 t vres2 m2'
   /\ Val.inject j' vres1 vres2
   /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
   /\ inject_separated j j' m1 m2.
 Proof.
   intros until vargs2; intros INV_STRONG CALL SEP ARGS.
-  intro WB_INJ.
   destruct SEP as (A & B & C). simpl in A.
   exploit external_call_mem_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_pick1; eauto.

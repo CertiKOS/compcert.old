@@ -853,10 +853,9 @@ Proof.
 Qed.
 
 Lemma wt_exec_Ibuiltin:
-  forall WB: _ -> Prop,
   forall env f ef (ge: genv) args res s vargs m t vres m' rs,
   wt_instr f env (Ibuiltin ef args res s) ->
-  external_call ef WB ge vargs m t vres m' ->
+  external_call ef ge vargs m t vres m' ->
   wt_regset env rs ->
   wt_regset env (regmap_setres res vres rs).
 Proof.
@@ -925,10 +924,6 @@ Hypothesis wt_p: wt_program p.
 
 Let ge := Genv.globalenv p.
 
-Section WITHWRITABLEBLOCK.
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Context `{writable_block_ops: WritableBlockOps}.
-
 Variable restyp: option typ.
 
 Lemma subject_reduction:
@@ -989,8 +984,6 @@ Proof.
   inv H1. econstructor; eauto.
   apply wt_regset_assign; auto. rewrite H10; auto.
 Qed.
-
-End WITHWRITABLEBLOCK.
 
 Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state (Some Tint) S.

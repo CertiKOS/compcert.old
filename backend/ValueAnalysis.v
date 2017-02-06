@@ -1052,9 +1052,8 @@ Proof.
 Qed.
 
 Theorem external_call_match:
-  forall WB,
   forall ef (ge: genv) vargs m t vres m' bc rm am,
-  external_call ef WB ge vargs m t vres m' ->
+  external_call ef ge vargs m t vres m' ->
   genv_match bc ge ->
   (forall v, In v vargs -> vmatch bc v Vtop) ->
   romatch bc m rm ->
@@ -1074,8 +1073,6 @@ Proof.
   eapply external_call_match'; eauto.
   intros.
   exploit external_call_mem_inject; eauto.
-  instantiate (1 := WB).
-  unfold inj_of_bc. intros. destruct (bc b1); congruence.
   destruct 1 as [? [? [? [? [? [? [? [? [? ?]]]]]]]]]; eauto 8.
   eapply external_call_readonly; eauto.
   intros; eapply external_call_max_perm; eauto.
@@ -1097,8 +1094,6 @@ Qed.
 
 Section SOUNDNESS.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Context `{Hwritable_block: WritableBlock}.
 Context `{romem_for_instance: ROMemFor}.
 
 Variable prog: program.
@@ -1544,8 +1539,6 @@ End SOUNDNESS.
 
 Section LINKING.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Context `{Hwritable_block: WritableBlock}.
 Context {romem_for_instance: ROMemFor}.
 
 Variable prog: program.
