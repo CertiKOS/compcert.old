@@ -1961,22 +1961,9 @@ already existing in the initial memory. This is stronger than
 [meminj_preserves_globals], which only preserves blocks associated to
 the global environment. *)
 
-Section WITHWB.
-
-Context {WB} `{writable_block_with_init_mem_ops: !WritableBlockWithInitMemOps WB}
-`{Hwritable_block_with_init_mem: !WritableBlockWithInitMem WB}.
-
 Section WITHMEMINIT.
 Variable init_m: mem.
 Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock init_m).
-
-Local Instance: WritableBlockOps (writable_block_with_init_mem init_m).
-Proof. typeclasses eauto. Defined.
-
-Hypothesis init_sp_not_writable:
-  forall b o,
-    init_sp = Vptr b o ->
-    ~ writable_block ge b.
 
 (** The proof of semantic preservation relies on simulation diagrams
   of the following form:
@@ -2296,7 +2283,7 @@ Proof.
   destruct a' ; try discriminate. eauto with mem.
   eauto.
   { (* init_args_linear *)
-    red. intros sl of ty H1 rs1.
+    (*red. intros sl of ty H1 rs1.
     apply INIT_ARGS in H1.
     specialize (H1 rs1).
     inv H1; constructor; auto.
@@ -2309,7 +2296,9 @@ Proof.
     intro.
     generalize (WRITABLE _ _ (eq_refl _)).
     intro.
-    congruence.
+    congruence.*)
+    (* FIXME: PW: to adapt *)
+    admit.
   }
   eauto with coqlib.
   eauto.
@@ -2387,7 +2376,7 @@ Proof.
     exact BND2.
   intros [vargs' [P Q]].
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
-  exploit (fun WB => external_call_parallel_rule WB (fun _ => True)); eauto.
+  exploit (external_call_parallel_rule); eauto.
   {
     repeat
     match goal with
@@ -2433,7 +2422,8 @@ Proof.
     inv H1; constructor; auto.
     destruct init_sp; try discriminate.
     unfold load_stack, Val.add, Mem.loadv in * |- * .
-    erewrite external_call_not_writable; eauto.
+    (* erewrite external_call_not_writable; eauto. *)
+    (* FIXME: PW:  *) admit.
   }
   { (* init_sp_valid *)
     intros b0 o H1.
@@ -2615,7 +2605,7 @@ Proof.
   }
   intros [vl [ARGS VINJ]].
   rewrite sep_comm, sep_assoc in SEP.
-  exploit (fun WB => external_call_parallel_rule WB (fun _ => True)); eauto.
+  exploit external_call_parallel_rule; eauto.
   {
     apply stack_contents_invar_weak.
   }
@@ -2684,7 +2674,8 @@ Proof.
     inv H; constructor; auto.
     destruct init_sp; try discriminate.
     unfold load_stack, Val.add, Mem.loadv in * |- * .
-    erewrite external_call_not_writable; eauto.
+    (* erewrite external_call_not_writable; eauto. *)
+    (* FIXME: PW: *) admit.
   }
   { (* init_sp_valid *)
     intros b0 o H1.
@@ -2700,15 +2691,17 @@ Proof.
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset init_ls s); auto.
-Qed.
+Admitted.
 
 End WITHMEMINIT.
 
-End WITHWB.
-
 End WITHINITSP.
 
-Let match_states s s' := exists j init_m init_m', match_states Vzero Vzero (Locmap.init Vundef) (signature_main) Vzero init_m j init_m' s s' /\ Ple (Genv.genv_next tge) (Mem.nextblock init_m').
+Let match_states s s' :=
+  exists j init_m init_m',
+    match_states Vzero Vzero (Locmap.init Vundef) (signature_main) Vzero init_m j init_m' s s' /\
+    Ple (Genv.genv_next ge) (Mem.nextblock init_m) /\
+    Ple (Genv.genv_next tge) (Mem.nextblock init_m').
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
@@ -2742,7 +2735,7 @@ Proof.
 }
   rewrite genv_next_preserved.
   unfold ge. erewrite Genv.init_mem_genv_next by eauto.
-  apply Ple_refl.
+  split; apply Ple_refl.
 Qed.
 
 Lemma transf_final_states:
@@ -2769,9 +2762,6 @@ Proof.
 - auto.
 Qed.
 
-Local Existing Instance writable_block_with_init_mem_always_ops.
-Local Existing Instance writable_block_with_init_mem_always.
-
 Theorem transf_program_correct:
   forward_simulation (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
 Proof.
@@ -2783,14 +2773,14 @@ Proof.
   apply wt_initial_state with (prog0 := prog); auto. exact wt_prog.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0.
-  inv H1. inv H2. inv H1.
-  inv H2.
-  exploit transf_step_correct; eauto. unfold Vzero; red; auto. unfold Vzero; red; auto. discriminate. discriminate. discriminate.
+  destruct H1 as (j & im & im' & MS & GE & GE').
+  exploit transf_step_correct; eauto.
+  unfold Vzero; red; auto. unfold Vzero; red; auto.
+  discriminate. discriminate. 
   eassumption. intros [s2' [A B]].
   exists s2'; split. exact A. split.
   eapply step_type_preservation; eauto. eexact wt_prog. eexact H.
-  red; eauto.
-Grab Existential Variables. exact Mem.empty.
+  repeat eexists; eauto. 
 Qed.
 
 End PRESERVATION.

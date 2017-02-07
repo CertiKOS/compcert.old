@@ -802,9 +802,6 @@ Proof.
   rewrite H in MKLOAD. inv MKLOAD. auto.
 Qed.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Context `{Hwritable_block: WritableBlock}.
-
 Lemma make_memcpy_correct:
   forall (SGE_NEXTBLOCK: Genv.genv_next ge = Genv.genv_next (Clight.globalenv prog)),
   forall f dst src ty k e le m b ofs v m' s,
@@ -825,8 +822,6 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
-  eapply writable_block_genv_next; [ | eassumption ] .
-  assumption.
 Qed.
 
 Lemma make_store_correct:
@@ -843,7 +838,6 @@ Proof.
   (* nonvolatile scalar *)
   rewrite H in MKSTORE; inv MKSTORE.
   econstructor; eauto.
-  injection 1; intros; subst. eapply writable_block_genv_next; [ | eassumption ]. assumption.
   (* by copy *)
   rewrite H in MKSTORE.
   eapply make_memcpy_correct with (b := b) (v := Vptr b' ofs'); eauto.
@@ -1168,11 +1162,6 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
   | match_transl_1: forall ts tk,
       match_transl (Sblock ts) tk ts (Kblock tk).
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-
-Section WITHWRITABLEBLOCK.
-Context `{Hwritable_block: WritableBlock}.
-
 Lemma match_transl_step:
   forall ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
@@ -1428,8 +1417,6 @@ Proof.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
-  eapply external_call_writable_block_weak; eauto.
-  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_states_skip; eauto.
 
 - (* seq *)
@@ -1606,8 +1593,6 @@ Proof.
   econstructor; split.
   apply plus_one. constructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eapply external_call_writable_block_weak; eauto.
-  apply writable_block_genv_next. apply genv_next_preserved.
   eapply match_returnstate with (ce := ce); eauto.
 
 - (* returnstate *)
@@ -1616,8 +1601,6 @@ Proof.
   apply plus_one. constructor.
   econstructor; eauto. simpl; reflexivity. constructor.
 Qed.
-
-End WITHWRITABLEBLOCK.
 
 Lemma transl_initial_states:
   forall S, Clight.initial_state prog S ->
@@ -1640,11 +1623,6 @@ Lemma transl_final_states:
 Proof.
   intros. inv H0. inv H. inv MK. constructor.
 Qed.
-
-(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
-all blocks are always writable. *)
-Local Existing Instance writable_block_always_ops.
-Local Existing Instance writable_block_always.
 
 Theorem transl_program_correct:
   forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).

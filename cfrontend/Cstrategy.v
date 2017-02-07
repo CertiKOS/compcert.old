@@ -377,7 +377,7 @@ Inductive estep: state -> trace -> state -> Prop :=
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
       eval_simple_list e m rargs tyargs vargs ->
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
 
@@ -576,7 +576,7 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
          cast_arguments m rargs tyargs vargs
-      /\ external_call ef (fun _ => True) ge vargs m t vres m'
+      /\ external_call ef ge vargs m t vres m'
   | _ => True
   end.
 
@@ -1908,7 +1908,7 @@ with eval_funcall: mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
       eval_funcall m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall m ef targs tres cconv vargs t vres m',
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       eval_funcall m (External ef targs tres cconv) vargs t m' vres.
 
 Scheme eval_expression_ind5 := Minimality for eval_expression Sort Prop

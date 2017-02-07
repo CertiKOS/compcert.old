@@ -225,8 +225,6 @@ Qed.
 (** ** Executing sequences of moves *)
 
 Lemma tr_moves_init_regs:
-(** [CompCertX:test-compcert-protect-stack-arg] We parameterize on the `writable block' predicate for store operations. *)
-  forall `{Hwritable_block: WritableBlock},
   forall F stk f sp m ctx1 ctx2, context_below ctx1 ctx2 ->
   forall rdsts rsrcs vl pc1 pc2 rs1,
   tr_moves f.(fn_code) pc1 (sregs ctx1 rsrcs) (sregs ctx2 rdsts) pc2 ->
@@ -364,13 +362,6 @@ Proof.
 Qed.
 
 (** ** Relating global environments *)
-
-(** [CompCertX:test-compcert-protect-stack-arg] We parameterize the semantics of both Csharpminor and Cminor with a predicate indicating writable blocks. However, this predicate has to be "preserved by injection", in the sense that, even though there is an injection between Csharpminor and Cminor, there is a common "initial memory" whose blocks are preserved between Csharpminor and Cminor, and non-writable blocks must be among those preserved blocks. *)
-
-Section WITHWRITABLEBLOCK.
-Context {WB}
-        `{writable_block_with_init_mem_ops: !WritableBlockWithInitMemOps WB}
-        `{Hwritable_block_with_init_mem: !WritableBlockWithInitMem WB}.
 
 (** [CompCertX:test-compcert-protect-stack-arg] We have to prove that
 the memory injection introduced by the compilation pass is independent
@@ -1026,13 +1017,6 @@ Proof.
   intros. inv H. eauto.
 Qed.
 
-Local Instance: WritableBlockOps (writable_block_with_init_mem m_init).
-Proof. typeclasses eauto. Defined.
-Hint Unfold writable_block.
-
-Local Instance: WritableBlock (WB m_init).
-Proof. typeclasses eauto. Defined.
-
 Theorem step_simulation:
   forall S1 t S2,
   step ge S1 t S2 ->
@@ -1094,16 +1078,6 @@ Proof.
     rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
   left; econstructor; split.
   eapply plus_one. eapply exec_Istore; eauto.
-  {
-    (** [CompCertX:test-compcert-protect-stack-arg] Here we have to prove [writable_block] *)
-    destruct a; try discriminate. inv Q. inversion 1; subst.
-    unfold writable_block. eapply writable_block_with_init_mem_inject.
-    eapply match_stacks_inside_inject_incr; eauto.
-    eapply match_stacks_inside_inject_separated; eauto.
-    eassumption.
-    rewrite <- genv_next_preserved in genv_next_le_m_init_next. assumption.
-    eapply writable_block_genv_next;  [ | eauto ]. apply genv_next_preserved.
-  }
   destruct a; simpl in H1; try discriminate.
   destruct a'; simpl in U; try discriminate.
   econstructor; eauto.
@@ -1196,22 +1170,10 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
-    {
-      instantiate (1 := writable_block ge).
-      unfold writable_block.
-      intros. eapply writable_block_with_init_mem_inject.
-      eapply match_stacks_inside_inject_incr; eauto.
-      eapply match_stacks_inside_inject_separated; eauto.
-      eassumption.
-      assumption.
-      assumption.
-    }
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
-  eapply external_call_writable_block_weak.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  apply writable_block_genv_next. apply genv_next_preserved.
   econstructor.
     eapply match_stacks_inside_set_res.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1361,23 +1323,11 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
-    {
-      instantiate (1 := writable_block ge). 
-      unfold writable_block.
-      intros. eapply writable_block_with_init_mem_inject.
-      eapply match_stacks_inject_incr; eauto.
-      eapply match_stacks_inject_separated; eauto.
-      eassumption.
-      assumption.
-      assumption.
-    }
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
-  eapply external_call_writable_block_weak.
-    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-    apply writable_block_genv_next. apply genv_next_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor.
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1425,8 +1375,6 @@ Proof.
 Qed.
 
 End WITHMEMINIT.
-
-End WITHWRITABLEBLOCK.
 
 (** [CompCertX:test-compcert-protect-stack-arg] For the whole-program
 setting, we have to embed the initial memory into a new
@@ -1477,11 +1425,6 @@ Proof.
   exploit match_stacks_empty; eauto. intros EQ; subst. inv VINJ. constructor.
   exploit match_stacks_inside_empty; eauto. intros [A B]. congruence.
 Qed.
-
-(** [CompCertX:test-compcert-protect-stack-arg] For whole programs,
-all blocks are always writable. *)
-Local Existing Instance writable_block_with_init_mem_always_ops.
-Local Existing Instance writable_block_with_init_mem_always.
 
 Theorem transf_program_correct:
   forward_simulation (semantics prog) (semantics tprog).

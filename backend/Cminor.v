@@ -245,10 +245,6 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
 Section WITHEXTCALLS.
 Context `{external_calls_prf: ExternalCalls}.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Section WITHWRITABLEBLOCK.
-Context `{writable_block_ops: WritableBlockOps}.
-
 Section RELSEM.
 
 Variable ge: genv.
@@ -463,7 +459,6 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_expr sp e m addr vaddr ->
       eval_expr sp e m a v ->
       Mem.storev chunk m vaddr v = Some m' ->
-      forall WRITABLE: forall b o, vaddr = Vptr b o -> writable_block ge b,
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
@@ -486,7 +481,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m bl vargs ->
-      external_call ef (writable_block ge) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -549,7 +544,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Int.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef (writable_block ge) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
@@ -559,17 +554,10 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
-End WITHWRITABLEBLOCK.
-
 (** Execution of whole programs are described as sequences of transitions
   from an initial state to a final state.  An initial state is a [Callstate]
   corresponding to the invocation of the ``main'' function of the program
   without arguments and with an empty continuation. *)
-
-(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
-
-Section WRITABLEBLOCKALWAYS.
-Local Existing Instance writable_block_always_ops.
 
 Inductive initial_state (p: program): state -> Prop :=
   | initial_state_intro: forall b f m0,
@@ -608,8 +596,6 @@ Proof.
 (* trace length *)
   red; intros; inv H; simpl; try omega; eapply external_call_trace_length; eauto.
 Qed.
-
-End WRITABLEBLOCKALWAYS.
 
 (** * Alternate operational semantics (big-step) *)
 
@@ -650,7 +636,6 @@ Definition outcome_free_mem
   end.
 
 Section NATURALSEM.
-Context `{writable_block_ops: WritableBlockOps}.
 
 Variable ge: genv.
 
@@ -673,7 +658,7 @@ Inductive eval_funcall:
       eval_funcall m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef m args t res m',
-      external_call ef (writable_block ge) ge args m t res m' ->
+      external_call ef ge args m t res m' ->
       eval_funcall m (External ef) args t m' res
 
 (** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
@@ -700,7 +685,6 @@ with exec_stmt:
       eval_expr ge sp e m addr vaddr ->
       eval_expr ge sp e m a v ->
       Mem.storev chunk m vaddr v = Some m' ->
-      forall WRITABLE: forall b o, vaddr = Vptr b o -> writable_block ge b,
       exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
       forall f sp e m optid sig a bl vf vargs fd t m' vres e',
@@ -714,7 +698,7 @@ with exec_stmt:
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
       eval_exprlist ge sp e m bl vargs ->
-      external_call ef (writable_block ge) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       e' = set_optvar optid vres e ->
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
@@ -854,9 +838,6 @@ End NATURALSEM.
 
 (** Big-step execution of a whole program *)
 
-Section WRITABLEBLOCKALWAYS2.
-Local Existing Instance writable_block_always_ops.
-
 Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
   | bigstep_program_terminates_intro:
       forall b f m0 t m r,
@@ -881,8 +862,6 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
 
 Definition bigstep_semantics (p: program) :=
   Bigstep_semantics (bigstep_program_terminates p) (bigstep_program_diverges p).
-
-End WRITABLEBLOCKALWAYS2.
 
 (** ** Correctness of the big-step semantics with respect to the transition semantics *)
 
@@ -929,9 +908,6 @@ Remark call_cont_is_call_cont:
 Proof.
   destruct k; simpl; intros; auto || contradiction.
 Qed.
-
-Section WITHWRITABLEBLOCK3.
-Context `{writable_block_ops: WritableBlockOps}.
 
 Lemma eval_funcall_exec_stmt_steps:
   (forall m fd args t m' res,
@@ -1180,10 +1156,6 @@ Proof.
   apply H. eauto.
   traceEq.
 Qed.
-
-End WITHWRITABLEBLOCK3.
-
-Local Existing Instance writable_block_always_ops.
 
 Theorem bigstep_semantics_sound:
   bigstep_sound (bigstep_semantics prog) (semantics prog).

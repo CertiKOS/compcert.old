@@ -144,9 +144,6 @@ Context `{external_calls_ops: ExternalCallsOps}.
 
 Section RELSEM.
 
-(** [CompCertX:test-compcert-protect-stack-arg] We also parameterize over a way to mark blocks writable. *)
-Context `{writable_block_ops: WritableBlockOps}.
-
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
 
@@ -189,7 +186,6 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_addressing ge sp addr (reglist rs args) = Some a ->
       Mem.storev chunk m a (rs (R src)) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
-      forall WRITABLE: forall b o, a = Vptr b o -> writable_block ge b,
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
@@ -209,7 +205,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef (writable_block ge) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Lbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
@@ -257,7 +253,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_external:
       forall s ef args res rs1 rs2 m t m',
       args = map (fun p => Locmap.getpair p rs1) (loc_arguments (ef_sig ef)) ->
-      external_call ef (writable_block ge) ge args m t res m' ->
+      external_call ef ge args m t res m' ->
       rs2 = Locmap.setpair (loc_result (ef_sig ef)) res rs1 ->
       step (Callstate s (External ef) rs1 m)
          t (Returnstate s rs2 m')
@@ -281,9 +277,6 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m retcode,
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
-
-(** [CompCertX:test-compcert-protect-stack-arg] For whole programs, all blocks are writable. *)
-Local Existing Instance writable_block_always_ops.
 
 Definition semantics (p: program) :=
   Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
