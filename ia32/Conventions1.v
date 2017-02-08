@@ -233,6 +233,82 @@ Proof.
 + apply IHl; auto.
 Qed.
 
+
+Remark loc_arguments_rec_charact':
+  forall tyl ofs p,
+    In p (regs_of_rpairs (loc_arguments_rec tyl ofs)) ->
+    (loc_argument_charact ofs) p.
+Proof.
+  assert (X: forall ofs1 ofs2 l, loc_argument_charact ofs2 l -> ofs1 <= ofs2 -> loc_argument_charact ofs1 l).
+  { destruct l; simpl; intros; auto. destruct sl; auto. intuition omega. }
+  induction tyl as [ | ty tyl]; simpl loc_arguments_rec; intros.
+- contradiction.
+- simpl in H. rewrite in_app in H. destruct H.
+  destruct ty; simpl in *; destruct H; try (now inv H); subst; simpl; try omega.
+  destruct H; subst; try inv H; simpl. omega.
+  apply IHtyl in H. generalize (typesize_pos ty); intros. destruct p; simpl in *.
+* auto. 
+* destruct sl; auto. omega. 
+Qed.
+
+
+Lemma loc_arguments_norepet sg:
+  Loc.norepet (regs_of_rpairs (loc_arguments sg)).
+Proof.
+  unfold loc_arguments.
+  generalize 0.
+  generalize (sig_args sg).
+  clear sg.
+  intro l.
+  induction l; simpl; auto using Loc.norepet_nil.
+  intro z.
+  assert (forall ty,
+             Loc.norepet
+               (regs_of_rpair (One (S Outgoing z ty)) ++
+                regs_of_rpairs (loc_arguments_rec l (z + typesize ty)))).
+  {
+    simpl. intros. apply Loc.norepet_cons; auto.
+    rewrite Loc.notin_iff.
+    intros l' H.
+    apply loc_arguments_rec_charact' in H.
+    destruct l' ; try contradiction.
+    destruct sl; try contradiction.
+    destruct H.
+    red.
+    right.
+    simpl.
+    omega.
+  } 
+  destruct a; auto.
+  simpl in *. apply Loc.norepet_cons.
+  - rewrite Loc.notin_iff.
+    inversion 1; subst.
+    {
+      simpl.
+      right.
+      omega.
+    }
+    apply loc_arguments_rec_charact' in H1.
+    destruct l' ; try contradiction.
+    destruct sl; try contradiction.
+    destruct H1.
+    red.
+    right.
+    simpl in *.
+    omega.
+  - apply Loc.norepet_cons; auto.
+    rewrite Loc.notin_iff.
+    intros l' H0.
+    apply loc_arguments_rec_charact' in H0.
+    destruct l' ; try contradiction.
+    destruct sl; try contradiction.
+    destruct H0.
+    red.
+    right.
+    simpl in *.
+    omega. 
+Qed.
+
 Lemma loc_arguments_main:
   loc_arguments signature_main = nil.
 Proof.

@@ -28,6 +28,7 @@ Require Import Smallstep.
 Require Import Op.
 Require Import Locations.
 Require Import Conventions.
+Require Import EraseArgs.
 Require Stacklayout.
 
 (** * Abstract syntax *)
@@ -413,14 +414,12 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       forall (* CompCertX: BEGIN additional conditions for calling convention *)
-         (SP_VALID:
-            forall (b : Values.block) (o : Integers.Int.int),
-              (parent_sp s) = Values.Vptr b o ->
-              Mem.valid_block m b)
-         (SP_NOT_GLOBAL:
-            forall (b : Values.block) (o : Integers.Int.int),
-              (parent_sp s) = Values.Vptr b o ->
-              Ple (Genv.genv_next ge) b)
+        (STACK:
+           exists m_,
+             free_extcall_args (parent_sp s) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
+             exists t_ res'_ m'_,
+               external_call ef ge args m_ t_ res'_ m'_
+        )
       ,      (* CompCertX: END additional conditions for calling convention *)
       external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->

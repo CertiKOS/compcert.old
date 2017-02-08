@@ -867,14 +867,19 @@ Transparent destroyed_at_function_entry.
   intros [res' [m2' [P [Q [R S]]]]].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
-  { (* rs SP valid *)
-    erewrite agree_sp by eauto.
-    intros.
-    erewrite <- Mem.valid_block_extends; eauto.
-  }
-  { (* rs SP not global *)
-    rewrite genv_next_preserved.
-    erewrite agree_sp; eauto.
+  {
+    destruct STACK as (m_ & FEA & t_ & res'_ & m'_ & EC).
+    inv AG.
+    exploit EraseArgs.free_extcall_args_parallel_extends.
+    eapply Val.lessdef_refl.
+    eassumption. eauto.
+    intros (m'_0 & FEA' & EXT).
+    esplit. rewrite agree_sp. split; eauto.
+    exploit external_call_mem_extends. eexact EC. eauto. eauto.
+    intros (vres' & m2'0 & EC' & LDres & EXT' & UNCH).
+    repeat eexists.
+    eapply external_call_symbols_preserved; eauto.
+    exact senv_preserved.
   }
   { (* rs SP Tint *)
     erewrite agree_sp by eauto.

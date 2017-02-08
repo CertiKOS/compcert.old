@@ -25,6 +25,8 @@ Require Import Smallstep.
 Require Import Locations.
 Require Import Stacklayout.
 Require Import Conventions.
+Require Import EraseArgs.
+
 
 (** * Abstract syntax *)
 
@@ -915,14 +917,20 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (External ef) ->
       extcall_arguments rs m (ef_sig ef) args ->
       forall (* CompCertX: BEGIN additional conditions for calling convention *)
-         (SP_VALID:
-            forall (b : Values.block) (o : Integers.Int.int),
-              rs ESP = Values.Vptr b o ->
-              Mem.valid_block m b)
-         (SP_NOT_GLOBAL:
-            forall (b : Values.block) (o : Integers.Int.int),
-              rs ESP = Values.Vptr b o ->
-              Ple (Genv.genv_next ge) b)
+         (* (SP_VALID: *)
+         (*    forall (b : Values.block) (o : Integers.Int.int), *)
+         (*      rs ESP = Values.Vptr b o -> *)
+         (*      Mem.valid_block m b) *)
+         (* (SP_NOT_GLOBAL: *)
+         (*    forall (b : Values.block) (o : Integers.Int.int), *)
+         (*      rs ESP = Values.Vptr b o -> *)
+        (*      Ple (Genv.genv_next ge) b) *)
+        (STACK:
+           exists m_,
+             free_extcall_args (rs ESP) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
+             exists t_ res'_ m'_,
+               external_call ef ge args m_ t_ res'_ m'_
+        )
          (SP_TYPE: Val.has_type (rs ESP) Tint)
          (RA_TYPE: Val.has_type (rs RA) Tint)
          (SP_NOT_VUNDEF: rs ESP <> Vundef)

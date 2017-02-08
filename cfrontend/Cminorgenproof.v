@@ -156,7 +156,6 @@ Qed.
 
 Section WITHMEMINIT.
 Variable m_init: mem.
-Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init).
 
 (** * Correspondence between C#minor's and Cminor's environments and memory states *)
 

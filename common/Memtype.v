@@ -1044,6 +1044,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   extends m1 m2 ->
   weak_valid_pointer m1 b ofs = true -> weak_valid_pointer m2 b ofs = true;
 
+  
 (** ** Properties of [magree]. *)
  ma_perm:
    forall m1 m2 (P: locset),
@@ -1456,6 +1457,18 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
        loadbytes m b o 1 = Some (Fragment (Vptr b' o') q n :: nil) ->
        f b' <> None) ->
   Mem.inject f m m;
+
+(* Needed by Stackingproof, with Linear2 to Mach,
+   to compose extends (in Linear2) and inject. *)
+ extends_inject_compose:
+   forall f m1 m2 m3,
+     extends m1 m2 -> inject f m2 m3 -> inject f m1 m3;
+
+ (* Needed by EraseArgs. *)
+ extends_extends_compose:
+   forall m1 m2 m3,
+     extends m1 m2 -> extends m2 m3 -> extends m1 m3;
+
 
 (** ** Properties of [inject_neutral] *)
 

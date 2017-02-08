@@ -372,7 +372,7 @@ the global environment. *)
 
 Section WITHMEMINIT.
 Variable m_init: mem.
-Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init).
+(* Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init). *)
 
 Inductive match_globalenvs (F: meminj) (bound: block): Prop :=
   | mk_match_globalenvs
