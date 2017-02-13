@@ -2125,6 +2125,44 @@ Proof.
   generalize (SEP _ _ _ Heqo J1). intros (A & B); elim B. apply BP.
 Qed.
 
+Opaque Z.mul.
+
+Program Definition minit_args_mach j sg_ : massert :=
+  {|
+    m_pred := init_args_mach j sg_;
+    m_footprint := fun b o =>
+                     exists sl ofs ty,
+                       In (S sl ofs ty) (regs_of_rpairs (loc_arguments sg_)) /\
+                       exists o', init_sp' = Vptr b o' /\
+                             let lo := Int.unsigned (Int.add o' (Int.repr (fe_ofs_arg + 4 * ofs))) in
+                             lo <= o < lo + size_chunk (chunk_of_type ty);
+    m_invar_weak := false
+  |}.
+Next Obligation.
+  red; intros.
+  exploit H. eauto. intros (v & EA & INJ).
+  inv EA.
+  eexists; split; eauto. econstructor; eauto.
+  unfold load_stack, Val.add, Mem.loadv in *.
+  destruct init_sp'; try discriminate.
+  eapply Mem.load_unchanged_on; eauto.
+  simpl; intros.
+  exists Outgoing, of, ty; split; auto.
+  eexists; split; eauto.
+  Unshelve. eauto.
+Defined.
+Next Obligation.
+  exploit H. eauto.
+  intros (v & EA & INJ). inv EA.
+  unfold load_stack, Val.add, Mem.loadv in *.
+  eapply Mem.load_valid_access in H12.
+  destruct H12.
+  exploit H0. split.
+  apply Zle_refl. destruct H2; simpl; omega.
+  eapply Mem.perm_valid_block; eauto.
+  Unshelve. exact (Regmap.init Vundef).
+Defined.
+  
 Inductive match_states: Linear2.state -> Mach.state -> Prop :=
 | match_states_intro:
     forall sg_,
@@ -2143,7 +2181,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (* (INIT_M_VALID: forall b, Mem.valid_block init_m b -> Mem.valid_block m b) *)
         (* (INIT_M'_VALID: forall b, Mem.valid_block init_m' b -> Mem.valid_block m' b) *)
         (* (INJ_SEP: inject_separated init_j j init_m init_m' ) *)
-        (INIT_ARGS: init_args_mach j sg_ m')
+        (* (INIT_ARGS: init_args_mach j sg_ m') *)
         (TAIL: is_tail c (Linear.fn_code f))
         s2_
         (Hs2: Linear2.state_lower s2_ = Linear.State cs f (Vptr sp Int.zero) c ls m)
@@ -2157,7 +2195,9 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (SEP: m' |= frame_contents f j sp' ls (parent_locset init_ls cs) (parent_sp init_sp' cs') (parent_ra init_ra cs')
                  ** stack_contents j cs cs'
                  ** minjection j m
-                 ** globalenv_inject ge j),
+                 ** globalenv_inject ge j
+                 ** minit_args_mach j sg_
+        ),
       match_states s2_ 
                    (Mach.State cs' fb (Vptr sp' Int.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
@@ -3374,7 +3414,7 @@ Proof.
     * congruence.
 
 - (* Lstore *)
-  assert (STORE_INJ:
+  assert (STORE_INJ: 
             exists a',
               eval_addressing ge (Vptr sp' Int.zero)
                               (transl_addr (make_env (function_bounds f)) addr) rs0##args = Some a' /\
@@ -3398,27 +3438,80 @@ Proof.
   + apply plus_one. econstructor.
     instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
     eexact C. eauto.
-  + constr_match_states. all: eauto with coqlib.
+  + revert Hno_init_args.
+    generalize (Linear2.state_invariant s1).
+    rewrite Hs2.
+    inversion step_high; inversion 1; subst; simpl in * |- * ; try now intuition congruence.
+
+    exploit eval_addressing_lessdef_strong. 2: apply sp_lessdef. apply reglist_lessdef.
+    eauto. eauto. intros (v2 & EA & LD).
+    rewrite EA in H1; inv H1.
+    destruct a0; try discriminate. inv LD. inv B. simpl in *.
+    intro OOB.
+
+    constr_match_states. all: eauto with coqlib.
     * rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.
     * apply agree_locs_undef_locs. auto. apply destroyed_by_store_caller_save.
     * eapply block_prop_impl; try eassumption.
-      destruct a' ; try discriminate. simpl in *. eauto with mem.
+      eauto with mem.
     * { 
-        revert Hno_init_args.
-        generalize (Linear2.state_invariant s1).
-        rewrite Hs2.
-        inversion step_high; inversion 1; subst; simpl in * |- * ; try now intuition congruence.
-        intro OOB.
+
+        Opaque fe_stack_data.
+        clear H7 H H3 Hs2.
+        clear H4 sp_lessdef EA A H0.
+
         red. intros sl ofs ty IN rs2.
         generalize (INIT_ARGS _ _ _ IN rs2). intros (v & EA & VINJ) .
         inv EA; eexists; split. constructor; auto. 2: eauto.
         unfold load_stack, Val.add, Mem.loadv, Mem.storev in * |- * .
         clearbody step. destruct init_sp'; try discriminate.
-        destruct a0; try discriminate.
-        destruct a'; try discriminate.
         erewrite Mem.load_store_other; eauto.
         red in OOB. inv INJ_INIT_SP; try congruence. 
         specialize (OOB _ _ eq_refl _ _ IN).
+        rewrite sep_swap23 in SEP_init.
+        rewrite <- sep_assoc in SEP_init.
+        apply sep_pick1 in SEP_init.
+        destruct SEP_init as (MINJ & FC & DISJ).
+
+        red in DISJ. simpl in DISJ.
+
+        specialize (DISJ b2 (Int.unsigned (Int.add i (Int.repr delta)))).
+        trim DISJ.
+        eexists; eexists; split; eauto.
+        erewrite Mem.address_inject; eauto.
+        replace (Int.unsigned i + delta - delta) with (Int.unsigned i) by omega.
+        exploit Mem.store_valid_access_3. eexact H2.
+        intros (RP & _).
+        eapply Mem.perm_cur_max. eapply Mem.perm_implies.
+        eapply RP. destruct chunk; simpl; omega. constructor.
+        simpl in MINJ; eauto.
+        exploit Mem.store_valid_access_3. eexact H2.
+        intros (RP & _).
+        eapply RP. destruct chunk; simpl; omega.
+
+        trim DISJ. unfold frame_contents_1, range, contains_locations; simpl.
+        simpl.
+        
+        assert (forall o,
+                   Int.unsigned i <= o < Int.unsigned i + size_chunk chunk ->
+                   ~ loc_out_of_bounds m0 b0 o).
+        {
+          unfold loc_out_of_bounds; red; intros.
+          apply H0.
+          exploit Mem.store_valid_access_3. eexact H5.
+          intros (RP & _).
+          eapply Mem.perm_cur_max. eapply Mem.perm_implies.
+          eapply RP. auto. constructor.
+        }
+
+        destruct (eq_block b0 b3).
+        - subst. rewrite H4 in H3. inv H3.
+          rewrite Int.add_assoc. rewrite (Int.add_commut (Int.repr delta)).
+          rewrite <- Int.add_assoc.
+          erewrite ! Mem.address_inject with (delta0:=delta). all : eauto.
+
+          simpl in *.
+        
         unfold loc_out_of_bounds in OOB.
 
         match goal with
@@ -3441,24 +3534,20 @@ Proof.
         destruct (eq_block b1 b3). subst.
 
         intros (RP & _).
-        eapply OOB. 2: eapply Mem.perm_implies.
-        2: eapply Mem.perm_cur_max. 2: eapply RP. 3: constructor.
-        instantiate (1 := Int.unsigned i1 - delta). omega.
-        red in A, OOB.
 
+        assert  ( a = Vptr b3 i0) by congruence. subst. inv B.
+        rewrite H12 in H10; inv H10. clear H1.
 
         revert OOB g g0.
-        generalize (Int.add i (Int.repr (4*ofs))). intros.
 
-
-        (* -----i0--i1-i0+--i1+------------ *)
-        (* ------i1---i0--i1+ i0+---------------------- *)
-
-        assert (exists o,
-                   Int.unsigned i1 <= o < Int.unsigned i1 + size_chunk (chunk_of_type ty) /\
-                   Int.unsigned i0 <= o < Int.unsigned i0 + size_chunk chunk).
+        assert (forall a b c d,
+                   c > 0 -> d > 0 ->
+                   a + c > b -> b + d > a ->
+                   exists o,
+                     a <= o < a + c /\
+                     b <= o < b + d).
         {
-          exists (Z.max (Int.unsigned i1) (Int.unsigned i0)).
+          clear. intros. exists (Z.max a b). 
           repeat split.
           apply Zmax_bound_l; auto. apply Zle_refl.
           rewrite Zmax_spec.
@@ -3466,12 +3555,23 @@ Proof.
             match goal with
               |- context [match ?a with _ => _ end] => destruct a eqn:?
             end.
-          destr. destruct ty; simpl; omega.
+          destr. omega. 
           omega.
           apply Zmax_bound_r. omega.
-          rewrite Zmax_spec; destr. omega. destruct chunk; simpl; omega.
+          rewrite Zmax_spec; destr. omega. omega. 
         }
-        destruct H as (o & C & D).
+        intros.
+        destruct (H1 _ _ _ _ (size_chunk_pos _) (size_chunk_pos _) g g0) as (o & E & D).
+        eapply OOB. 2: eapply Mem.perm_implies.
+        2: eapply Mem.perm_cur_max. 2: eapply RP. 3: constructor.
+        instantiate (1 := o - delta).
+        revert E. rewrite Int.add_assoc. rewrite (Int.add_commut (Int.repr delta)).
+        rewrite <- Int.add_assoc.
+        erewrite Mem.address_inject. clear; intros. omega.
+        3: apply H12. 
+        2: apply RP. eapply Mem.extends_inject_compose. eauto.
+        apply sep_pick1 in SEP_init; simpl in SEP_init; eauto.
+        
         generalize (A _ D) (OOB _ C).
         clear - memory_model_prf. intros A B. apply B. eapply Mem.perm_implies.
         apply Mem.perm_cur_max. eauto. constructor.
