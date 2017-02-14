@@ -1721,6 +1721,27 @@ Proof.
   intros. apply strong_unchanged_on_weak. eapply drop_perm_strong_unchanged_on; eauto.
 Qed.
 
+Lemma perm_free m b lo hi m':
+  free m b lo hi = Some m' ->
+  forall b' o' k p,
+    perm m' b' o' k p <->
+    ((~ (b' = b /\ lo <= o' < hi)) /\ perm m b' o' k p).
+Proof.
+  intros H b' o' k p.
+  assert (~ (b' = b /\ lo <= o' < hi) -> perm m b' o' k p -> perm m' b' o' k p) as H0.
+  {
+    intro H0.
+    eapply perm_free_1; eauto.
+    destruct (peq b' b); try tauto.
+    subst.
+    intuition xomega.
+  }
+  assert (b' = b /\ lo <= o' < hi -> ~ perm m' b' o' k p) as H1.
+  destruct 1; subst; eapply perm_free_2; eauto.
+  generalize (perm_free_3 _ _ _ _ _ H b' o' k p).
+  tauto.
+Qed.
+
 End WITHMEMORYMODEL.
 
 End Mem.

@@ -1730,7 +1730,47 @@ Proof.
   exists (v1'::vl'); split; constructor; auto.
 Qed.
 
+
 End EVAL_BUILTIN_ARG_LESSDEF.
+
+Section EVAL_BUILTIN_ARG_LESSDEF'.
+
+  Variable A : Type.
+  Variable ge : Senv.t.
+  Variables rs1 rs2 : A -> val.
+  Hypothesis rs_lessdef: forall a, Val.lessdef (rs1 a) (rs2 a).
+  Variables sp sp' : val.
+  Hypothesis sp_lessdef: Val.lessdef sp sp'.
+  Variable m : mem.
+
+
+  Lemma eval_builtin_arg_lessdef':
+  forall arg v v'
+    (EBA: eval_builtin_arg ge rs1 sp m arg v) 
+    (EBA': eval_builtin_arg ge rs2 sp' m arg v'),
+    Val.lessdef v v'.
+  Proof.
+    induction arg; intros; inv EBA; inv EBA'; subst; auto.
+    - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H2.
+      2: rewrite H3. simpl. apply Val.add_lessdef; auto. intros (v2 & B & C). inv B. auto.
+    - intros; apply Val.add_lessdef; auto.
+    - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H3.
+      2: rewrite H4. auto. intros (v2 & B & C). inv B. auto.
+    - apply Val.longofwords_lessdef. eauto. eauto.
+  Qed.
+
+  Lemma eval_builtin_args_lessdef':
+    forall args vl vl'
+      (EBA: eval_builtin_args ge rs1 sp m args vl) 
+      (EBA': eval_builtin_args ge rs2 sp' m args vl'),
+      Val.lessdef_list vl vl'.
+  Proof.
+    induction args; simpl; intros. inv EBA; inv EBA'. constructor.
+    inv EBA; inv EBA'. constructor; auto.
+    eapply eval_builtin_arg_lessdef'; eauto.
+  Qed.
+
+End EVAL_BUILTIN_ARG_LESSDEF'.
 
 End WITHEXTERNALCALLS.
 
