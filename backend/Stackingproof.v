@@ -2190,10 +2190,9 @@ Qed.
 signature [sg] can be retrieved in [m'] (a Mach memory state) and agree with the
 locset [init_ls].*)
 
-Definition init_args_mach j sg m' :=
+Definition init_args_mach j sg rs m' :=
   forall sl of ty,
     List.In (Locations.S sl of ty) (regs_of_rpairs (loc_arguments sg)) ->
-    forall rs,
     exists v,
       extcall_arg rs m' init_sp (S sl of ty) v /\
       Val.inject j (init_ls (S sl of ty)) v.
@@ -2216,7 +2215,7 @@ Hypothesis AGCS: agree_callee_save ls (parent_locset init_ls cs).
 Variable m': mem.
 Hypothesis SEP: m' |= stack_contents j cs cs'.
 
-Hypothesis init_args: init_args_mach j isg m' .
+Hypothesis init_args: init_args_mach j isg rs m'.
 
 Lemma transl_external_argument:
   forall l,
@@ -2441,9 +2440,9 @@ Qed.
 
 Opaque Z.mul.
 
-Program Definition minit_args_mach j sg_ : massert :=
+Program Definition minit_args_mach j sg_ rs : massert :=
   {|
-    m_pred := init_args_mach j sg_;
+    m_pred := init_args_mach j sg_ rs;
     m_footprint := fun b o =>
                      exists sl ofs ty,
                        In (S sl ofs ty) (regs_of_rpairs (loc_arguments sg_)) /\
@@ -2463,7 +2462,6 @@ Next Obligation.
   simpl; intros.
   exists Outgoing, of, ty; split; auto.
   eexists; split; eauto.
-  Unshelve. eauto.
 Defined.
 Next Obligation.
   exploit H. eauto.
@@ -2474,7 +2472,6 @@ Next Obligation.
   exploit H0. split.
   apply Zle_refl. destruct H2; simpl; omega.
   eapply Mem.perm_valid_block; eauto.
-  Unshelve. exact (Regmap.init Vundef).
 Defined.
 
 Fixpoint bounds_stack m ll (* hi *) :=
@@ -2568,7 +2565,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
                  ** stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j
-                 ** minit_args_mach j sg_
+                 ** minit_args_mach j sg_ rs
         )
         (PERM_stack: forall (ofs : Z) (p : permission), Mem.perm m sp ofs Max p -> 0 <= ofs < Linear.fn_stacksize f)
         (BS: bounds_stack m cs),
@@ -2592,7 +2589,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j
-                 ** minit_args_mach j sg_)
+                 ** minit_args_mach j sg_ rs)
         (BS: bounds_stack m cs),
       match_states s2_ (Mach.Callstate cs' fb rs m')
   | match_states_return:
@@ -2611,7 +2608,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j
-                 ** minit_args_mach j sg_)
+                 ** minit_args_mach j sg_ rs)
         (BS: bounds_stack m cs),
       match_states s2_ (Mach.Returnstate cs' rs m').
 
@@ -2834,6 +2831,45 @@ Ltac constr_match_states :=
   | |- _ => idtac
   end.
 
+Lemma extcall_arg_change_reg:
+  forall rs rs' m v sl o t v',
+    extcall_arg rs m v (S sl o t) v' ->
+    extcall_arg rs' m v (S sl o t) v'.
+Proof.
+  intros rs rs' m v sl o t v' EA. inv EA; constructor.
+  auto.
+Qed.
+
+Lemma init_args_mach_set_reg:
+  forall j sg_ rs rs' m0,
+    init_args_mach j sg_ rs m0 -> init_args_mach j sg_ rs' m0.
+Proof.
+  red; intros.
+  eapply H in H0. destruct H0 as (v0 & EA & INJ).
+  eapply extcall_arg_change_reg in EA.
+  eauto.
+Qed.
+
+Lemma sep_iamsg:
+  forall m' f j sp' ls pls psp pra cs cs' m (ge: Linear.genv) sg_ rs rs',
+    m'
+      |= frame_contents f j sp' ls pls psp pra **
+      stack_contents j cs cs' **
+      minjection j m ** globalenv_inject ge j ** minit_args_mach j sg_ rs ->
+    m'
+      |= frame_contents f j sp' ls pls psp pra **
+      stack_contents j cs cs' **
+      minjection j m ** globalenv_inject ge j ** minit_args_mach j sg_ rs'.
+Proof.
+  intros.
+  eapply sep_imp. eexact H. eauto.
+  apply sepconj_morph_1_Proper. auto.
+  apply sepconj_morph_1_Proper. auto.
+  apply sepconj_morph_1_Proper. auto.
+  red; intros; simpl; repeat split; auto.
+  apply init_args_mach_set_reg.  
+Qed.
+
 Theorem transf_step_correct:
   forall s1 t s2, Linear2.step ge s1 t s2 ->
   forall (WTS: wt_state init_ls (Linear2.state_lower s1)) s1' (MS: match_states s1 s1'),
@@ -2868,19 +2904,22 @@ Proof.
       econstructor.
       4: apply agree_regs_set_reg; eauto.
       4: apply agree_locs_set_reg; eauto.
-      all: eauto with mem.
+      all: eauto with mem. 
       eapply is_tail_cons_left; eauto.
       revert Hno_init_args.
       generalize (Linear2.state_invariant s1). rewrite Hs2.
       inversion step_high; inversion 1; subst; simpl in *; now intuition congruence.
       congruence.
+      eapply sep_iamsg; eauto with mem.
+      eapply frame_set_reg. eauto. 
+
     + (* Lgetstack, incoming *)
       unfold slot_valid in SV. InvBooleans.
       exploit incoming_slot_in_parameters; eauto. intros IN_ARGS.
       inversion STACKS; clear STACKS.
       subst. destruct TP as [TP | TP] .
       * elim (TP _ IN_ARGS).
-      * assert (init_args_mach j init_sg m') as INIT_ARGS_MACH.
+      * assert (init_args_mach j init_sg rs0 m') as INIT_ARGS_MACH.
         {
           subst.
           rewrite <- sep_assoc in SEP. apply sep_drop in SEP.
@@ -2890,7 +2929,7 @@ Proof.
         exploit frame_get_parent; eauto.
         intro PARST. Opaque Z.mul bound_outgoing. 
         subst.
-        exploit INIT_ARGS_MACH. eauto. instantiate (1 := Regmap.init Vundef). intros (v & EA & EAinj).
+        exploit INIT_ARGS_MACH. eauto. intros (v & EA & EAinj).
         esplit.
         -- split.
            ++ eapply plus_one.
@@ -2914,6 +2953,8 @@ Proof.
                  generalize (Linear2.state_invariant s1). rewrite Hs2.
                  inversion step_high; inversion 1; subst; simpl in *; now intuition congruence.
               ** congruence.
+              ** eapply sep_iamsg; eauto with mem.
+                 eapply frame_set_reg. eapply frame_undef_regs; eauto.
       * subst sg isg.
         subst s cs'.
         exploit frame_get_outgoing.
@@ -2942,6 +2983,8 @@ Proof.
               generalize (Linear2.state_invariant s1). rewrite Hs2.
               inversion step_high; inversion 1; subst; simpl in *; now intuition congruence.
            ++ congruence.
+           ++ eapply sep_iamsg; eauto with mem.
+              eapply frame_set_reg. eapply frame_undef_regs; eauto. 
     + (* Lgetstack, outgoing *)
       exploit frame_get_outgoing; eauto. intros (v & A & B).
       econstructor; split.
@@ -2954,7 +2997,9 @@ Proof.
       rewrite Hs2.
       inversion step_high; inversion 1; subst; simpl in * |- * ; now intuition congruence.
       congruence.
-  
+      eapply sep_iamsg; eauto with mem.
+      eapply frame_set_reg. eapply frame_undef_regs; eauto.
+
   - (* Lsetstack *)
     exploit wt_state_setstack; eauto. intros (SV & SW).
     set (ofs' := match sl with
@@ -2969,7 +3014,7 @@ Proof.
                                                            (LTL.undef_regs (destroyed_by_setstack ty) rs))
                      (parent_locset init_ls s) (parent_sp init_sp cs') (parent_ra init_ra cs')
                      ** stack_contents j s cs' ** minjection j m ** globalenv_inject ge j
-                     ** minit_args_mach j sg_
+                     ** minit_args_mach j sg_ (undef_regs (destroyed_by_setstack ty) rs0)
            ).
     {
       unfold ofs'; destruct sl; try discriminate.
