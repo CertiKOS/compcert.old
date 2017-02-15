@@ -1772,6 +1772,59 @@ Section EVAL_BUILTIN_ARG_LESSDEF'.
 
 End EVAL_BUILTIN_ARG_LESSDEF'.
 
+Section EVAL_BUILTIN_ARG_LESSDEF''.
+
+  Variable A : Type.
+  Variable ge : Senv.t.
+  Variables rs1 rs2 : A -> val.
+  Hypothesis rs_lessdef: forall a, Val.lessdef (rs1 a) (rs2 a).
+  Variables sp sp' : val.
+  Hypothesis sp_lessdef: Val.lessdef sp sp'.
+  Variables m m' : mem.
+  Hypotheses MEXT:  Mem.extends m m'.
+
+
+  Lemma eval_builtin_arg_lessdef'':
+  forall arg v
+    (EBA: eval_builtin_arg ge rs1 sp m arg v),
+  exists v', eval_builtin_arg ge rs2 sp' m' arg v' /\
+        Val.lessdef v v'.
+  Proof.
+    induction arg; intros; inv EBA; subst; auto;
+      try now (eexists; split; [ constructor | auto ]).
+    - exploit Mem.loadv_extends. eauto. eauto. apply Val.add_lessdef; try eassumption. eauto.
+      intros (v2 & B & C).
+      eexists; split. constructor. eauto. eauto.
+    - eexists; split; [ constructor; eauto | eauto ]. intros; apply Val.add_lessdef; auto.
+    - exploit Mem.loadv_extends. eauto. eauto. auto. 
+      intros (v2 & B & C).
+      eexists; split. constructor. eauto. eauto.
+    - apply IHarg1 in H1. apply IHarg2 in H3.
+      decompose [ex and] H1.
+      decompose [ex and] H3.
+      eexists; split; [ constructor; eauto | eauto ]. 
+      apply Val.longofwords_lessdef. eauto. eauto.
+  Qed.
+
+  Lemma eval_builtin_args_lessdef'':
+    forall args vl 
+      (EBA: eval_builtin_args ge rs1 sp m args vl),
+    exists vl',
+      eval_builtin_args ge rs2 sp' m' args vl' /\
+      Val.lessdef_list vl vl'.
+  Proof.
+    induction args; simpl; intros. inv EBA. eexists; split; eauto. constructor. 
+    inv EBA.
+    exploit IHargs; eauto. intros (vl' & EBA & LD).
+    exploit eval_builtin_arg_lessdef''; eauto.
+    intros (v' & EBA1 & L).
+    eexists; split.
+    constructor; eauto. eauto.
+  Qed.
+
+End EVAL_BUILTIN_ARG_LESSDEF''.
+
+
 End WITHEXTERNALCALLS.
 
 Hint Constructors eval_builtin_arg: barg.
