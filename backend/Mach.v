@@ -360,6 +360,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
+      forall BUILTIN_ENABLED : builtin_enabled ef,
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
   | exec_Mgoto:

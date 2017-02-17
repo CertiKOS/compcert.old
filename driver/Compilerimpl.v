@@ -24,6 +24,7 @@ Local Existing Instance Unusedglobproofimpl.Mem.memory_model_x_prf.
 
 Local Existing Instance Events.symbols_inject_instance.
 Parameter external_calls_ops: Events.ExternalCallsOps Memimpl.Mem.mem.
+Axiom external_calls_props: Events.ExternalCallsProps Memimpl.Mem.mem.
 Axiom external_calls_prf: Events.ExternalCalls Memimpl.Mem.mem.
 Axiom i64_helpers_correct_prf:
   SelectLongproof.I64HelpersCorrect Memimpl.Mem.mem.

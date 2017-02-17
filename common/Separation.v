@@ -902,6 +902,7 @@ Qed.
 
 Context `{external_calls_ops: !ExternalCallsOps mem}.
 Context `{symbols_inject'_instance: !SymbolsInject}.
+Context `{external_calls_props: !ExternalCallsProps mem}.
 Context `{external_calls_prf: !ExternalCalls mem}.
 
 Lemma external_call_parallel_rule:

@@ -256,8 +256,9 @@ Inductive step : state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
-      step (State s f sp pc rs m)
-         t (State s f sp pc' (regmap_setres res vres rs) m')
+      forall BUILTIN_ENABLED : builtin_enabled ef,
+        step (State s f sp pc rs m)
+             t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
       forall s f sp pc rs m cond args ifso ifnot b pc',
       (fn_code f)!pc = Some(Icond cond args ifso ifnot) ->

@@ -730,6 +730,16 @@ Notation " 'check' A ; B" := (if A then B else stuck)
 
 Local Open Scope reducts_monad_scope.
 
+Definition builtin_is_enabled (ef: external_function) :
+  {builtin_enabled ef} + {~ builtin_enabled ef}.
+Proof.
+  unfold builtin_enabled.
+  destruct ef; try (left; exact I).
+  destruct cc_enable_external_as_builtin.
+  left. exact I.
+  right; intro; assumption.
+Defined.
+
 Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
   match k, a with
   | LV, Eloc b ofs ty =>
@@ -915,11 +925,13 @@ Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
   | RV, Ebuiltin ef tyargs rargs ty =>
       match is_val_list rargs with
       | Some vtl =>
-          do vargs <- sem_cast_arguments vtl tyargs m;
-          match do_external ef w vargs m with
-          | None => stuck
-          | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
-          end
+        do vargs <- sem_cast_arguments vtl tyargs m;
+          if builtin_is_enabled ef then
+            match do_external ef w vargs m with
+            | None => stuck
+            | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
+            end
+          else stuck
       | _ =>
           incontext (fun x => Ebuiltin ef tyargs x ty) (step_exprlist rargs m)
       end
@@ -1025,7 +1037,8 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
-      exprlist_all_values rargs ->
+    exprlist_all_values rargs ->
+    exists _: builtin_enabled ef /\
       exists vargs t vres m' w',
          cast_arguments m rargs tyargs vargs
       /\ external_call ef ge vargs m t vres m'

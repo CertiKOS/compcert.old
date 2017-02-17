@@ -364,6 +364,15 @@ Proof.
   predSpec Int.eq Int.eq_spec i0 Int.zero; congruence.
 Qed.
 
+Lemma ef_inline_enabled:
+  forall ef,
+    ef_inline ef = true ->
+    builtin_enabled ef.
+Proof.
+  destruct ef; simpl; auto; discriminate.
+Qed.
+Hint Resolve ef_inline_enabled.
+
 Lemma classify_call_correct:
   forall unit sp e m a v fd,
   linkorder unit prog ->
@@ -372,7 +381,7 @@ Lemma classify_call_correct:
   match classify_call (prog_defmap unit) a with
   | Call_default => True
   | Call_imm id => exists b, Genv.find_symbol ge id = Some b /\ v = Vptr b Int.zero
-  | Call_builtin ef => fd = External ef
+  | Call_builtin ef => fd = External ef /\ builtin_enabled ef
   end.
 Proof.
   unfold classify_call; intros.
@@ -828,9 +837,10 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m')
         (EA: list_forall2 (CminorSel.eval_builtin_arg tge sp e' m') al args'),
-      match_states
-        (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
-        (State f' (Sbuiltin (sel_builtin_res optid) ef al) k' sp e' m')
+      forall BUILTIN_ENABLED : builtin_enabled ef,
+        match_states
+          (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
+          (State f' (Sbuiltin (sel_builtin_res optid) ef al) k' sp e' m')
   | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k'
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
@@ -983,7 +993,7 @@ Proof.
   eapply match_callstate with (cunit := cunit'); eauto.
   red; intros; eapply match_cont_call with (cunit := cunit); eauto. 
 + (* turned into Sbuiltin *)
-  intros EQ. subst fd.
+  intros [EQ ENABLED]. subst fd.
   exploit sel_builtin_args_correct; eauto. intros [vargs' [C D]].
   right; split. simpl. omega. split. auto.
   econstructor; eauto.

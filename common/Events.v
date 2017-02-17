@@ -1441,7 +1441,7 @@ Class ExternalCallsOps (mem: Type) {memory_model_ops: Mem.MemoryModelOps mem}: T
 }.
 Global Arguments ExternalCallsOps _ {_}.
 
-Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
+Class ExternalCallsProps mem `{external_calls_ops: ExternalCallsOps mem}
       {symbols_inject'_instance: SymbolsInject}
       {memory_model_prf: Mem.MemoryModel mem}
 : Prop :=
@@ -1460,8 +1460,23 @@ Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
   inline_assembly_properties:
     forall id sg, extcall_properties (inline_assembly_sem id sg) sg
 }.
-Global Arguments ExternalCalls _ {_ _ _ _}.
+Global Arguments ExternalCallsProps _ {_ _ _ _}.
 
+
+Class ExternalCalls mem `{external_calls_prf: ExternalCallsProps mem} : Type :=
+  {
+    cc_enable_external_as_builtin: bool
+  }.
+Global Arguments ExternalCalls mem {  memory_model_ops external_calls_ops symbols_inject'_instance memory_model_prf external_calls_prf }.
+
+
+Definition builtin_enabled mem `{external_calls_prf: ExternalCalls mem} (ec: external_function): Prop :=
+  match ec with
+	| EF_external _ _ => if cc_enable_external_as_builtin then True else False
+	| _ => True
+	end.
+
+Hint Unfold builtin_enabled.
 
 (** ** Combined semantics of external calls *)
 
