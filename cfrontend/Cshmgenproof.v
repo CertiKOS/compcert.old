@@ -822,6 +822,7 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
+  auto.
 Qed.
 
 Lemma make_store_correct:
@@ -1417,6 +1418,7 @@ Proof.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
+  auto.
   eapply match_states_skip; eauto.
 
 - (* seq *)

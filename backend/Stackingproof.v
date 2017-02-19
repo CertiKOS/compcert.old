@@ -3266,7 +3266,7 @@ Proof.
 
          destruct (eq_block b1 b2); auto.
          assert (b0 = b1).
-         revert H8 e INJ_INIT_SP HAMOA SP_NOT_INIT external_calls_prf. clear. intros; subst.
+         clear - H8 e INJ_INIT_SP HAMOA SP_NOT_INIT external_calls_prf0 external_calls_prf. subst.
          eapply HAMOA; eauto.
          subst b1. subst b0. assert (delta = 0) by congruence. subst delta.
          rewrite Int.add_zero in *.

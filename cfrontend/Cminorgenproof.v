@@ -2089,6 +2089,7 @@ Proof.
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  auto.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).

@@ -273,7 +273,7 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
       state.
 
 Section WITHEXTERNALCALLSOPS.
-Context `{external_calls_ops: ExternalCallsOps}.
+Context `{external_calls: ExternalCalls}.
 
 Section RELSEM.
 Variables init_sp init_ra: val.

@@ -907,6 +907,7 @@ Inductive step: state -> trace -> state -> Prop :=
       find_instr (Int.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs ESP) m args vargs ->
       external_call ef ge vargs m t vres m' ->
+      forall BUILTIN_ENABLED: builtin_enabled ef,
       rs' = nextinstr_nf
              (set_res res vres
                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->

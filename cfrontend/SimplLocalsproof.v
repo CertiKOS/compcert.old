@@ -286,6 +286,7 @@ Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None).
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
   simpl. constructor.
+  auto.
 Qed.
 
 Lemma step_Sdebug_var:
@@ -298,6 +299,7 @@ Proof.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
   simpl. constructor.
+  auto.
 Qed.
 
 Lemma step_Sset_debug:

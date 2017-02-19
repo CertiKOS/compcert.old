@@ -396,7 +396,7 @@ Proof.
   destruct (prog_defmap_linkorder _ _ _ _ H G) as (gd & P & Q).
   inv Q. inv H2. 
 - apply Genv.find_def_symbol in P. destruct P as (b' & X & Y). fold ge in X, Y. 
-  rewrite <- Genv.find_funct_ptr_iff in Y. congruence.
+  rewrite <- Genv.find_funct_ptr_iff in Y. split. congruence. auto.
 - simpl in INLINE. discriminate.
 Qed.
 
@@ -1018,7 +1018,7 @@ Proof.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto. apply sel_builtin_res_correct; auto.
 - (* Seq *)
   left; econstructor; split.
@@ -1104,7 +1104,7 @@ Proof.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto.
 - (* return *)
   apply match_call_cont_cont in MC. destruct MC as (cunit0 & hf0 & MC). 

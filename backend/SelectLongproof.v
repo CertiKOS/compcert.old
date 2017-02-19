@@ -48,7 +48,7 @@ Definition builtin_implements
   external_call (EF_builtin name sg) ge vargs m E0 vres m.
 
 Class I64HelpersCorrect mem
-      `{external_calls_ops: ExternalCallsOps mem}: Prop :=
+      `{external_calls: ExternalCalls mem}: Prop :=
 {
  i64_helpers_correct :
     (forall x z, Val.longoffloat x = Some z -> external_implements "__i64_dtos" sig_f_l (x::nil) z)
@@ -145,6 +145,7 @@ Remark eval_builtin_1:
   eval_expr ge sp e m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor. apply H0.
+  auto.
 Qed.
 
 Remark eval_builtin_2:
@@ -155,6 +156,7 @@ Remark eval_builtin_2:
   eval_expr ge sp e m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor. apply H1.
+  auto.
 Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=

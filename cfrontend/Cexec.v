@@ -1038,9 +1038,9 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
     exprlist_all_values rargs ->
-    exists _: builtin_enabled ef /\
-      exists vargs t vres m' w',
-         cast_arguments m rargs tyargs vargs
+    builtin_enabled ef /\
+    exists vargs t vres m' w',
+      cast_arguments m rargs tyargs vargs
       /\ external_call ef ge vargs m t vres m'
       /\ possible_trace w t w'
   | _ => True
@@ -1072,7 +1072,7 @@ Proof.
   exists t; exists v1; exists w'; auto.
   exists t; exists v1; exists w'; auto.
   exists v; auto.
-  intros; exists vargs; exists t; exists vres; exists m'; exists w'; auto.
+  intros; split. apply BUILTIN_ENABLED. exists vargs; exists t; exists vres; exists m'; exists w'; auto.
 Qed.
 
 Lemma callred_invert:
@@ -1546,9 +1546,11 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (do_external ef w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
   exploit do_ef_external_sound; eauto. intros [EC PT].
+  destruct (builtin_is_enabled ef) eqn:?...
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
   eapply sem_cast_arguments_sound; eauto.
   exists w0; auto.
+  destruct (builtin_is_enabled ef) eqn:?...
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   assert (x = vargs).
     exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
@@ -1650,6 +1652,7 @@ Proof.
   inv H0. rewrite H; econstructor; eauto.
 (* builtin *)
   exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
+  destruct (builtin_is_enabled ef); try contradiction.
   exploit do_ef_external_complete; eauto. intros C.
   rewrite A. rewrite B. rewrite C. econstructor; eauto.
 Qed.

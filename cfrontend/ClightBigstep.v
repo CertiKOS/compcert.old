@@ -106,6 +106,7 @@ Inductive exec_stmt: env -> temp_env -> mem -> statement -> trace -> temp_env ->
   | exec_Sbuiltin:   forall e le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e le m al tyargs vargs ->
       external_call ef ge vargs m t vres m' ->
+      forall BUILTIN_ENABLED: builtin_enabled ef,
       exec_stmt e le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sseq_1:   forall e le m s1 s2 t1 le1 m1 t2 le2 m2 out,
