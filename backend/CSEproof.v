@@ -109,8 +109,8 @@ End EXTEN.
 Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
+  Context `{external_calls_prf: ExternalCalls}.
+ 
 Lemma valnum_reg_holds:
   forall valu1 ge sp rs m n r n' v,
   numbering_holds valu1 ge sp rs m n ->

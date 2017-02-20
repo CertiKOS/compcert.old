@@ -272,6 +272,7 @@ Proof.
   exists ae, am.
   split. auto.
   split. eapply ematch_ge; eauto. apply ematch_init; auto.
+  destruct external_calls_prf.
   auto.
 - exists AE.top, mtop.
   split. apply PMap.gi.
@@ -320,7 +321,8 @@ Proof.
   destruct (analyze rm f)#s as [ | ae'' am'']; simpl; try tauto. intros [A B].
   exists ae'', am''.
   split. auto.
-  split. eapply ematch_ge; eauto. eauto.
+  split. eapply ematch_ge; eauto.
+  destruct external_calls_prf; eauto.
 Qed.
 
 (** ** Analysis of registers and builtin arguments *)
@@ -1510,23 +1512,24 @@ Proof.
   eapply external_call_nextblock; eauto.
 
 - (* return *)
+  destruct external_calls_prf.
   inv STK.
   + (* from public call *)
-   exploit return_from_public_call; eauto.
-   intros; rewrite SAME; auto.
-   intros (bc1 & A & B & C & D & E & F & G).
-   destruct (analyze rm f)#pc as [ |ae' am'] eqn:EQ; simpl in AN; try contradiction. destruct AN as [A1 A2].
-   eapply sound_regular_state with (bc := bc1); eauto.
-   apply sound_stack_exten with bc'; auto.
-   eapply ematch_ge; eauto. apply ematch_update. auto. auto.
+    exploit return_from_public_call; eauto.
+    intros; rewrite SAME; auto.
+    intros (bc1 & A & B & C & D & E & F & G).
+    destruct (analyze rm f)#pc as [ |ae' am'] eqn:EQ; simpl in AN; try contradiction. destruct AN as [A1 A2].
+    eapply sound_regular_state with (bc := bc1); eauto.
+    apply sound_stack_exten with bc'; auto.
+    eapply ematch_ge; eauto. apply ematch_update. auto. auto.
   + (* from private call *)
-   exploit return_from_private_call; eauto.
-   intros; rewrite SAME; auto.
-   intros (bc1 & A & B & C & D & E & F & G).
-   destruct (analyze rm f)#pc as [ |ae' am'] eqn:EQ; simpl in AN; try contradiction. destruct AN as [A1 A2].
-   eapply sound_regular_state with (bc := bc1); eauto.
-   apply sound_stack_exten with bc'; auto.
-   eapply ematch_ge; eauto. apply ematch_update. auto. auto.
+    exploit return_from_private_call; eauto.
+    intros; rewrite SAME; auto.
+    intros (bc1 & A & B & C & D & E & F & G).
+    destruct (analyze rm f)#pc as [ |ae' am'] eqn:EQ; simpl in AN; try contradiction. destruct AN as [A1 A2].
+    eapply sound_regular_state with (bc := bc1); eauto.
+    apply sound_stack_exten with bc'; auto.
+    eapply ematch_ge; eauto. apply ematch_update. auto. auto.
 Qed.
 
 End SOUNDNESS.
@@ -1765,7 +1768,7 @@ Proof.
   assert (Plt b (Genv.genv_next g)) by (eapply Genv.genv_symb_range; eauto).
   rewrite PTree.gso in H3 by (apply Plt_ne; auto). 
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
-  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
+  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; destruct external_calls_prf; eauto with mem).
   apply bmatch_inv with m.
   eapply H0; eauto.
   intros. transitivity (Mem.loadbytes m1 b ofs n0).
@@ -1794,7 +1797,7 @@ Proof.
 + assert (Plt b (Genv.genv_next g)) by (eapply Genv.genv_symb_range; eauto).
   rewrite PTree.gso in H3 by (apply Plt_ne; auto). 
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
-  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
+  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; destruct external_calls_prf; eauto with mem).
   apply bmatch_inv with m3.
   eapply store_init_data_list_other; eauto.
   eapply store_zeros_other; eauto.
@@ -1817,7 +1820,7 @@ Proof.
   destruct ((Genv.genv_defs g) ! b) as [ [ | ] | ] eqn:EQ; try discriminate.
   inv H3.
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
-  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
+  assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; destruct external_calls_prf; eauto with mem).
   apply bmatch_inv with m.
   eapply H0; eauto.
   unfold Genv.find_var_info. unfold Genv.find_def. rewrite EQ. reflexivity.

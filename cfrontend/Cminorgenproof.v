@@ -115,7 +115,8 @@ Proof.
   induction fbl; simpl; intros until p.
   congruence.
   destruct a as [[b' lo] hi]. case_eq (Mem.free m b' lo hi); try congruence.
-  intros. eauto with mem.
+  intros.
+  eapply IHfbl in H0; eauto. eapply Mem.perm_free_3; eauto.
 Qed.
 
 Lemma nextblock_freelist:
@@ -142,6 +143,7 @@ Proof.
   caseEq (Mem.free m b' lo' hi'); try congruence.
   intros m1 FREE1 FREE2.
   destruct H0. inv H.
+  destruct external_calls_prf.
   eauto with mem.
   red; intros. eapply Mem.perm_free_3; eauto. exploit IHl; eauto.
 Qed.
@@ -2005,7 +2007,7 @@ Proof.
 
 (* skip seq *)
   monadInv TR. left.
-  revert memory_model_prf external_calls_ops external_calls_prf0 external_calls_prf.
+  revert enable_builtins_instance external_calls_prf.
   dependent induction MK; subst.
   econstructor; split.
   apply plus_one. constructor.
@@ -2019,7 +2021,7 @@ Proof.
   auto.
 (* skip block *)
   monadInv TR. left.
-  revert memory_model_prf external_calls_ops external_calls_prf0 external_calls_prf.
+  revert enable_builtins_instance external_calls_prf.
   dependent induction MK; subst.
   econstructor; split.
   apply plus_one. constructor.
@@ -2137,7 +2139,7 @@ Opaque PTree.set.
 
 (* exit seq *)
   monadInv TR. left.
-  revert memory_model_prf external_calls_ops external_calls_prf0 external_calls_prf.
+  revert enable_builtins_instance external_calls_prf.
   dependent induction MK; subst.
   econstructor; split.
   apply plus_one. constructor.
@@ -2152,7 +2154,7 @@ Opaque PTree.set.
 
 (* exit block 0 *)
   monadInv TR. left.
-  revert memory_model_prf external_calls_ops external_calls_prf0 external_calls_prf.
+  revert enable_builtins_instance external_calls_prf.
   dependent induction MK; subst.
   econstructor; split.
   simpl. apply plus_one. constructor.
@@ -2164,7 +2166,7 @@ Opaque PTree.set.
 
 (* exit block n+1 *)
   monadInv TR. left.
-  revert memory_model_prf external_calls_ops external_calls_prf0 external_calls_prf.
+  revert enable_builtins_instance external_calls_prf.
   dependent induction MK; subst.
   econstructor; split.
   simpl. apply plus_one. constructor.

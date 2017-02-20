@@ -521,7 +521,7 @@ Qed.
 
 Section WITHEXTERNALCALLS.
 Local Existing Instance symbols_inject_instance.
-Context `{external_calls_prf: ExternalCalls (symbols_inject'_instance := symbols_inject_instance) }.
+Context `{external_calls_prf: ExternalCalls (symbols_inject_instance := symbols_inject_instance) }.
 Context `{memory_model_x_prf: !Mem.MemoryModelX mem}.
 
 Section SOUNDNESS.

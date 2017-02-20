@@ -144,11 +144,14 @@ Proof.
   + split; intros; edestruct inline_assembly_sem_empty; eauto.
 Qed.
 
-Local Instance external_calls_instance: Events.ExternalCalls Memimpl.Mem.mem.
+Local Instance enable_builtins_instance: Events.EnableBuiltins Memimpl.Mem.mem.
 Proof.
   constructor.
   exact true.
 Qed.
+
+Local Instance external_calls_instance: Events.ExternalCalls Memimpl.Mem.mem.
+
 
 (** ** Instantiate Cexec. *)
 

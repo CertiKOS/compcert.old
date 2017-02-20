@@ -48,7 +48,7 @@ Definition builtin_implements
   external_call (EF_builtin name sg) ge vargs m E0 vres m.
 
 Class I64HelpersCorrect mem
-      `{external_calls: ExternalCalls mem}: Prop :=
+      `{external_calls: ExternalCallsOps mem}: Prop :=
 {
  i64_helpers_correct :
     (forall x z, Val.longoffloat x = Some z -> external_implements "__i64_dtos" sig_f_l (x::nil) z)
@@ -91,7 +91,8 @@ Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) 
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
 Section CMCONSTR.
-Context `{i64_helpers_correct_prf: I64HelpersCorrect}.
+  Context mem `{external_calls_prf: ExternalCalls mem}.
+  Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: program.
 Variable hf: helper_functions.

@@ -778,6 +778,7 @@ Lemma match_stacks_inside_store:
   match_stacks_inside F m1 m1' stk stk' f' ctx sp' rs'.
 Proof.
   intros.
+  destruct external_calls_prf.
   eapply match_stacks_inside_invariant; eauto with mem.
 Qed.
 
@@ -1293,7 +1294,7 @@ Proof.
     (* offset is representable *)
     instantiate (1 := dstk ctx). generalize (Zmax2 (fn_stacksize f) 0). omega.
     (* size of target block is representable *)
-    intros. right. exploit SSZ2; eauto with mem. inv FB; omega.
+    intros. right. destruct external_calls_prf; exploit SSZ2; eauto with mem. inv FB; omega.
     (* we have full permissions on sp' at and above dstk ctx *)
     intros. apply Mem.perm_cur. apply Mem.perm_implies with Freeable; auto with mem.
     eapply range_private_perms; eauto. xomega.
