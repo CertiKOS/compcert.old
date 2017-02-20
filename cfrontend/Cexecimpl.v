@@ -135,7 +135,7 @@ Proof.
   + apply inline_assembly_sem.
 Defined.
 
-Local Instance external_calls_prf: Events.ExternalCalls Memimpl.Mem.mem.
+Local Instance external_calls_prf: Events.ExternalCallsProps Memimpl.Mem.mem.
 Proof.
   constructor.
   + apply external_functions_properties.
@@ -143,6 +143,15 @@ Proof.
   + apply external_functions_properties.
   + split; intros; edestruct inline_assembly_sem_empty; eauto.
 Qed.
+
+Local Instance enable_builtins_instance: Events.EnableBuiltins Memimpl.Mem.mem.
+Proof.
+  constructor.
+  exact true.
+Qed.
+
+Local Instance external_calls_instance: Events.ExternalCalls Memimpl.Mem.mem.
+
 
 (** ** Instantiate Cexec. *)
 

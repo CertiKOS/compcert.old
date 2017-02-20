@@ -1044,6 +1044,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   extends m1 m2 ->
   weak_valid_pointer m1 b ofs = true -> weak_valid_pointer m2 b ofs = true;
 
+  
 (** ** Properties of [magree]. *)
  ma_perm:
    forall m1 m2 (P: locset),
@@ -1457,6 +1458,18 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
        f b' <> None) ->
   Mem.inject f m m;
 
+(* Needed by Stackingproof, with Linear2 to Mach,
+   to compose extends (in Linear2) and inject. *)
+ extends_inject_compose:
+   forall f m1 m2 m3,
+     extends m1 m2 -> inject f m2 m3 -> inject f m1 m3;
+
+ (* Needed by EraseArgs. *)
+ extends_extends_compose:
+   forall m1 m2 m3,
+     extends m1 m2 -> extends m2 m3 -> extends m1 m3;
+
+
 (** ** Properties of [inject_neutral] *)
 
  neutral_inject:
@@ -1706,6 +1719,27 @@ Lemma drop_perm_unchanged_on:
      unchanged_on P m m'.
 Proof.
   intros. apply strong_unchanged_on_weak. eapply drop_perm_strong_unchanged_on; eauto.
+Qed.
+
+Lemma perm_free m b lo hi m':
+  free m b lo hi = Some m' ->
+  forall b' o' k p,
+    perm m' b' o' k p <->
+    ((~ (b' = b /\ lo <= o' < hi)) /\ perm m b' o' k p).
+Proof.
+  intros H b' o' k p.
+  assert (~ (b' = b /\ lo <= o' < hi) -> perm m b' o' k p -> perm m' b' o' k p) as H0.
+  {
+    intro H0.
+    eapply perm_free_1; eauto.
+    destruct (peq b' b); try tauto.
+    subst.
+    intuition xomega.
+  }
+  assert (b' = b /\ lo <= o' < hi -> ~ perm m' b' o' k p) as H1.
+  destruct 1; subst; eapply perm_free_2; eauto.
+  generalize (perm_free_3 _ _ _ _ _ H b' o' k p).
+  tauto.
 Qed.
 
 End WITHMEMORYMODEL.

@@ -28,6 +28,7 @@ Require Import Smallstep.
 Require Import Op.
 Require Import Locations.
 Require Import Conventions.
+Require Import EraseArgs.
 Require Stacklayout.
 
 (** * Abstract syntax *)
@@ -272,7 +273,7 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
       state.
 
 Section WITHEXTERNALCALLSOPS.
-Context `{external_calls_ops: ExternalCallsOps}.
+Context `{external_calls: ExternalCalls}.
 
 Section RELSEM.
 Variables init_sp init_ra: val.
@@ -359,6 +360,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
+      forall BUILTIN_ENABLED : builtin_enabled ef,
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
   | exec_Mgoto:
@@ -413,14 +415,12 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       forall (* CompCertX: BEGIN additional conditions for calling convention *)
-         (SP_VALID:
-            forall (b : Values.block) (o : Integers.Int.int),
-              (parent_sp s) = Values.Vptr b o ->
-              Mem.valid_block m b)
-         (SP_NOT_GLOBAL:
-            forall (b : Values.block) (o : Integers.Int.int),
-              (parent_sp s) = Values.Vptr b o ->
-              Ple (Genv.genv_next ge) b)
+        (STACK:
+           exists m_,
+             free_extcall_args (parent_sp s) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
+             exists t_ res'_ m'_,
+               external_call ef ge args m_ t_ res'_ m'_
+        )
       ,      (* CompCertX: END additional conditions for calling convention *)
       external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->

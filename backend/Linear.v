@@ -140,7 +140,7 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
       state.
 
 Section WITHEXTERNALCALLSOPS.
-Context `{external_calls_ops: ExternalCallsOps}.
+Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -207,8 +207,9 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
-      step (State s f sp (Lbuiltin ef args res :: b) rs m)
-         t (State s f sp b rs' m')
+      forall BUILTIN_ENABLED : builtin_enabled ef,
+        step (State s f sp (Lbuiltin ef args res :: b) rs m)
+             t (State s f sp b rs' m')
   | exec_Llabel:
       forall s f sp lbl b rs m,
       step (State s f sp (Llabel lbl :: b) rs m)

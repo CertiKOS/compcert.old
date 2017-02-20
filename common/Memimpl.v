@@ -5136,6 +5136,8 @@ Proof.
   exact free_parallel_inject.
   exact drop_outside_inject.
   exact self_inject.
+  exact extends_inject_compose.
+  exact extends_extends_compose.
   exact neutral_inject.
   exact empty_inject_neutral.
   exact alloc_inject_neutral.

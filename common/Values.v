@@ -1759,3 +1759,14 @@ Proof.
   unfold compose_meminj; rewrite H1; rewrite H3; eauto.
   rewrite Int.add_assoc. decEq. unfold Int.add. apply Int.eqm_samerepr. auto with ints.
 Qed.
+
+Lemma val_list_lessdef_inject_compose j l1 l2:
+	Val.lessdef_list l1 l2 ->
+	forall l3,
+	  Val.inject_list j l2 l3 ->
+	  Val.inject_list j l1 l3.
+Proof.
+	induction 1; inversion 1; subst; auto.
+	constructor; auto.
+	inversion H; subst; auto.
+Qed.

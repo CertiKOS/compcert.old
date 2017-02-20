@@ -706,6 +706,7 @@ Lemma transl_expr_Ebuiltin_correct:
   eval_exprlist ge sp e m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge vl m E0 v m ->
+  forall BUILTIN_ENABLED: builtin_enabled ef,
   transl_expr_prop le (Ebuiltin ef al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -1420,7 +1421,7 @@ Proof.
   eapply exec_Ibuiltin. eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-  traceEq.
+  auto. traceEq.
   econstructor; eauto. constructor.
   eapply match_env_update_res; eauto.
 

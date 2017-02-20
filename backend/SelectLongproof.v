@@ -91,7 +91,8 @@ Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) 
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
 Section CMCONSTR.
-Context `{i64_helpers_correct_prf: I64HelpersCorrect}.
+Context mem `{external_calls_prf: ExternalCalls mem}.
+Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: program.
 Variable hf: helper_functions.
@@ -145,6 +146,7 @@ Remark eval_builtin_1:
   eval_expr ge sp e m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor. apply H0.
+  auto.
 Qed.
 
 Remark eval_builtin_2:
@@ -155,6 +157,7 @@ Remark eval_builtin_2:
   eval_expr ge sp e m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor. apply H1.
+  auto.
 Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=

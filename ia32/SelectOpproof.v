@@ -74,7 +74,7 @@ Ltac TrivialExists :=
 (** * Correctness of the smart constructors *)
 
 Section CMCONSTR.
-Context `{external_call_ops: Events.ExternalCallsOps}.
+Context `{external_call: Events.ExternalCalls}.
 
 Variable ge: genv.
 Variable sp: val.

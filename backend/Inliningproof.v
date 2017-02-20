@@ -372,7 +372,6 @@ the global environment. *)
 
 Section WITHMEMINIT.
 Variable m_init: mem.
-Hypothesis genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init).
 
 Inductive match_globalenvs (F: meminj) (bound: block): Prop :=
   | mk_match_globalenvs
@@ -778,6 +777,7 @@ Lemma match_stacks_inside_store:
   match_stacks_inside F m1 m1' stk stk' f' ctx sp' rs'.
 Proof.
   intros.
+  destruct external_calls_prf.
   eapply match_stacks_inside_invariant; eauto with mem.
 Qed.
 
@@ -1293,7 +1293,7 @@ Proof.
     (* offset is representable *)
     instantiate (1 := dstk ctx). generalize (Zmax2 (fn_stacksize f) 0). omega.
     (* size of target block is representable *)
-    intros. right. exploit SSZ2; eauto with mem. inv FB; omega.
+    intros. right. destruct external_calls_prf; exploit SSZ2; eauto with mem. inv FB; omega.
     (* we have full permissions on sp' at and above dstk ctx *)
     intros. apply Mem.perm_cur. apply Mem.perm_implies with Freeable; auto with mem.
     eapply range_private_perms; eauto. xomega.

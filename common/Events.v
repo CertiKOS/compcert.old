@@ -1441,7 +1441,7 @@ Class ExternalCallsOps (mem: Type) {memory_model_ops: Mem.MemoryModelOps mem}: T
 }.
 Global Arguments ExternalCallsOps _ {_}.
 
-Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
+Class ExternalCallsProps mem `{external_calls_ops: ExternalCallsOps mem}
       {symbols_inject'_instance: SymbolsInject}
       {memory_model_prf: Mem.MemoryModel mem}
 : Prop :=
@@ -1460,7 +1460,32 @@ Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
   inline_assembly_properties:
     forall id sg, extcall_properties (inline_assembly_sem id sg) sg
 }.
-Global Arguments ExternalCalls _ {_ _ _ _}.
+Global Arguments ExternalCallsProps _ {_ _ _ _}.
+
+
+Class EnableBuiltins mem `{ExternalCallsOps mem}: Type :=
+  {
+    cc_enable_external_as_builtin: bool
+  }.
+Global Arguments EnableBuiltins _ { _ _ }.
+
+Definition builtin_enabled `{enable_builtin_instance: EnableBuiltins} (ec: external_function): Prop :=
+  match ec with
+	| EF_external _ _ => if cc_enable_external_as_builtin then True else False
+	| _ => True
+	end.
+
+Hint Unfold builtin_enabled.
+
+Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
+      `{enable_builtins_instance: !EnableBuiltins mem}
+      `{symbols_inject_instance: SymbolsInject}
+      `{memory_model_prf: !Mem.MemoryModel mem}
+      `{external_calls_props: !ExternalCallsProps mem}
+  : Type :=
+  {
+  }.
+Global Arguments ExternalCalls mem { memory_model_ops external_calls_ops enable_builtins_instance symbols_inject_instance memory_model_prf external_calls_props }.
 
 
 (** ** Combined semantics of external calls *)
@@ -1730,7 +1755,100 @@ Proof.
   exists (v1'::vl'); split; constructor; auto.
 Qed.
 
+
 End EVAL_BUILTIN_ARG_LESSDEF.
+
+Section EVAL_BUILTIN_ARG_LESSDEF'.
+
+  Variable A : Type.
+  Variable ge : Senv.t.
+  Variables rs1 rs2 : A -> val.
+  Hypothesis rs_lessdef: forall a, Val.lessdef (rs1 a) (rs2 a).
+  Variables sp sp' : val.
+  Hypothesis sp_lessdef: Val.lessdef sp sp'.
+  Variable m : mem.
+
+
+  Lemma eval_builtin_arg_lessdef':
+  forall arg v v'
+    (EBA: eval_builtin_arg ge rs1 sp m arg v)
+    (EBA': eval_builtin_arg ge rs2 sp' m arg v'),
+    Val.lessdef v v'.
+  Proof.
+    induction arg; intros; inv EBA; inv EBA'; subst; auto.
+    - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H2.
+      2: rewrite H3. simpl. apply Val.add_lessdef; auto. intros (v2 & B & C). inv B. auto.
+    - intros; apply Val.add_lessdef; auto.
+    - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H3.
+      2: rewrite H4. auto. intros (v2 & B & C). inv B. auto.
+    - apply Val.longofwords_lessdef. eauto. eauto.
+  Qed.
+
+  Lemma eval_builtin_args_lessdef':
+    forall args vl vl'
+      (EBA: eval_builtin_args ge rs1 sp m args vl)
+      (EBA': eval_builtin_args ge rs2 sp' m args vl'),
+      Val.lessdef_list vl vl'.
+  Proof.
+    induction args; simpl; intros. inv EBA; inv EBA'. constructor.
+    inv EBA; inv EBA'. constructor; auto.
+    eapply eval_builtin_arg_lessdef'; eauto.
+  Qed.
+
+End EVAL_BUILTIN_ARG_LESSDEF'.
+
+Section EVAL_BUILTIN_ARG_LESSDEF''.
+
+  Variable A : Type.
+  Variable ge : Senv.t.
+  Variables rs1 rs2 : A -> val.
+  Hypothesis rs_lessdef: forall a, Val.lessdef (rs1 a) (rs2 a).
+  Variables sp sp' : val.
+  Hypothesis sp_lessdef: Val.lessdef sp sp'.
+  Variables m m' : mem.
+  Hypotheses MEXT:  Mem.extends m m'.
+
+
+  Lemma eval_builtin_arg_lessdef'':
+  forall arg v
+    (EBA: eval_builtin_arg ge rs1 sp m arg v),
+  exists v', eval_builtin_arg ge rs2 sp' m' arg v' /\
+        Val.lessdef v v'.
+  Proof.
+    induction arg; intros; inv EBA; subst; auto;
+      try now (eexists; split; [ constructor | auto ]).
+    - exploit Mem.loadv_extends. eauto. eauto. apply Val.add_lessdef; try eassumption. eauto.
+      intros (v2 & B & C).
+      eexists; split. constructor. eauto. eauto.
+    - eexists; split; [ constructor; eauto | eauto ]. intros; apply Val.add_lessdef; auto.
+    - exploit Mem.loadv_extends. eauto. eauto. auto.
+      intros (v2 & B & C).
+      eexists; split. constructor. eauto. eauto.
+    - apply IHarg1 in H1. apply IHarg2 in H3.
+      decompose [ex and] H1.
+      decompose [ex and] H3.
+      eexists; split; [ constructor; eauto | eauto ].
+      apply Val.longofwords_lessdef. eauto. eauto.
+  Qed.
+
+  Lemma eval_builtin_args_lessdef'':
+    forall args vl
+      (EBA: eval_builtin_args ge rs1 sp m args vl),
+    exists vl',
+      eval_builtin_args ge rs2 sp' m' args vl' /\
+      Val.lessdef_list vl vl'.
+  Proof.
+    induction args; simpl; intros. inv EBA. eexists; split; eauto. constructor.
+    inv EBA.
+    exploit IHargs; eauto. intros (vl' & EBA & LD).
+    exploit eval_builtin_arg_lessdef''; eauto.
+    intros (v' & EBA1 & L).
+    eexists; split.
+    constructor; eauto. eauto.
+  Qed.
+
+End EVAL_BUILTIN_ARG_LESSDEF''.
+
 
 End WITHEXTERNALCALLS.
 

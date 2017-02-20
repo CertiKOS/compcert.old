@@ -150,7 +150,7 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
       state.
 
 Section WITHEXTCALLSOPS.
-Context `{external_calls_ops: ExternalCallsOps}.
+Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -193,7 +193,8 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
       external_call ef ge vl m E0 v m ->
-      eval_expr le (Ebuiltin ef al) v
+      forall BUILTIN_ENABLED : builtin_enabled ef,
+        eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
@@ -377,6 +378,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f res ef al k sp e m vl t v m',
       list_forall2 (eval_builtin_arg sp e m) al vl ->
       external_call ef ge vl m t v m' ->
+      forall BUILTIN_ENABLED : builtin_enabled ef,
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
 

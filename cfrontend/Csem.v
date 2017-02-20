@@ -312,6 +312,7 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
       external_call ef ge vargs m t vres m' ->
+      forall BUILTIN_ENABLED: builtin_enabled ef,
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 

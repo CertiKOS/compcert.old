@@ -364,6 +364,15 @@ Proof.
   predSpec Int.eq Int.eq_spec i0 Int.zero; congruence.
 Qed.
 
+Lemma ef_inline_enabled:
+  forall ef,
+    ef_inline ef = true ->
+    builtin_enabled ef.
+Proof.
+  destruct ef; simpl; auto; discriminate.
+Qed.
+Hint Resolve ef_inline_enabled.
+
 Lemma classify_call_correct:
   forall unit sp e m a v fd,
   linkorder unit prog ->
@@ -372,7 +381,7 @@ Lemma classify_call_correct:
   match classify_call (prog_defmap unit) a with
   | Call_default => True
   | Call_imm id => exists b, Genv.find_symbol ge id = Some b /\ v = Vptr b Int.zero
-  | Call_builtin ef => fd = External ef
+  | Call_builtin ef => fd = External ef /\ builtin_enabled ef
   end.
 Proof.
   unfold classify_call; intros.
@@ -387,7 +396,7 @@ Proof.
   destruct (prog_defmap_linkorder _ _ _ _ H G) as (gd & P & Q).
   inv Q. inv H2. 
 - apply Genv.find_def_symbol in P. destruct P as (b' & X & Y). fold ge in X, Y. 
-  rewrite <- Genv.find_funct_ptr_iff in Y. congruence.
+  rewrite <- Genv.find_funct_ptr_iff in Y. split. congruence. auto.
 - simpl in INLINE. discriminate.
 Qed.
 
@@ -533,17 +542,17 @@ Lemma sel_switch_long_correct:
 Proof.
   intros. eapply sel_switch_correct with (R := Rlong); eauto.
 - intros until n; intros EVAL R RANGE.
-  eapply eval_cmpl. eexact EVAL. apply eval_longconst with (n0 := Int64.repr n).
+  eapply eval_cmpl. eexact EVAL. apply eval_longconst with (n := Int64.repr n).
   inv R. unfold Val.cmpl. simpl. f_equal; f_equal. unfold Int64.eq.
   rewrite Int64.unsigned_repr. destruct (zeq (Int64.unsigned n0) n); auto.
   unfold Int64.max_unsigned; omega.
 - intros until n; intros EVAL R RANGE.
-  eapply eval_cmplu. eexact EVAL. apply eval_longconst with (n0 := Int64.repr n).
+  eapply eval_cmplu. eexact EVAL. apply eval_longconst with (n := Int64.repr n).
   inv R. unfold Val.cmplu. simpl. f_equal; f_equal. unfold Int64.ltu.
   rewrite Int64.unsigned_repr. destruct (zlt (Int64.unsigned n0) n); auto.
   unfold Int64.max_unsigned; omega.
 - intros until n; intros EVAL R RANGE.
-  exploit eval_subl.  eexact EVAL. apply eval_longconst with (n0 := Int64.repr n).
+  exploit eval_subl.  eexact EVAL. apply eval_longconst with (n := Int64.repr n).
   intros (vb & A & B).
   inv R. simpl in B. inv B. econstructor; split; eauto.
   replace ((Int64.unsigned n0 - n) mod Int64.modulus)
@@ -828,9 +837,10 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m')
         (EA: list_forall2 (CminorSel.eval_builtin_arg tge sp e' m') al args'),
-      match_states
-        (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
-        (State f' (Sbuiltin (sel_builtin_res optid) ef al) k' sp e' m')
+      forall BUILTIN_ENABLED : builtin_enabled ef,
+        match_states
+          (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
+          (State f' (Sbuiltin (sel_builtin_res optid) ef al) k' sp e' m')
   | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k'
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
@@ -983,7 +993,7 @@ Proof.
   eapply match_callstate with (cunit := cunit'); eauto.
   red; intros; eapply match_cont_call with (cunit := cunit); eauto. 
 + (* turned into Sbuiltin *)
-  intros EQ. subst fd.
+  intros [EQ ENABLED]. subst fd.
   exploit sel_builtin_args_correct; eauto. intros [vargs' [C D]].
   right; split. simpl. omega. split. auto.
   econstructor; eauto.
@@ -1008,7 +1018,7 @@ Proof.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto. apply sel_builtin_res_correct; auto.
 - (* Seq *)
   left; econstructor; split.
@@ -1094,7 +1104,7 @@ Proof.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto.
 - (* return *)
   apply match_call_cont_cont in MC. destruct MC as (cunit0 & hf0 & MC). 

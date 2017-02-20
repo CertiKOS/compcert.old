@@ -378,6 +378,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       leftcontext RV RV C ->
       eval_simple_list e m rargs tyargs vargs ->
       external_call ef ge vargs m t vres m' ->
+      forall BUILTIN_ENABLED: builtin_enabled ef,
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
 
@@ -574,6 +575,7 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
+      builtin_enabled ef /\
       exists vargs, exists t, exists vres, exists m',
          cast_arguments m rargs tyargs vargs
       /\ external_call ef ge vargs m t vres m'
@@ -606,7 +608,7 @@ Proof.
   exists t; exists v1; auto.
   exists t; exists v1; auto.
   exists v; auto.
-  intros. exists vargs; exists t; exists vres; exists m'; auto.
+  intros. split; auto. exists vargs; exists t; exists vres; exists m'; auto.
 Qed.
 
 Lemma callred_invert:
@@ -1385,7 +1387,7 @@ Proof.
   eapply safe_steps. eexact H.
   apply (eval_simple_list_steps f k e m rargs vl E C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [vargs [t [vres [m' [U V]]]]].
+  intros [BUITIN_ENABLED [vargs [t [vres [m' [U V]]]]]].
   econstructor; econstructor; eapply step_builtin; eauto.
   eapply can_eval_simple_list; eauto.
 (* paren *)

@@ -381,13 +381,13 @@ Proof.
   constructor. eexact E1. constructor.
   simpl; constructor.
   simpl; auto.
-  traceEq.
+  auto. traceEq.
 - eapply star_step; eauto.
   econstructor.
   constructor.
   simpl; constructor.
   simpl; auto.
-  traceEq.
+  auto. traceEq.
 Qed.
 
 (** Matching between program states. *)

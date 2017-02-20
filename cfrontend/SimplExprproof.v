@@ -794,7 +794,7 @@ Proof.
   intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto. constructor.
-  simpl. econstructor; eauto.
+  simpl. econstructor; eauto. auto.
 (* nonvolatile case *)
   intros [A B]. subst t. constructor. eapply eval_Elvalue; eauto.
 Qed.
@@ -816,7 +816,7 @@ Proof.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto.
   econstructor; eauto. rewrite H3; eauto. constructor.
-  simpl. econstructor; eauto.
+  simpl. econstructor; eauto. auto.
 (* nonvolatile case *)
   intros [A B]. subst t. econstructor; eauto. congruence.
 Qed.

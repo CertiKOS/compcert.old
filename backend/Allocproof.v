@@ -2145,7 +2145,7 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   instantiate (1 := ls2); auto.
-  eapply star_right. eexact A3.
+  auto. eapply star_right. eexact A3.
   econstructor.
   reflexivity. reflexivity. reflexivity. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
