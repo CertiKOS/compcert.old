@@ -1602,7 +1602,7 @@ Proof.
   intros.
   destruct (j b) eqn:?.
   + destruct p. exploit H. eauto. intros.
-    assert (b0 = sp') by congruence. subst.
+    assert (b0 = sp') by congruence. subst. eapply INJ_UNIQUE in Heqo. auto.
   + generalize (H0 _ _ _ Heqo H2).
     intros (A & B).
     apply VB in INJ. congruence.
