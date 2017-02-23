@@ -126,7 +126,7 @@ let name_of_fkind = function
   | FDouble -> "double"
   | FLongDouble -> "long double"
 
-let rec dcl pp ty n =
+let rec dcl ?(pp_indication=true) pp ty n =
   match ty with
   | TVoid a ->
       fprintf pp "void%a%t" attributes a n
@@ -142,13 +142,14 @@ let rec dcl pp ty n =
       dcl pp t n'
   | TArray(t, sz, a) ->
       let n' pp =
+        n pp;
         begin match a with
-        | [] -> n pp
-        | _  -> fprintf pp " (%a%t)" attributes a n
+        | [] -> fprintf pp "["
+        | _  -> fprintf pp "[%a " attributes a
         end;
         begin match sz with
-        | None -> fprintf pp "[]"
-        | Some i -> fprintf pp "[%Ld]" i
+        | None -> fprintf pp "]"
+        | Some i -> fprintf pp "%Ld]" i
         end in
       dcl pp t n'
   | TFun(tres, args, vararg, a) ->
@@ -156,11 +157,10 @@ let rec dcl pp ty n =
         dcl pp ty
           (fun pp -> fprintf pp " %a" ident id) in
       let n' pp =
-        begin match a with
-        | [] -> n pp
-        | _  -> fprintf pp " (%a%t)" attributes a n
-        end;
-        fprintf pp "(@[<hov 0>";
+        attributes pp a;
+        n pp;
+        fprintf pp "(";
+        if pp_indication then fprintf pp "@[<hov 0>";
         begin match args with
         | None -> ()
         | Some [] -> if vararg then fprintf pp "..." else fprintf pp "void"
@@ -169,7 +169,8 @@ let rec dcl pp ty n =
             List.iter (fun a -> fprintf pp ",@ "; param a) al;
             if vararg then fprintf pp ",@ ..."
         end;
-        fprintf pp "@])" in
+        if pp_indication then fprintf pp "@]";
+        fprintf pp ")" in
       dcl pp tres n'
   | TNamed(id, a) ->
       fprintf pp "%a%a%t" ident id attributes a n
@@ -182,6 +183,9 @@ let rec dcl pp ty n =
 
 let typ pp ty =
   dcl pp ty (fun _ -> ())
+
+let typ_raw pp ty =
+  dcl ~pp_indication:false pp ty (fun _ -> ())
 
 type associativity = LtoR | RtoL | NA
 

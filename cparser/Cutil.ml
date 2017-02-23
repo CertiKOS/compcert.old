@@ -20,6 +20,11 @@ open C
 open Env
 open Machine
 
+
+(* Empty location *)
+
+let no_loc = ("", -1)
+
 (* Set and Map structures over identifiers *)
 
 module Ident = struct
@@ -31,6 +36,15 @@ module IdentSet = Set.Make(Ident)
 module IdentMap = Map.Make(Ident)
 
 (* Operations on attributes *)
+
+(* Normalize the name of an attribute, removing starting and trailing '__' *)
+
+let re_normalize_attrname = Str.regexp "^__\\(.*\\)__$"
+
+let normalize_attrname a =
+  if Str.string_match re_normalize_attrname a 0
+  then Str.matched_group 1 a
+  else a
 
 (* Lists of attributes are kept sorted in increasing order *)
 
@@ -78,17 +92,34 @@ let rec remove_custom_attributes (names: string list)  (al: attributes) =
   | a :: tl ->
       a :: remove_custom_attributes names tl
 
+(* Classification of attributes *)
+
+type attribute_class =
+  | Attr_name           (* Attribute applies to the names being declared  *)
+  | Attr_type           (* Attribute applies to types *)
+  | Attr_struct         (* Attribute applies to struct, union and enum *)
+  | Attr_function       (* Attribute applies to function types and decls *)
+  | Attr_unknown        (* Unknown attribute *)
+      
+let attr_class : (string, attribute_class) Hashtbl.t = Hashtbl.create 32
+
+let declare_attribute name cls =
+  Hashtbl.replace attr_class (normalize_attrname name) cls
+
+let declare_attributes l =
+  List.iter (fun (n,c) -> declare_attribute n c) l
+
+let class_of_attribute = function
+  | AConst | AVolatile | ARestrict | AAlignas _ -> Attr_type
+  | Attr(name, args) ->
+      try Hashtbl.find attr_class (normalize_attrname name)
+      with Not_found -> Attr_unknown
+
 (* Is an attribute a ISO C standard attribute? *)
 
 let attr_is_standard = function
   | AConst | AVolatile | ARestrict -> true
   | AAlignas _ | Attr _ -> false
-
-(* Is an attribute type-related (true) or variable-related (false)? *)
-
-let attr_is_type_related = function
-  | Attr(("packed" | "__packed__"), _) -> true
-  | _ -> false
 
 (* Is an attribute applicable to a whole array (true) or only to
    array elements (false)? *)
@@ -478,7 +509,7 @@ let rec sizeof env t =
       | Some s ->
           match cautious_mul n s with
           | Some sz -> Some sz
-          | None -> error "sizeof(%a) overflows" Cprint.typ t'; Some 1
+          | None -> error no_loc "sizeof(%a) overflows" Cprint.typ t'; Some 1
       end
   | TFun(_, _, _, _) -> !config.sizeof_fun
   | TNamed(_, _) -> sizeof env (unroll env t)
@@ -527,6 +558,25 @@ let sizeof_struct env members =
         sizeof_rec (align ofs a + s) ml'
       end
   in sizeof_rec 0 members
+
+(* Compute the offset of a struct member *)
+let offsetof env ty field =
+  let rec sub acc name = function
+    | [] -> List.rev acc
+    | m::rem -> if m.fld_name = name then
+        List.rev acc
+      else
+        sub (m::acc) name rem in
+  match unroll env ty with
+    | TStruct (id,_) ->
+      let str = Env.find_struct env id in
+      let pre = sub [] field.fld_name str.ci_members in
+      begin match sizeof_struct env pre, alignof env field.fld_typ with
+      | Some s, Some a ->
+        align s a
+      | _ -> assert false end
+    | TUnion _ -> 0
+    | _ -> assert false
 
 (* Simplified version to compute offsets on structs without bitfields *)
 let struct_layout env members =
@@ -678,13 +728,19 @@ let is_function_type env t =
   | TFun _ -> true
   | _ -> false
 
+let is_anonymous_composite = function
+  | TStruct (id,_)
+  | TUnion (id,_) -> id.C.name = ""
+  | _ -> false
+
 (* Find the info for a field access *)
 
 let field_of_dot_access env t m =
-  match unroll env t with
-  | TStruct(id, _) -> Env.find_struct_member env (id, m)
-  | TUnion(id, _) -> Env.find_union_member env (id, m)
-  | _ -> assert false
+ let m = match unroll env t with
+   | TStruct(id, _) -> Env.find_struct_member env (id, m)
+   | TUnion(id, _) -> Env.find_union_member env (id, m)
+   | _ -> assert false in
+ List.hd (List.rev m)
 
 let field_of_arrow_access env t m =
   match unroll env t with
@@ -941,6 +997,14 @@ let valid_cast env tfrom tto =
   | TUnion(s1, _), TUnion(s2, _) -> s1 = s2
   | _, _ -> false
 
+(* Check that the cast from tfrom to tto is an integer to pointer conversion *)
+
+let int_pointer_conversion env tfrom tto =
+  match unroll env tfrom, unroll env tto with
+  | (TInt _ | TEnum _),(TPtr _)
+  | (TPtr _),(TInt _ | TEnum _) -> true
+  | _,_ -> false
+
 (* Construct an integer constant *)
 
 let intconst v ik =
@@ -1007,10 +1071,6 @@ let sseq loc s1 s2 =
 let sassign loc lv rv =
   { sdesc = Sdo (eassign lv rv); sloc = loc }
 
-(* Empty location *)
-
-let no_loc = ("", -1)
-
 (* Dummy skip statement *)
 
 let sskip = { sdesc = Sskip; sloc = no_loc }
@@ -1026,6 +1086,7 @@ let formatloc pp (filename, lineno) =
   if filename <> "" then Format.fprintf pp "%s:%d: " filename lineno
 
 (* Generate the default initializer for the given type *)
+exception No_default_init
 
 let rec default_init env ty =
   match unroll env ty with
@@ -1049,11 +1110,11 @@ let rec default_init env ty =
   | TUnion(id, _) ->
       let ci = Env.find_union env id in
       begin match ci.ci_members with
-      | [] -> assert false
+      | [] -> raise No_default_init
       | fld :: _ -> Init_union(id, fld, default_init env fld.fld_typ)
       end
   | _ ->
-      assert false
+      raise No_default_init
 
 (* Substitution of variables by expressions *)
 

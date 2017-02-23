@@ -16,6 +16,7 @@
 (* Parsing of command-line flags and arguments *)
 
 open Printf
+open Responsefile
 
 type pattern =
   | Exact of string
@@ -31,6 +32,8 @@ type action =
   | Self of (string -> unit)
   | String of (string -> unit)
   | Integer of (int -> unit)
+  | Ignore
+  | Unit of (unit -> unit)
 
 let match_pattern text = function
   | Exact s ->
@@ -95,8 +98,37 @@ let parse_array spec argv first last =
           end else begin
             eprintf "Option `%s' expects an argument\n" s; exit 2
           end
+      | Some (Ignore) ->
+          if i + 1 <= last then begin
+            parse (i+2)
+          end else begin
+            eprintf "Option `%s' expects an argument\n" s; exit 2
+          end
+      | Some (Unit f) -> f (); parse (i+1)
     end
   in parse first
 
 let parse_cmdline spec =
-  parse_array spec Sys.argv 1 (Array.length Sys.argv - 1)
+  try
+    let argv = expandargv Sys.argv in
+    parse_array spec argv 1 (Array.length argv - 1)
+  with Responsefile.Error s ->
+    eprintf "%s" s;
+    exit 2
+
+let long_int_action key s =
+  let ls = String.length s
+  and lkey = String.length key in
+  assert (ls > lkey);
+  let s = String.sub s (lkey + 1) (ls - lkey - 1) in
+  try
+    int_of_string s
+  with Failure _ ->
+    eprintf "Argument to option `%s' must be an integer\n" key;
+    exit 2
+
+let longopt_int key f =
+  let act s =
+    let n = long_int_action key s in
+    f n in
+  Prefix (key ^ "="),Self act

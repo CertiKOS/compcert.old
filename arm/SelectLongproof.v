@@ -2,7 +2,7 @@
 (*                                                                     *)
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
-(*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
+(*                 Xavier Leroy, INRIA Paris                           *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -10,9 +10,13 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-let big_endian =
-  match Configuration.arch with
-  | "powerpc" -> true
-  | "arm" -> false
-  | "ia32" -> false
-  | _ -> assert false
+(** Instruction selection for 64-bit integer operations *)
+
+Require Import String Coqlib Maps Integers Floats Errors.
+Require Archi.
+Require Import AST Values Memory Globalenvs Events.
+Require Import Cminor Op CminorSel.
+Require Import SelectOp SelectOpproof SplitLong SplitLongproof.
+Require Import SelectLong.
+
+(** This file is empty because we use the default implementation provided in [SplitLong]. *)

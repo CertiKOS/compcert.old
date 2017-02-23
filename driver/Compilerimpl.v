@@ -28,7 +28,7 @@ Axiom external_calls_props: Events.ExternalCallsProps Memimpl.Mem.mem.
 Axiom enable_builtins_instance: Events.EnableBuiltins Memimpl.Mem.mem.
 Axiom external_calls_prf: Events.ExternalCalls Memimpl.Mem.mem.
 Axiom i64_helpers_correct_prf:
-  SelectLongproof.I64HelpersCorrect Memimpl.Mem.mem.
+  SplitLongproof.I64HelpersCorrect Memimpl.Mem.mem.
 
 (** * Correctness of the CompCert compiler *)
 

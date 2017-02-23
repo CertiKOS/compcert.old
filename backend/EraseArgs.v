@@ -20,7 +20,7 @@ Definition free_extcall_arg sp m e :=
     | S Outgoing ofs ty =>
       match sp with
         | Vptr b o =>
-          let of :=(Int.unsigned (Int.add o (Int.repr (Stacklayout.fe_ofs_arg + 4 * ofs)))) in
+          let of :=(Ptrofs.unsigned (Ptrofs.add o (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)))) in
           Mem.free m b of (of + size_chunk (chunk_of_type ty))
         | _ => None
       end
@@ -93,8 +93,8 @@ Proof.
   destruct sl; auto.
   destruct sp; try discriminate.
   inversion LESSDEF; subst.
-  set (o := Int.unsigned
-              (Int.add i (Int.repr (Stacklayout.fe_ofs_arg + 4 * pos)))).
+  set (o := Ptrofs.unsigned
+              (Ptrofs.add i (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * pos)))).
   intros m m' H m_ H0.
   destruct (Mem.free m b o (o + size_chunk (chunk_of_type ty))) eqn:FREE; try discriminate.
   exploit Mem.free_parallel_extends; eauto.

@@ -45,6 +45,7 @@ module type TARGET =
       val default_falignment: int
       val new_label: unit -> int
       val label: out_channel -> int -> unit
+      val address: string
     end
 
 (* On-the-fly label renaming *)
@@ -137,6 +138,9 @@ let cfi_section =
 (* Basic printing functions *)
 let coqint oc n =
   fprintf oc "%ld" (camlint_of_coqint n)
+
+let coqint64 oc n =
+  fprintf oc "%Ld" (camlint64_of_coqint n)
 
 (** Programmer-supplied annotations (__builtin_annot). *)
 

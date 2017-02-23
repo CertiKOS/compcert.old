@@ -65,10 +65,10 @@ let format_value m flags length conv arg =
   | ('d'|'i'|'u'|'o'|'x'|'X'|'c'), (""|"h"|"hh"|"l"|"z"|"t"), _ ->
       "<int argument expected>"
   | ('d'|'i'|'u'|'o'|'x'|'X'), ("ll"|"j"), Vlong i ->
-      format_int64 (flags ^ conv) (camlint64_of_coqint i)
+       format_int64 (flags ^ conv) (camlint64_of_coqint i)
   | ('d'|'i'|'u'|'o'|'x'|'X'), ("ll"|"j"), _ ->
       "<long long argument expected"
-  | ('f'|'e'|'E'|'g'|'G'|'a'), "", Vfloat f ->
+  | ('f'|'e'|'E'|'g'|'G'|'a'), (""|"l"), Vfloat f ->
       format_float (flags ^ conv) (camlfloat_of_coqfloat f)
   | ('f'|'e'|'E'|'g'|'G'|'a'), "", _ ->
       "<float argument expected"
@@ -128,16 +128,15 @@ let do_printf m fmt args =
 let (>>=) opt f = match opt with None -> None | Some arg -> f arg
 
 (* Like eventval_of_val, but accepts static globals as well *)
-
 let convert_external_arg ge v t =
-  match v, t with
-  | Vint i, AST.Tint -> Some (EVint i)
-  | Vfloat f, AST.Tfloat -> Some (EVfloat f)
-  | Vsingle f, AST.Tsingle -> Some (EVsingle f)
-  | Vlong n, AST.Tlong -> Some (EVlong n)
-  | Vptr(b, ofs), AST.Tint ->
+  match v with
+  | Vint i -> Some (EVint i)
+  | Vfloat f -> Some (EVfloat f)
+  | Vsingle f -> Some (EVsingle f)
+  | Vlong n -> Some (EVlong n)
+  | Vptr(b, ofs) ->
       Senv.invert_symbol ge b >>= fun id -> Some (EVptr_global(id, ofs))
-  | _, _ -> None
+  | _ -> None
 
 let rec convert_external_args ge vl tl =
   match vl, tl with
@@ -148,12 +147,14 @@ let rec convert_external_args ge vl tl =
   | _, _ -> None
 
 let do_external_function id sg ge w args m =
-  match camlstring_of_coqstring id, args with
+ match camlstring_of_coqstring id, args with
   | "printf", Vptr(b, ofs) :: args' ->
       extract_string m b ofs >>= fun fmt ->
-      print_string (do_printf m fmt args');
+      let fmt' = do_printf m fmt args' in
+      let len = coqint_of_camlint (Int32.of_int (String.length fmt')) in
+      Format.print_string fmt';
       flush stdout;
       convert_external_args ge args sg.sig_args >>= fun eargs ->
-      Some(((w, [Event_syscall(id, eargs, EVint Int.zero)]), Vint Int.zero), m)
+      Some(((w, [Event_syscall(id, eargs, EVint len)]), Vint len), m)
   | _ ->
       None

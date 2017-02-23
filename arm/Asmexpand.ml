@@ -30,6 +30,9 @@ let _2 = coqint_of_camlint 2l
 let _4 = coqint_of_camlint 4l
 let _8 = coqint_of_camlint 8l
 let _16 = coqint_of_camlint 16l
+let _32 = coqint_of_camlint 32l
+let _64 = coqint_of_camlint 64l
+let _m1 = coqint_of_camlint (-1l)
 
 (* Emit instruction sequences that set or offset a register by a constant. *)
 (* No S suffix because they are applied to SP most of the time. *)
@@ -182,13 +185,14 @@ let expand_builtin_vload_common chunk base ofs res =
   | Mint32, BR(IR res) ->
      emit (Pldr (res, base, SOimm ofs))
   | Mint64, BR_splitlong(BR(IR res1), BR(IR res2)) ->
-     let ofs' = Int.add ofs _4 in
+     let ofs_hi = if Archi.big_endian then ofs else Int.add ofs _4 in
+     let ofs_lo = if Archi.big_endian then Int.add ofs _4 else ofs in
      if base <> res2 then begin
-	 emit (Pldr (res2, base, SOimm ofs));
-	 emit (Pldr (res1, base, SOimm ofs'))
+	 emit (Pldr (res2, base, SOimm ofs_lo));
+	 emit (Pldr (res1, base, SOimm ofs_hi))
        end else begin
-	 emit (Pldr (res1, base, SOimm ofs'));
-	 emit (Pldr (res2, base, SOimm ofs))
+	 emit (Pldr (res1, base, SOimm ofs_hi));
+	 emit (Pldr (res2, base, SOimm ofs_lo))
        end
   | Mfloat32, BR(FR res) ->
      emit (Pflds (res, base, ofs))
@@ -223,9 +227,10 @@ let expand_builtin_vstore_common chunk base ofs src =
   | Mint32, BA(IR src) ->
      emit (Pstr (src, base, SOimm ofs))
   | Mint64, BA_splitlong(BA(IR src1), BA(IR src2)) ->
-     let ofs' = Int.add ofs _4 in
-     emit (Pstr (src2, base, SOimm ofs));
-     emit (Pstr (src1, base, SOimm ofs'))
+     let ofs_hi = if Archi.big_endian then ofs else Int.add ofs _4 in
+     let ofs_lo = if Archi.big_endian then Int.add ofs _4 else ofs in
+     emit (Pstr (src2, base, SOimm ofs_lo));
+     emit (Pstr (src1, base, SOimm ofs_hi))
   | Mfloat32, BA(FR src) ->
      emit (Pfsts (src, base, ofs))
   | Mfloat64, BA(FR src) ->
@@ -294,6 +299,33 @@ let expand_builtin_inline name args res =
      emit (Pmovite (TCeq, IR14, SOreg IR14, SOimm _0));
      emit (Pclz (res, ah));
      emit (Padd (res, res, SOreg IR14))
+  | ("__builtin_ctz" | "__builtin_ctzl"), [BA(IR a1)], BR(IR res) ->
+     emit (Padd(IR14, a1, SOimm _m1));   (* tmp := x-1 *)
+     emit (Pmvn(res, SOreg a1));         (* res := ~(x) *)
+     emit (Pand(res, IR14, SOreg res));  (* res := tmp & ~(x) *)
+     emit (Pclz(res, res));              (* res := #leading zeros *)
+     emit (Prsb(res, res, SOimm _32))    (* res := 32 - #leading zeros *)
+  | "__builtin_ctzll", [BA_splitlong(BA(IR ah), BA(IR al))], BR(IR res) ->
+     let lbl1 = new_label () in
+     let lbl2 = new_label () in
+     (* low word equal to zero? *)
+     emit (Pcmp (al, SOimm _0));
+     emit (Pbne lbl1);
+     (* low word is zero, count trailing zeros in high word and increment by 32 *)
+     emit (Padd(IR14, ah, SOimm _m1));
+     emit (Pmvn(res, SOreg ah));
+     emit (Pand(res, IR14, SOreg res));
+     emit (Pclz(res, res));
+     emit (Prsb(res, res, SOimm _64));
+     emit (Pb lbl2);
+     (* count trailing zeros in low word *)
+     emit (Plabel lbl1);
+     emit (Padd(IR14, al, SOimm _m1));
+     emit (Pmvn(res, SOreg al));
+     emit (Pand(res, IR14, SOreg res));
+     emit (Pclz(res, res));
+     emit (Prsb(res, res, SOimm _32));
+     emit (Plabel lbl2)
   (* Float arithmetic *)
   | "__builtin_fabs",  [BA(FR a1)], BR(FR res) ->
      emit (Pfabsd (res,a1))
@@ -406,11 +438,16 @@ let int_reg_to_dwarf = function
    | IR8 -> 8  | IR9 -> 9  | IR10 -> 10 | IR11 -> 11
    | IR12 -> 12 | IR13 -> 13 | IR14 -> 14
 
-let float_reg_to_dwarf = function
-   | FR0 -> 64  | FR1 -> 65  | FR2 -> 66  | FR3 -> 67
-   | FR4 -> 68  | FR5 -> 69  | FR6 -> 70  | FR7 -> 71
-   | FR8 -> 72  | FR9 -> 73  | FR10 -> 74 | FR11 -> 75
-   | FR12 -> 76 | FR13 -> 77 | FR14 -> 78 | FR15 -> 79
+let float_reg_to_dwarf reg =
+ let reg =  match reg with
+   | FR0 -> 0  | FR1 -> 1  | FR2 -> 2  | FR3 -> 3
+   | FR4 -> 4  | FR5 -> 5  | FR6 -> 6  | FR7 -> 7
+   | FR8 -> 8  | FR9 -> 9  | FR10 -> 10 | FR11 -> 11
+   | FR12 -> 12 | FR13 -> 13 | FR14 -> 14 | FR15 -> 15 in
+   if Configuration.model >= "armv7" then
+     256 + reg
+   else
+     64 + reg
 
 let preg_to_dwarf = function
    | IR r -> int_reg_to_dwarf r

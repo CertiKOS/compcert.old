@@ -45,7 +45,7 @@ let option_dmach = ref false
 let option_dasm = ref false
 let option_sdump = ref false
 let option_g = ref false
-let option_gdwarf = ref 2
+let option_gdwarf = ref (if Configuration.system = "diab" then 2 else 3)
 let option_gdepth = ref 3
 let option_o = ref (None: string option)
 let option_E = ref false
@@ -60,6 +60,5 @@ let option_small_data =
        then 8 else 0)
 let option_small_const = ref (!option_small_data)
 let option_timings = ref false
-let option_rename_static = ref false
 let stdlib_path = ref Configuration.stdlib_path
 let use_standard_headers =  ref Configuration.has_standard_headers

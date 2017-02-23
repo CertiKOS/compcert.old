@@ -37,7 +37,7 @@ Require Import List.
   STRUCT UNION ENUM UNDERSCORE_BOOL PACKED ALIGNAS ATTRIBUTE ASM
 
 %token<cabsloc> CASE DEFAULT IF ELSE SWITCH WHILE DO FOR GOTO CONTINUE BREAK
-  RETURN BUILTIN_VA_ARG
+  RETURN BUILTIN_VA_ARG BUILTIN_OFFSETOF
 
 %token EOF
 
@@ -145,6 +145,10 @@ postfix_expression:
     { (CAST typ (COMPOUND_INIT (rev' init)), loc) }
 | loc = LPAREN typ = type_name RPAREN LBRACE init = initializer_list COMMA RBRACE
     { (CAST typ (COMPOUND_INIT (rev' init)), loc) }
+| loc = BUILTIN_OFFSETOF LPAREN typ = type_name COMMA id = OTHER_NAME mems = designator_list RPAREN
+    { (BUILTIN_OFFSETOF typ ((INFIELD_INIT (fst id))::(rev mems)), loc) }
+| loc = BUILTIN_OFFSETOF LPAREN typ = type_name COMMA mem = OTHER_NAME RPAREN
+    { (BUILTIN_OFFSETOF typ [INFIELD_INIT (fst mem)], loc) }
 
 (* Semantic value is in reverse order. *)
 argument_expression_list:
@@ -451,7 +455,7 @@ struct_declaration:
     { Field_group (fst decspec) (rev' decls) (snd decspec) }
 (* Extension to C99 grammar needed to parse some GNU header files. *)
 | decspec = specifier_qualifier_list SEMICOLON
-    { Field_group (fst decspec) [] (snd decspec) }
+    { Field_group (fst decspec) [(None,None)] (snd decspec) }
 
 specifier_qualifier_list:
 | typ = type_specifier rest = specifier_qualifier_list

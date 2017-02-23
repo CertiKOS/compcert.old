@@ -52,14 +52,31 @@ val erase_attributes_type : Env.t -> typ -> typ
   (* Erase the attributes of the given type. *)
 val change_attributes_type : Env.t -> (attributes -> attributes) -> typ -> typ
   (* Apply the given function to the top-level attributes of the given type *)
-val attr_is_type_related: attribute -> bool
-  (* Is an attribute type-related (true) or variable-related (false)? *)
+
+type attribute_class =
+  | Attr_name           (* Attribute applies to the names being declared  *)
+  | Attr_type           (* Attribute applies to types *)
+  | Attr_struct         (* Attribute applies to struct, union and enum *)
+  | Attr_function       (* Attribute applies to function types and decls *)
+  | Attr_unknown        (* Not a declared attribute *)
+
+val declare_attribute: string -> attribute_class -> unit
+val declare_attributes: (string * attribute_class) list -> unit
+  (* Register the given custom attribute names with the given classes. *)
+val class_of_attribute: attribute -> attribute_class
+  (* Return the class of the given attribute.  Standard attributes
+     have class [Attr_type].  Custom attributes have the class that
+     was given to them using [declare_attribute], or [Attr_unknown]
+     if not declared. *)
 val attr_inherited_by_members: attribute -> bool
   (* Is an attribute of a composite inherited by members of the composite? *)
+
+
 val strip_attributes_type: typ -> attribute list -> typ
   (* Remove all attributes from the given type that are not contained in the list *)
 val strip_last_attribute: typ -> attribute option * typ
   (* Remove the last top level attribute and return it *)
+
 
 (* Type compatibility *)
 
@@ -111,6 +128,12 @@ val composite_info_def:
   Env.t -> struct_or_union -> attributes -> field list -> Env.composite_info
 val struct_layout:
   Env.t -> field list -> (string * int) list
+val offsetof:
+  Env.t -> typ -> field -> int
+(* Compute the offset of a struct member *)
+val cautious_mul: int64 -> int -> int option
+(* Overflow-avoiding multiplication of an int64 and an int, with
+   result in type int. *)
 
 (* Type classification functions *)
 
@@ -128,6 +151,8 @@ val is_composite_type : Env.t -> typ -> bool
   (* Is type a struct or union? *)
 val is_function_type : Env.t -> typ -> bool
   (* Is type a function type? (not pointer to function) *)
+val is_anonymous_composite : typ -> bool
+ (* Is type an anonymous composite? *)
 val pointer_arithmetic_ok : Env.t -> typ -> bool
   (* Is the type [*ty] appropriate for pointer arithmetic?
      [ty] must not be void, nor a function type, nor an incomplete type. *)
@@ -198,6 +223,9 @@ val valid_assignment : Env.t -> exp -> typ -> bool
      the given type is allowed. *)
 val valid_cast : Env.t -> typ -> typ -> bool
   (* Check that a cast from the first type to the second is allowed. *)
+val int_pointer_conversion : Env.t -> typ -> typ -> bool
+  (* Check that the cast from tfrom to tto is an integer to pointer
+     conversion *)
 val fundef_typ: fundef -> typ
   (* Return the function type for the given function definition. *)
 val int_representable: int64 -> int -> bool -> bool
@@ -244,6 +272,8 @@ val formatloc: Format.formatter -> location -> unit
   (* Printer for locations (for Format) *)
 
 (* Initializers *)
+exception No_default_init
+  (* Raised if no default initilaizer exists *)
 
 val default_init: Env.t -> typ -> init
   (* Return a default initializer for the given type

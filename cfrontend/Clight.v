@@ -205,7 +205,7 @@ Context `{external_calls: ExternalCalls}.
   memory load is performed.  If the type [ty] indicates an access by
   reference or by copy, the pointer [Vptr b ofs] is returned. *)
 
-Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: int) : val -> Prop :=
+Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :=
   | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
       Mem.loadv chunk m (Vptr b ofs) = Some v ->
@@ -229,7 +229,7 @@ Section SEMANTICS.
 
 Variable ge: genv.
 
-Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (ofs: int):
+Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
                                             val -> mem -> Prop :=
   | assign_loc_value: forall v chunk m',
       access_mode ty = By_value chunk ->
@@ -237,13 +237,13 @@ Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (o
       assign_loc ty m b ofs v m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
-      (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Int.unsigned ofs')) ->
-      (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Int.unsigned ofs)) ->
-      b' <> b \/ Int.unsigned ofs' = Int.unsigned ofs
-              \/ Int.unsigned ofs' + sizeof ce ty <= Int.unsigned ofs
-              \/ Int.unsigned ofs + sizeof ce ty <= Int.unsigned ofs' ->
-      Mem.loadbytes m b' (Int.unsigned ofs') (sizeof ce ty) = Some bytes ->
-      Mem.storebytes m b (Int.unsigned ofs) bytes = Some m' ->
+      (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs')) ->
+      (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs)) ->
+      b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
+              \/ Ptrofs.unsigned ofs' + sizeof ce ty <= Ptrofs.unsigned ofs
+              \/ Ptrofs.unsigned ofs + sizeof ce ty <= Ptrofs.unsigned ofs' ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) = Some bytes ->
+      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
       assign_loc ty m b ofs (Vptr b' ofs') m'.
 
 (** Allocation of function-local variables.
@@ -279,7 +279,7 @@ Inductive bind_parameters (e: env):
   | bind_parameters_cons:
       forall m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
-      assign_loc ty m b Int.zero v1 m1 ->
+      assign_loc ty m b Ptrofs.zero v1 m1 ->
       bind_parameters e m1 params vl m2 ->
       bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
 
@@ -389,9 +389,9 @@ Inductive eval_expr: expr -> val -> Prop :=
       sem_cast v1 (typeof a) ty m = Some v ->
       eval_expr (Ecast a ty) v
   | eval_Esizeof: forall ty1 ty,
-      eval_expr (Esizeof ty1 ty) (Vint (Int.repr (sizeof ge ty1)))
+      eval_expr (Esizeof ty1 ty) (Vptrofs (Ptrofs.repr (sizeof ge ty1)))
   | eval_Ealignof: forall ty1 ty,
-      eval_expr (Ealignof ty1 ty) (Vint (Int.repr (alignof ge ty1)))
+      eval_expr (Ealignof ty1 ty) (Vptrofs (Ptrofs.repr (alignof ge ty1)))
   | eval_Elvalue: forall a loc ofs v,
       eval_lvalue a loc ofs ->
       deref_loc (typeof a) m loc ofs v ->
@@ -401,14 +401,14 @@ Inductive eval_expr: expr -> val -> Prop :=
   in l-value position.  The result is the memory location [b, ofs]
   that contains the value of the expression [a]. *)
 
-with eval_lvalue: expr -> block -> int -> Prop :=
+with eval_lvalue: expr -> block -> ptrofs -> Prop :=
   | eval_Evar_local:   forall id l ty,
       e!id = Some(l, ty) ->
-      eval_lvalue (Evar id ty) l Int.zero
+      eval_lvalue (Evar id ty) l Ptrofs.zero
   | eval_Evar_global: forall id l ty,
       e!id = None ->
       Genv.find_symbol ge id = Some l ->
-      eval_lvalue (Evar id ty) l Int.zero
+      eval_lvalue (Evar id ty) l Ptrofs.zero
   | eval_Ederef: forall a ty l ofs,
       eval_expr a (Vptr l ofs) ->
       eval_lvalue (Ederef a ty) l ofs
@@ -417,7 +417,7 @@ with eval_lvalue: expr -> block -> int -> Prop :=
       typeof a = Tstruct id att ->
       ge.(genv_cenv)!id = Some co ->
       field_offset ge i (co_members co) = OK delta ->
-      eval_lvalue (Efield a i ty) l (Int.add ofs (Int.repr delta))
+      eval_lvalue (Efield a i ty) l (Ptrofs.add ofs (Ptrofs.repr delta))
  | eval_Efield_union:   forall a i ty l ofs id co att,
       eval_expr a (Vptr l ofs) ->
       typeof a = Tunion id att ->

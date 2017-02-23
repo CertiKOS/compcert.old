@@ -1090,7 +1090,7 @@ End CORRECTNESS_EXPR.
 
 (** ** Measure over CminorSel states *)
 
-Open Local Scope nat_scope.
+Local Open Scope nat_scope.
 
 Fixpoint size_stmt (s: stmt) : nat :=
   match s with

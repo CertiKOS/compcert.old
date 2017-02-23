@@ -65,13 +65,13 @@ type dwarf_accu =
      ranges: int * dw_ranges
    }
 
-let (=<<) acc t =
+let up_typs acc t =
   {acc with typs = IntSet.add t acc.typs;}
 
-let (<=<) acc loc =
+let up_locs acc loc =
   {acc with locs = loc@acc.locs;}
 
-let (>>=) acc r =
+let up_ranges acc r =
   {acc with ranges = r;}
 
 let empty_accu =
@@ -88,18 +88,21 @@ module Dwarfgenaux (Target: TARGET) =
 
     let name_opt n = if n <> "" then Some (string_entry n) else None
 
+    let subrange_type : int option ref = ref None
+
+    let encoding_of_ikind = function
+      | IBool -> DW_ATE_boolean
+      | IChar ->
+          if !Machine.config.Machine.char_signed then
+            DW_ATE_signed_char
+          else
+            DW_ATE_unsigned_char
+      | IInt | ILong | ILongLong | IShort | ISChar -> DW_ATE_signed
+      | _ -> DW_ATE_unsigned
+
     (* Functions to translate the basetypes. *)
     let int_type_to_entry id i =
-      let encoding =
-        (match i.int_kind with
-        | IBool -> DW_ATE_boolean
-        | IChar ->
-            if !Machine.config.Machine.char_signed then
-              DW_ATE_signed_char
-            else
-              DW_ATE_unsigned_char
-        | IInt | ILong | ILongLong | IShort | ISChar -> DW_ATE_signed
-        | _ -> DW_ATE_unsigned)in
+      let encoding = encoding_of_ikind i.int_kind in
       let int = {
         base_type_byte_size = sizeof_ikind i.int_kind;
         base_type_encoding = Some encoding;
@@ -153,10 +156,18 @@ module Dwarfgenaux (Target: TARGET) =
         let r = match a with
         | None -> None
         | Some i ->
-            let bound = Int64.to_int (Int64.sub i Int64.one) in
-            Some (BoundConst bound) in
+            if i <> 0L then
+              let bound = Int64.to_int (Int64.sub i Int64.one) in
+              Some (BoundConst bound)
+            else
+              None in
+        let st = match !subrange_type with
+        | None -> let id = next_id () in
+          subrange_type := Some id;
+          id
+        | Some id  -> id in
         let s = {
-          subrange_type = None;
+          subrange_type = st;
           subrange_upper_bound = r;
         } in
         new_entry (next_id ()) (DW_TAG_subrange_type s)) arr.arr_size in
@@ -221,7 +232,7 @@ module Dwarfgenaux (Target: TARGET) =
         | None -> None
         | Some s -> Some (DataLocBlock (DW_OP_plus_uconst s)));
         member_declaration = None;
-        member_name = string_entry mem.cfd_name;
+        member_name = if mem.cfd_anon then None else Some (string_entry mem.cfd_name);
         member_type = mem.cfd_typ;
       } in
       new_entry (next_id ()) (DW_TAG_member mem)
@@ -310,11 +321,22 @@ module Dwarfgenaux (Target: TARGET) =
         else
           d in
       let typs = aux needed in
-      List.rev (fold_types (fun id t acc ->
-        if IntSet.mem id typs then
-          (infotype_to_entry id t)::acc
-        else
-          acc) [])
+      let res =
+        List.rev (fold_types (fun id t acc ->
+          if IntSet.mem id typs then
+            (infotype_to_entry id t)::acc
+          else
+            acc) []) in
+      match !subrange_type with
+      | None -> res
+      | Some id ->
+          let encoding = encoding_of_ikind (Cutil.size_t_ikind ()) in
+          let tag = {
+            base_type_byte_size = !Machine.config.Machine.sizeof_size_t;
+            base_type_encoding = Some encoding;
+            base_type_name = string_entry "sizetype";
+          } in
+          (new_entry id (DW_TAG_base_type tag))::res
 
     let global_variable_to_entry acc id v =
       let loc = match v.gvar_atom with
@@ -329,7 +351,7 @@ module Dwarfgenaux (Target: TARGET) =
         variable_type = v.gvar_type;
         variable_location = loc;
       } in
-      let acc = acc =<< v.gvar_type in
+      let acc = up_typs acc v.gvar_type in
       new_entry id (DW_TAG_variable var),acc
 
     let gen_splitlong op_hi op_lo =
@@ -399,7 +421,7 @@ module Dwarfgenaux (Target: TARGET) =
         formal_parameter_variable_parameter = None;
         formal_parameter_location = loc;
       } in
-      let acc = (acc =<< p.formal_parameter_type) <=< loc_list in
+      let acc = up_locs (up_typs acc p.formal_parameter_type) loc_list in
       new_entry (next_id ()) (DW_TAG_formal_parameter p),acc
 
     let scope_range f_id id (o,dwr) =
@@ -440,7 +462,7 @@ module Dwarfgenaux (Target: TARGET) =
             variable_type = v.lvar_type;
             variable_location = loc;
           } in
-          let acc = (acc =<< v.lvar_type) <=< loc_list in
+          let acc = up_locs (up_typs acc v.lvar_type)  loc_list in
           Some (new_entry id (DW_TAG_variable var)),acc
 
     and scope_to_entry f_id acc sc id =
@@ -448,9 +470,10 @@ module Dwarfgenaux (Target: TARGET) =
       let scope = {
         lexical_block_range = r;
       } in
+      let acc = up_ranges acc dwr in
       let vars,acc = mmap_opt (local_to_entry  f_id) acc sc.scope_variables in
       let entry = new_entry id (DW_TAG_lexical_block scope) in
-      add_children entry vars,(acc >>= dwr)
+      add_children entry vars,acc
 
     and local_to_entry f_id acc id =
       match get_local_variable id with
@@ -480,7 +503,7 @@ module Dwarfgenaux (Target: TARGET) =
         subprogram_range = r;
       } in
       let f_id = get_opt_val f.fun_atom in
-      let acc = match f.fun_return_type with Some s -> acc =<< s | None -> acc in
+      let acc = match f.fun_return_type with Some s -> up_typs acc s | None -> acc in
       let f_entry =  new_entry id (DW_TAG_subprogram f_tag) in
       let children,acc =
         if !Clflags.option_gdepth > 1 then
@@ -555,18 +578,20 @@ let gnu_file_loc (f,l) =
 let string_table: (string,int) Hashtbl.t = Hashtbl.create 7
 
 let gnu_string_entry s =
-  if String.length s < 4 || Configuration.system = "cygwin" then (*Cygwin does not use the debug_str seciton *)
+  if (String.length s < 4 && Configuration.system <> "macosx") (* macosx needs debug_str *)
+  || Configuration.system = "cygwin" then (*Cygwin does not use the debug_str seciton*)
     Simple_string s
   else
     try
-      Offset_string (Hashtbl.find string_table s)
+      Offset_string ((Hashtbl.find string_table s),s)
     with Not_found ->
       let id = next_id () in
       Hashtbl.add string_table s id;
-      Offset_string id
+      Offset_string (id,s)
 
 
 let gen_gnu_debug_info sec_name var_section : debug_entries =
+  Hashtbl.clear string_table;
   let r,dwr,low_pc =
     try if !Clflags.option_gdwarf > 3 then
         let pcs  = fold_section_start (fun s low acc ->
@@ -580,7 +605,7 @@ let gen_gnu_debug_info sec_name var_section : debug_entries =
         and h = section_end ".text" in
         Pc_pair(l,h),(0,[]),Some l
     with Not_found ->  Empty,(0,[]),None in
-  let accu = empty_accu >>= dwr in
+  let accu = up_ranges empty_accu dwr in
   let module Gen = Dwarfgenaux (struct
     let file_loc = gnu_file_loc
     let string_entry = gnu_string_entry

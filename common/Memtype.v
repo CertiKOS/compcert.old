@@ -238,13 +238,13 @@ Context `{memory_model_ops: MemoryModelOps}.
 
 Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) : option val :=
   match addr with
-  | Vptr b ofs => load chunk m b (Int.unsigned ofs)
+  | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs)
   | _ => None
   end.
 
 Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
   match addr with
-  | Vptr b ofs => store chunk m b (Int.unsigned ofs) v
+  | Vptr b ofs => store chunk m b (Ptrofs.unsigned ofs) v
   | _ => None
   end.
 
@@ -281,7 +281,7 @@ Definition weak_valid_pointer (m: mem) (b: block) (ofs: Z) :=
 Definition compat_pointer_chunks (chunk1 chunk2: memory_chunk) : Prop :=
   match chunk1, chunk2 with
   | (Mint32 | Many32), (Mint32 | Many32) => True
-  | Many64, Many64 => True
+  | (Mint64 | Many64), (Mint64 | Many64) => True
   | _, _ => False
   end.
 
@@ -421,7 +421,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  loadv_int64_split:
   forall m a v,
-  loadv Mint64 m a = Some v ->
+  loadv Mint64 m a = Some v -> Archi.ptr64 = false ->
   exists v1 v2,
      loadv Mint32 m a = Some (if Archi.big_endian then v1 else v2)
   /\ loadv  Mint32 m (Val.add a (Vint (Int.repr 4))) = Some (if Archi.big_endian then v2 else v1)
@@ -611,7 +611,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   store Mint16signed m b ofs (Vint n);
  storev_int64_split:
   forall m a v m',
-  storev Mint64 m a v = Some m' ->
+  storev Mint64 m a v = Some m' -> Archi.ptr64 = false ->
   exists m1,
      storev Mint32 m a (if Archi.big_endian then Val.hiword v else Val.loword v) = Some m1
   /\ storev Mint32 m1 (Val.add a (Vint (Int.repr 4))) (if Archi.big_endian then Val.loword v else Val.hiword v) = Some m';
@@ -1174,45 +1174,45 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  address_inject:
   forall f m1 m2 b1 ofs1 b2 delta p,
   inject f m1 m2 ->
-  perm m1 b1 (Int.unsigned ofs1) Cur p ->
+  perm m1 b1 (Ptrofs.unsigned ofs1) Cur p ->
   f b1 = Some (b2, delta) ->
-  Int.unsigned (Int.add ofs1 (Int.repr delta)) = Int.unsigned ofs1 + delta;
+  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta;
 
  (** The following is needed by Separation, to prove storev_parallel_rule *)
  address_inject':
   forall f m1 m2 chunk b1 ofs1 b2 delta,
   inject f m1 m2 ->
-  valid_access m1 chunk b1 (Int.unsigned ofs1) Nonempty ->
+  valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty ->
   f b1 = Some (b2, delta) ->
-  Int.unsigned (Int.add ofs1 (Int.repr delta)) = Int.unsigned ofs1 + delta;
+  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta;
 
  valid_pointer_inject_no_overflow:
   forall f m1 m2 b ofs b' delta,
   inject f m1 m2 ->
-  valid_pointer m1 b (Int.unsigned ofs) = true ->
+  valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
   f b = Some(b', delta) ->
-  0 <= Int.unsigned ofs + Int.unsigned (Int.repr delta) <= Int.max_unsigned;
+  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned;
 
  weak_valid_pointer_inject_no_overflow:
   forall f m1 m2 b ofs b' delta,
   inject f m1 m2 ->
-  weak_valid_pointer m1 b (Int.unsigned ofs) = true ->
+  weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
   f b = Some(b', delta) ->
-  0 <= Int.unsigned ofs + Int.unsigned (Int.repr delta) <= Int.max_unsigned;
+  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned;
 
  valid_pointer_inject_val:
   forall f m1 m2 b ofs b' ofs',
   inject f m1 m2 ->
-  valid_pointer m1 b (Int.unsigned ofs) = true ->
+  valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
-  valid_pointer m2 b' (Int.unsigned ofs') = true;
+  valid_pointer m2 b' (Ptrofs.unsigned ofs') = true;
 
  weak_valid_pointer_inject_val:
   forall f m1 m2 b ofs b' ofs',
   inject f m1 m2 ->
-  weak_valid_pointer m1 b (Int.unsigned ofs) = true ->
+  weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
-  weak_valid_pointer m2 b' (Int.unsigned ofs') = true;
+  weak_valid_pointer m2 b' (Ptrofs.unsigned ofs') = true;
 
  inject_no_overlap:
   forall f m1 m2 b1 b2 b1' b2' delta1 delta2 ofs1 ofs2,
@@ -1228,13 +1228,13 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m m' b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
   inject f m m' ->
   b1 <> b2 ->
-  valid_pointer m b1 (Int.unsigned ofs1) = true ->
-  valid_pointer m b2 (Int.unsigned ofs2) = true ->
+  valid_pointer m b1 (Ptrofs.unsigned ofs1) = true ->
+  valid_pointer m b2 (Ptrofs.unsigned ofs2) = true ->
   f b1 = Some (b1', delta1) ->
   f b2 = Some (b2', delta2) ->
   b1' <> b2' \/
-  Int.unsigned (Int.add ofs1 (Int.repr delta1)) <>
-  Int.unsigned (Int.add ofs2 (Int.repr delta2));
+  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <>
+  Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2));
 
  disjoint_or_equal_inject:
   forall f m m' b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 sz,
@@ -1372,8 +1372,8 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m1 m2 ->
   alloc m1 lo hi = (m1', b1) ->
   valid_block m2 b2 ->
-  0 <= delta <= Int.max_unsigned ->
-  (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Int.max_unsigned) ->
+  0 <= delta <= Ptrofs.max_unsigned ->
+  (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
   inj_offset_aligned delta (hi-lo) ->
   (forall b delta' ofs k p,

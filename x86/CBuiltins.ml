@@ -17,14 +17,24 @@
 
 open C
 
+let (va_list_type, va_list_scalar, size_va_list) =
+  if Archi.ptr64 then
+    (* Actually a struct passed by reference; equivalent to 3 64-bit words *)
+    (TArray(TInt(IULong, []), Some 3L, []), false, 3*8)
+  else
+    (* Just a pointer *)
+    (TPtr(TVoid [], []), true, 4)
+
 let builtins = {
   Builtins.typedefs = [
-    "__builtin_va_list", TPtr(TVoid [], [])
+    "__builtin_va_list", va_list_type;
   ];
   Builtins.functions = [
     (* Integer arithmetic *)
     "__builtin_bswap",
       (TInt(IUInt, []), [TInt(IUInt, [])], false);
+    "__builtin_bswap64",
+      (TInt(IULongLong, []), [TInt(IULongLong, [])], false);
     "__builtin_bswap32",
       (TInt(IUInt, []), [TInt(IUInt, [])], false);
     "__builtin_bswap16",
@@ -78,9 +88,6 @@ let builtins = {
       (TVoid [], [], false);
   ]
 }
-
-let size_va_list = 4
-let va_list_scalar = true
 
 (* Expand memory references inside extended asm statements.  Used in C2C. *)
 

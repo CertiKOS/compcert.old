@@ -853,7 +853,7 @@ Proof.
 intros n Zn.
 rewrite <- (Zdigits_abs n).
 assert (Hn: (0 < Zabs n)%Z).
-destruct n ; try easy.
+destruct n ; [|easy|easy].
 now elim Zn.
 destruct (Zabs n) as [|p|p] ; try easy ; clear.
 simpl.

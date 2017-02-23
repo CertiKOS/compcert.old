@@ -57,7 +57,7 @@ type bound_value =
 
 type string_const =
   | Simple_string of string
-  | Offset_string of reference
+  | Offset_string of reference * string
 
 type file_loc =
   | Diab_file_loc of constant * constant
@@ -159,7 +159,7 @@ type dw_tag_member =
      member_bit_size:             constant            option;
      member_data_member_location: data_location_value option;
      member_declaration:          flag                option;
-     member_name:                 string_const;
+     member_name:                 string_const        option;
      member_type:                 reference;
    }
 
@@ -188,7 +188,7 @@ type dw_tag_subprogram =
 
 type dw_tag_subrange_type =
     {
-     subrange_type:        reference   option;
+     subrange_type:        reference;
      subrange_upper_bound: bound_value option;
    }
 
@@ -302,4 +302,5 @@ module type DWARF_TARGET =
     val section: out_channel -> section_name -> unit
     val symbol: out_channel -> atom -> unit
     val comment: string
+    val address: string
   end

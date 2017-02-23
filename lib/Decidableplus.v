@@ -19,55 +19,8 @@
   of Coq 8.5 with more instances of decidable properties, including
   universal and existential quantification over finite types. *)
 
-(** Temporarily and for compatibility with Coq 8.4, this file includes
-  a copy of the relevant definitions from the Coq 8.5 [DecidableClass]
-  library.  This library is copyright INRIA. *)
-
+Require Export DecidableClass.
 Require Import Coqlib.
-
-Class Decidable (P : Prop) := {
-  Decidable_witness : bool;
-  Decidable_spec : Decidable_witness = true <-> P
-}.
-
-Lemma Decidable_sound : forall P (H : Decidable P),
-  Decidable_witness = true -> P.
-Proof.
-  intros. rewrite <- Decidable_spec. auto.
-Qed.
-
-Lemma Decidable_complete : forall P (H : Decidable P),
-  P -> Decidable_witness = true.
-Proof.
-  intros. rewrite Decidable_spec. auto.
-Qed.
-
-Lemma Decidable_sound_alt : forall P (H : Decidable P),
-   ~ P -> Decidable_witness = false.
-Proof.
-  intros. destruct Decidable_witness eqn:E; auto. elim H0. eapply Decidable_sound; eauto.
-Qed.
-
-Lemma Decidable_complete_alt : forall P (H : Decidable P),
-  Decidable_witness = false -> ~ P.
-Proof.
-  intros; red; intros. rewrite (Decidable_complete P H) in H0 by auto. discriminate.
-Qed.
-
-Definition decide P {H : Decidable P} := Decidable_witness (Decidable:=H).
-
-Ltac _decide_ P H :=
-  let b := fresh "b" in
-  set (b := decide P) in *;
-  assert (H : decide P = b) by reflexivity;
-  clearbody b;
-  destruct b; [apply Decidable_sound in H|apply Decidable_complete_alt in H].
-
-Tactic Notation "decide" constr(P) "as" ident(H) :=
-  _decide_ P H.
-
-Tactic Notation "decide" constr(P) :=
-  let H := fresh "H" in _decide_ P H.
 
 Ltac decide_goal := eapply Decidable_sound; reflexivity.
 
@@ -167,6 +120,34 @@ Program Instance Decidable_lt_Z : forall (x y: Z), Decidable (x < y) := {
 }.
 Next Obligation.
   apply Z.ltb_lt. 
+Qed.
+
+Program Instance Decidable_ge_Z : forall (x y: Z), Decidable (x >= y) := {
+  Decidable_witness := Z.geb x y
+}.
+Next Obligation.
+  rewrite Z.geb_le. intuition omega.
+Qed.
+
+Program Instance Decidable_gt_Z : forall (x y: Z), Decidable (x > y) := {
+  Decidable_witness := Z.gtb x y
+}.
+Next Obligation.
+  rewrite Z.gtb_lt. intuition omega.
+Qed.
+
+Program Instance Decidable_divides : forall (x y: Z), Decidable (x | y) := {
+  Decidable_witness := Z.eqb y ((y / x) * x)%Z
+}.
+Next Obligation.
+  split.
+  intros. apply Z.eqb_eq in H. exists (y / x). auto.
+  intros [k EQ]. apply Z.eqb_eq. 
+  destruct (Z.eq_dec x 0). 
+  subst x. rewrite Z.mul_0_r in EQ. subst y. reflexivity.
+  assert (k = y / x).
+  { apply Zdiv_unique_full with 0. red; omega. rewrite EQ; ring. }
+  congruence.
 Qed.
 
 (** Deciding properties over lists *)

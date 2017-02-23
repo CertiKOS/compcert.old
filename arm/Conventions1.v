@@ -60,6 +60,15 @@ Definition destroyed_at_call :=
 Definition dummy_int_reg := R0.     (**r Used in [Coloring]. *)
 Definition dummy_float_reg := F0.   (**r Used in [Coloring]. *)
 
+Definition is_float_reg (r: mreg): bool :=
+  match r with
+  | R0  | R1  | R2  | R3
+  | R4  | R5  | R6  | R7
+  | R8  | R9  | R10 | R11  | R12 => false
+  | F0  | F1  | F2  | F3  | F4  | F5  | F6  | F7
+  | F8  | F9  | F10  | F11 | F12  | F13  | F14  | F15 => true
+  end.
+
 (** * Function calling conventions *)
 
 (** The functions in this section determine the locations (machine registers
@@ -85,15 +94,21 @@ Definition dummy_float_reg := F0.   (**r Used in [Coloring]. *)
 
   For the "softfloat" convention, results of FP types should be passed
   in [R0] or [R0,R1].  This doesn't fit the CompCert register model,
-  so we have code in [arm/PrintAsm.ml] that inserts additional moves
-  to/from [F0]. *)
+  so we have code in [arm/TargetPrinter.ml] that inserts additional moves
+  to/from [F0].
+
+  Concerning endianness for 64bit values in register pairs, the contents
+  of the registers is as if the value had been loaded from memory
+  representation with a single LDM instruction. *)
 
 Definition loc_result (s: signature) : rpair mreg :=
   match s.(sig_res) with
   | None => One R0
   | Some (Tint | Tany32) => One R0
   | Some (Tfloat | Tsingle | Tany64) => One F0
-  | Some Tlong => Twolong R1 R0
+  | Some Tlong => if Archi.big_endian
+                  then Twolong R0 R1
+                  else Twolong R1 R0
   end.
 
 (** The result registers have types compatible with that given in the signature. *)
@@ -102,7 +117,7 @@ Lemma loc_result_type:
   forall sig,
   subtype (proj_sig_res sig) (typ_rpair mreg_type (loc_result sig)) = true.
 Proof.
-  intros. unfold proj_sig_res, loc_result. destruct (sig_res sig) as [[]|]; auto.
+  intros. unfold proj_sig_res, loc_result. destruct (sig_res sig) as [[]|]; destruct Archi.big_endian; auto.
 Qed.
 
 (** The result locations are caller-save registers *)
@@ -112,7 +127,7 @@ Lemma loc_result_caller_save:
   forall_rpair (fun r => is_callee_save r = false) (loc_result s).
 Proof.
   intros.
-  unfold loc_result. destruct (sig_res s) as [[]|]; simpl; auto.
+  unfold loc_result. destruct (sig_res s) as [[]|]; destruct Archi.big_endian; simpl; auto.
 Qed.
 
 (** If the result is in a pair of registers, those registers are distinct and have type [Tint] at least. *)
@@ -121,10 +136,20 @@ Lemma loc_result_pair:
   forall sg,
   match loc_result sg with
   | One _ => True
-  | Twolong r1 r2 => r1 <> r2 /\ sg.(sig_res) = Some Tlong /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true
+  | Twolong r1 r2 => r1 <> r2 /\ sg.(sig_res) = Some Tlong /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true /\ Archi.splitlong = true
   end.
 Proof.
-  intros; unfold loc_result; destruct (sig_res sg) as [[]|]; auto. intuition congruence. 
+  intros; unfold loc_result; destruct (sig_res sg) as [[]|]; destruct Archi.big_endian; auto.
+  intuition congruence.
+  intuition congruence.
+Qed.
+
+(** The location of the result depends only on the result part of the signature *)
+
+Lemma loc_result_exten:
+  forall s1 s2, s1.(sig_res) = s2.(sig_res) -> loc_result s1 = loc_result s2.
+Proof.
+  intros. unfold loc_result. rewrite H; auto.
 Qed.
 
 (** ** Location of function arguments *)
@@ -176,11 +201,13 @@ Fixpoint loc_arguments_hf
       then One (R (freg_param fr)) :: loc_arguments_hf tys ir (fr + 1) ofs
       else One (S Outgoing ofs Tsingle) :: loc_arguments_hf tys ir fr (ofs + 1)
   | Tlong :: tys =>
+      let ohi := if Archi.big_endian then 0 else 1 in
+      let olo := if Archi.big_endian then 1 else 0 in
       let ir := align ir 2 in
       if zlt ir 4
-      then Twolong (R (ireg_param (ir + 1))) (R (ireg_param ir)) :: loc_arguments_hf tys (ir + 2) fr ofs
+      then Twolong (R (ireg_param (ir + ohi))) (R (ireg_param (ir + olo))) :: loc_arguments_hf tys (ir + 2) fr ofs
       else let ofs := align ofs 2 in
-           Twolong (S Outgoing (ofs + 1) Tint) (S Outgoing ofs Tint) :: loc_arguments_hf tys ir fr (ofs + 2)
+           Twolong (S Outgoing (ofs + ohi) Tint) (S Outgoing (ofs + olo) Tint) :: loc_arguments_hf tys ir fr (ofs + 2)
   end.
 
 (** For the "softfloat" configuration, as well as for variable-argument functions
@@ -218,9 +245,11 @@ Fixpoint loc_arguments_sf
       One (if zlt ofs 0 then R (freg_param (ofs + 4)) else S Outgoing ofs Tsingle)
       :: loc_arguments_sf tys (ofs + 1)
   | Tlong :: tys =>
+      let ohi := if Archi.big_endian then 0 else 1 in
+      let olo := if Archi.big_endian then 1 else 0 in
       let ofs := align ofs 2 in
-      Twolong (if zlt ofs 0 then R (ireg_param (ofs+1+4)) else S Outgoing (ofs+1) Tint)
-              (if zlt ofs 0 then R (ireg_param (ofs+4)) else S Outgoing ofs Tint)
+      Twolong (if zlt ofs 0 then R (ireg_param (ofs+ohi+4)) else S Outgoing (ofs+ohi) Tint)
+              (if zlt ofs 0 then R (ireg_param (ofs+olo+4)) else S Outgoing (ofs+olo) Tint)
       :: loc_arguments_sf tys (ofs + 2)
   end.
 
@@ -341,9 +370,9 @@ Proof.
   set (ir' := align ir 2) in *.
   assert (ofs <= align ofs 2) by (apply align_le; omega).
   destruct (zlt ir' 4).
-  destruct H. subst p. split; apply ireg_param_caller_save. 
+  destruct H. subst p. split; apply ireg_param_caller_save.
   eapply IHtyl; eauto.
-  destruct H. subst p. split; (split; [ omega | auto ]).
+  destruct H. subst p. split; destruct Archi.big_endian; (split; [ omega | auto ]).
   eapply Y. eapply IHtyl; eauto. omega.
 - (* single *)
   destruct (zlt fr 8); destruct H.
@@ -396,7 +425,7 @@ Proof.
   destruct H.
   destruct (zlt ofs' 0); subst p.
   split; apply ireg_param_caller_save.
-  split; (split; [xomega|auto]).
+  split; destruct Archi.big_endian; (split; [xomega|auto]).
   eapply Y. eapply IHtyl; eauto. omega.
 - (* single *)
   destruct H.
@@ -513,6 +542,12 @@ Proof.
 - (* long *)
   destruct (zlt (align ir 2) 4).
   destruct H. discriminate. destruct H. discriminate. eauto.
+  destruct Archi.big_endian.
+  destruct H. inv H.
+  eapply Zle_trans. 2: apply size_arguments_hf_above. simpl; omega.
+  destruct H. inv H.
+  rewrite <- Zplus_assoc. simpl. apply size_arguments_hf_above.
+  eauto.
   destruct H. inv H.
   rewrite <- Zplus_assoc. simpl. apply size_arguments_hf_above.
   destruct H. inv H.
@@ -556,9 +591,15 @@ Proof.
   eauto.
 - (* long *)
   destruct H.
+  destruct Archi.big_endian.
+  destruct (zlt (align ofs0 2) 0); inv H.
+  eapply Zle_trans. 2: apply size_arguments_sf_above. simpl; xomega.
   destruct (zlt (align ofs0 2) 0); inv H.
   rewrite <- Zplus_assoc. simpl. apply size_arguments_sf_above.
   destruct H.
+  destruct Archi.big_endian.
+  destruct (zlt (align ofs0 2) 0); inv H.
+  rewrite <- Zplus_assoc. simpl. apply size_arguments_sf_above.
   destruct (zlt (align ofs0 2) 0); inv H.
   eapply Zle_trans. 2: apply size_arguments_sf_above. simpl; xomega.
   eauto.

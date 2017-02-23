@@ -102,50 +102,61 @@ let parmove_regs2locs tyenv srcs dsts k =
   assert (List.length srcs = List.length dsts);
   let rec expand srcs' dsts' rl ll =
     match rl, ll with
-    | [], [] -> (srcs', dsts')
+    | [], [] ->
+        begin match srcs', dsts' with
+        | [], [] -> k
+        | [src], [dst] -> move src dst k
+        | _, _ -> Xparmove(srcs', dsts', new_temp Tint, new_temp Tfloat) :: k
+        end
     | r :: rl, One l :: ll ->
         let ty = tyenv r in
         expand (V(r, ty) :: srcs') (L l :: dsts') rl ll
     | r :: rl, Twolong(l1, l2) :: ll ->
         assert (tyenv r = Tlong);
-        expand (V(r, Tint) :: V(twin_reg r, Tint) :: srcs')
-               (L l1 :: L l2 :: dsts')
-               rl ll
+        if Archi.splitlong then
+          expand (V(r, Tint) :: V(twin_reg r, Tint) :: srcs')
+                 (L l1 :: L l2 :: dsts')
+                 rl ll
+        else
+          Xop(Ohighlong, [V(r, Tlong)], L l1) ::
+          Xop(Olowlong,  [V(r, Tlong)], L l2) ::
+          expand srcs' dsts' rl ll
     | _, _ ->
         assert false in
-  let (srcs', dsts') = expand [] [] srcs dsts in
-  match srcs', dsts' with
-  | [], [] -> k
-  | [src], [dst] -> move src dst k
-  | _, _ -> Xparmove(srcs', dsts', new_temp Tint, new_temp Tfloat) :: k
+  expand [] [] srcs dsts
 
 let parmove_locs2regs tyenv srcs dsts k =
   assert (List.length srcs = List.length dsts);
   let rec expand srcs' dsts' ll rl =
     match ll, rl with
-    | [], [] -> (srcs', dsts')
+    | [], [] ->
+        begin match srcs', dsts' with
+        | [], [] -> k
+        | [src], [dst] -> move src dst k
+        | _, _ -> Xparmove(srcs', dsts', new_temp Tint, new_temp Tfloat) :: k
+        end
     | One l :: ll, r :: rl ->
         let ty = tyenv r in
         expand (L l :: srcs') (V(r, ty) :: dsts') ll rl
     | Twolong(l1, l2) :: ll, r :: rl ->
         assert (tyenv r = Tlong);
-        expand (L l1 :: L l2 :: srcs')
-               (V(r, Tint) :: V(twin_reg r, Tint) :: dsts')
-               ll rl
+        if Archi.splitlong then
+          expand (L l1 :: L l2 :: srcs')
+                 (V(r, Tint) :: V(twin_reg r, Tint) :: dsts')
+                 ll rl
+        else
+          Xop(Omakelong, [L l1; L l2], V(r, Tlong)) ::
+          expand srcs' dsts' ll rl
     | _, _ ->
         assert false in
-  let (srcs', dsts') = expand [] [] srcs dsts in
-  match srcs', dsts' with
-  | [], [] -> k
-  | [src], [dst] -> move src dst k
-  | _, _ -> Xparmove(srcs', dsts', new_temp Tint, new_temp Tfloat) :: k
+  expand [] [] srcs dsts
 
 let rec convert_builtin_arg tyenv = function
   | BA r ->
-      begin match tyenv r with
-      | Tlong -> BA_splitlong(BA(V(r, Tint)), BA(V(twin_reg r, Tint)))
-      | ty    -> BA(V(r, ty))
-      end
+      let ty = tyenv r in
+      if Archi.splitlong && ty = Tlong
+      then BA_splitlong(BA(V(r, Tint)), BA(V(twin_reg r, Tint)))
+      else BA(V(r, ty))
   | BA_int n -> BA_int n
   | BA_long n -> BA_long n
   | BA_float n -> BA_float n
@@ -159,10 +170,10 @@ let rec convert_builtin_arg tyenv = function
 
 let convert_builtin_res tyenv = function
   | BR r ->
-      begin match tyenv r with
-      | Tlong -> BR_splitlong(BR(V(r, Tint)), BR(V(twin_reg r, Tint)))
-      | ty    -> BR(V(r, ty))
-      end
+      let ty = tyenv r in
+      if Archi.splitlong && ty = Tlong
+      then BR_splitlong(BR(V(r, Tint)), BR(V(twin_reg r, Tint)))
+      else BR(V(r, ty))
   | BR_none -> BR_none
   | BR_splitlong _ -> assert false
 
@@ -197,25 +208,26 @@ let rec constrain_builtin_res a cl =
 (* Return the XTL basic block corresponding to the given RTL instruction.
    Move and parallel move instructions are introduced to honor calling
    conventions and register constraints on some operations.
-   64-bit integer variables are split in two 32-bit halves. *)
+   64-bit integer variables are split in two 32-bit halves
+   if [Archi.splitlong] is true. *)
 
 let block_of_RTL_instr funsig tyenv = function
   | RTL.Inop s ->
       [Xbranch s]
   | RTL.Iop(Omove, [arg], res, s) ->
-      if tyenv arg = Tlong then
+      if Archi.splitlong && tyenv arg = Tlong then
         [Xmove(V(arg, Tint), V(res, Tint));
          Xmove(V(twin_reg arg, Tint), V(twin_reg res, Tint));
          Xbranch s]
       else
         [Xmove(vreg tyenv arg, vreg tyenv res); Xbranch s]
-  | RTL.Iop(Omakelong, [arg1; arg2], res, s) ->
+  | RTL.Iop(Omakelong, [arg1; arg2], res, s) when Archi.splitlong ->
       [Xmove(V(arg1, Tint), V(res, Tint));
        Xmove(V(arg2, Tint), V(twin_reg res, Tint));
        Xbranch s]
-  | RTL.Iop(Olowlong, [arg], res, s) ->
+  | RTL.Iop(Olowlong, [arg], res, s) when Archi.splitlong ->
       [Xmove(V(twin_reg arg, Tint), V(res, Tint)); Xbranch s]
-  | RTL.Iop(Ohighlong, [arg], res, s) ->
+  | RTL.Iop(Ohighlong, [arg], res, s) when Archi.splitlong ->
       [Xmove(V(arg, Tint), V(res, Tint)); Xbranch s]
   | RTL.Iop(op, args, res, s) ->
       let (cargs, cres) = mregs_for_operation op in
@@ -232,7 +244,7 @@ let block_of_RTL_instr funsig tyenv = function
               let t = new_temp (tyenv res) in (t :: args2', t) in
       movelist args1 args3 (Xop(op, args3, res3) :: move res3 res1 [Xbranch s])
   | RTL.Iload(chunk, addr, args, dst, s) ->
-      if chunk = Mint64 then begin
+      if Archi.splitlong && chunk = Mint64 then begin
         match offset_addressing addr (coqint_of_camlint 4l) with
         | None -> assert false
         | Some addr' ->
@@ -244,7 +256,7 @@ let block_of_RTL_instr funsig tyenv = function
       end else
         [Xload(chunk, addr, vregs tyenv args, vreg tyenv dst); Xbranch s]
   | RTL.Istore(chunk, addr, args, src, s) ->
-      if chunk = Mint64 then begin
+      if Archi.splitlong && chunk = Mint64 then begin
         match offset_addressing addr (coqint_of_camlint 4l) with
         | None -> assert false
         | Some addr' ->
@@ -459,7 +471,7 @@ let rec dce_block blk after =
 
 let dead_code_elimination f liveness =
   { f with fn_code =
-      PTree.map (fun pc blk -> Datatypes.snd(dce_block blk (PMap.get pc liveness)))
+      PTree.map (fun pc blk -> snd(dce_block blk (PMap.get pc liveness)))
                  f.fn_code }
 
 
@@ -657,9 +669,12 @@ let add_interfs_instr g instr live =
   | Xstore(chunk, addr, args, src) ->
       add_interfs_destroyed g live (destroyed_by_store chunk addr)
   | Xcall(sg, vos, args, res) ->
+      begin match vos with
+      | Coq_inl v ->  List.iter (fun r -> IRC.add_interf g (vmreg r) v) destroyed_at_indirect_call
+      | _ -> () end;
       add_interfs_destroyed g (vset_removelist res live) destroyed_at_call
   | Xtailcall(sg, Coq_inl v, args) ->
-      List.iter (fun r -> IRC.add_interf g (vmreg r) v) int_callee_save_regs
+      List.iter (fun r -> IRC.add_interf g (vmreg r) v) (int_callee_save_regs @ destroyed_at_indirect_call)
   | Xtailcall(sg, Coq_inr id, args) ->
       ()
   | Xbuiltin(ef, args, res) ->
@@ -915,7 +930,12 @@ let spill_instr tospill eqs instr =
           | false, true ->
               let eqs1 = add arg1 res (kill res eqs) in
               let (argl', c1, eqs2) = reload_vars tospill eqs1 argl in
-              (Xreload(arg1, res) :: c1 @ [Xop(op, res :: argl', res)],
+              (* PR#113, PR#122: [Xreload] here causes [res] to become
+                 unspillable in the future.  This is too strong, hence
+                 the [Xmove].  Alternatively, this [false, true]
+                 case could be removed and the [true, true] case
+                 below used instead. *)
+              (Xmove(arg1, res) :: c1 @ [Xop(op, res :: argl', res)],
                kill res eqs2)
           | true, true ->
               let tmp = new_temp (typeof res) in
@@ -1016,10 +1036,8 @@ let make_parmove srcs dsts itmp ftmp k =
   let n = Array.length src in
   assert (Array.length dst = n);
   let status = Array.make n To_move in
-  let temp_for =
-    function (Tint|Tany32) -> itmp
-           | (Tfloat|Tsingle|Tany64) -> ftmp
-           | Tlong -> assert false in
+  let temp_for cls =
+    match cls with 0 -> itmp | 1 -> ftmp | _ -> assert false in
   let code = ref [] in
   let add_move s d =
     match s, d with
@@ -1030,7 +1048,7 @@ let make_parmove srcs dsts itmp ftmp k =
     | Locations.S(sl, ofs, ty), R rd ->
         code := LTL.Lgetstack(sl, ofs, ty, rd) :: !code
     | Locations.S(sls, ofss, tys), Locations.S(sld, ofsd, tyd) ->
-        let tmp = temp_for tys in
+        let tmp = temp_for (class_of_type tys) in
         (* code will be reversed at the end *)
         code := LTL.Lsetstack(tmp, sld, ofsd, tyd) ::
                 LTL.Lgetstack(sls, ofss, tys, tmp) :: !code
@@ -1044,7 +1062,7 @@ let make_parmove srcs dsts itmp ftmp k =
           | To_move ->
               move_one j
           | Being_moved ->
-              let tmp = R (temp_for (Loc.coq_type src.(j))) in
+              let tmp = R (temp_for (class_of_loc src.(j))) in
               add_move src.(j) tmp;
               src.(j) <- tmp
           | Moved ->
@@ -1153,16 +1171,15 @@ and success f alloc =
   end;
   f'
 
-open !Errors
 
 let regalloc f =
   init_trace();
   reset_temps();
   let f1 = Splitting.rename_function f in
   match RTLtyping.type_function f1 with
-  | Error msg ->
-      Errors.Error(MSG (coqstring_of_camlstring "RTL code after splitting is ill-typed:") :: msg)
-  | OK tyenv ->
+  | Errors.Error msg ->
+      Errors.Error(Errors.MSG (coqstring_of_camlstring "RTL code after splitting is ill-typed:") :: msg)
+  | Errors.OK tyenv ->
       let f2 = function_of_RTL_function f1 tyenv in
       let liveness = liveness_analysis f2 in
       let f3 = dead_code_elimination f2 liveness in
@@ -1171,12 +1188,12 @@ let regalloc f =
         PrintXTL.print_function !pp f3
       end;
       try
-        OK(first_round f3 liveness)
+        Errors.OK(first_round f3 liveness)
       with
       | Timeout ->
-          Error(msg (coqstring_of_camlstring "Spilling fails to converge"))
+          Errors.Error(Errors.msg (coqstring_of_camlstring "Spilling fails to converge"))
       | Type_error_at pc ->
-          Error [MSG(coqstring_of_camlstring "Ill-typed XTL code at PC ");
-                 POS pc]
+          Errors.Error [Errors.MSG(coqstring_of_camlstring "Ill-typed XTL code at PC ");
+                 Errors.POS pc]
       | Bad_LTL ->
-          Error(msg (coqstring_of_camlstring "Bad LTL after spilling"))
+          Errors.Error(Errors.msg (coqstring_of_camlstring "Bad LTL after spilling"))

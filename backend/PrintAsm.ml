@@ -13,7 +13,6 @@
 
 open AST
 open Camlcoq
-open !Datatypes
 open DwarfPrinter
 open PrintAsmaux
 open Printf
@@ -114,6 +113,7 @@ module Printer(Target:TARGET) =
         let section = Target.section
         let symbol = Target.symbol
         let comment = Target.comment
+        let address = Target.address
       end
 
     module DebugPrinter = DwarfPrinter (DwarfTarget)

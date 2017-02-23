@@ -739,9 +739,15 @@ Remark sem_cast_deterministic:
   v1 = v2.
 Proof.
   unfold sem_cast; intros. destruct (classify_cast ty ty'); try congruence.
-  destruct v; try congruence.
-  destruct (weak_valid_pointer m1 b (Int.unsigned i)); inv H.
-  destruct (weak_valid_pointer m2 b (Int.unsigned i)); inv H0.
+- destruct v; try congruence.
+  destruct Archi.ptr64; try discriminate.
+  destruct (weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
+  destruct (weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
+  auto.
+- destruct v; try congruence. 
+  destruct (negb Archi.ptr64); try discriminate.
+  destruct (weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
+  destruct (weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
   auto.
 Qed.
 

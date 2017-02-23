@@ -24,7 +24,7 @@ let transform_program t p name =
   (run_pass Unblock.program 'b'
   (run_pass Bitfields.program 'f'
   p)))) in
-  (Rename.program p1 (Filename.chop_suffix name ".c"))
+  (Rename.program p1)
 
 let parse_transformations s =
   let t = ref CharSet.empty in
@@ -70,10 +70,11 @@ let preprocessed_file transfs name sourcefile =
              | Parser.Parser.Inter.Fail_pr ->
                  (* Theoretically impossible : implies inconsistencies
                     between grammars. *)
-                 Cerrors.fatal_error "Internal error while parsing"
+                 Cerrors.fatal_error Cutil.no_loc "Internal error while parsing"
              | Parser.Parser.Inter.Timeout_pr -> assert false
              | Parser.Parser.Inter.Parsed_pr (ast, _ ) -> ast) in
       let p1 = Timing.time "Elaboration" Elab.elab_file ast in
+      Cerrors.raise_on_errors ();
       Timing.time2 "Emulations" transform_program t p1 name
     with
     | Cerrors.Abort ->

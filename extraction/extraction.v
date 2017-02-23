@@ -12,6 +12,7 @@
 
 Require Coqlib.
 Require Wfsimpl.
+Require DecidableClass Decidableplus.
 Require AST.
 Require Iteration.
 Require Floats.
@@ -39,6 +40,16 @@ Require Import ExtrOcamlString.
 
 (* Coqlib *)
 Extract Inlined Constant Coqlib.proj_sumbool => "(fun x -> x)".
+
+(* Datatypes *)
+Extract Inlined Constant Datatypes.fst => "fst".
+Extract Inlined Constant Datatypes.snd => "snd".
+
+(* Decidable *)
+
+Extraction Inline DecidableClass.Decidable_witness DecidableClass.decide
+   Decidableplus.Decidable_and Decidableplus.Decidable_or
+   Decidableplus.Decidable_not Decidableplus.Decidable_implies.
 
 (* Wfsimpl *)
 Extraction Inline Wfsimpl.Fix Wfsimpl.Fixm.
@@ -118,7 +129,7 @@ Extract Constant Cabs.cabsloc =>
    byteno: int;
    ident : int;
  }".
-Extract Constant Cabs.string => "String.t".
+Extract Inlined Constant Cabs.string => "String.t".
 Extract Constant Cabs.char_code => "int64".
 
 (* Int31 *)
@@ -164,12 +175,14 @@ Separate Extraction
    Ctyping.typecheck_program
    Ctyping.epostincr Ctyping.epostdecr Ctyping.epreincr Ctyping.epredecr
    Ctypes.make_program
-   Conventions1.int_caller_save_regs Conventions1.float_caller_save_regs 
-   Conventions1.int_callee_save_regs Conventions1.float_callee_save_regs 
+   Conventions1.is_float_reg
+   Conventions1.int_caller_save_regs Conventions1.float_caller_save_regs
+   Conventions1.int_callee_save_regs Conventions1.float_callee_save_regs
    Conventions1.dummy_int_reg Conventions1.dummy_float_reg
    RTL.instr_defs RTL.instr_uses
    Machregs.mregs_for_operation Machregs.mregs_for_builtin
    Machregs.two_address_op Machregs.is_stack_reg
+   Machregs.destroyed_at_indirect_call
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed
    Globalenvs.Senv.invert_symbol

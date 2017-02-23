@@ -17,7 +17,6 @@
 open Lexing
 open Pre_parser
 open Pre_parser_aux
-open !Cabshelper
 
 module SSet = Set.Make(String)
 
@@ -36,6 +35,7 @@ let () =
       ("__attribute", fun loc -> ATTRIBUTE loc);
       ("__attribute__", fun loc -> ATTRIBUTE loc);
       ("__builtin_va_arg", fun loc -> BUILTIN_VA_ARG loc);
+      ("__builtin_offsetof", fun loc -> BUILTIN_OFFSETOF loc);
       ("__const", fun loc -> CONST loc);
       ("__const__", fun loc -> CONST loc);
       ("__inline", fun loc -> INLINE loc);
@@ -126,16 +126,16 @@ let currentLoc =
 (* Error reporting *)
 
 let fatal_error lb fmt =
-  Cerrors.fatal_error ("%s:%d: Error:@ " ^^ fmt)
-      lb.lex_curr_p.pos_fname lb.lex_curr_p.pos_lnum
+  Cerrors.fatal_error
+    (lb.lex_curr_p.pos_fname,lb.lex_curr_p.pos_lnum) fmt
 
 let error lb fmt =
-  Cerrors.error ("%s:%d: Error:@ " ^^ fmt)
-      lb.lex_curr_p.pos_fname lb.lex_curr_p.pos_lnum
+  Cerrors.error
+    (lb.lex_curr_p.pos_fname,lb.lex_curr_p.pos_lnum) fmt
 
 let warning lb fmt =
-  Cerrors.warning ("%s:%d: Warning:@ " ^^ fmt)
-      lb.lex_curr_p.pos_fname lb.lex_curr_p.pos_lnum
+  Cerrors.warning
+      (lb.lex_curr_p.pos_fname,lb.lex_curr_p.pos_lnum) Cerrors.Unnamed ("warning: " ^^ fmt)
 
 (* Simple character escapes *)
 
@@ -510,6 +510,7 @@ and singleline_comment = parse
       | UNDERSCORE_BOOL loc -> loop UNDERSCORE_BOOL't loc
       | BREAK loc -> loop BREAK't loc
       | BUILTIN_VA_ARG loc -> loop BUILTIN_VA_ARG't loc
+      | BUILTIN_OFFSETOF loc -> loop BUILTIN_OFFSETOF't loc
       | CASE loc -> loop CASE't loc
       | CHAR loc -> loop CHAR't loc
       | COLON loc -> loop COLON't loc
