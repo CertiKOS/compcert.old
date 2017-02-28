@@ -81,7 +81,7 @@ Record t: Type := mksenv {
   find_symbol: ident -> option block;
   public_symbol: ident -> bool;
   invert_symbol: block -> option ident;
-  block_is_volatile: block -> bool;
+  block_is_volatile: block -> option bool;
   nextblock: block;
   (** Properties *)
   find_symbol_injective:
@@ -95,7 +95,7 @@ Record t: Type := mksenv {
   find_symbol_below:
     forall id b, find_symbol id = Some b -> Plt b nextblock;
   block_is_volatile_below:
-    forall b, block_is_volatile b = true -> Plt b nextblock
+    forall b, block_is_volatile b = Some true -> Plt b nextblock
 }.
 
 Definition symbol_address (ge: t) (id: ident) (ofs: ptrofs) : val :=
@@ -223,10 +223,10 @@ Definition find_var_info (ge: t) (b: block) : option (globvar V) :=
 (** [block_is_volatile ge b] returns [true] if [b] points to a global variable
   of volatile type, [false] otherwise. *)
 
-Definition block_is_volatile (ge: t) (b: block) : bool :=
+Definition block_is_volatile (ge: t) (b: block) : option bool :=
   match find_var_info ge b with
-  | None => false
-  | Some gv => gv.(gvar_volatile)
+  | None => None
+  | Some gv => Some (gv.(gvar_volatile))
   end.
 
 (** ** Constructing the global environment *)
@@ -670,7 +670,7 @@ Proof.
 Qed.
 
 Theorem block_is_volatile_below:
-  forall ge b, block_is_volatile ge b = true ->  Plt b ge.(genv_next).
+  forall ge b, block_is_volatile ge b = Some true ->  Plt b ge.(genv_next).
 Proof.
   unfold block_is_volatile; intros. destruct (find_var_info ge b) as [gv|] eqn:FV.
   rewrite find_var_info_iff in FV. eapply genv_defs_range; eauto.

@@ -198,28 +198,34 @@ Qed.
 
 Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs)
                              : option (world * trace * val) :=
-  if Genv.block_is_volatile ge b then
+  match Genv.block_is_volatile ge b with
+  | Some true =>
     do id <- Genv.invert_symbol ge b;
-    match nextworld_vload w chunk id ofs with
-    | None => None
-    | Some(res, w') =>
+      match nextworld_vload w chunk id ofs with
+      | None => None
+      | Some(res, w') =>
         do vres <- val_of_eventval res (type_of_chunk chunk);
-        Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
-    end
-  else
+          Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
+      end
+  | Some false =>
     do v <- Mem.load chunk m b (Ptrofs.unsigned ofs);
-    Some(w, E0, v).
+      Some(w, E0, v)
+  | None => None
+  end.
 
 Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs) (v: val)
                              : option (world * trace * mem) :=
-  if Genv.block_is_volatile ge b then
+  match Genv.block_is_volatile ge b with
+    Some true =>
     do id <- Genv.invert_symbol ge b;
-    do ev <- eventval_of_val (Val.load_result chunk v) (type_of_chunk chunk);
-    do w' <- nextworld_vstore w chunk id ofs ev;
-    Some(w', Event_vstore chunk id ofs ev :: nil, m)
-  else
+      do ev <- eventval_of_val (Val.load_result chunk v) (type_of_chunk chunk);
+      do w' <- nextworld_vstore w chunk id ofs ev;
+      Some(w', Event_vstore chunk id ofs ev :: nil, m)
+  | Some false =>
     do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v;
-    Some(w, E0, m').
+      Some(w, E0, m')
+  | None => None
+  end.
 
 Lemma do_volatile_load_sound:
   forall w chunk m b ofs w' t v,

@@ -559,28 +559,28 @@ Context `{memory_model_ops: Mem.MemoryModelOps}.
 Inductive volatile_load (ge: Senv.t):
                    memory_chunk -> mem -> block -> ptrofs -> trace -> val -> Prop :=
   | volatile_load_vol: forall chunk m b ofs id ev v,
-      Senv.block_is_volatile ge b = true ->
+      Senv.block_is_volatile ge b = Some true ->
       Senv.find_symbol ge id = Some b ->
       eventval_match ge ev (type_of_chunk chunk) v ->
       volatile_load ge chunk m b ofs
                       (Event_vload chunk id ofs ev :: nil)
                       (Val.load_result chunk v)
   | volatile_load_nonvol: forall chunk m b ofs v,
-      Senv.block_is_volatile ge b = false ->
+      Senv.block_is_volatile ge b = Some false ->
       Mem.load chunk m b (Ptrofs.unsigned ofs) = Some v ->
       volatile_load ge chunk m b ofs E0 v.
 
 Inductive volatile_store (ge: Senv.t):
                   memory_chunk -> mem -> block -> ptrofs -> val -> trace -> mem -> Prop :=
   | volatile_store_vol: forall chunk m b ofs id ev v,
-      Senv.block_is_volatile ge b = true ->
+      Senv.block_is_volatile ge b = Some true ->
       Senv.find_symbol ge id = Some b ->
       eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v) ->
       volatile_store ge chunk m b ofs v
                       (Event_vstore chunk id ofs ev :: nil)
                       m
   | volatile_store_nonvol: forall chunk m b ofs v m',
-      Senv.block_is_volatile ge b = false ->
+      Senv.block_is_volatile ge b = Some false ->
       Mem.store chunk m b (Ptrofs.unsigned ofs) v = Some m' ->
       volatile_store ge chunk m b ofs v E0 m'.
 
