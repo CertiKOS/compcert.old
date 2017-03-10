@@ -965,7 +965,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
           | Some sp =>
               match rs#RSP with
               | Vptr stk ofs =>
-                  match Mem.free m stk 0 sz with
+                (* RSP does not necessarily point to the base of the stack frame *)
+                  match Mem.free m stk (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + sz) with
                   | None => Stuck
                   | Some m' => Next (nextinstr (rs#RSP <- sp #RA <- ra)) m'
                   end
