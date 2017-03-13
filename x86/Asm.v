@@ -567,7 +567,11 @@ Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
   | None => Stuck
   | Some pos =>
       match rs#PC with
-      | Vptr b ofs => Next (rs#PC <- (Vptr b (Ptrofs.repr pos))) m
+      | Vptr b ofs =>
+        match Genv.find_funct_ptr ge b with
+        | Some _ => Next (rs#PC <- (Vptr b (Ptrofs.repr pos))) m
+        | None => Stuck
+        end
       | _ => Stuck
     end
   end.
