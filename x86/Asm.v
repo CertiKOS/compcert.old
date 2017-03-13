@@ -567,7 +567,11 @@ Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
   | None => Stuck
   | Some pos =>
       match rs#PC with
-      | Vptr b ofs => Next (rs#PC <- (Vptr b (Ptrofs.repr pos))) m
+      | Vptr b ofs =>
+        match Genv.find_funct_ptr ge b with
+        | Some _ => Next (rs#PC <- (Vptr b (Ptrofs.repr pos))) m
+        | None => Stuck
+        end
       | _ => Stuck
     end
   end.
@@ -965,7 +969,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
           | Some sp =>
               match rs#RSP with
               | Vptr stk ofs =>
-                  match Mem.free m stk 0 sz with
+                (* RSP does not necessarily point to the base of the stack frame *)
+                  match Mem.free m stk (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + sz) with
                   | None => Stuck
                   | Some m' => Next (nextinstr (rs#RSP <- sp #RA <- ra)) m'
                   end
