@@ -30,6 +30,8 @@ Qed.
 Section PRESERVATION.
 Context `{external_calls_prf: ExternalCalls}.
 
+Local Existing Instance mem_accessors_default.
+
 Variable prog: Mach.program.
 Variable tprog: Asm.program.
 Hypothesis TRANSF: match_prog prog tprog.

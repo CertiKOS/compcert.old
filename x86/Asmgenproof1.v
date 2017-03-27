@@ -83,6 +83,8 @@ Ltac Simplifs := repeat Simplif.
 
 (** * Correctness of x86-64 constructor functions *)
 
+Local Existing Instance mem_accessors_default.
+
 Section CONSTRUCTORS.
 Context `{memory_model_prf: Mem.MemoryModel}.
 

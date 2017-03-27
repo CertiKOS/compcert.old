@@ -745,6 +745,9 @@ Ltac TailNoLabel :=
 
 (** * Execution of straight-line code *)
 
+Section WITHCONFIG.
+
+  Local Existing Instance mem_accessors_default.
 Section STRAIGHTLINE.
 
 Variable ge: genv.
@@ -909,6 +912,7 @@ Qed.
 
 End MATCH_STACK.
 
+End WITHCONFIG.
 End WITHEXTERNALCALLS.
 
 Hint Extern 1 (nolabel _) => exact I : labels.

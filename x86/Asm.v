@@ -346,9 +346,14 @@ Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
+
+Class FindLabels {function instructionx}
+  (is_label : label -> instructionx -> bool)
+  (fn_code : function -> list instructionx).
+
 (** Looking up instructions in a code sequence by position. *)
 
-Fixpoint find_instr (pos: Z) (c: code) {struct c} : option instruction :=
+Fixpoint find_instr `{Hfl: FindLabels} (pos: Z) (c: list instructionx) {struct c} : option instructionx :=
   match c with
   | nil => None
   | i :: il => if zeq pos 0 then Some i else find_instr (pos - 1) il
@@ -362,6 +367,8 @@ Definition is_label (lbl: label) (instr: instruction) : bool :=
   | _ => false
   end.
 
+Global Instance: FindLabels is_label fn_code.
+
 Lemma is_label_correct:
   forall lbl instr,
   if is_label lbl instr then instr = Plabel lbl else instr <> Plabel lbl.
@@ -370,14 +377,21 @@ Proof.
   case (peq lbl l); intro; congruence.
 Qed.
 
-Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
+
+Section WITH_FIND_LABELS.
+  Context {function instructionx is_label fn_code}
+          `{Hfl: FindLabels function instructionx is_label fn_code}.
+
+  Fixpoint label_pos `{Hfl: FindLabels function instructionx is_label fn_code} (lbl: label) (pos: Z) (c: list instructionx) {struct c} : option Z :=
   match c with
   | nil => None
   | instr :: c' =>
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
-Variable ge: genv.
+  Section WITHGE.
+    Context {F V : Type}.
+    Variable ge: Genv.t F V.
 
 (** Evaluating an addressing mode *)
 
@@ -419,6 +433,8 @@ Definition eval_addrmode64 (a: addrmode) (rs: regset) : val :=
 
 Definition eval_addrmode (a: addrmode) (rs: regset) : val :=
   if Archi.ptr64 then eval_addrmode64 a rs else eval_addrmode32 a rs.
+
+End WITHGE.
 
 (** Performing a comparison *)
 
@@ -562,7 +578,7 @@ Definition nextinstr (rs: regset) :=
 Definition nextinstr_nf (rs: regset) : regset :=
   nextinstr (undef_regs (CR ZF :: CR CF :: CR PF :: CR SF :: CR OF :: nil) rs).
 
-Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
+Definition goto_label {F V} (ge: Genv.t F V) (f: function) (lbl: label) (rs: regset) (m: mem) :=
   match label_pos lbl 0 (fn_code f) with
   | None => Stuck
   | Some pos =>
@@ -576,22 +592,42 @@ Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
     end
   end.
 
-(** Auxiliaries for memory accesses. *)
+(** [CompCertiKOS:test-compcert-param-mem-accessors] For CertiKOS, we
+need to parameterize over [exec_load] and [exec_store], which will be
+defined differently depending on whether we are in kernel or user
+mode. *)
 
-Definition exec_load (chunk: memory_chunk) (m: mem)
+Class MemAccessors
+      `{!Mem.MemoryModelOps mem}
+      (exec_load: forall F V: Type, Genv.t F V -> memory_chunk -> mem -> addrmode -> regset -> preg -> outcome)
+      (exec_store: forall F V: Type, Genv.t F V -> memory_chunk -> mem -> addrmode -> regset -> preg -> list preg -> outcome)
+: Prop := {}.
+
+Section MEM_ACCESSORS_DEFAULT.
+
+(** [CompCertiKOS:test-compcert-param-mem-accessors] Compcert does not
+care about kernel vs. user mode, and uses its memory model to define
+its memory accessors. *)
+
+Definition exec_load {F V} (ge: Genv.t F V) (chunk: memory_chunk) (m: mem)
                      (a: addrmode) (rs: regset) (rd: preg) :=
-  match Mem.loadv chunk m (eval_addrmode a rs) with
+  match Mem.loadv chunk m (eval_addrmode ge a rs) with
   | Some v => Next (nextinstr_nf (rs#rd <- v)) m
   | None => Stuck
   end.
 
-Definition exec_store (chunk: memory_chunk) (m: mem)
+Definition exec_store {F V} (ge: Genv.t F V) (chunk: memory_chunk) (m: mem)
                       (a: addrmode) (rs: regset) (r1: preg)
                       (destroyed: list preg) :=
-  match Mem.storev chunk m (eval_addrmode a rs) (rs r1) with
+  match Mem.storev chunk m (eval_addrmode ge a rs) (rs r1) with
   | Some m' => Next (nextinstr_nf (undef_regs destroyed rs)) m'
   | None => Stuck
   end.
+
+Local Instance mem_accessors_default: MemAccessors (@exec_load) (@exec_store).
+
+End MEM_ACCESSORS_DEFAULT.
+
 
 (** Execution of a single instruction [i] in initial state
     [rs] and [m].  Return updated state.  For instructions
@@ -612,7 +648,7 @@ Definition exec_store (chunk: memory_chunk) (m: mem)
     but we do not need to model this precisely.
 *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_store} {F V} (ge: Genv.t F V) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   (** Moves *)
   | Pmov_rr rd r1 =>
@@ -624,58 +660,58 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pmov_rs rd id =>
       Next (nextinstr_nf (rs#rd <- (Genv.symbol_address ge id Ptrofs.zero))) m
   | Pmovl_rm rd a =>
-      exec_load Mint32 m a rs rd
+      exec_load _ _ ge Mint32 m a rs rd
   | Pmovq_rm rd a =>
-      exec_load Mint64 m a rs rd
+      exec_load _ _ ge Mint64 m a rs rd
   | Pmovl_mr a r1 =>
-      exec_store Mint32 m a rs r1 nil
+      exec_store _ _ ge Mint32 m a rs r1 nil
   | Pmovq_mr a r1 =>
-      exec_store Mint64 m a rs r1 nil
+      exec_store _ _ ge Mint64 m a rs r1 nil
   | Pmovsd_ff rd r1 =>
       Next (nextinstr (rs#rd <- (rs r1))) m
   | Pmovsd_fi rd n =>
       Next (nextinstr (rs#rd <- (Vfloat n))) m
   | Pmovsd_fm rd a =>
-      exec_load Mfloat64 m a rs rd
+      exec_load _ _ ge Mfloat64 m a rs rd
   | Pmovsd_mf a r1 =>
-      exec_store Mfloat64 m a rs r1 nil
+      exec_store _ _ ge Mfloat64 m a rs r1 nil
   | Pmovss_fi rd n =>
       Next (nextinstr (rs#rd <- (Vsingle n))) m
   | Pmovss_fm rd a =>
-      exec_load Mfloat32 m a rs rd
+      exec_load _ _ ge Mfloat32 m a rs rd
   | Pmovss_mf a r1 =>
-      exec_store Mfloat32 m a rs r1 nil
+      exec_store _ _ ge Mfloat32 m a rs r1 nil
   | Pfldl_m a =>
-      exec_load Mfloat64 m a rs ST0
+      exec_load _ _ ge Mfloat64 m a rs ST0
   | Pfstpl_m a =>
-      exec_store Mfloat64 m a rs ST0 (ST0 :: nil)
+      exec_store _ _ ge Mfloat64 m a rs ST0 (ST0 :: nil)
   | Pflds_m a =>
-      exec_load Mfloat32 m a rs ST0
+      exec_load _ _ ge Mfloat32 m a rs ST0
   | Pfstps_m a =>
-      exec_store Mfloat32 m a rs ST0 (ST0 :: nil)
+      exec_store _ _ ge Mfloat32 m a rs ST0 (ST0 :: nil)
   | Pxchg_rr r1 r2 =>
       Next (nextinstr (rs#r1 <- (rs r2) #r2 <- (rs r1))) m
   (** Moves with conversion *)
   | Pmovb_mr a r1 =>
-      exec_store Mint8unsigned m a rs r1 nil
+      exec_store _ _ ge Mint8unsigned m a rs r1 nil
   | Pmovw_mr a r1 =>
-      exec_store Mint16unsigned m a rs r1 nil
+      exec_store _ _ ge Mint16unsigned m a rs r1 nil
   | Pmovzb_rr rd r1 =>
       Next (nextinstr (rs#rd <- (Val.zero_ext 8 rs#r1))) m
   | Pmovzb_rm rd a =>
-      exec_load Mint8unsigned m a rs rd
+      exec_load _ _ ge Mint8unsigned m a rs rd
   | Pmovsb_rr rd r1 =>
       Next (nextinstr (rs#rd <- (Val.sign_ext 8 rs#r1))) m
   | Pmovsb_rm rd a =>
-      exec_load Mint8signed m a rs rd
+      exec_load _ _ ge Mint8signed m a rs rd
   | Pmovzw_rr rd r1 =>
       Next (nextinstr (rs#rd <- (Val.zero_ext 16 rs#r1))) m
   | Pmovzw_rm rd a =>
-      exec_load Mint16unsigned m a rs rd
+      exec_load _ _ ge Mint16unsigned m a rs rd
   | Pmovsw_rr rd r1 =>
       Next (nextinstr (rs#rd <- (Val.sign_ext 16 rs#r1))) m
   | Pmovsw_rm rd a =>
-      exec_load Mint16signed m a rs rd
+      exec_load _ _ ge Mint16signed m a rs rd
   | Pmovzl_rr rd r1 =>
       Next (nextinstr (rs#rd <- (Val.longofintu rs#r1))) m
   | Pmovsl_rr rd r1 =>
@@ -704,9 +740,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rd <- (Val.maketotal (Val.singleoflong rs#r1)))) m
   (** Integer arithmetic *)
   | Pleal rd a =>
-      Next (nextinstr (rs#rd <- (eval_addrmode32 a rs))) m
+      Next (nextinstr (rs#rd <- (eval_addrmode32 ge a rs))) m
   | Pleaq rd a =>
-      Next (nextinstr (rs#rd <- (eval_addrmode64 a rs))) m
+      Next (nextinstr (rs#rd <- (eval_addrmode64 ge a rs))) m
   | Pnegl rd =>
       Next (nextinstr_nf (rs#rd <- (Val.neg rs#rd))) m
   | Pnegq rd =>
@@ -903,20 +939,20 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr_nf (rs#rd <- (Vsingle Float32.zero))) m
   (** Branches and calls *)
   | Pjmp_l lbl =>
-      goto_label f lbl rs m
+      goto_label ge f lbl rs m
   | Pjmp_s id sg =>
       Next (rs#PC <- (Genv.symbol_address ge id Ptrofs.zero)) m
   | Pjmp_r r sg =>
       Next (rs#PC <- (rs r)) m
   | Pjcc cond lbl =>
       match eval_testcond cond rs with
-      | Some true => goto_label f lbl rs m
+      | Some true => goto_label ge f lbl rs m
       | Some false => Next (nextinstr rs) m
       | None => Stuck
       end
   | Pjcc2 cond1 cond2 lbl =>
       match eval_testcond cond1 rs, eval_testcond cond2 rs with
-      | Some true, Some true => goto_label f lbl rs m
+      | Some true, Some true => goto_label ge f lbl rs m
       | Some _, Some _ => Next (nextinstr rs) m
       | _, _ => Stuck
       end
@@ -925,7 +961,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       | Vint n =>
           match list_nth_z tbl (Int.unsigned n) with
           | None => Stuck
-          | Some lbl => goto_label f lbl (rs #RAX <- Vundef #RDX <- Vundef) m
+          | Some lbl => goto_label ge f lbl (rs #RAX <- Vundef #RDX <- Vundef) m
           end
       | _ => Stuck
       end
@@ -939,13 +975,13 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (rs#PC <- (rs#RA) #RA <- Vundef) m
   (** Saving and restoring registers *)
   | Pmov_rm_a rd a =>
-      exec_load (if Archi.ptr64 then Many64 else Many32) m a rs rd
+      exec_load _ _ ge (if Archi.ptr64 then Many64 else Many32) m a rs rd
   | Pmov_mr_a a r1 =>
-      exec_store (if Archi.ptr64 then Many64 else Many32) m a rs r1 nil
+      exec_store _ _ ge (if Archi.ptr64 then Many64 else Many32) m a rs r1 nil
   | Pmovsd_fm_a rd a =>
-      exec_load Many64 m a rs rd
+      exec_load _ _ ge Many64 m a rs rd
   | Pmovsd_mf_a a r1 =>
-      exec_store Many64 m a rs r1 nil
+      exec_store _ _ ge Many64 m a rs r1 nil
   (** Pseudo-instructions *)
   | Plabel lbl =>
       Next (nextinstr rs) m
@@ -1021,6 +1057,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Psubq_ri _ _ => Stuck
   end.
 
+End WITH_FIND_LABELS.
+
+
+
 (** Translation of the LTL/Linear/Mach view of machine registers
   to the Asm view.  *)
 
@@ -1094,52 +1134,52 @@ Definition loc_external_result (sg: signature) : rpair preg :=
 Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State: regset -> mem -> state.
 
-Inductive step: state -> trace -> state -> Prop :=
-  | exec_step_internal:
-      forall b ofs f i rs m rs' m',
+Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} (ge: genv) : state -> trace -> state -> Prop :=
+| exec_step_internal:
+    forall b ofs f i rs m rs' m',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
-      find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
-      step (State rs m) E0 (State rs' m')
-  | exec_step_builtin:
-      forall b ofs f ef args res rs m vargs t vres rs' m',
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr ge f i rs m = Next rs' m' ->
+      step ge (State rs m) E0 (State rs' m')
+| exec_step_builtin:
+    forall b ofs f ef args res rs m vargs t vres rs' m',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs RSP) m args vargs ->
       external_call ef ge vargs m t vres m' ->
       forall BUILTIN_ENABLED: builtin_enabled ef,
-      rs' = nextinstr_nf
-             (set_res res vres
-               (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
-      step (State rs m) t (State rs' m')
-  | exec_step_external:
-      forall b ef args res rs m t rs' m',
+        rs' = nextinstr_nf
+                (set_res res vres
+                         (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
+        step ge (State rs m) t (State rs' m')
+| exec_step_external:
+    forall b ef args res rs m t rs' m',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       extcall_arguments rs m (ef_sig ef) args ->
       forall (* CompCertX: BEGIN additional conditions for calling convention *)
-       (STACK:
+        (STACK:
            exists m_,
              free_extcall_args (rs RSP) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
              exists t_ res'_ m'_,
                external_call ef ge args m_ t_ res'_ m'_
         )
-         (SP_TYPE: Val.has_type (rs RSP) Tptr)
-         (RA_TYPE: Val.has_type (rs RA) Tptr)
-         (SP_NOT_VUNDEF: rs RSP <> Vundef)
-         (RA_NOT_VUNDEF: rs RA <> Vundef)
+        (SP_TYPE: Val.has_type (rs RSP) Tptr)
+        (RA_TYPE: Val.has_type (rs RA) Tptr)
+        (SP_NOT_VUNDEF: rs RSP <> Vundef)
+        (RA_NOT_VUNDEF: rs RA <> Vundef)
       ,      (* CompCertX: END additional conditions for calling convention *)
-      external_call ef ge args m t res m' ->
-      rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) #RA <- Vundef ->
-      step (State rs m) t (State rs' m').
+        external_call ef ge args m t res m' ->
+        rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) #RA <- Vundef ->
+        step ge (State rs m) t (State rs' m').
 
 End RELSEM.
 
 (** Execution of whole programs. *)
 
-Inductive initial_state (p: program): state -> Prop :=
+Inductive initial_state {F V} (p: AST.program F V): state -> Prop :=
   | initial_state_intro: forall m0,
       Genv.init_mem p = Some m0 ->
       let ge := Genv.globalenv p in
@@ -1155,6 +1195,8 @@ Inductive final_state: state -> int -> Prop :=
       rs#PC = Vnullptr ->
       rs#RAX = Vint r ->
       final_state (State rs m) r.
+
+Local Existing Instance mem_accessors_default.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
