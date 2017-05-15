@@ -88,6 +88,30 @@ Module Mem.
 
 Definition locset := block -> Z -> Prop.
 
+Record segment :=
+  {
+    seg_ofs: ptrofs;
+    seg_size: Z;
+  }.
+
+Record frame :=
+  {
+    frame_size: Z;
+    frame_ofs_link: ptrofs;
+    frame_ofs_retaddr: ptrofs;
+    frame_locals: segment;
+    frame_outgoing: segment;
+    frame_callee_saves: segment;
+  }.
+
+Record stack :=
+  {
+    stack_size: Z;
+    stack_block: block;
+    stack_frames: list (frame * ptrofs);
+  }.
+
+
 Class MemoryModelOps
 
 (** The abstract type of memory states. *)
@@ -101,6 +125,8 @@ Class MemoryModelOps
 
 (** [empty] is the initial memory state. *)
   empty: mem;
+
+
 
 (** [alloc m lo hi] allocates a fresh block of size [hi - lo] bytes.
   Valid offsets in this block are between [lo] included and [hi] excluded.
@@ -145,6 +171,18 @@ Class MemoryModelOps
     Returns updated memory state, or [None] if insufficient permissions. *)
 
  drop_perm: forall (m: mem) (b: block) (lo hi: Z) (p: permission), option mem;
+
+
+(** * Stack operations  *)
+
+ is_global_block (m: mem) (b: block): bool;
+ stack_inj (m: mem) (b: block): option Z;
+ mem_stack (m: mem): stack;
+ push_frame (m: mem) (f: frame) : option (mem * block);
+ pop_frame (m: mem): option mem;
+ get_stack (m: mem) (ty: typ) (ofs: Z): option val;
+ set_stack (m: mem) (ty: typ) (ofs: Z) (v: val): option mem;
+ get_param (m: mem) (ty: typ) (ofs: Z): option val;
 
 (** * Permissions, block validity, access validity, and bounds *)
 
@@ -225,7 +263,9 @@ that we now axiomatize. *)
  postconditions to external function calls, whereas
  [strong_unchanged_on] will be used for ordinary memory operations. *)
 
- strong_unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop
+ strong_unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop;
+
+
 
 
 }.

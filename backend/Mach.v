@@ -123,10 +123,10 @@ Section WITHMEMORYMODELOPS.
 Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Definition load_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) :=
-  Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp ofs).
+  Mem.get_stack m ty (Ptrofs.unsigned ofs).
 
 Definition store_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) (v: val) :=
-  Mem.storev (chunk_of_type ty) m (Val.offset_ptr sp ofs) v.
+  Mem.set_stack m ty (Ptrofs.unsigned ofs) v.
 
 End WITHMEMORYMODELOPS.
 
@@ -292,6 +292,8 @@ Definition parent_ra (s: list stackframe) : val :=
 
 Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
+Variable frame_layout: block -> Mem.frame.
+
 Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -350,9 +352,11 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb stk soff sig ros c rs m f f' m',
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
-      Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' ->
+      let fl := frame_layout fb in
+      load_stack m (Vptr stk soff) Tptr (Mem.frame_ofs_link fl) = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr (Mem.frame_ofs_retaddr fl) = Some (parent_ra s) ->
+      (* Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' -> *)
+      Mem.pop_frame m = Some m' ->
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
@@ -394,22 +398,26 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s fb sp c' rs' m)
   | exec_Mreturn:
       forall s fb stk soff c rs m f m',
-      Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
-      Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' ->
-      step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
-        E0 (Returnstate s rs m')
+        Genv.find_funct_ptr ge fb = Some (Internal f) ->
+        let fl := frame_layout fb in
+        load_stack m (Vptr stk soff) Tptr (Mem.frame_ofs_link fl) = Some (parent_sp s) ->
+        load_stack m (Vptr stk soff) Tptr (Mem.frame_ofs_retaddr fl) = Some (parent_ra s) ->
+        (* Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' -> *)
+        Mem.pop_frame m = Some m' ->
+        step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
+             E0 (Returnstate s rs m')
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk rs',
-      Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) ->
-      let sp := Vptr stk Ptrofs.zero in
-      store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
-      store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
-      rs' = undef_regs destroyed_at_function_entry rs ->
-      step (Callstate s fb rs m)
-        E0 (State s fb sp f.(fn_code) rs' m3)
+        Genv.find_funct_ptr ge fb = Some (Internal f) ->
+        let fl := frame_layout fb in
+        Mem.push_frame m fl = Some (m1, stk) ->
+        (* Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) -> *)
+        let sp := Vptr stk Ptrofs.zero in
+        store_stack m1 sp Tptr (Mem.frame_ofs_link fl) (parent_sp s) = Some m2 ->
+        store_stack m2 sp Tptr (Mem.frame_ofs_retaddr fl) (parent_ra s) = Some m3 ->
+        rs' = undef_regs destroyed_at_function_entry rs ->
+        step (Callstate s fb rs m)
+             E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
       forall s fb rs m t rs' ef args res m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->
@@ -446,7 +454,7 @@ Inductive final_state: state -> int -> Prop :=
       rs r = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
-  Semantics (step Vnullptr Vnullptr rao) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (rao: function -> code -> ptrofs -> Prop) (fl: block -> Mem.frame) (p: program) :=
+  Semantics (step Vnullptr Vnullptr rao fl) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.
