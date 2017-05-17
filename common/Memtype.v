@@ -84,9 +84,33 @@ Inductive perm_kind: Type :=
   | Max: perm_kind
   | Cur: perm_kind.
 
-Module Mem.
+Section AbsBlock.
+  Context {stackblock: Type}.
 
-Definition locset := block -> Z -> Prop.
+  Inductive abs_block : Type :=
+  | StackBlock (sb: stackblock)
+  | MemBlock (b: block).
+
+  Definition eq_abs_block {eq_stackblock: forall sb1 sb2: stackblock, {sb1 = sb2} + {sb1 <> sb2}} 
+             (sb1 sb2: abs_block): {sb1 = sb2} + {sb1 <> sb2}.
+  Proof.
+    decide equality.
+    apply eq_block.
+  Defined.
+
+  (* Definition footprint (bfp: block -> Z -> Prop) (nfp: stackblock -> Z -> Prop) al ofs := *)
+  (*   match al with *)
+  (*     MemBlock b => bfp b ofs *)
+  (*   | StackBlock n => nfp n ofs *)
+  (*   end. *)
+
+  (* Definition block_footprint fp := *)
+  (*   footprint  fp (fun _ _ => False). *)
+
+  (* Definition stack_footprint fp := *)
+  (*   footprint (fun _ _ => False) fp. *)
+
+End AbsBlock.
 
 Record segment :=
   {
@@ -108,8 +132,13 @@ Record stack :=
   {
     stack_size: Z;
     stack_block: block;
-    stack_frames: list (frame * ptrofs);
+    stack_frames: list (frame * block * ptrofs);
   }.
+
+ 
+Module Mem.
+
+Definition locset := block -> Z -> Prop.
 
 
 Class MemoryModelOps
@@ -121,7 +150,30 @@ Class MemoryModelOps
  :=
 {
 
+(** * Stack operations  *)
+  stackblock: Type;
+  eq_stackblock: forall (sb1 sb2 : stackblock), {sb1 = sb2} + {sb1 <> sb2};
+  abs_block := @abs_block stackblock;
+  eq_abs_block := @eq_abs_block _ eq_stackblock;
+  footprint (bfp: block -> Z -> Prop) (nfp: stackblock -> Z -> Prop) al ofs :=
+    match al with
+      MemBlock b => bfp b ofs
+    | StackBlock n => nfp n ofs
+    end;
+  block_footprint fp := footprint  fp (fun _ _ => False);
+  stack_footprint fp := footprint (fun _ _ => False) fp;
+
+  is_global_block (m: mem) (b: block): bool;
+  stack_inj (m: mem) (b: block): option Z;
+  mem_stack (m: mem): stack;
+  push_frame (m: mem) (f: frame) : option (mem * block);
+  pop_frame (m: mem): option mem;
+  get_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
+  set_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z) (v: val): option mem;
+  get_param (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
+
 (** * Operations on memory states *)
+
 
 (** [empty] is the initial memory state. *)
   empty: mem;
@@ -170,19 +222,9 @@ Class MemoryModelOps
     in the initial memory state [m].
     Returns updated memory state, or [None] if insufficient permissions. *)
 
- drop_perm: forall (m: mem) (b: block) (lo hi: Z) (p: permission), option mem;
+ drop_perm: forall (m: mem) (b: abs_block) (lo hi: Z) (p: permission), option mem;
 
 
-(** * Stack operations  *)
-
- is_global_block (m: mem) (b: block): bool;
- stack_inj (m: mem) (b: block): option Z;
- mem_stack (m: mem): stack;
- push_frame (m: mem) (f: frame) : option (mem * block);
- pop_frame (m: mem): option mem;
- get_stack (m: mem) (ty: typ) (ofs: Z): option val;
- set_stack (m: mem) (ty: typ) (ofs: Z) (v: val): option mem;
- get_param (m: mem) (ty: typ) (ofs: Z): option val;
 
 (** * Permissions, block validity, access validity, and bounds *)
 
@@ -201,11 +243,11 @@ Class MemoryModelOps
   If the address is empty, [perm m b ofs p] is false for all values of [p].
   [k] is the kind of permission we are interested in: either the current
   permissions or the maximal permissions. *)
- perm: forall (m: mem) (b: block) (ofs: Z) (k: perm_kind) (p: permission), Prop;
+ perm: forall (m: mem) (b: abs_block) (ofs: Z) (k: perm_kind) (p: permission), Prop;
 
 (** [range_perm m b lo hi p] holds iff the addresses [b, lo] to [b, hi-1]
   all have permission [p] of kind [k]. *)
- range_perm (m: mem) (b: block) (lo hi: Z) (k: perm_kind) (p: permission) : Prop :=
+ range_perm (m: mem) (b: abs_block) (lo hi: Z) (k: perm_kind) (p: permission) : Prop :=
   forall ofs, lo <= ofs < hi -> perm m b ofs k p;
 
 (** [valid_pointer m b ofs] returns [true] if the address [b, ofs]
@@ -256,14 +298,13 @@ that we now axiomatize. *)
 
 (** ** Invariance properties between two memory states *)
 
- unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop
- ;
+ unchanged_on: forall (P: abs_block -> Z -> Prop) (m_before m_after: mem), Prop;
 
  (** Necessary to distinguish from [unchanged_on], used as
  postconditions to external function calls, whereas
  [strong_unchanged_on] will be used for ordinary memory operations. *)
 
- strong_unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop;
+ strong_unchanged_on: forall (P: abs_block -> Z -> Prop) (m_before m_after: mem), Prop;
 
 
 
@@ -304,7 +345,7 @@ Definition valid_block (m: mem) (b: block) := Plt b (nextblock m).
 (** An access to a memory quantity [chunk] at address [b, ofs] with
   permission [p] is valid in [m] if the accessed addresses all have
   current permission [p] and moreover the offset is properly aligned. *)
-Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
+Definition valid_access (m: mem) (chunk: memory_chunk) (b: Mem.abs_block) (ofs: Z) (p: permission): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
   /\ (align_chunk chunk | ofs).
 
@@ -336,8 +377,8 @@ Definition meminj_no_overlap (f: meminj) (m: mem) : Prop :=
   b1 <> b2 ->
   f b1 = Some (b1', delta1) ->
   f b2 = Some (b2', delta2) ->
-  perm m b1 ofs1 Max Nonempty ->
-  perm m b2 ofs2 Max Nonempty ->
+  perm m (MemBlock b1) ofs1 Max Nonempty ->
+  perm m (MemBlock b2) ofs2 Max Nonempty ->
   b1' <> b2' \/ ofs1 + delta1 <> ofs2 + delta2.
 
 End WITHMEMORYMODELOPS.
@@ -365,7 +406,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 (** Having a (nonempty) permission implies that the block is valid.
   In other words, invalid blocks, not yet allocated, are all empty. *)
  perm_valid_block:
-  forall m b ofs k p, perm m b ofs k p -> valid_block m b;
+  forall m (b: block) ofs k p, perm m (MemBlock b) ofs k p -> valid_block m b;
 
  range_perm_implies:
   forall m b lo hi k p1 p2,
@@ -386,7 +427,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  valid_access_valid_block:
   forall m chunk b ofs,
-  valid_access m chunk b ofs Nonempty ->
+  valid_access m chunk (MemBlock b) ofs Nonempty ->
   valid_block m b;
 
  valid_access_perm:
@@ -396,10 +437,10 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  valid_pointer_nonempty_perm:
   forall m b ofs,
-  valid_pointer m b ofs = true <-> perm m b ofs Cur Nonempty;
+  valid_pointer m b ofs = true <-> perm m (MemBlock b) ofs Cur Nonempty;
  valid_pointer_valid_access:
   forall m b ofs,
-  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty;
+  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned (MemBlock b) ofs Nonempty;
 
  weak_valid_pointer_spec:
   forall m b ofs,
@@ -423,12 +464,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 (** A load succeeds if and only if the access is valid for reading *)
  valid_access_load:
   forall m chunk b ofs,
-  valid_access m chunk b ofs Readable ->
+  valid_access m chunk (MemBlock b) ofs Readable ->
   exists v, load chunk m b ofs = Some v;
  load_valid_access:
   forall m chunk b ofs v,
   load chunk m b ofs = Some v ->
-  valid_access m chunk b ofs Readable;
+  valid_access m chunk (MemBlock b) ofs Readable;
 
 (** The value returned by [load] belongs to the type of the memory quantity
   accessed: [Vundef], [Vint] or [Vptr] for an integer quantity,
@@ -474,12 +515,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  range_perm_loadbytes:
   forall m b ofs len,
-  range_perm m b ofs (ofs + len) Cur Readable ->
+  range_perm m (MemBlock b) ofs (ofs + len) Cur Readable ->
   exists bytes, loadbytes m b ofs len = Some bytes;
  loadbytes_range_perm:
   forall m b ofs len bytes,
   loadbytes m b ofs len = Some bytes ->
-  range_perm m b ofs (ofs + len) Cur Readable;
+  range_perm m (MemBlock b) ofs (ofs + len) Cur Readable;
 
 (** If [loadbytes] succeeds, the corresponding [load] succeeds and
   returns a value that is determined by the
@@ -550,7 +591,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  valid_access_store':
   forall m1 chunk b ofs v,
-  valid_access m1 chunk b ofs Writable ->
+  valid_access m1 chunk (MemBlock b) ofs Writable ->
   exists m2: mem, store chunk m1 b ofs v = Some m2;
  store_valid_access_1:
   forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
@@ -562,7 +603,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p;
  store_valid_access_3:
   forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  valid_access m1 chunk b ofs Writable;
+  valid_access m1 chunk (MemBlock b) ofs Writable;
 
 (** Load-store properties. *)
 
@@ -664,11 +705,11 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  range_perm_storebytes' :
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+  range_perm m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
   exists m2 : mem, storebytes m1 b ofs bytes = Some m2;
  storebytes_range_perm:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable;
+  range_perm m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable;
  perm_storebytes_1:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
   forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p;
@@ -782,18 +823,18 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall b' ofs k p, perm m1 b' ofs k p -> perm m2 b' ofs k p;
  perm_alloc_2:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
-  forall ofs k, lo <= ofs < hi -> perm m2 b ofs k Freeable;
+  forall ofs k, lo <= ofs < hi -> perm m2 (MemBlock b) ofs k Freeable;
  perm_alloc_3:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
-  forall ofs k p, perm m2 b ofs k p -> lo <= ofs < hi;
+  forall ofs k p, perm m2 (MemBlock b) ofs k p -> lo <= ofs < hi;
  perm_alloc_4:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
-  forall b' ofs k p, perm m2 b' ofs k p -> b' <> b -> perm m1 b' ofs k p;
+  forall b' ofs k p, perm m2 b' ofs k p -> b' <> MemBlock b -> perm m1 b' ofs k p;
  perm_alloc_inv:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
   forall b' ofs k p,
   perm m2 b' ofs k p ->
-  if eq_block b' b then lo <= ofs < hi else perm m1 b' ofs k p;
+  if eq_abs_block b' (MemBlock b) then lo <= ofs < hi else perm m1 b' ofs k p;
 
 (** Effect of [alloc] on access validity. *)
 
@@ -806,12 +847,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
   forall chunk ofs,
   lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
-  valid_access m2 chunk b ofs Freeable;
+  valid_access m2 chunk (MemBlock b) ofs Freeable;
  valid_access_alloc_inv:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
   forall chunk b' ofs p,
   valid_access m2 chunk b' ofs p ->
-  if eq_block b' b
+  if eq_abs_block b' (MemBlock b)
   then lo <= ofs /\ ofs + size_chunk chunk <= hi /\ (align_chunk chunk | ofs)
   else valid_access m1 chunk b' ofs p;
 
@@ -855,11 +896,11 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  range_perm_free' :
   forall m1 b lo hi,
-  range_perm m1 b lo hi Cur Freeable ->
+  range_perm m1 (MemBlock b) lo hi Cur Freeable ->
   exists m2: mem, free m1 b lo hi = Some m2;
  free_range_perm:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  range_perm m1 bf lo hi Cur Freeable;
+  range_perm m1 (MemBlock bf) lo hi Cur Freeable;
 
 (** Block validity is preserved by [free]. *)
 
@@ -878,12 +919,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  perm_free_1:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
   forall b ofs k p,
-  b <> bf \/ ofs < lo \/ hi <= ofs ->
+  b <> MemBlock bf \/ ofs < lo \/ hi <= ofs ->
   perm m1 b ofs k p ->
   perm m2 b ofs k p;
  perm_free_2:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  forall ofs k p, lo <= ofs < hi -> ~ perm m2 bf ofs k p;
+  forall ofs k p, lo <= ofs < hi -> ~ perm m2 (MemBlock bf) ofs k p;
  perm_free_3:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
   forall b ofs k p,
@@ -895,13 +936,13 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
   forall chunk b ofs p,
   valid_access m1 chunk b ofs p ->
-  b <> bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
+  b <> MemBlock bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
   valid_access m2 chunk b ofs p;
  valid_access_free_2:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
   forall chunk ofs p,
   lo < hi -> ofs + size_chunk chunk > lo -> ofs < hi ->
-  ~(valid_access m2 chunk bf ofs p);
+  ~(valid_access m2 chunk (MemBlock bf) ofs p);
  valid_access_free_inv_1:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
   forall chunk b ofs p,
@@ -910,7 +951,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  valid_access_free_inv_2:
   forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
   forall chunk ofs p,
-  valid_access m2 chunk bf ofs p ->
+  valid_access m2 chunk (MemBlock bf) ofs p ->
   lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs;
 
 (** Load-free properties *)
@@ -960,12 +1001,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  loadbytes_drop:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
   forall b' ofs n,
-  b' <> b \/ ofs + n <= lo \/ hi <= ofs \/ perm_order p Readable ->
+    MemBlock b' <> b \/ ofs + n <= lo \/ hi <= ofs \/ perm_order p Readable ->
   loadbytes m' b' ofs n = loadbytes m b' ofs n;
  load_drop:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
   forall chunk b' ofs,
-  b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p Readable ->
+    MemBlock b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p Readable ->
   load chunk m' b' ofs = load chunk m b' ofs;
 
 
@@ -1007,7 +1048,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall chunk m1 m2 b ofs v m2',
   extends m1 m2 ->
   store chunk m2 b ofs v = Some m2' ->
-  (forall ofs', perm m1 b ofs' Cur Readable -> ofs <= ofs' < ofs + size_chunk chunk -> False) ->
+  (forall ofs', perm m1 (MemBlock b) ofs' Cur Readable -> ofs <= ofs' < ofs + size_chunk chunk -> False) ->
   extends m1 m2';
 
  storev_extends:
@@ -1033,7 +1074,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall m1 m2 b ofs bytes2 m2',
   extends m1 m2 ->
   storebytes m2 b ofs bytes2 = Some m2' ->
-  (forall ofs', perm m1 b ofs' Cur Readable -> ofs <= ofs' < ofs + Z_of_nat (length bytes2) -> False) ->
+  (forall ofs', perm m1 (MemBlock b) ofs' Cur Readable -> ofs <= ofs' < ofs + Z_of_nat (length bytes2) -> False) ->
   extends m1 m2';
 
  alloc_extends:
@@ -1055,7 +1096,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall m1 m2 b lo hi m2',
   extends m1 m2 ->
   free m2 b lo hi = Some m2' ->
-  (forall ofs k p, perm m1 b ofs k p -> lo <= ofs < hi -> False) ->
+  (forall ofs k p, perm m1 (MemBlock b) ofs k p -> lo <= ofs < hi -> False) ->
   extends m1 m2';
 
  free_parallel_extends:
@@ -1182,20 +1223,20 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m1 m2 b1 b2 delta ofs k p,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  perm m1 b1 ofs k p -> perm m2 b2 (ofs + delta) k p;
+  perm m1 (MemBlock b1) ofs k p -> perm m2 (MemBlock b2) (ofs + delta) k p;
 
  range_perm_inject:
   forall f m1 m2 b1 b2 delta lo hi k p,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  range_perm m1 b1 lo hi k p -> range_perm m2 b2 (lo + delta) (hi + delta) k p;
+  range_perm m1 (MemBlock b1) lo hi k p -> range_perm m2 (MemBlock b2) (lo + delta) (hi + delta) k p;
 
  valid_access_inject:
   forall f m1 m2 chunk b1 ofs b2 delta p,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  valid_access m1 chunk b1 ofs p ->
-  valid_access m2 chunk b2 (ofs + delta) p;
+  valid_access m1 chunk (MemBlock b1) ofs p ->
+  valid_access m2 chunk (MemBlock b2) (ofs + delta) p;
 
  valid_pointer_inject:
   forall f m1 m2 b1 ofs b2 delta,
@@ -1214,7 +1255,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  address_inject:
   forall f m1 m2 b1 ofs1 b2 delta p,
   inject f m1 m2 ->
-  perm m1 b1 (Ptrofs.unsigned ofs1) Cur p ->
+  perm m1 (MemBlock b1) (Ptrofs.unsigned ofs1) Cur p ->
   f b1 = Some (b2, delta) ->
   Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta;
 
@@ -1222,7 +1263,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  address_inject':
   forall f m1 m2 chunk b1 ofs1 b2 delta,
   inject f m1 m2 ->
-  valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty ->
+  valid_access m1 chunk (MemBlock b1) (Ptrofs.unsigned ofs1) Nonempty ->
   f b1 = Some (b2, delta) ->
   Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta;
 
@@ -1260,8 +1301,8 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   b1 <> b2 ->
   f b1 = Some (b1', delta1) ->
   f b2 = Some (b2', delta2) ->
-  perm m1 b1 ofs1 Max Nonempty ->
-  perm m1 b2 ofs2 Max Nonempty ->
+  perm m1 (MemBlock b1) ofs1 Max Nonempty ->
+  perm m1 (MemBlock b2) ofs2 Max Nonempty ->
   b1' <> b2' \/ ofs1 + delta1 <> ofs2 + delta2;
 
  different_pointers_inject:
@@ -1281,8 +1322,8 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m m' ->
   f b1 = Some(b1', delta1) ->
   f b2 = Some(b2', delta2) ->
-  range_perm m b1 ofs1 (ofs1 + sz) Max Nonempty ->
-  range_perm m b2 ofs2 (ofs2 + sz) Max Nonempty ->
+  range_perm m (MemBlock b1) ofs1 (ofs1 + sz) Max Nonempty ->
+  range_perm m (MemBlock b2) ofs2 (ofs2 + sz) Max Nonempty ->
   sz > 0 ->
   b1 <> b2 \/ ofs1 = ofs2 \/ ofs1 + sz <= ofs2 \/ ofs2 + sz <= ofs1 ->
   b1' <> b2' \/ ofs1 + delta1 = ofs2 + delta2
@@ -1294,7 +1335,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m m' ->
   al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz > 0 ->
   (al | sz) ->
-  range_perm m b ofs (ofs + sz) Cur Nonempty ->
+  range_perm m (MemBlock b) ofs (ofs + sz) Cur Nonempty ->
   (al | ofs) ->
   f b = Some(b', delta) ->
   (al | ofs + delta);
@@ -1343,7 +1384,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m1 m2 ->
   (forall b' delta ofs',
     f b' = Some(b, delta) ->
-    perm m1 b' ofs' Cur Readable ->
+    perm m1 (MemBlock b') ofs' Cur Readable ->
     ofs <= ofs' + delta < ofs + size_chunk chunk -> False) ->
   store chunk m2 b ofs v = Some m2' ->
   inject f m1 m2';
@@ -1379,7 +1420,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m1 m2 ->
   (forall b' delta ofs',
     f b' = Some(b, delta) ->
-    perm m1 b' ofs' Cur Readable ->
+    perm m1 (MemBlock b') ofs' Cur Readable ->
     ofs <= ofs' + delta < ofs + Z_of_nat (length bytes2) -> False) ->
   storebytes m2 b ofs bytes2 = Some m2' ->
   inject f m1 m2';
@@ -1413,12 +1454,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   alloc m1 lo hi = (m1', b1) ->
   valid_block m2 b2 ->
   0 <= delta <= Ptrofs.max_unsigned ->
-  (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
-  (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
+  (forall ofs k p, perm m2 (MemBlock b2) ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
+  (forall ofs k p, lo <= ofs < hi -> perm m2 (MemBlock b2) (ofs + delta) k p) ->
   inj_offset_aligned delta (hi-lo) ->
   (forall b delta' ofs k p,
    f b = Some (b2, delta') ->
-   perm m1 b ofs k p ->
+   perm m1 (MemBlock b) ofs k p ->
    lo + delta <= ofs + delta' < hi + delta -> False) ->
   exists f',
      inject f' m1' m2
@@ -1444,7 +1485,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   free_list m1 l = Some m1' ->
   free m2 b lo hi = Some m2' ->
   (forall b1 delta ofs k p,
-    f b1 = Some(b, delta) -> perm m1 b1 ofs k p -> lo <= ofs + delta < hi ->
+    f b1 = Some(b, delta) -> perm m1 (MemBlock b1) ofs k p -> lo <= ofs + delta < hi ->
     exists lo1, exists hi1, In (b1, lo1, hi1) l /\ lo1 <= ofs < hi1) ->
   inject f m1' m2';
 
@@ -1464,7 +1505,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m1 m2 ->
   free m2 b lo hi = Some m2' ->
   (forall b1 delta ofs k p,
-    f b1 = Some(b, delta) -> perm m1 b1 ofs k p ->
+    f b1 = Some(b, delta) -> perm m1 (MemBlock b1) ofs k p ->
     lo <= ofs + delta < hi -> False) ->
   inject f m1 m2';
 
@@ -1480,10 +1521,10 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  drop_outside_inject:
   forall f m1 m2 b lo hi p m2',
   inject f m1 m2 ->
-  drop_perm m2 b lo hi p = Some m2' ->
+  drop_perm m2 (MemBlock b) lo hi p = Some m2' ->
   (forall b' delta ofs k p,
     f b' = Some(b, delta) ->
-    perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
+    perm m1 (MemBlock b') ofs k p -> lo <= ofs + delta < hi -> False) ->
   inject f m1 m2';
 
 (** The following property is needed by ValueDomain, to prove mmatch_inj. *)
@@ -1536,7 +1577,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  drop_inject_neutral:
   forall m b lo hi p m' thr,
-  drop_perm m b lo hi p = Some m' ->
+  drop_perm m (MemBlock b) lo hi p = Some m' ->
   inject_neutral thr m ->
   Plt b thr ->
   inject_neutral thr m';
@@ -1561,41 +1602,41 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   perm m b ofs k p -> perm m' b ofs k p;
  perm_unchanged_on_2:
   forall P m m' b ofs k p,
-  unchanged_on P m m' -> P b ofs -> valid_block m b ->
-  perm m' b ofs k p -> perm m b ofs k p;
+  unchanged_on P m m' -> P (MemBlock b) ofs -> valid_block m b ->
+  perm m' (MemBlock b) ofs k p -> perm m (MemBlock b) ofs k p;
  loadbytes_unchanged_on_1:
   forall P m m' b ofs n,
   unchanged_on P m m' ->
   valid_block m b ->
-  (forall i, ofs <= i < ofs + n -> P b i) ->
+  (forall i, ofs <= i < ofs + n -> P (MemBlock b) i) ->
   loadbytes m' b ofs n = loadbytes m b ofs n;
  loadbytes_unchanged_on:
    forall P m m' b ofs n bytes,
      unchanged_on P m m' ->
-     (forall i, ofs <= i < ofs + n -> P b i) ->
+     (forall i, ofs <= i < ofs + n -> P (MemBlock b) i) ->
      loadbytes m b ofs n = Some bytes ->
      loadbytes m' b ofs n = Some bytes;
  load_unchanged_on_1:
   forall P m m' chunk b ofs,
   unchanged_on P m m' ->
   valid_block m b ->
-  (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> P (MemBlock b) i) ->
   load chunk m' b ofs = load chunk m b ofs;
  load_unchanged_on:
    forall P m m' chunk b ofs v,
      unchanged_on P m m' ->
-     (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
+     (forall i, ofs <= i < ofs + size_chunk chunk -> P (MemBlock b) i) ->
      load chunk m b ofs = Some v ->
      load chunk m' b ofs = Some v;
  store_strong_unchanged_on:
   forall P chunk m b ofs v m',
     store chunk m b ofs v = Some m' ->
-    (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
+    (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P (MemBlock b) i) ->
     strong_unchanged_on P m m';
  storebytes_strong_unchanged_on:
   forall P m b ofs bytes m',
   storebytes m b ofs bytes = Some m' ->
-  (forall i, ofs <= i < ofs + Z_of_nat (length bytes) -> ~ P b i) ->
+  (forall i, ofs <= i < ofs + Z_of_nat (length bytes) -> ~ P (MemBlock b) i) ->
   strong_unchanged_on P m m';
  alloc_strong_unchanged_on:
    forall P m lo hi m' b,
@@ -1604,7 +1645,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  free_strong_unchanged_on:
   forall P m b lo hi m',
   free m b lo hi = Some m' ->
-  (forall i, lo <= i < hi -> ~ P b i) ->
+  (forall i, lo <= i < hi -> ~ P (MemBlock b) i) ->
   strong_unchanged_on P m m';
  drop_perm_strong_unchanged_on:
    forall P m b lo hi p m',
@@ -1612,15 +1653,15 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
      (forall i, lo <= i < hi -> ~ P b i) ->
      strong_unchanged_on P m m';
  unchanged_on_implies:
-   forall (P Q: block -> Z -> Prop) m m',
+   forall (P Q: abs_block -> Z -> Prop) m m',
      unchanged_on P m m' ->
-     (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
+     (forall b ofs, Q (MemBlock b) ofs -> valid_block m b -> P (MemBlock b) ofs) ->
      unchanged_on Q m m'
  ;
  strong_unchanged_on_implies:
-   forall (P Q: block -> Z -> Prop) m m',
+   forall (P Q: abs_block -> Z -> Prop) m m',
      strong_unchanged_on P m m' ->
-     (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
+     (forall b ofs, Q (MemBlock b) ofs -> valid_block m b -> P (MemBlock b) ofs) ->
      strong_unchanged_on Q m m'
  ;
 
@@ -1631,10 +1672,10 @@ for [unchanged_on]. *)
  inject_strong_unchanged_on j m0 m m' :
    inject j m0 m ->
    strong_unchanged_on
-     (fun (b : block) (ofs : Z) =>
+     (block_footprint (fun (b : block) (ofs : Z) =>
         exists (b0 : block) (delta : Z),
           j b0 = Some (b, delta) /\
-          perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
+          perm m0 (MemBlock b0) (ofs - delta) Max Nonempty)) m m' ->
    inject j m0 m'
 }.
 
@@ -1644,7 +1685,7 @@ Context `{memory_model_prf: MemoryModel}.
 
 Lemma valid_access_store:
   forall m1 chunk b ofs v,
-  valid_access m1 chunk b ofs Writable ->
+  valid_access m1 chunk (MemBlock b) ofs Writable ->
   { m2: mem | store chunk m1 b ofs v = Some m2 }.
 Proof.
   intros m1 chunk b ofs v H.
@@ -1657,7 +1698,7 @@ Defined.
 
 Lemma range_perm_storebytes:
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+  range_perm m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
   { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
 Proof.
   intros m1 b ofs bytes H.
@@ -1670,7 +1711,7 @@ Defined.
 
 Lemma range_perm_free:
   forall m1 b lo hi,
-  range_perm m1 b lo hi Cur Freeable ->
+  range_perm m1 (MemBlock b) lo hi Cur Freeable ->
   { m2: mem | free m1 b lo hi = Some m2 }.
 Proof.
   intros m1 b lo hi H.
@@ -1696,8 +1737,8 @@ Defined.
 Lemma perm_free_list:
   forall l m m' b ofs k p,
   free_list m l = Some m' ->
-  perm m' b ofs k p ->
-  perm m b ofs k p /\
+  perm m' (MemBlock b) ofs k p ->
+  perm m (MemBlock b) ofs k p /\
   (forall lo hi, In (b, lo, hi) l -> lo <= ofs < hi -> False).
 Proof.
   induction l; simpl; intros.
@@ -1720,7 +1761,7 @@ Qed.
 Lemma store_unchanged_on:
   forall P chunk m b ofs v m',
     store chunk m b ofs v = Some m' ->
-    (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
+    (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P (MemBlock b) i) ->
     unchanged_on P m m'.
 Proof.
   intros. apply strong_unchanged_on_weak. eapply store_strong_unchanged_on; eauto.
@@ -1729,7 +1770,7 @@ Qed.
 Lemma storebytes_unchanged_on:
   forall P m b ofs bytes m',
   storebytes m b ofs bytes = Some m' ->
-  (forall i, ofs <= i < ofs + Z_of_nat (length bytes) -> ~ P b i) ->
+  (forall i, ofs <= i < ofs + Z_of_nat (length bytes) -> ~ P (MemBlock b) i) ->
   unchanged_on P m m'.
 Proof.
   intros. apply strong_unchanged_on_weak. eapply storebytes_strong_unchanged_on; eauto.
@@ -1746,7 +1787,7 @@ Qed.
 Lemma free_unchanged_on:
   forall P m b lo hi m',
   free m b lo hi = Some m' ->
-  (forall i, lo <= i < hi -> ~ P b i) ->
+  (forall i, lo <= i < hi -> ~ P (MemBlock b) i) ->
   unchanged_on P m m'.
 Proof.
   intros. apply strong_unchanged_on_weak. eapply free_strong_unchanged_on; eauto.
@@ -1765,18 +1806,18 @@ Lemma perm_free m b lo hi m':
   free m b lo hi = Some m' ->
   forall b' o' k p,
     perm m' b' o' k p <->
-    ((~ (b' = b /\ lo <= o' < hi)) /\ perm m b' o' k p).
+    ((~ (b' = MemBlock b /\ lo <= o' < hi)) /\ perm m b' o' k p).
 Proof.
   intros H b' o' k p.
-  assert (~ (b' = b /\ lo <= o' < hi) -> perm m b' o' k p -> perm m' b' o' k p) as H0.
+  assert (~ (b' = MemBlock b /\ lo <= o' < hi) -> perm m b' o' k p -> perm m' b' o' k p) as H0.
   {
     intro H0.
-    eapply perm_free_1; eauto.
-    destruct (peq b' b); try tauto.
+    eapply perm_free_1; eauto. 
+    destruct (eq_abs_block b' (MemBlock b)); try tauto.
     subst.
     intuition xomega.
   }
-  assert (b' = b /\ lo <= o' < hi -> ~ perm m' b' o' k p) as H1.
+  assert (b' = MemBlock b /\ lo <= o' < hi -> ~ perm m' b' o' k p) as H1.
   destruct 1; subst; eapply perm_free_2; eauto.
   generalize (perm_free_3 _ _ _ _ _ H b' o' k p).
   tauto.
