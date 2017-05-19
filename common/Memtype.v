@@ -166,11 +166,21 @@ Class MemoryModelOps
   is_global_block (m: mem) (b: block): bool;
   stack_inj (m: mem) (b: block): option Z;
   mem_stack (m: mem): stack;
-  push_frame (m: mem) (f: frame) : option (mem * block);
+  push_frame (m: mem) (f: frame) (parent_sp: stackblock) (parent_ra: val) : option (mem * stackblock);
   pop_frame (m: mem): option mem;
   get_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
   set_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z) (v: val): option mem;
   get_param (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
+
+
+  (* load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
+  check_link_correct:
+    mem -> stackblock -> frame -> stackblock -> Prop;
+
+  (* load_stack m stk Tptr (frame_ofs_retaddr fl) = Some (parent_ra s) -> *)
+  check_retaddr_correct:
+    mem -> stackblock -> frame -> val -> Prop;
+
 
 (** * Operations on memory states *)
 
