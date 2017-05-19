@@ -263,7 +263,7 @@ Class MemoryModelOps
 (** [valid_pointer m b ofs] returns [true] if the address [b, ofs]
   is nonempty in [m] and [false] if it is empty. *)
 
- valid_pointer: forall (m: mem) (b: block) (ofs: Z), bool;
+ valid_pointer: forall (m: mem) (b: abs_block) (ofs: Z), bool;
 
 (** * Relating two memory states. *)
 
@@ -363,7 +363,7 @@ Definition valid_access (m: mem) (chunk: memory_chunk) (b: Mem.abs_block) (ofs: 
   [weak_valid_pointer m b ofs] holds if address [b, ofs] is a valid pointer
   in [m], or a pointer one past a valid block in [m].  *)
 
-Definition weak_valid_pointer (m: mem) (b: block) (ofs: Z) :=
+Definition weak_valid_pointer (m: mem) (b: abs_block) (ofs: Z) :=
   valid_pointer m b ofs || valid_pointer m b (ofs - 1).
 
 (** Integrity of pointer values. *)
