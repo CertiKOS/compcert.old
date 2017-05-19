@@ -316,7 +316,7 @@ that we now axiomatize. *)
 
  strong_unchanged_on: forall (P: abs_block -> Z -> Prop) (m_before m_after: mem), Prop;
 
-
+ valid_block (m: mem) (b: abs_block) : Prop;
 
 
 }.
@@ -350,7 +350,6 @@ Fixpoint free_list (m: mem) (l: list (block * Z * Z)) {struct l}: option mem :=
       end
   end.
 
-Definition valid_block (m: mem) (b: block) := Plt b (nextblock m).
 
 (** An access to a memory quantity [chunk] at address [b, ofs] with
   permission [p] is valid in [m] if the accessed addresses all have
