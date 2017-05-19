@@ -446,10 +446,10 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  valid_pointer_nonempty_perm:
   forall m b ofs,
-  valid_pointer m b ofs = true <-> perm m (MemBlock b) ofs Cur Nonempty;
+  valid_pointer m b ofs = true <-> perm m b ofs Cur Nonempty;
  valid_pointer_valid_access:
   forall m b ofs,
-  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned (MemBlock b) ofs Nonempty;
+  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty;
 
  weak_valid_pointer_spec:
   forall m b ofs,
@@ -1251,15 +1251,15 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m1 m2 b1 ofs b2 delta,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  valid_pointer m1 b1 ofs = true ->
-  valid_pointer m2 b2 (ofs + delta) = true;
+  valid_pointer m1 (MemBlock b1) ofs = true ->
+  valid_pointer m2 (MemBlock b2) (ofs + delta) = true;
 
  weak_valid_pointer_inject:
   forall f m1 m2 b1 ofs b2 delta,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  weak_valid_pointer m1 b1 ofs = true ->
-  weak_valid_pointer m2 b2 (ofs + delta) = true;
+  weak_valid_pointer m1 (MemBlock b1) ofs = true ->
+  weak_valid_pointer m2 (MemBlock b2) (ofs + delta) = true;
 
  address_inject:
   forall f m1 m2 b1 ofs1 b2 delta p,
@@ -1279,30 +1279,30 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  valid_pointer_inject_no_overflow:
   forall f m1 m2 b ofs b' delta,
   inject f m1 m2 ->
-  valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+  valid_pointer m1 (MemBlock b) (Ptrofs.unsigned ofs) = true ->
   f b = Some(b', delta) ->
   0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned;
 
  weak_valid_pointer_inject_no_overflow:
   forall f m1 m2 b ofs b' delta,
   inject f m1 m2 ->
-  weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+  weak_valid_pointer m1 (MemBlock b) (Ptrofs.unsigned ofs) = true ->
   f b = Some(b', delta) ->
   0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned;
 
  valid_pointer_inject_val:
   forall f m1 m2 b ofs b' ofs',
   inject f m1 m2 ->
-  valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+  valid_pointer m1 (MemBlock b) (Ptrofs.unsigned ofs) = true ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
-  valid_pointer m2 b' (Ptrofs.unsigned ofs') = true;
+  valid_pointer m2 (MemBlock b') (Ptrofs.unsigned ofs') = true;
 
  weak_valid_pointer_inject_val:
   forall f m1 m2 b ofs b' ofs',
   inject f m1 m2 ->
-  weak_valid_pointer m1 b (Ptrofs.unsigned ofs) = true ->
+  weak_valid_pointer m1 (MemBlock b) (Ptrofs.unsigned ofs) = true ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
-  weak_valid_pointer m2 b' (Ptrofs.unsigned ofs') = true;
+  weak_valid_pointer m2 (MemBlock b') (Ptrofs.unsigned ofs') = true;
 
  inject_no_overlap:
   forall f m1 m2 b1 b2 b1' b2' delta1 delta2 ofs1 ofs2,
@@ -1318,8 +1318,8 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m m' b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
   inject f m m' ->
   b1 <> b2 ->
-  valid_pointer m b1 (Ptrofs.unsigned ofs1) = true ->
-  valid_pointer m b2 (Ptrofs.unsigned ofs2) = true ->
+  valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs1) = true ->
+  valid_pointer m (MemBlock b2) (Ptrofs.unsigned ofs2) = true ->
   f b1 = Some (b1', delta1) ->
   f b2 = Some (b2', delta2) ->
   b1' <> b2' \/
