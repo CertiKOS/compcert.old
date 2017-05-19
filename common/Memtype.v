@@ -415,7 +415,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 (** Having a (nonempty) permission implies that the block is valid.
   In other words, invalid blocks, not yet allocated, are all empty. *)
  perm_valid_block:
-  forall m (b: block) ofs k p, perm m (MemBlock b) ofs k p -> valid_block m b;
+  forall m b ofs k p, perm m b ofs k p -> valid_block m b;
 
  range_perm_implies:
   forall m b lo hi k p1 p2,
@@ -436,7 +436,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  valid_access_valid_block:
   forall m chunk b ofs,
-  valid_access m chunk (MemBlock b) ofs Nonempty ->
+  valid_access m chunk b ofs Nonempty ->
   valid_block m b;
 
  valid_access_perm:
@@ -817,13 +817,13 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall b', valid_block m1 b' -> valid_block m2 b';
  fresh_block_alloc:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
-  ~(valid_block m1 b);
+  ~(valid_block m1 (MemBlock b));
  valid_new_block:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
-  valid_block m2 b;
+  valid_block m2 (MemBlock b);
  valid_block_alloc_inv:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
-  forall b', valid_block m2 b' -> b' = b \/ valid_block m1 b';
+  forall b', valid_block m2 b' -> b' = MemBlock b \/ valid_block m1 b';
 
 (** Effect of [alloc] on permissions. *)
 
@@ -870,7 +870,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  load_alloc_unchanged:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
   forall chunk b' ofs,
-  valid_block m1 b' ->
+  valid_block m1 (MemBlock b') ->
   load chunk m2 b' ofs = load chunk m1 b' ofs;
  load_alloc_other:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
@@ -890,7 +890,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  loadbytes_alloc_unchanged:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
   forall b' ofs n,
-  valid_block m1 b' ->
+  valid_block m1 (MemBlock b') ->
   loadbytes m2 b' ofs n = loadbytes m1 b' ofs n;
  loadbytes_alloc_same:
   forall m1 lo hi m2 b, alloc m1 lo hi = (m2, b) ->
@@ -1220,13 +1220,13 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m1 m2 b1 b2 delta,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  valid_block m1 b1;
+  valid_block m1 (MemBlock b1);
 
  valid_block_inject_2:
   forall f m1 m2 b1 b2 delta,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  valid_block m2 b2;
+  valid_block m2 (MemBlock b2);
 
  perm_inject:
   forall f m1 m2 b1 b2 delta ofs k p,
@@ -1461,7 +1461,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m1 m2 lo hi m1' b1 b2 delta,
   inject f m1 m2 ->
   alloc m1 lo hi = (m1', b1) ->
-  valid_block m2 b2 ->
+  valid_block m2 (MemBlock b2) ->
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 (MemBlock b2) ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 (MemBlock b2) (ofs + delta) k p) ->
@@ -1540,7 +1540,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  self_inject f m:
   (forall b, f b = None \/ f b = Some (b, 0)) ->
-  (forall b, f b <> None -> Mem.valid_block m b) ->
+  (forall b, f b <> None -> Mem.valid_block m (MemBlock b)) ->
   (forall b,
      f b <> None ->
      forall o b' o' q n,
@@ -1611,12 +1611,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   perm m b ofs k p -> perm m' b ofs k p;
  perm_unchanged_on_2:
   forall P m m' b ofs k p,
-  unchanged_on P m m' -> P (MemBlock b) ofs -> valid_block m b ->
-  perm m' (MemBlock b) ofs k p -> perm m (MemBlock b) ofs k p;
+  unchanged_on P m m' -> P b ofs -> valid_block m b ->
+  perm m' b ofs k p -> perm m b ofs k p;
  loadbytes_unchanged_on_1:
   forall P m m' b ofs n,
   unchanged_on P m m' ->
-  valid_block m b ->
+  valid_block m (MemBlock b) ->
   (forall i, ofs <= i < ofs + n -> P (MemBlock b) i) ->
   loadbytes m' b ofs n = loadbytes m b ofs n;
  loadbytes_unchanged_on:
@@ -1628,7 +1628,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  load_unchanged_on_1:
   forall P m m' chunk b ofs,
   unchanged_on P m m' ->
-  valid_block m b ->
+  valid_block m (MemBlock b) ->
   (forall i, ofs <= i < ofs + size_chunk chunk -> P (MemBlock b) i) ->
   load chunk m' b ofs = load chunk m b ofs;
  load_unchanged_on:
@@ -1664,13 +1664,13 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  unchanged_on_implies:
    forall (P Q: abs_block -> Z -> Prop) m m',
      unchanged_on P m m' ->
-     (forall b ofs, Q (MemBlock b) ofs -> valid_block m b -> P (MemBlock b) ofs) ->
+     (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
      unchanged_on Q m m'
  ;
  strong_unchanged_on_implies:
    forall (P Q: abs_block -> Z -> Prop) m m',
      strong_unchanged_on P m m' ->
-     (forall b ofs, Q (MemBlock b) ofs -> valid_block m b -> P (MemBlock b) ofs) ->
+     (forall b ofs, Q b ofs -> valid_block m b -> P b ofs) ->
      strong_unchanged_on Q m m'
  ;
 
