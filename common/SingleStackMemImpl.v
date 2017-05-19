@@ -422,10 +422,18 @@ Qed.
 
 (** The initial store *)
 
+Definition cstack_limit := (100000)%Z.
+
 Program Definition empty: mem :=
-  mkmem (PMap.init (ZMap.init Undef))
+  mkmem (1%positive)
+        cstack_limit
+        (ZMap.init Undef)
+        (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        1%positive _ _ _.
+        (PMap.init (ZMap.init Undef))
+        (PMap.init (fun ofs k => None))
+        (2%positive)
+        _ _ _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
 Qed.
@@ -435,7 +443,16 @@ Qed.
 Next Obligation.
   rewrite PMap.gi. auto.
 Qed.
-
+Next Obligation.
+  repeat rewrite PMap.gi. red; auto.
+Qed.
+Next Obligation.
+  rewrite PMap.gi. auto.
+Qed.
+Next Obligation.
+  rewrite PMap.gi. auto.
+Qed.
+        
 (** Allocation of a fresh block with the given bounds.  Return an updated
   memory state and the address of the fresh block, which initially contains
   undefined cells.  Note that allocation never fails: we model an
