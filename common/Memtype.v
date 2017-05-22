@@ -124,7 +124,7 @@ Record frame :=
     frame_ofs_link: Z;
     frame_ofs_retaddr: Z;
     frame_locals: segment;
-    frame_outgoing: segment;
+    frame_outgoings: segment;
     frame_callee_saves: segment;
     frame_data: segment;
   }.
@@ -134,6 +134,15 @@ Record stack :=
     stack_size: Z;
     stack_block: block;
     stack_frames: list (frame * block * Z);
+  }.
+
+Record frame_permission :=
+  {
+    frame_ofs_link_perm : permission;
+    frame_ofs_retaddr_perm : permission;
+    frame_locals_perm: permission;
+    frame_outgoings_perm: permission;
+    frame_callee_saves_perm: permission;
   }.
 
  
@@ -168,7 +177,8 @@ Class MemoryModelOps
   is_global_block (m: mem) (b: block): bool;
   stack_inj (m: mem) (b: block): option Z;
   mem_stack (m: mem): stack;
-  push_frame (m: mem) (f: frame) (parent_ra: val) : option (mem * stackblock);
+  push_frame (m: mem) (f: frame) (parent_ra: val) 
+    (perm: frame_permission) : option (mem * stackblock);
   pop_frame (m: mem): option mem;
   get_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
   set_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z) (v: val): option mem;
@@ -189,6 +199,7 @@ Class MemoryModelOps
 
 (** [empty] is the initial memory state. *)
   empty: mem;
+  
 
 
 
@@ -234,7 +245,7 @@ Class MemoryModelOps
     in the initial memory state [m].
     Returns updated memory state, or [None] if insufficient permissions. *)
 
- drop_perm: forall (m: mem) (b: abs_block) (lo hi: Z) (p: permission), option mem;
+ drop_perm: forall (m: mem) (b: block) (lo hi: Z) (p: permission), option mem;
 
 
 
@@ -478,9 +489,9 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 (** ** Properties of the initial memory state. *)
 
  nextblock_empty: nextblock empty = 1%positive;
- perm_empty: forall b ofs k p, ~perm empty b ofs k p;
+ perm_empty: forall b ofs k p, ~perm empty (MemBlock b) ofs k p;
  valid_access_empty:
-  forall chunk b ofs p, ~valid_access empty chunk b ofs p;
+  forall chunk b ofs p, ~valid_access empty chunk (MemBlock b) ofs p;
 
 (** ** Properties of [load]. *)
 
@@ -1003,20 +1014,20 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  range_perm_drop_1:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
-  range_perm m b lo hi Cur Freeable;
+  range_perm m (MemBlock b) lo hi Cur Freeable;
  range_perm_drop_2' :
   forall m b lo hi p,
-  range_perm m b lo hi Cur Freeable -> exists m', drop_perm m b lo hi p = Some m';
+  range_perm m (MemBlock b) lo hi Cur Freeable -> exists m', drop_perm m b lo hi p = Some m';
 
  perm_drop_1:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
-  forall ofs k, lo <= ofs < hi -> perm m' b ofs k p;
+  forall ofs k, lo <= ofs < hi -> perm m' (MemBlock b) ofs k p;
  perm_drop_2:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
-  forall ofs k p', lo <= ofs < hi -> perm m' b ofs k p' -> perm_order p p';
+  forall ofs k p', lo <= ofs < hi -> perm m' (MemBlock b) ofs k p' -> perm_order p p';
  perm_drop_3:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
-  forall b' ofs k p', b' <> b \/ ofs < lo \/ hi <= ofs -> perm m b' ofs k p' -> perm m' b' ofs k p';
+  forall b' ofs k p', b' <> b \/ ofs < lo \/ hi <= ofs -> perm m (MemBlock b') ofs k p' -> perm m' (MemBlock b') ofs k p';
  perm_drop_4:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
   forall b' ofs k p', perm m' b' ofs k p' -> perm m b' ofs k p';
@@ -1024,12 +1035,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  loadbytes_drop:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
   forall b' ofs n,
-    MemBlock b' <> b \/ ofs + n <= lo \/ hi <= ofs \/ perm_order p Readable ->
+    b' <> b \/ ofs + n <= lo \/ hi <= ofs \/ perm_order p Readable ->
   loadbytes m' b' ofs n = loadbytes m b' ofs n;
  load_drop:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
   forall chunk b' ofs,
-    MemBlock b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p Readable ->
+    b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p Readable ->
   load chunk m' b' ofs = load chunk m b' ofs;
 
 
@@ -1544,7 +1555,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  drop_outside_inject:
   forall f m1 m2 b lo hi p m2',
   inject f m1 m2 ->
-  drop_perm m2 (MemBlock b) lo hi p = Some m2' ->
+  drop_perm m2 b lo hi p = Some m2' ->
   (forall b' delta ofs k p,
     f b' = Some(b, delta) ->
     perm m1 (MemBlock b') ofs k p -> lo <= ofs + delta < hi -> False) ->
@@ -1600,7 +1611,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  drop_inject_neutral:
   forall m b lo hi p m' thr,
-  drop_perm m (MemBlock b) lo hi p = Some m' ->
+  drop_perm m b lo hi p = Some m' ->
   inject_neutral thr m ->
   Plt b thr ->
   inject_neutral thr m';
@@ -1673,7 +1684,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  drop_perm_strong_unchanged_on:
    forall P m b lo hi p m',
      drop_perm m b lo hi p = Some m' ->
-     (forall i, lo <= i < hi -> ~ P b i) ->
+     (forall i, lo <= i < hi -> ~ P (MemBlock b) i) ->
      strong_unchanged_on P m m';
  unchanged_on_implies:
    forall (P Q: abs_block -> Z -> Prop) m m',
@@ -1747,7 +1758,7 @@ Defined.
 
 Lemma range_perm_drop_2:
   forall m b lo hi p,
-  range_perm m b lo hi Cur Freeable -> { m' | drop_perm m b lo hi p = Some m' }.
+  range_perm m (MemBlock b) lo hi Cur Freeable -> { m' | drop_perm m b lo hi p = Some m' }.
 Proof.
   intros m b lo hi p H.
   destruct (drop_perm _ _ _ _ _) eqn:DROP; eauto.
@@ -1819,7 +1830,7 @@ Qed.
 Lemma drop_perm_unchanged_on:
    forall P m b lo hi p m',
      drop_perm m b lo hi p = Some m' ->
-     (forall i, lo <= i < hi -> ~ P b i) ->
+     (forall i, lo <= i < hi -> ~ P (MemBlock b) i) ->
      unchanged_on P m m'.
 Proof.
   intros. apply strong_unchanged_on_weak. eapply drop_perm_strong_unchanged_on; eauto.
