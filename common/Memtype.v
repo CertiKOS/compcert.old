@@ -489,9 +489,9 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 (** ** Properties of the initial memory state. *)
 
  nextblock_empty: nextblock empty = 1%positive;
- perm_empty: forall b ofs k p, ~perm empty (MemBlock b) ofs k p;
+ perm_empty: forall b ofs k p, ~perm empty b ofs k p;
  valid_access_empty:
-  forall chunk b ofs p, ~valid_access empty chunk (MemBlock b) ofs p;
+  forall chunk b ofs p, ~valid_access empty chunk b ofs p;
 
 (** ** Properties of [load]. *)
 

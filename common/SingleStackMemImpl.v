@@ -66,12 +66,6 @@ Definition perm_order'' (po1 po2: option permission) :=
 Definition stackblock := block.
 
 Record mem' : Type := mkmem {
-  (* The continuous single stack *)
-  cont_stack : block;
-  (* The size limit of the continuous stack *) 
-  stack_limit : Z;
-  (* Contents of the continuous stack *)
-  cs_contents : ZMap.t memval;
   (* Contents of the stack blocks *)
   sb_contents : PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   (* Permissions of the stack blocks *)
@@ -104,18 +98,16 @@ Definition mem := mem'.
 
 Lemma mkmem_ext:
  forall 
-  cstack1 cstack2 slimit1 slimit2 cscont1 cscont2
   sbcont1 sbcont2 sbacc1 sbacc2 
   memcont1 memcont2 memacc1 memacc2
   next1 next2 sba1 sba2 sbb1 sbb2 sbc1 sbc2
   mema1 mema2 memb1 memb2 memc1 memc2,
-  cstack1 = cstack2 -> slimit1 = slimit2 -> cscont1 = cscont2 ->
   sbcont1 = sbcont2 -> sbacc1 = sbacc2 -> 
   memcont1 = memcont2 -> memacc1 = memacc2 ->
   next1=next2 ->
-  (mkmem cstack1 slimit1 cscont1 sbcont1 sbacc1 memcont1 memacc1 next1 sba1 sbb1 sbc1 mema1 memb1 memc1)
+  (mkmem sbcont1 sbacc1 memcont1 memacc1 next1 sba1 sbb1 sbc1 mema1 memb1 memc1)
   = 
-  (mkmem cstack2 slimit2 cscont2 sbcont2 sbacc2 memcont2 memacc2 next2 sba2 sbb2 sbc2 mema2 memb2 memc2).
+  (mkmem sbcont2 sbacc2 memcont2 memacc2 next2 sba2 sbb2 sbc2 mema2 memb2 memc2).
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -133,6 +125,23 @@ Definition ab_lt (b:abs_block) :=
 Definition ab_lt_dec (x:abs_block) (y:block) : {ab_lt x y} + {~ ab_lt x y}.
   destruct x; simpl; apply plt.
 Defined.
+
+Lemma ab_lt_trans_succ : 
+  forall x y, ab_lt x y -> ab_lt x (Pos.succ y).
+Proof.
+  intros. 
+  destruct x as [x|x]; (simpl in H; simpl; apply Plt_trans_succ; apply H).
+Qed.
+
+Lemma ab_lt_succ_inv :
+  forall x y, ab_lt x (Pos.succ y) -> 
+    ab_lt x y \/ 
+    (exists b, (x = MemBlock b /\ b = y) \/ (x = StackBlock b /\ b = y)).
+Proof.
+  intros. 
+  destruct x as [x|x]; (simpl; simpl in H; apply Plt_succ_inv in H; destruct H; eauto).
+Qed.
+  
 
 (** * Methods and properties for abstract blocks *)
 
@@ -425,14 +434,11 @@ Qed.
 Definition cstack_limit := (100000)%Z.
 
 Program Definition empty: mem :=
-  mkmem (1%positive)
-        cstack_limit
-        (ZMap.init Undef)
-        (PMap.init (ZMap.init Undef))
+  mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
         (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        (2%positive)
+        (1%positive)
         _ _ _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
@@ -459,10 +465,7 @@ Qed.
   infinite memory. *)
 
 Program Definition alloc (m: mem) (lo hi: Z) :=
-  (mkmem (m.(cont_stack))
-         (m.(stack_limit))
-         (m.(cs_contents))
-         (m.(sb_contents))
+  (mkmem (m.(sb_contents))
          (m.(sb_access))
          (PMap.set m.(nextblock)
                    (ZMap.init Undef)
@@ -507,10 +510,7 @@ Qed.
   range will fail.  Requires freeable permission on the given range. *)
 
 Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
-  mkmem (m.(cont_stack))
-        (m.(stack_limit))
-        (m.(cs_contents))
-        (m.(sb_contents))
+  mkmem (m.(sb_contents))
         (m.(sb_access))
         (m.(mem_contents))
         (PMap.set b
@@ -679,10 +679,7 @@ Qed.
 
 Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val): option mem :=
   if valid_access_dec m chunk (MemBlock b) ofs Writable then
-    Some (mkmem (m.(cont_stack))
-                (m.(stack_limit))
-                (m.(cs_contents))
-                (m.(sb_contents))
+    Some (mkmem (m.(sb_contents))
                 (m.(sb_access))
                 (PMap.set b
                           (setN (encode_val chunk v) ofs (m.(mem_contents)#b))
@@ -725,10 +722,7 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
 
 Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) : option mem :=
   if range_perm_dec m (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable then
-    Some (mkmem (m.(cont_stack))
-                (m.(stack_limit))
-                (m.(cs_contents))
-                (m.(sb_contents))
+    Some (mkmem (m.(sb_contents))
                 (m.(sb_access))
                 (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
                 m.(mem_access)
@@ -761,10 +755,7 @@ Qed.
 
 Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): option mem :=
   if range_perm_dec m (MemBlock b) lo hi Cur Freeable then
-    Some (mkmem (m.(cont_stack))
-                (m.(stack_limit))
-                (m.(cs_contents))
-                (m.(sb_contents))
+    Some (mkmem (m.(sb_contents))
                 (m.(sb_access))
                 (m.(mem_contents))
                 (PMap.set b
@@ -805,12 +796,13 @@ Qed.
 
 (** Properties of the empty store. *)
 
-Theorem nextblock_empty: nextblock empty = 2%positive.
+Theorem nextblock_empty: nextblock empty = 1%positive.
 Proof. reflexivity. Qed.
 
-Theorem perm_empty: forall b ofs k p, Plt 1%positive b -> ~perm empty (MemBlock b) ofs k p.
+Theorem perm_empty: forall b ofs k p, ~perm empty b ofs k p.
 Proof.
-  intros. unfold perm, empty; simpl. rewrite PMap.gi. simpl. tauto.
+  intros. 
+  destruct b as[b|b]; (unfold perm, empty; simpl; rewrite PMap.gi; simpl; tauto).
 Qed.
 
 Theorem valid_access_empty: forall chunk b ofs p, ~valid_access empty chunk b ofs p.
@@ -823,7 +815,7 @@ Qed.
 
 Theorem valid_access_load:
   forall m chunk b ofs,
-  valid_access m chunk b ofs Readable ->
+  valid_access m chunk (MemBlock b) ofs Readable ->
   exists v, load chunk m b ofs = Some v.
 Proof.
   intros. econstructor. unfold load. rewrite pred_dec_true; eauto.
@@ -832,10 +824,10 @@ Qed.
 Theorem load_valid_access:
   forall m chunk b ofs v,
   load chunk m b ofs = Some v ->
-  valid_access m chunk b ofs Readable.
+  valid_access m chunk (MemBlock b) ofs Readable.
 Proof.
   intros until v. unfold load.
-  destruct (valid_access_dec m chunk b ofs Readable); intros.
+  destruct (valid_access_dec m chunk (MemBlock b) ofs Readable); intros.
   auto.
   congruence.
 Qed.
@@ -846,7 +838,7 @@ Lemma load_result:
   v = decode_val chunk (getN (size_chunk_nat chunk) ofs (m.(mem_contents)#b)).
 Proof.
   intros until v. unfold load.
-  destruct (valid_access_dec m chunk b ofs Readable); intros.
+  destruct (valid_access_dec m chunk (MemBlock b) ofs Readable); intros.
   congruence.
   congruence.
 Qed.
@@ -885,7 +877,7 @@ Proof.
   intros. unfold load.
   change (size_chunk_nat Mint8signed) with (size_chunk_nat Mint8unsigned).
   set (cl := getN (size_chunk_nat Mint8unsigned) ofs m.(mem_contents)#b).
-  destruct (valid_access_dec m Mint8signed b ofs Readable).
+  destruct (valid_access_dec m Mint8signed (MemBlock b) ofs Readable).
   rewrite pred_dec_true; auto. unfold decode_val.
   destruct (proj_bytes cl); auto.
   simpl. decEq. decEq. rewrite Int.sign_ext_zero_ext. auto. compute; auto.
@@ -899,7 +891,7 @@ Proof.
   intros. unfold load.
   change (size_chunk_nat Mint16signed) with (size_chunk_nat Mint16unsigned).
   set (cl := getN (size_chunk_nat Mint16unsigned) ofs m.(mem_contents)#b).
-  destruct (valid_access_dec m Mint16signed b ofs Readable).
+  destruct (valid_access_dec m Mint16signed (MemBlock b) ofs Readable).
   rewrite pred_dec_true; auto. unfold decode_val.
   destruct (proj_bytes cl); auto.
   simpl. decEq. decEq. rewrite Int.sign_ext_zero_ext. auto. compute; auto.
@@ -910,7 +902,7 @@ Qed.
 
 Theorem range_perm_loadbytes:
   forall m b ofs len,
-  range_perm m b ofs (ofs + len) Cur Readable ->
+  range_perm m (MemBlock b) ofs (ofs + len) Cur Readable ->
   exists bytes, loadbytes m b ofs len = Some bytes.
 Proof.
   intros. econstructor. unfold loadbytes. rewrite pred_dec_true; eauto.
@@ -919,10 +911,10 @@ Qed.
 Theorem loadbytes_range_perm:
   forall m b ofs len bytes,
   loadbytes m b ofs len = Some bytes ->
-  range_perm m b ofs (ofs + len) Cur Readable.
+  range_perm m (MemBlock b) ofs (ofs + len) Cur Readable.
 Proof.
   intros until bytes. unfold loadbytes.
-  destruct (range_perm_dec m b ofs (ofs + len) Cur Readable). auto. congruence.
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + len) Cur Readable). auto. congruence.
 Qed.
 
 Theorem loadbytes_load:
@@ -932,7 +924,7 @@ Theorem loadbytes_load:
   load chunk m b ofs = Some(decode_val chunk bytes).
 Proof.
   unfold loadbytes, load; intros.
-  destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur Readable);
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + size_chunk chunk) Cur Readable);
   try congruence.
   inv H. rewrite pred_dec_true. auto.
   split; auto.
@@ -963,7 +955,7 @@ Theorem loadbytes_length:
   length bytes = nat_of_Z n.
 Proof.
   unfold loadbytes; intros.
-  destruct (range_perm_dec m b ofs (ofs + n) Cur Readable); try congruence.
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + n) Cur Readable); try congruence.
   inv H. apply getN_length.
 Qed.
 
@@ -994,8 +986,8 @@ Theorem loadbytes_concat:
   loadbytes m b ofs (n1 + n2) = Some(bytes1 ++ bytes2).
 Proof.
   unfold loadbytes; intros.
-  destruct (range_perm_dec m b ofs (ofs + n1) Cur Readable); try congruence.
-  destruct (range_perm_dec m b (ofs + n1) (ofs + n1 + n2) Cur Readable); try congruence.
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + n1) Cur Readable); try congruence.
+  destruct (range_perm_dec m (MemBlock b) (ofs + n1) (ofs + n1 + n2) Cur Readable); try congruence.
   rewrite pred_dec_true. rewrite nat_of_Z_plus; auto.
   rewrite getN_concat. rewrite nat_of_Z_eq; auto.
   congruence.
@@ -1014,7 +1006,7 @@ Theorem loadbytes_split:
   /\ bytes = bytes1 ++ bytes2.
 Proof.
   unfold loadbytes; intros.
-  destruct (range_perm_dec m b ofs (ofs + (n1 + n2)) Cur Readable);
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + (n1 + n2)) Cur Readable);
   try congruence.
   rewrite nat_of_Z_plus in H; auto. rewrite getN_concat in H.
   rewrite nat_of_Z_eq in H; auto.
@@ -1127,12 +1119,12 @@ Qed.
 
 Theorem valid_access_store' :
   forall m1 chunk b ofs v,
-  valid_access m1 chunk b ofs Writable ->
+  valid_access m1 chunk (MemBlock b) ofs Writable ->
   exists m2: mem, store chunk m1 b ofs v = Some m2 .
 Proof.
   intros.
   unfold store.
-  destruct (valid_access_dec m1 chunk b ofs Writable).
+  destruct (valid_access_dec m1 chunk (MemBlock b) ofs Writable).
   eauto.
   contradiction.
 Qed.
@@ -1141,7 +1133,7 @@ Local Hint Resolve valid_access_store': mem.
 
 Theorem valid_access_store:
   forall m1 chunk b ofs v,
-  valid_access m1 chunk b ofs Writable ->
+  valid_access m1 chunk (MemBlock b) ofs Writable ->
   { m2: mem | store chunk m1 b ofs v = Some m2 }.
 Proof.
   intros m1 chunk b ofs v H.
@@ -1163,16 +1155,36 @@ Variable v: val.
 Variable m2: mem.
 Hypothesis STORE: store chunk m1 b ofs v = Some m2.
 
-Lemma store_access: mem_access m2 = mem_access m1.
+(* Lemma store_mem_access: mem_access m2 = mem_access m1. *)
+(* Proof. *)
+(*   unfold store in STORE. destruct ( valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv STORE. *)
+(*   auto. *)
+(* Qed. *)
+
+(* Lemma store_sb_access: sb_access m2 = sb_access m1. *)
+(* Proof. *)
+(*   unfold store in STORE. destruct ( valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv STORE. *)
+(*   auto. *)
+(* Qed. *)
+
+Lemma store_access: access m2 = access m1.
 Proof.
-  unfold store in STORE. destruct ( valid_access_dec m1 chunk b ofs Writable); inv STORE.
+  unfold store in STORE. destruct ( valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv STORE.
   auto.
 Qed.
+
 
 Lemma store_mem_contents:
   mem_contents m2 = PMap.set b (setN (encode_val chunk v) ofs m1.(mem_contents)#b) m1.(mem_contents).
 Proof.
-  unfold store in STORE. destruct (valid_access_dec m1 chunk b ofs Writable); inv STORE.
+  unfold store in STORE. destruct (valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv STORE.
+  auto.
+Qed.
+
+Lemma store_sb_contents:
+  sb_contents m2 = sb_contents m1.
+Proof.
+  unfold store in STORE. destruct (valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv STORE.
   auto.
 Qed.
 
@@ -1180,13 +1192,13 @@ Theorem perm_store_1:
   forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p.
 Proof.
   intros.
- unfold perm in *. rewrite store_access; auto.
+  unfold perm in *. simpl. rewrite store_access; auto.
 Qed.
 
 Theorem perm_store_2:
   forall b' ofs' k p, perm m2 b' ofs' k p -> perm m1 b' ofs' k p.
 Proof.
-  intros. unfold perm in *.  rewrite store_access in H; auto.
+  intros. unfold perm in *. simpl in H. rewrite store_access in H; auto.
 Qed.
 
 Local Hint Resolve perm_store_1 perm_store_2: mem.
@@ -1195,7 +1207,7 @@ Theorem nextblock_store:
   nextblock m2 = nextblock m1.
 Proof.
   intros.
-  unfold store in STORE. destruct ( valid_access_dec m1 chunk b ofs Writable); inv STORE.
+  unfold store in STORE. destruct ( valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv STORE.
   auto.
 Qed.
 
@@ -1228,9 +1240,9 @@ Proof.
 Qed.
 
 Theorem store_valid_access_3:
-  valid_access m1 chunk b ofs Writable.
+  valid_access m1 chunk (MemBlock b) ofs Writable.
 Proof.
-  unfold store in STORE. destruct (valid_access_dec m1 chunk b ofs Writable).
+  unfold store in STORE. destruct (valid_access_dec m1 chunk (MemBlock b) ofs Writable).
   auto.
   congruence.
 Qed.
@@ -1282,7 +1294,7 @@ Theorem load_store_other:
   load chunk' m2 b' ofs' = load chunk' m1 b' ofs'.
 Proof.
   intros. unfold load.
-  destruct (valid_access_dec m1 chunk' b' ofs' Readable).
+  destruct (valid_access_dec m1 chunk' (MemBlock b') ofs' Readable).
   rewrite pred_dec_true.
   decEq. decEq. rewrite store_mem_contents; simpl.
   rewrite PMap.gsspec. destruct (peq b' b). subst b'.
@@ -1298,7 +1310,7 @@ Theorem loadbytes_store_same:
   loadbytes m2 b ofs (size_chunk chunk) = Some(encode_val chunk v).
 Proof.
   intros.
-  assert (valid_access m2 chunk b ofs Readable) by eauto with mem.
+  assert (valid_access m2 chunk (MemBlock b) ofs Readable) by eauto with mem.
   unfold loadbytes. rewrite pred_dec_true. rewrite store_mem_contents; simpl.
   rewrite PMap.gss.
   replace (nat_of_Z (size_chunk chunk)) with (length (encode_val chunk v)).
@@ -1316,7 +1328,7 @@ Theorem loadbytes_store_other:
   loadbytes m2 b' ofs' n = loadbytes m1 b' ofs' n.
 Proof.
   intros. unfold loadbytes.
-  destruct (range_perm_dec m1 b' ofs' (ofs' + n) Cur Readable).
+  destruct (range_perm_dec m1 (MemBlock b') ofs' (ofs' + n) Cur Readable).
   rewrite pred_dec_true.
   decEq. rewrite store_mem_contents; simpl.
   rewrite PMap.gsspec. destruct (peq b' b). subst b'.
@@ -1521,8 +1533,8 @@ Proof.
     rewrite <- (encode_val_length chunk2 v2).
     congruence.
   unfold store.
-  destruct (valid_access_dec m chunk1 b ofs Writable);
-  destruct (valid_access_dec m chunk2 b ofs Writable); auto.
+  destruct (valid_access_dec m chunk1 (MemBlock b) ofs Writable);
+  destruct (valid_access_dec m chunk2 (MemBlock b) ofs Writable); auto.
   f_equal. apply mkmem_ext; auto. congruence.
   elim n. apply valid_access_compat with chunk1; auto. omega.
   elim n. apply valid_access_compat with chunk2; auto. omega.
@@ -1586,18 +1598,18 @@ Qed.
 
 Theorem range_perm_storebytes':
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+  range_perm m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
   exists m2, storebytes m1 b ofs bytes = Some m2.
 Proof.
   intros. unfold storebytes.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable).
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable).
   econstructor; reflexivity.
   contradiction.
 Qed.
 
 Theorem range_perm_storebytes:
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+  range_perm m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
   { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
 Proof.
   intros m1 b ofs bytes H.
@@ -1615,8 +1627,8 @@ Theorem storebytes_store:
   store chunk m1 b ofs v = Some m2.
 Proof.
   unfold storebytes, store. intros.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable); inv H.
-  destruct (valid_access_dec m1 chunk b ofs Writable).
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable); inv H.
+  destruct (valid_access_dec m1 chunk (MemBlock b) ofs Writable).
   f_equal. apply mkmem_ext; auto.
   elim n. constructor; auto.
   rewrite encode_val_length in r. rewrite size_chunk_conv. auto.
@@ -1628,8 +1640,8 @@ Theorem store_storebytes:
   storebytes m1 b ofs (encode_val chunk v) = Some m2.
 Proof.
   unfold storebytes, store. intros.
-  destruct (valid_access_dec m1 chunk b ofs Writable); inv H.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable).
+  destruct (valid_access_dec m1 chunk (MemBlock b) ofs Writable); inv H.
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable).
   f_equal. apply mkmem_ext; auto.
   destruct v0.  elim n.
   rewrite encode_val_length. rewrite <- size_chunk_conv. auto.
@@ -1643,10 +1655,10 @@ Variable bytes: list memval.
 Variable m2: mem.
 Hypothesis STORE: storebytes m1 b ofs bytes = Some m2.
 
-Lemma storebytes_access: mem_access m2 = mem_access m1.
+Lemma storebytes_access: access m2 = access m1.
 Proof.
   unfold storebytes in STORE.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   inv STORE.
   auto.
 Qed.
@@ -1655,7 +1667,7 @@ Lemma storebytes_mem_contents:
    mem_contents m2 = PMap.set b (setN bytes ofs m1.(mem_contents)#b) m1.(mem_contents).
 Proof.
   unfold storebytes in STORE.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   inv STORE.
   auto.
 Qed.
@@ -1695,7 +1707,7 @@ Theorem nextblock_storebytes:
 Proof.
   intros.
   unfold storebytes in STORE.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   inv STORE.
   auto.
 Qed.
@@ -1715,11 +1727,11 @@ Qed.
 Local Hint Resolve storebytes_valid_block_1 storebytes_valid_block_2: mem.
 
 Theorem storebytes_range_perm:
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable.
+  range_perm m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable.
 Proof.
   intros.
   unfold storebytes in STORE.
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   inv STORE.
   auto.
 Qed.
@@ -1728,7 +1740,7 @@ Theorem loadbytes_storebytes_same:
   loadbytes m2 b ofs (Z_of_nat (length bytes)) = Some bytes.
 Proof.
   intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes. 
-  destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
+  destruct (range_perm_dec m1 (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
   try discriminate.
   rewrite pred_dec_true.
   decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite nat_of_Z_of_nat.
@@ -1743,7 +1755,7 @@ Theorem loadbytes_storebytes_disjoint:
   loadbytes m2 b' ofs' len = loadbytes m1 b' ofs' len.
 Proof.
   intros. unfold loadbytes.
-  destruct (range_perm_dec m1 b' ofs' (ofs' + len) Cur Readable).
+  destruct (range_perm_dec m1 (MemBlock b') ofs' (ofs' + len) Cur Readable).
   rewrite pred_dec_true.
   rewrite storebytes_mem_contents. decEq.
   rewrite PMap.gsspec. destruct (peq b' b). subst b'.
@@ -1774,7 +1786,7 @@ Theorem load_storebytes_other:
   load chunk m2 b' ofs' = load chunk m1 b' ofs'.
 Proof.
   intros. unfold load.
-  destruct (valid_access_dec m1 chunk b' ofs' Readable).
+  destruct (valid_access_dec m1 chunk (MemBlock b') ofs' Readable).
   rewrite pred_dec_true.
   rewrite storebytes_mem_contents. decEq.
   rewrite PMap.gsspec. destruct (peq b' b). subst b'.
@@ -1804,9 +1816,9 @@ Theorem storebytes_concat:
 Proof.
   intros. generalize H; intro ST1. generalize H0; intro ST2.
   unfold storebytes; unfold storebytes in ST1; unfold storebytes in ST2.
-  destruct (range_perm_dec m b ofs (ofs + Z_of_nat(length bytes1)) Cur Writable); try congruence.
-  destruct (range_perm_dec m1 b (ofs + Z_of_nat(length bytes1)) (ofs + Z_of_nat(length bytes1) + Z_of_nat(length bytes2)) Cur Writable); try congruence.
-  destruct (range_perm_dec m b ofs (ofs + Z_of_nat (length (bytes1 ++ bytes2))) Cur Writable).
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + Z_of_nat(length bytes1)) Cur Writable); try congruence.
+  destruct (range_perm_dec m1 (MemBlock b) (ofs + Z_of_nat(length bytes1)) (ofs + Z_of_nat(length bytes1) + Z_of_nat(length bytes2)) Cur Writable); try congruence.
+  destruct (range_perm_dec m (MemBlock b) ofs (ofs + Z_of_nat (length (bytes1 ++ bytes2))) Cur Writable).
   inv ST1; inv ST2; simpl. decEq. apply mkmem_ext; auto.
   rewrite PMap.gss.  rewrite setN_concat. symmetry. apply PMap.set2.
   elim n.
@@ -1899,17 +1911,17 @@ Theorem valid_block_alloc:
   forall b', valid_block m1 b' -> valid_block m2 b'.
 Proof.
   unfold valid_block; intros. rewrite nextblock_alloc.
-  apply Plt_trans_succ; auto.
+  apply ab_lt_trans_succ; auto.
 Qed.
 
 Theorem fresh_block_alloc:
-  ~(valid_block m1 b).
+  ~(valid_block m1 (MemBlock b)).
 Proof.
   unfold valid_block. rewrite alloc_result. apply Plt_strict.
 Qed.
 
 Theorem valid_new_block:
-  valid_block m2 b.
+  valid_block m2 (MemBlock b).
 Proof.
   unfold valid_block. rewrite alloc_result. rewrite nextblock_alloc. apply Plt_succ.
 Qed.
@@ -1917,11 +1929,11 @@ Qed.
 Local Hint Resolve valid_block_alloc fresh_block_alloc valid_new_block: mem.
 
 Theorem valid_block_alloc_inv:
-  forall b', valid_block m2 b' -> b' = b \/ valid_block m1 b'.
+  forall b', valid_block m2 b' -> b' = MemBlock b \/ valid_block m1 b'.
 Proof.
   unfold valid_block; intros.
   rewrite nextblock_alloc in H. rewrite alloc_result.
-  exploit Plt_succ_inv; eauto. tauto.
+  exploit ab_lt_succ_inv; eauto. tauto.
 Qed.
 
 Theorem perm_alloc_1:
