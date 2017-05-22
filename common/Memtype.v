@@ -114,25 +114,26 @@ End AbsBlock.
 
 Record segment :=
   {
-    seg_ofs: ptrofs;
+    seg_ofs: Z;
     seg_size: Z;
   }.
 
 Record frame :=
   {
     frame_size: Z;
-    frame_ofs_link: ptrofs;
-    frame_ofs_retaddr: ptrofs;
+    frame_ofs_link: Z;
+    frame_ofs_retaddr: Z;
     frame_locals: segment;
     frame_outgoing: segment;
     frame_callee_saves: segment;
+    frame_data: segment;
   }.
 
 Record stack :=
   {
     stack_size: Z;
     stack_block: block;
-    stack_frames: list (frame * block * ptrofs);
+    stack_frames: list (frame * block * Z);
   }.
 
  
@@ -162,11 +163,12 @@ Class MemoryModelOps
     end;
   block_footprint fp := footprint  fp (fun _ _ => False);
   stack_footprint fp := footprint (fun _ _ => False) fp;
+  get_sp (m: mem): option stackblock;
 
   is_global_block (m: mem) (b: block): bool;
   stack_inj (m: mem) (b: block): option Z;
   mem_stack (m: mem): stack;
-  push_frame (m: mem) (f: frame) (parent_sp: stackblock) (parent_ra: val) : option (mem * stackblock);
+  push_frame (m: mem) (f: frame) (parent_ra: val) : option (mem * stackblock);
   pop_frame (m: mem): option mem;
   get_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
   set_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z) (v: val): option mem;
@@ -394,6 +396,18 @@ End WITHMEMORYMODELOPS.
 
 Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 {
+
+  valid_block_incr:
+    forall m m',
+      Ple (nextblock m) (nextblock m') ->
+      forall b,
+        valid_block m b ->
+        valid_block m' b;
+
+  plt_nextblock_valid_block:
+    forall m b,
+      Plt b (Mem.nextblock m) <->
+      valid_block m (MemBlock b);
 
  valid_not_valid_diff:
   forall m b b', valid_block m b -> ~(valid_block m b') -> b <> b';
