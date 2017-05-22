@@ -459,29 +459,47 @@ Qed.
   infinite memory. *)
 
 Program Definition alloc (m: mem) (lo hi: Z) :=
-  (mkmem (PMap.set m.(nextblock)
+  (mkmem (m.(cont_stack))
+         (m.(stack_limit))
+         (m.(cs_contents))
+         (m.(sb_contents))
+         (m.(sb_access))
+         (PMap.set m.(nextblock)
                    (ZMap.init Undef)
                    m.(mem_contents))
          (PMap.set m.(nextblock)
                    (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
                    m.(mem_access))
          (Psucc m.(nextblock))
-         _ _ _,
+         _ _ _ _ _ _,
    m.(nextblock)).
+Next Obligation.
+  apply m.(sb_access_max).
+Qed.
+Next Obligation.
+  apply m.(sb_nextblock_noaccess).
+  unfold "~". intros. apply H. apply Plt_trans_succ.
+  apply H0.
+Qed.
+Next Obligation.
+  apply m.(sb_contents_default).
+Qed.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b (nextblock m)).
   subst b. destruct (zle lo ofs && zlt ofs hi); red; auto with mem.
-  apply access_max.
+  apply m.(mem_access_max).
 Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b (nextblock m)).
   subst b. elim H. apply Plt_succ.
-  apply nextblock_noaccess. red; intros; elim H.
+  apply m.(mem_nextblock_noaccess). red; intros; elim H.
   apply Plt_trans_succ; auto.
 Qed.
 Next Obligation.
-  rewrite PMap.gsspec. destruct (peq b (nextblock m)). auto. apply contents_default.
+  rewrite PMap.gsspec. destruct (peq b (nextblock m)). auto. 
+  apply m.(mem_contents_default).
 Qed.
+
 
 (** Freeing a block between the given bounds.
   Return the updated memory state where the given range of the given block
@@ -489,27 +507,45 @@ Qed.
   range will fail.  Requires freeable permission on the given range. *)
 
 Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
-  mkmem m.(mem_contents)
+  mkmem (m.(cont_stack))
+        (m.(stack_limit))
+        (m.(cs_contents))
+        (m.(sb_contents))
+        (m.(sb_access))
+        (m.(mem_contents))
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
-        m.(nextblock) _ _ _.
+        (m.(nextblock))
+        _ _ _ _ _ _.
+Next Obligation.
+  apply m.(sb_access_max).
+Qed.
+Next Obligation.
+  apply m.(sb_nextblock_noaccess).
+  apply H.
+Qed.
+Next Obligation.
+  apply m.(sb_contents_default).
+Qed.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
-  destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
-  apply access_max.
+  destruct (zle lo ofs && zlt ofs hi). red; auto. 
+  apply m.(mem_access_max).
+  apply m.(mem_access_max).
 Qed.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst.
-  destruct (zle lo ofs && zlt ofs hi). auto. apply nextblock_noaccess; auto.
-  apply nextblock_noaccess; auto.
+  destruct (zle lo ofs && zlt ofs hi). auto. 
+  apply m.(mem_nextblock_noaccess); auto.
+  apply m.(mem_nextblock_noaccess); auto.
 Qed.
 Next Obligation.
-  apply contents_default.
+  apply m.(mem_contents_default).
 Qed.
 
 Definition free (m: mem) (b: block) (lo hi: Z): option mem :=
-  if range_perm_dec m b lo hi Cur Freeable
+  if range_perm_dec m (MemBlock b) lo hi Cur Freeable
   then Some(unchecked_free m b lo hi)
   else None.
 
@@ -539,7 +575,7 @@ Fixpoint getN (n: nat) (p: Z) (c: ZMap.t memval) {struct n}: list memval :=
   are not readable. *)
 
 Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z): option val :=
-  if valid_access_dec m chunk b ofs Readable
+  if valid_access_dec m chunk (MemBlock b) ofs Readable
   then Some(decode_val chunk (getN (size_chunk_nat chunk) ofs (m.(mem_contents)#b)))
   else None.
 
@@ -557,7 +593,7 @@ Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) : option val :=
   not readable. *)
 
 Definition loadbytes (m: mem) (b: block) (ofs n: Z): option (list memval) :=
-  if range_perm_dec m b ofs (ofs + n) Cur Readable
+  if range_perm_dec m (MemBlock b) ofs (ofs + n) Cur Readable
   then Some (getN (nat_of_Z n) ofs (m.(mem_contents)#b))
   else None.
 
@@ -642,21 +678,36 @@ Qed.
   are not writable. *)
 
 Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val): option mem :=
-  if valid_access_dec m chunk b ofs Writable then
-    Some (mkmem (PMap.set b
+  if valid_access_dec m chunk (MemBlock b) ofs Writable then
+    Some (mkmem (m.(cont_stack))
+                (m.(stack_limit))
+                (m.(cs_contents))
+                (m.(sb_contents))
+                (m.(sb_access))
+                (PMap.set b
                           (setN (encode_val chunk v) ofs (m.(mem_contents)#b))
                           m.(mem_contents))
                 m.(mem_access)
                 m.(nextblock)
-                _ _ _)
+                _ _ _ _ _ _)
   else
     None.
-Next Obligation. apply access_max. Qed.
-Next Obligation. apply nextblock_noaccess; auto. Qed.
+Next Obligation.
+  apply m.(sb_access_max).
+Qed.
+Next Obligation.
+  apply m.(sb_nextblock_noaccess).
+  apply H0.
+Qed.
+Next Obligation.
+  apply m.(sb_contents_default).
+Qed.
+Next Obligation. apply mem_access_max. Qed.
+Next Obligation. apply mem_nextblock_noaccess; auto. Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b0 b).
-  rewrite setN_default. apply contents_default.
-  apply contents_default.
+  rewrite setN_default. apply mem_contents_default.
+  apply mem_contents_default.
 Qed.
 
 (** [storev chunk m addr v] is similar, but the address and offset are given
@@ -673,20 +724,34 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
   or [None] if the accessed locations are not writable. *)
 
 Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) : option mem :=
-  if range_perm_dec m b ofs (ofs + Z_of_nat (length bytes)) Cur Writable then
-    Some (mkmem
-             (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
-             m.(mem_access)
-             m.(nextblock)
-             _ _ _)
+  if range_perm_dec m (MemBlock b) ofs (ofs + Z_of_nat (length bytes)) Cur Writable then
+    Some (mkmem (m.(cont_stack))
+                (m.(stack_limit))
+                (m.(cs_contents))
+                (m.(sb_contents))
+                (m.(sb_access))
+                (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
+                m.(mem_access)
+                m.(nextblock)
+                _ _ _ _ _ _)
   else
     None.
-Next Obligation. apply access_max. Qed.
-Next Obligation. apply nextblock_noaccess; auto. Qed.
+Next Obligation.
+  apply m.(sb_access_max).
+Qed.
+Next Obligation.
+  apply m.(sb_nextblock_noaccess).
+  apply H0.
+Qed.
+Next Obligation.
+  apply m.(sb_contents_default).
+Qed.
+Next Obligation. apply mem_access_max. Qed.
+Next Obligation. apply mem_nextblock_noaccess; auto. Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b0 b).
-  rewrite setN_default. apply contents_default.
-  apply contents_default.
+  rewrite setN_default. apply mem_contents_default.
+  apply mem_contents_default.
 Qed.
 
 (** [drop_perm m b lo hi p] sets the max permissions of the byte range
@@ -695,38 +760,55 @@ Qed.
     Returns updated memory state, or [None] if insufficient permissions. *)
 
 Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): option mem :=
-  if range_perm_dec m b lo hi Cur Freeable then
-    Some (mkmem m.(mem_contents)
+  if range_perm_dec m (MemBlock b) lo hi Cur Freeable then
+    Some (mkmem (m.(cont_stack))
+                (m.(stack_limit))
+                (m.(cs_contents))
+                (m.(sb_contents))
+                (m.(sb_access))
+                (m.(mem_contents))
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
-                m.(nextblock) _ _ _)
+                m.(nextblock) 
+                _ _ _ _ _ _)
   else None.
 Next Obligation.
-  repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
-  destruct (zle lo ofs && zlt ofs hi). red; auto with mem. apply access_max.
-  apply access_max.
+  apply m.(sb_access_max).
 Qed.
 Next Obligation.
-  specialize (nextblock_noaccess m b0 ofs k H0). intros.
+  apply m.(sb_nextblock_noaccess).
+  apply H0.
+Qed.
+Next Obligation.
+  apply m.(sb_contents_default).
+Qed.
+Next Obligation.
+  repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
+  destruct (zle lo ofs && zlt ofs hi). red; auto with mem. 
+  apply mem_access_max.
+  apply mem_access_max.
+Qed.
+Next Obligation.
+  specialize (mem_nextblock_noaccess m b0 ofs k H0). intros.
   rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
   destruct (zle lo ofs). destruct (zlt ofs hi).
-  assert (perm m b ofs k Freeable). apply perm_cur. apply H; auto.
-  unfold perm in H2. rewrite H1 in H2. contradiction.
+  assert (perm m (MemBlock b) ofs k Freeable). apply perm_cur. apply H; auto.
+  unfold perm in H2. simpl in H2. rewrite H1 in H2. contradiction.
   auto. auto. auto.
 Qed.
 Next Obligation.
-  apply contents_default.
+  apply mem_contents_default.
 Qed.
 
 (** * Properties of the memory operations *)
 
 (** Properties of the empty store. *)
 
-Theorem nextblock_empty: nextblock empty = 1%positive.
+Theorem nextblock_empty: nextblock empty = 2%positive.
 Proof. reflexivity. Qed.
 
-Theorem perm_empty: forall b ofs k p, ~perm empty b ofs k p.
+Theorem perm_empty: forall b ofs k p, Plt 1%positive b -> ~perm empty (MemBlock b) ofs k p.
 Proof.
   intros. unfold perm, empty; simpl. rewrite PMap.gi. simpl. tauto.
 Qed.
