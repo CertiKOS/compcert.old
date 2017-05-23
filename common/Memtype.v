@@ -1027,7 +1027,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall ofs k p', lo <= ofs < hi -> perm m' (MemBlock b) ofs k p' -> perm_order p p';
  perm_drop_3:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
-  forall b' ofs k p', b' <> b \/ ofs < lo \/ hi <= ofs -> perm m (MemBlock b') ofs k p' -> perm m' (MemBlock b') ofs k p';
+  forall b' ofs k p', b' <> MemBlock b \/ ofs < lo \/ hi <= ofs -> perm m b' ofs k p' -> perm m' b' ofs k p';
  perm_drop_4:
   forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
   forall b' ofs k p', perm m' b' ofs k p' -> perm m b' ofs k p';
