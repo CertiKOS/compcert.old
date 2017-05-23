@@ -135,7 +135,7 @@ Lemma free_list_freeable:
   forall l m m',
   Mem.free_list m l = Some m' ->
   forall b lo hi,
-  In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable.
+  In (b, lo, hi) l -> Mem.range_perm m (MemBlock b) lo hi Cur Freeable.
 Proof.
   induction l; simpl; intros.
   contradiction.
@@ -347,13 +347,13 @@ Qed.
 
 Definition match_bounds (e: Csharpminor.env) (m: mem) : Prop :=
   forall id b sz ofs p,
-  PTree.get id e = Some(b, sz) -> Mem.perm m b ofs Max p -> 0 <= ofs < sz.
+  PTree.get id e = Some(b, sz) -> Mem.perm m (MemBlock b) ofs Max p -> 0 <= ofs < sz.
 
 Lemma match_bounds_invariant:
   forall e m1 m2,
   match_bounds e m1 ->
   (forall id b sz ofs p,
-   PTree.get id e = Some(b, sz) -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
+   PTree.get id e = Some(b, sz) -> Mem.perm m2 (MemBlock b) ofs Max p -> Mem.perm m1 (MemBlock b) ofs Max p) ->
   match_bounds e m2.
 Proof.
   intros; red; intros. eapply H; eauto.
@@ -373,13 +373,13 @@ Inductive is_reachable_from_env (f: meminj) (e: Csharpminor.env) (sp: block) (of
 
 Definition padding_freeable (f: meminj) (e: Csharpminor.env) (tm: mem) (sp: block) (sz: Z) : Prop :=
   forall ofs,
-  0 <= ofs < sz -> Mem.perm tm sp ofs Cur Freeable \/ is_reachable_from_env f e sp ofs.
+  0 <= ofs < sz -> Mem.perm tm (MemBlock sp) ofs Cur Freeable \/ is_reachable_from_env f e sp ofs.
 
 Lemma padding_freeable_invariant:
   forall f1 e tm1 sp sz cenv lo hi f2 tm2,
   padding_freeable f1 e tm1 sp sz ->
   match_env f1 cenv e sp lo hi ->
-  (forall ofs, Mem.perm tm1 sp ofs Cur Freeable -> Mem.perm tm2 sp ofs Cur Freeable) ->
+  (forall ofs, Mem.perm tm1 (MemBlock sp) ofs Cur Freeable -> Mem.perm tm2 (MemBlock sp) ofs Cur Freeable) ->
   (forall b, Plt b hi -> f2 b = f1 b) ->
   padding_freeable f2 e tm2 sp sz.
 Proof.
@@ -566,8 +566,8 @@ Lemma match_callstack_invariant:
   forall f1 m1 tm1 f2 m2 tm2 cs bound tbound,
   match_callstack f1 m1 tm1 cs bound tbound ->
   inject_incr f1 f2 ->
-  (forall b ofs p, Plt b bound -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
-  (forall sp ofs, Plt sp tbound -> Mem.perm tm1 sp ofs Cur Freeable -> Mem.perm tm2 sp ofs Cur Freeable) ->
+  (forall b ofs p, Plt b bound -> Mem.perm m2 (MemBlock b) ofs Max p -> Mem.perm m1 (MemBlock b) ofs Max p) ->
+  (forall sp ofs, Plt sp tbound -> Mem.perm tm1 (MemBlock sp) ofs Cur Freeable -> Mem.perm tm2 (MemBlock sp) ofs Cur Freeable) ->
   (forall b, Plt b bound -> f2 b = f1 b) ->
   (forall b b' delta, f2 b = Some(b', delta) -> Plt b' tbound -> f1 b = Some(b', delta)) ->
   match_callstack f2 m2 tm2 cs bound tbound.
@@ -658,7 +658,7 @@ Proof.
   red; intros.
   exploit PERM; eauto. intros [A | A].
   auto.
-  inv A. assert (Mem.range_perm m b 0 sz Cur Freeable).
+  inv A. assert (Mem.range_perm m (MemBlock b) 0 sz Cur Freeable).
   eapply free_list_freeable; eauto. eapply in_blocks_of_env; eauto.
   replace ofs with ((ofs - delta) + delta) by omega.
   eapply Mem.perm_inject; eauto. apply H3. omega.
@@ -670,7 +670,7 @@ Proof.
   apply match_callstack_incr_bound with lo sp; try omega.
   apply match_callstack_invariant with f m tm; auto.
   intros. eapply perm_freelist; eauto.
-  intros. eapply Mem.perm_free_1; eauto. left; unfold block; xomega. xomega. xomega.
+  intros. eapply Mem.perm_free_1; eauto. left; intro E; inv E. xomega. xomega. xomega.
   eapply Mem.free_inject; eauto.
   intros. exploit me_inv0; eauto. intros [id [sz A]].
   exists 0; exists sz; split.
@@ -682,11 +682,11 @@ Qed.
 
 Lemma match_callstack_external_call:
   forall f1 f2 m1 m2 m1' m2',
-  Mem.unchanged_on (loc_unmapped f1) m1 m2 ->
-  Mem.unchanged_on (loc_out_of_reach f1 m1) m1' m2' ->
+  Mem.unchanged_on (Mem.block_footprint (loc_unmapped f1)) m1 m2 ->
+  Mem.unchanged_on (Mem.block_footprint (loc_out_of_reach f1 m1)) m1' m2' ->
   inject_incr f1 f2 ->
   inject_separated f1 f2 m1 m1' ->
-  (forall b ofs p, Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
+  (forall b ofs p, Mem.valid_block m1 b -> Mem.perm m2 (MemBlock b) ofs Max p -> Mem.perm m1 (MemBlock b) ofs Max p) ->
   forall cs bound tbound,
   match_callstack f1 m1 m1' cs bound tbound ->
   Ple bound (Mem.nextblock m1) -> Ple tbound (Mem.nextblock m1') ->
@@ -715,13 +715,13 @@ Proof.
   exploit SEPARATED; eauto. intros [A B]. elim A. red. xomega.
   eapply match_bounds_invariant; eauto.
   intros. eapply MAXPERMS; eauto. red. exploit me_bounded; eauto. xomega.
-  (* padding-freeable *)
+  (* padding-freeable *) 
   red; intros.
   destruct (is_reachable_from_env_dec f1 e sp ofs).
   inv H3. right. apply is_reachable_intro with id b sz delta; auto.
   exploit PERM; eauto. intros [A|A]; try contradiction.
   left. eapply Mem.perm_unchanged_on; eauto.
-  red; intros; red; intros. elim H3.
+  simpl. red; intros; red; intros. elim H3.
   exploit me_inv; eauto. intros [id [lv B]].
   exploit BOUND0; eauto. intros C.
   apply is_reachable_intro with id b0 lv delta; auto; omega.
@@ -790,13 +790,13 @@ Proof.
   red; intros. rewrite PTree.gsspec in H. destruct (peq id0 id).
   inversion H. subst b0 sz0 id0. eapply Mem.perm_alloc_3; eauto.
   eapply BOUND0; eauto. eapply Mem.perm_alloc_4; eauto.
-  exploit me_bounded; eauto. unfold block in *; xomega.
+  intro E; inv E. exploit me_bounded; eauto. unfold block in *; xomega.
   red; intros. exploit PERM; eauto. intros [A|A]. auto. right.
   inv A. apply is_reachable_intro with id0 b0 sz0 delta; auto.
   rewrite PTree.gso. auto. congruence.
   eapply match_callstack_invariant with (m1 := m1); eauto.
   intros. eapply Mem.perm_alloc_4; eauto.
-  unfold block in *; xomega.
+  intro E; inv E. unfold block in *; xomega.
   intros. apply H4. unfold block in *; xomega.
   intros. destruct (eq_block b0 b).
   subst b0. rewrite H3 in H. inv H. xomegaContradiction.
@@ -852,15 +852,15 @@ Definition cenv_mem_separated (cenv: compilenv) (vars: list (ident * Z)) (f: mem
   forall id sz ofs b delta ofs' k p,
   In (id, sz) vars -> PTree.get id cenv = Some ofs ->
   f b = Some (sp, delta) ->
-  Mem.perm m b ofs' k p ->
+  Mem.perm m (MemBlock b) ofs' k p ->
   ofs <= ofs' + delta < sz + ofs -> False.
 
 Lemma match_callstack_alloc_variables_rec:
   forall tm sp tf cenv le te lo cs,
   Mem.valid_block tm sp ->
   fn_stackspace tf <= Ptrofs.max_unsigned ->
-  (forall ofs k p, Mem.perm tm sp ofs k p -> 0 <= ofs < fn_stackspace tf) ->
-  (forall ofs k p, 0 <= ofs < fn_stackspace tf -> Mem.perm tm sp ofs k p) ->
+  (forall ofs k p, Mem.perm tm (MemBlock sp) ofs k p -> 0 <= ofs < fn_stackspace tf) ->
+  (forall ofs k p, 0 <= ofs < fn_stackspace tf -> Mem.perm tm (MemBlock sp) ofs k p) ->
   forall e1 m1 vars e2 m2,
   alloc_variables e1 m1 vars e2 m2 ->
   forall f1,
@@ -901,13 +901,14 @@ Proof.
   exploit (IHalloc_variables f2); eauto.
     red; intros. eapply COMPAT. auto with coqlib.
     red; intros. eapply SEP1; eauto with coqlib.
-    red; intros. exploit Mem.perm_alloc_inv; eauto. destruct (eq_block b b1); intros P.
-    subst b. rewrite C in H5; inv H5.
+    red; intros. exploit Mem.perm_alloc_inv; eauto.
+    destruct (Mem.eq_abs_block (MemBlock b) (MemBlock b1)); intros P. inv e0.
+    rewrite C in H5; inv H5.
     exploit SEP1. eapply in_eq. eapply in_cons; eauto. eauto. eauto.
     red; intros; subst id0. elim H3. change id with (fst (id, sz0)). apply in_map; auto.
     omega.
     eapply SEP2. apply in_cons; eauto. eauto.
-    rewrite D in H5; eauto. eauto. auto.
+    rewrite D in H5; eauto. congruence. eauto. auto.
     intros. rewrite PTree.gso. eapply UNBOUND; eauto with coqlib.
     red; intros; subst id0. elim H3. change id with (fst (id, sz0)). apply in_map; auto.
     eapply match_callstack_alloc_left; eauto.

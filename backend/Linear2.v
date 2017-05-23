@@ -37,12 +37,12 @@ Require Import Conventions.
 Require Import Linear.
 Require Import Morphisms.
 
-Inductive invar_stackframe: stackframe -> stackframe -> Prop :=
+Inductive invar_stackframe  `{memory_model_ops: Mem.MemoryModelOps}: stackframe -> stackframe -> Prop :=
 | invar_stackframe_intro
     fh sph rsh ch
     fl spl rsl cl
     (f_eq: fh = fl)
-    (sp_lessdef: Val.lessdef sph spl)
+    (sp_lessdef: sph = spl)
     (rs_lessdef: forall l, Val.lessdef (rsh l) (rsl l))
     (c_eq: ch = cl)
   :
@@ -51,7 +51,7 @@ Inductive invar_stackframe: stackframe -> stackframe -> Prop :=
       (Stackframe fl spl rsl cl)
 .
 
-Global Instance invar_stackframe_refl:
+Global Instance invar_stackframe_refl  `{memory_model_ops: Mem.MemoryModelOps}:
   Reflexive invar_stackframe.
 Proof.
   red. intro x.
@@ -59,9 +59,9 @@ Proof.
   econstructor; eauto.
 Qed.
 
-Definition invar_stack := list_forall2 invar_stackframe.
+Definition invar_stack  `{memory_model_ops: Mem.MemoryModelOps} := list_forall2 invar_stackframe.
 
-Global Instance invar_stack_refl: Reflexive invar_stack.
+Global Instance invar_stack_refl  `{memory_model_ops: Mem.MemoryModelOps}: Reflexive invar_stack.
 Proof.
   red. intro x.
   induction x; econstructor; eauto.
@@ -77,7 +77,7 @@ Inductive invar: state -> state -> Prop :=
     stackl fl spl cl rsl ml
     (stack_inv: invar_stack stackh stackl)
     (f_eq: fh = fl)
-    (sp_lessdef: Val.lessdef sph spl)
+    (sp_lessdef: sph = spl)
     (c_eq: ch = cl)
     (rs_lessdef: forall l, Val.lessdef (rsh l) (rsl l))
     (m_ext: Mem.extends mh ml)
@@ -142,13 +142,13 @@ Record state: Type := State
     state_invariant: invar state_higher state_lower
   }.
 
-Record step (ge: genv) (before: state) (t: trace) (after: state): Prop :=
+Record step fl (ge: genv) (before: state) (t: trace) (after: state): Prop :=
   {
     step_ge_eq_before: ge = state_ge before;
     step_ge_eq_after: ge = state_ge after;
     step_init_ls_eq: state_init_ls after = state_init_ls before;
-    step_high: Linear.step (state_init_ls before) ge (state_higher before) t (state_higher after);
-    step_low: Linear.step (state_init_ls before) ge (state_lower before) t (state_lower after)
+    step_high: Linear.step (state_init_ls before) fl ge (state_higher before) t (state_higher after);
+    step_low: Linear.step (state_init_ls before) fl ge (state_lower before) t (state_lower after)
   }.
 
 (* Whole-program case *)
@@ -166,8 +166,8 @@ Inductive final_state (s: state) (i: int): Prop :=
     (fin_lower: Linear.final_state (state_lower s) i)
 .
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) fl :=
+  Semantics (step fl) (initial_state p) final_state (Genv.globalenv p).
 
 (* Whole-program Linear trivially forward-simulates into Linear2:
    the two executions are actually the same as the Linear one.
@@ -185,10 +185,10 @@ Record whole_program_invariant (ge: genv) (u: unit) (s: Linear.state) (s2: state
     state_init_ls s2 = Locmap.init Vundef
 }.
 
-Theorem whole_program_linear_to_linear2 p:
+Theorem whole_program_linear_to_linear2 p fl:
   forward_simulation
-    (Linear.semantics p)
-    (semantics p)
+    (Linear.semantics p fl)
+    (semantics p fl)
 .
 Proof.
   apply Forward_simulation with

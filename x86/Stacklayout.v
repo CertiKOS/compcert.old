@@ -13,7 +13,7 @@
 (** Machine- and ABI-dependent layout information for activation records. *)
 
 Require Import Coqlib.
-Require Import AST Memory Separation.
+Require Import AST Memory SeparationSingleStack.
 Require Import Bounds.
 
 Local Open Scope sep_scope.
@@ -184,3 +184,20 @@ Proof.
   split. apply align_divides; omega.
   apply align_divides; omega.
 Qed.
+
+Definition frame_of_frame_env (b: bounds) : frame :=
+  let fe := make_env b in
+  {|
+    frame_size := fe_size fe;
+    frame_ofs_link := (fe_ofs_link fe);
+    frame_ofs_retaddr := (fe_ofs_retaddr fe);
+    frame_locals := {| seg_ofs := (fe_ofs_local fe);
+                      seg_size := 4 * bound_local b |};
+    frame_outgoings := {| seg_ofs := fe_ofs_arg;
+                        seg_size := 4 * bound_outgoing b |};
+    frame_callee_saves := {| seg_ofs := (fe_ofs_callee_save fe);
+                             seg_size := size_callee_save_area b 0 |};
+    frame_data := {| seg_ofs := fe_stack_data fe;
+                     seg_size := bound_stack_data b |};
+                            
+  |}.

@@ -208,7 +208,7 @@ Definition wt_fundef (fd: fundef) :=
 Section WITHINITLS.
 Variable init_ls: locset.
 
-Inductive wt_callstack: list stackframe -> Prop :=
+Inductive wt_callstack  `{memory_model_ops: Mem.MemoryModelOps}: list stackframe -> Prop :=
   | wt_callstack_nil:
       wt_locset init_ls ->
       wt_callstack nil
@@ -219,7 +219,7 @@ Inductive wt_callstack: list stackframe -> Prop :=
         (WTRS: wt_locset rs),
       wt_callstack (Stackframe f sp rs c :: s).
 
-Lemma wt_parent_locset:
+Lemma wt_parent_locset  `{memory_model_ops: Mem.MemoryModelOps}:
   forall s, wt_callstack s -> wt_locset (parent_locset init_ls s).
 Proof.
   induction 1; simpl.
@@ -277,8 +277,10 @@ Section WITHINITLS.
 
 Variable init_ls: locset.
 
+Variable fl: function -> frame.
+
 Theorem step_type_preservation:
-  forall S1 t S2, step init_ls ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
+  forall S1 t S2, step init_ls fl ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
 Proof.
 Local Opaque mreg_type.
   induction 1; intros WTS; inv WTS.

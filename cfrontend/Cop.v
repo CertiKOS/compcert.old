@@ -225,7 +225,7 @@ Definition cast_single_long (si : signedness) (f: float32) : option int64 :=
    not only in the proof.) To break this dependency on the memory model, we
    introduce a simpler type class to parameterize over sem_cast. *)
 
-Class SemCast {T: Type} (valid_pointer: T -> block -> Z -> bool): Prop :=
+Class SemCast `{memory_model_ops: Mem.MemoryModelOps} {T: Type} (valid_pointer: T -> Mem.abs_block -> Z -> bool): Prop :=
   {
     weak_valid_pointer m b o :=
       valid_pointer m b o || valid_pointer m b (o - 1)
@@ -302,7 +302,7 @@ Definition sem_cast (v: val) (t1 t2: type) (m: T): option val :=
           Some(Vint(if Int.eq n Int.zero then Int.zero else Int.one))
       | Vptr b ofs =>
           if Archi.ptr64 then None else
-          if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some Vone else None
+          if weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned ofs) then Some Vone else None
       | _ => None
       end
   | cast_case_l2bool =>
@@ -311,7 +311,7 @@ Definition sem_cast (v: val) (t1 t2: type) (m: T): option val :=
           Some(Vint(if Int64.eq n Int64.zero then Int.zero else Int.one))
       | Vptr b ofs =>
           if negb Archi.ptr64 then None else
-            if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some Vone else None
+            if weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned ofs) then Some Vone else None
       | _ => None
       end
   | cast_case_f2bool =>
@@ -421,7 +421,7 @@ Definition bool_val (v: val) (t: type) (m: T) : option bool :=
       | Vint n => Some (negb (Int.eq n Int.zero))
       | Vptr b ofs =>
           if Archi.ptr64 then None else
-          if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some true else None
+          if weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned ofs) then Some true else None
       | _ => None
       end
   | bool_case_l =>
@@ -429,7 +429,7 @@ Definition bool_val (v: val) (t: type) (m: T) : option bool :=
       | Vlong n => Some (negb (Int64.eq n Int64.zero))
       | Vptr b ofs =>
           if negb Archi.ptr64 then None else
-          if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some true else None
+          if weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned ofs) then Some true else None
       | _ => None
       end
   | bool_case_f =>
@@ -947,8 +947,8 @@ Definition classify_cmp (ty1: type) (ty2: type) :=
 Definition cmp_ptr (m: T) (c: comparison) (v1 v2: val): option val :=
   option_map Val.of_bool
    (if Archi.ptr64
-    then Val.cmplu_bool (valid_pointer m) c v1 v2
-    else Val.cmpu_bool (valid_pointer m) c v1 v2).
+    then Val.cmplu_bool (fun b o => valid_pointer m (MemBlock b) o) c v1 v2
+    else Val.cmpu_bool (fun b o => valid_pointer m (MemBlock b) o) c v1 v2).
 
 Definition sem_cmp (c:comparison)
                   (v1: val) (t1: type) (v2: val) (t2: type)
@@ -1098,7 +1098,7 @@ Definition incrdecr_type (ty: type) :=
 
 End WITHSEMCAST.
 
-Global Instance sem_cast_unit: SemCast (fun (_: unit) _ _ => false) := {}.
+Global Instance sem_cast_unit`{memory_model_ops: Mem.MemoryModelOps}: SemCast (fun (_: unit) _ _ => false) := {}.
 
 Global Instance sem_cast_mem `{memory_model_ops: Mem.MemoryModelOps}:
   SemCast Mem.valid_pointer
@@ -1243,7 +1243,7 @@ Lemma option_of_bool_cmpu_unit_to_mem
   option_map Val.of_bool
              (Val.cmpu_bool (fun (_ : block) (_ : Z) => false) c v1 v2) =
   Some v' ->
-  option_map Val.of_bool (Val.cmpu_bool (Mem.valid_pointer m) c v1 v2) =
+  option_map Val.of_bool (Val.cmpu_bool (fun b o => Mem.valid_pointer m (MemBlock b) o) c v1 v2) =
   Some v'.
 Proof.
   destruct c; destruct v1; destruct v2; simpl; try discriminate; auto;
@@ -1258,7 +1258,7 @@ Lemma option_of_bool_cmplu_unit_to_mem
   option_map Val.of_bool
              (Val.cmplu_bool (fun (_ : block) (_ : Z) => false) c v1 v2) =
   Some v' ->
-  option_map Val.of_bool (Val.cmplu_bool (Mem.valid_pointer m) c v1 v2) =
+  option_map Val.of_bool (Val.cmplu_bool (fun b o => Mem.valid_pointer m (MemBlock b) o) c v1 v2) =
   Some v'.
 Proof.
   destruct c; destruct v1; destruct v2; simpl; try discriminate; auto;
@@ -1347,26 +1347,26 @@ Variables m m': mem.
 Hypothesis valid_pointer_inj:
   forall b1 ofs b2 delta,
   f b1 = Some(b2, delta) ->
-  Mem.valid_pointer m b1 (Ptrofs.unsigned ofs) = true ->
-  Mem.valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+  Mem.valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs) = true ->
+  Mem.valid_pointer m' (MemBlock b2) (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
 
 Hypothesis weak_valid_pointer_inj:
   forall b1 ofs b2 delta,
   f b1 = Some(b2, delta) ->
-  Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true ->
-  Mem.weak_valid_pointer m' b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+  Mem.weak_valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs) = true ->
+  Mem.weak_valid_pointer m' (MemBlock b2) (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
 
 Hypothesis weak_valid_pointer_no_overflow:
   forall b1 ofs b2 delta,
   f b1 = Some(b2, delta) ->
-  Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs) = true ->
+  Mem.weak_valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs) = true ->
   0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned.
 
 Hypothesis valid_different_pointers_inj:
   forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
   b1 <> b2 ->
-  Mem.valid_pointer m b1 (Ptrofs.unsigned ofs1) = true ->
-  Mem.valid_pointer m b2 (Ptrofs.unsigned ofs2) = true ->
+  Mem.valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs1) = true ->
+  Mem.valid_pointer m (MemBlock b2) (Ptrofs.unsigned ofs2) = true ->
   f b1 = Some (b1', delta1) ->
   f b2 = Some (b2', delta2) ->
   b1' <> b2' \/
@@ -1425,10 +1425,10 @@ Proof.
   rewrite weak_valid_pointer_eq in * |- *.
   destruct (classify_bool ty); inv H0; try congruence.
   destruct Archi.ptr64; try discriminate.
-  destruct (Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs1)) eqn:VP; inv H.
+  destruct (Mem.weak_valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs1)) eqn:VP; inv H.
   erewrite weak_valid_pointer_inj by eauto. auto.
   destruct Archi.ptr64; try discriminate.
-  destruct (Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs1)) eqn:VP; inv H.
+  destruct (Mem.weak_valid_pointer m (MemBlock b1) (Ptrofs.unsigned ofs1)) eqn:VP; inv H.
   erewrite weak_valid_pointer_inj by eauto. auto.
 Qed.
 
@@ -1506,13 +1506,21 @@ Remark sem_cmp_ptr_inj:
 Proof.
   unfold cmp_ptr; intros. 
   remember (if Archi.ptr64
-       then Val.cmplu_bool (Mem.valid_pointer m) c v1 v2
-       else Val.cmpu_bool (Mem.valid_pointer m) c v1 v2) as ob.
+       then Val.cmplu_bool (fun b o => Mem.valid_pointer m (MemBlock b) o) c v1 v2
+       else Val.cmpu_bool (fun b o => Mem.valid_pointer m (MemBlock b) o) c v1 v2) as ob.
   destruct ob as [b|]; simpl in H; inv H.
   exists (Val.of_bool b); split; auto.
   destruct Archi.ptr64. 
-  erewrite Val.cmplu_bool_inject by eauto. auto.
-  erewrite Val.cmpu_bool_inject by eauto. auto.
+  erewrite Val.cmplu_bool_inject; try (simpl; eauto).
+  simpl. eauto.
+  simpl. eauto.
+  simpl. eauto.
+  simpl. eauto.
+  erewrite Val.cmpu_bool_inject; try (simpl; eauto).
+  simpl. eauto.
+  simpl. eauto.
+  simpl. eauto.
+  simpl. eauto.
 Qed.
 
 Remark sem_cmp_inj:
@@ -1700,9 +1708,9 @@ Lemma cast_bool_bool_val:
   unfold sem_cast, classify_cast; remember Archi.ptr64 as ptr64; destruct t; simpl; auto; destruct v; auto;
     try rewrite weak_valid_pointer_eq in * |- *.
   destruct (Int.eq i0 Int.zero); auto.
-  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i0)); auto.
+  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i0)); auto.
   destruct (Int64.eq i Int64.zero); auto.
-  destruct (negb ptr64); auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct (negb ptr64); auto. destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
   destruct f; auto.
   destruct f; auto.
   destruct f; auto.
@@ -1718,22 +1726,22 @@ Lemma cast_bool_bool_val:
   destruct ptr64; auto. destruct (Int64.eq i Int64.zero); auto.
   destruct ptr64; auto.
   destruct ptr64; auto.
-  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
-  destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
+  destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
   destruct ptr64; auto.
   destruct ptr64; auto. destruct (Int.eq i Int.zero); auto.
   destruct ptr64; auto. destruct (Int64.eq i Int64.zero); auto.
   destruct ptr64; auto.
   destruct ptr64; auto.
-  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
-  destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
+  destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
   destruct ptr64; auto.
   destruct ptr64; auto. destruct (Int.eq i Int.zero); auto.
   destruct ptr64; auto. destruct (Int64.eq i Int64.zero); auto.
   destruct ptr64; auto.
   destruct ptr64; auto.
-  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
-  destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
+  destruct (Mem.weak_valid_pointer m (MemBlock b) (Ptrofs.unsigned i)); auto.
 Qed.
 
 (** Relation between Boolean value and Boolean negation. *)

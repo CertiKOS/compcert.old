@@ -162,7 +162,7 @@ Qed.
 Lemma match_envs_extcall:
   forall f cenv e le m lo hi te tle tlo thi tm f' m',
   match_envs f cenv e le m lo hi te tle tlo thi ->
-  Mem.unchanged_on (loc_unmapped f) m m' ->
+  Mem.unchanged_on (Mem.block_footprint (loc_unmapped f)) m m' ->
   inject_incr f f' ->
   inject_separated f f' m tm ->
   Ple hi (Mem.nextblock m) -> Ple thi (Mem.nextblock tm) ->
@@ -1053,15 +1053,15 @@ Proof.
   exploit Mem.loadbytes_length; eauto. intros LEN.
   assert (SZPOS: sizeof tge ty > 0).
   { generalize (sizeof_pos tge ty); omega. }
-  assert (RPSRC: Mem.range_perm m bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sizeof tge ty) Cur Nonempty).
+  assert (RPSRC: Mem.range_perm m (MemBlock bsrc) (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sizeof tge ty) Cur Nonempty).
     eapply Mem.range_perm_implies. eapply Mem.loadbytes_range_perm; eauto. auto with mem.
-  assert (RPDST: Mem.range_perm m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + sizeof tge ty) Cur Nonempty).
+  assert (RPDST: Mem.range_perm m (MemBlock bdst) (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + sizeof tge ty) Cur Nonempty).
     replace (sizeof tge ty) with (Z_of_nat (length bytes)).
     eapply Mem.range_perm_implies. eapply Mem.storebytes_range_perm; eauto. auto with mem.
     rewrite LEN. apply nat_of_Z_eq. omega.
-  assert (PSRC: Mem.perm m bsrc (Ptrofs.unsigned osrc) Cur Nonempty).
+  assert (PSRC: Mem.perm m (MemBlock bsrc) (Ptrofs.unsigned osrc) Cur Nonempty).
     apply RPSRC. omega.
-  assert (PDST: Mem.perm m bdst (Ptrofs.unsigned odst) Cur Nonempty).
+  assert (PDST: Mem.perm m (MemBlock bdst) (Ptrofs.unsigned odst) Cur Nonempty).
     apply RPDST. omega.
   exploit Mem.address_inject.  eauto. eexact PSRC. eauto. intros EQ1.
   exploit Mem.address_inject.  eauto. eexact PDST. eauto. intros EQ2.
@@ -1191,7 +1191,7 @@ Lemma free_blocks_of_env_perm_1:
   forall ce m e m' id b ty ofs k p,
   Mem.free_list m (blocks_of_env ce e) = Some m' ->
   e!id = Some(b, ty) ->
-  Mem.perm m' b ofs k p ->
+  Mem.perm m' (MemBlock b) ofs k p ->
   0 <= ofs < sizeof ce ty ->
   False.
 Proof.
@@ -1205,7 +1205,7 @@ Lemma free_list_perm':
   forall b lo hi l m m',
   Mem.free_list m l = Some m' ->
   In (b, lo, hi) l ->
-  Mem.range_perm m b lo hi Cur Freeable.
+  Mem.range_perm m (MemBlock b) lo hi Cur Freeable.
 Proof.
   induction l; simpl; intros.
   contradiction.
@@ -1219,7 +1219,7 @@ Lemma free_blocks_of_env_perm_2:
   forall ce m e m' id b ty,
   Mem.free_list m (blocks_of_env ce e) = Some m' ->
   e!id = Some(b, ty) ->
-  Mem.range_perm m b 0 (sizeof ce ty) Cur Freeable.
+  Mem.range_perm m (MemBlock b) 0 (sizeof ce ty) Cur Freeable.
 Proof.
   intros. eapply free_list_perm'; eauto.
   unfold blocks_of_env. change (b, 0, sizeof ce ty) with (block_of_binding ce (id, (b, ty))).
@@ -1237,7 +1237,7 @@ Fixpoint freelist_no_overlap (l: list (block * Z * Z)) : Prop :=
 
 Lemma can_free_list:
   forall l m,
-  (forall b lo hi, In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable) ->
+  (forall b lo hi, In (b, lo, hi) l -> Mem.range_perm m (MemBlock b) lo hi Cur Freeable) ->
   freelist_no_overlap l ->
   exists m', Mem.free_list m l = Some m'.
 Proof.
@@ -1247,7 +1247,7 @@ Proof.
   destruct (Mem.range_perm_free m b lo hi) as [m1 A]; auto.
   rewrite A. apply IHl; auto.
   intros. red; intros. eapply Mem.perm_free_1; eauto.
-  exploit H1; eauto. intros [B|B]. auto. right; omega.
+  exploit H1; eauto. intros [B|B]. intuition congruence. right; omega.
   eapply H; eauto.
 Qed.
 
@@ -1256,7 +1256,7 @@ Lemma blocks_of_env_no_overlap:
   match_envs j cenv e le m lo hi te tle tlo thi ->
   Mem.inject j m tm ->
   (forall id b ty,
-   e!id = Some(b, ty) -> Mem.range_perm m b 0 (sizeof ge ty) Cur Freeable) ->
+   e!id = Some(b, ty) -> Mem.range_perm m (MemBlock b) 0 (sizeof ge ty) Cur Freeable) ->
   forall l,
   list_norepet (List.map fst l) ->
   (forall id bty, In (id, bty) l -> te!id = Some bty) ->
@@ -1277,10 +1277,10 @@ Proof.
     assert (b0 <> b0').
     { eapply me_inj; eauto. red; intros; subst; elim H3.
       change id' with (fst (id', (b', ty'))). apply List.in_map; auto. }
-    assert (Mem.perm m b0 0 Max Nonempty).
+    assert (Mem.perm m (MemBlock b0) 0 Max Nonempty).
     { apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable.
       eapply PERMS; eauto. omega. auto with mem. }
-    assert (Mem.perm m b0' 0 Max Nonempty).
+    assert (Mem.perm m (MemBlock b0') 0 Max Nonempty).
     { apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable.
       eapply PERMS; eauto. omega. auto with mem. }
     exploit Mem.mi_no_overlap; eauto. intros [A|A]. auto. omegaContradiction.
@@ -1292,7 +1292,7 @@ Lemma free_list_right_inject:
   Mem.free_list m2 l = Some m2' ->
   (forall b1 b2 delta lo hi ofs k p,
      j b1 = Some(b2, delta) -> In (b2, lo, hi) l ->
-     Mem.perm m1 b1 ofs k p -> lo <= ofs + delta < hi -> False) ->
+     Mem.perm m1 (MemBlock b1) ofs k p -> lo <= ofs + delta < hi -> False) ->
   Mem.inject j m1 m2'.
 Proof.
   induction l; simpl; intros.
@@ -1615,7 +1615,7 @@ Qed.
 Lemma match_cont_extcall:
   forall f cenv k tk m bound tbound tm f' m',
   match_cont f cenv k tk m bound tbound ->
-  Mem.unchanged_on (loc_unmapped f) m m' ->
+  Mem.unchanged_on (Mem.block_footprint (loc_unmapped f)) m m' ->
   inject_incr f f' ->
   inject_separated f f' m tm ->
   Ple bound (Mem.nextblock m) -> Ple tbound (Mem.nextblock tm) ->

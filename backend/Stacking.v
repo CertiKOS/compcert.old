@@ -72,10 +72,12 @@ Definition restore_callee_save (fe: frame_env) (k: Mach.code) :=
   behaviour. *)
 
 Definition transl_op (fe: frame_env) (op: operation) :=
-  shift_stack_operation fe.(fe_stack_data) op.
+  (* shift_stack_operation fe.(fe_stack_data)  *)
+  op.
 
 Definition transl_addr (fe: frame_env) (addr: addressing) :=
-  shift_stack_addressing fe.(fe_stack_data) addr.
+  (* shift_stack_addressing fe.(fe_stack_data) *)
+  addr.
 
 (** Translation of a builtin argument. *)
 
@@ -89,10 +91,10 @@ Fixpoint transl_builtin_arg (fe: frame_env) (a: builtin_arg loc) : builtin_arg m
   | BA_long n => BA_long n
   | BA_float n => BA_float n
   | BA_single n => BA_single n
-  | BA_loadstack chunk ofs =>
-      BA_loadstack chunk (Ptrofs.add ofs (Ptrofs.repr fe.(fe_stack_data)))
-  | BA_addrstack ofs =>
-      BA_addrstack (Ptrofs.add ofs (Ptrofs.repr fe.(fe_stack_data)))
+  | BA_loadstack chunk ofs => BA_loadstack chunk ofs
+  (* (Ptrofs.add ofs (Ptrofs.repr fe.(fe_stack_data))) *)
+  | BA_addrstack ofs => BA_addrstack ofs
+  (* (Ptrofs.add ofs (Ptrofs.repr fe.(fe_stack_data))) *)
   | BA_loadglobal chunk id ofs => BA_loadglobal chunk id ofs
   | BA_addrglobal id ofs => BA_addrglobal id ofs
   | BA_splitlong hi lo =>

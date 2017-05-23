@@ -101,10 +101,10 @@ Definition find_function (ge: genv) (ros: mreg + ident) (rs: locset) : option fu
 
 (** Linear execution states. *)
 
-Inductive stackframe: Type :=
+Inductive stackframe `{memory_model_ops: Mem.MemoryModelOps}: Type :=
   | Stackframe:
       forall (f: function)         (**r calling function *)
-             (sp: val)             (**r stack pointer in calling function *)
+             (sp: Mem.stackblock)             (**r stack pointer in calling function *)
              (rs: locset)          (**r location state in calling function *)
              (c: code),            (**r program point in calling function *)
       stackframe.
@@ -113,7 +113,7 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
   | State:
       forall (stack: list stackframe) (**r call stack *)
              (f: function)            (**r function currently executing *)
-             (sp: val)                (**r stack pointer *)
+             (sp: Mem.stackblock)                (**r stack pointer *)
              (c: code)                (**r current program point *)
              (rs: locset)             (**r location state *)
              (m: mem),                (**r memory state *)
@@ -146,6 +146,8 @@ Definition parent_locset (stack: list stackframe) : locset :=
   | Stackframe f sp ls c :: stack' => ls
   end.
 
+Variable frame_layout : function -> frame.
+
 Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -161,20 +163,20 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b rs' m)
   | exec_Lop:
       forall s f sp op args res b rs m v rs',
-      eval_operation ge sp op (reglist rs args) m = Some v ->
+      eval_operation ge op (reglist rs args) m = Some v ->
       rs' = Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs) ->
       step (State s f sp (Lop op args res :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lload:
       forall s f sp chunk addr args dst b rs m a v rs',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge addr (reglist rs args) = Some a ->
       Mem.loadv chunk m a = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (State s f sp (Lload chunk addr args dst :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lstore:
       forall s f sp chunk addr args src b rs m m' a rs',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge addr (reglist rs args) = Some a ->
       Mem.storev chunk m a (rs (R src)) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
@@ -190,12 +192,13 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = return_regs (parent_locset s) rs ->
       find_function ge ros rs' = Some f' ->
       sig = funsig f' ->
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
-      step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
+      Mem.pop_frame m = Some m' ->
+      (* free m stk 0 f.(fn_stacksize) = Some m' -> *)
+      step (State s f stk (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
   | exec_Lbuiltin:
-      forall s f sp rs m ef args res b vargs t vres rs' m',
-      eval_builtin_args ge rs sp m args vargs ->
+      forall s f sp sp' rs m ef args res b vargs t vres rs' m',
+      eval_builtin_args ge rs sp' m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       forall BUILTIN_ENABLED : builtin_enabled ef,
@@ -233,15 +236,25 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b' rs' m)
   | exec_Lreturn:
       forall s f stk b rs m m',
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
-      step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
+        (* Mem.free m stk 0 f.(fn_stacksize) = Some m' -> *)
+        Mem.pop_frame m = Some m' ->
+      step (State s f stk (Lreturn :: b) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal:
       forall s f rs m rs' m' stk,
-      Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
+        Mem.push_frame
+          m (frame_layout f)
+          Vundef
+          {|
+            frame_ofs_link_perm := Freeable;
+            frame_ofs_retaddr_perm := Freeable;
+            frame_locals_perm := Freeable;
+            frame_outgoings_perm := Freeable;
+            frame_callee_saves_perm := Nonempty;
+          |}  = Some (m', stk) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
-        E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')
+        E0 (State s f stk f.(fn_code) rs' m')
   | exec_function_external:
       forall s ef args res rs1 rs2 m t m',
       args = map (fun p => Locmap.getpair p rs1) (loc_arguments (ef_sig ef)) ->
@@ -270,7 +283,7 @@ Inductive final_state: state -> int -> Prop :=
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (p: program) :=
-  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) fl :=
+  Semantics (step (Locmap.init Vundef) fl) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.
