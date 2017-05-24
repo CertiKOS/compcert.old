@@ -2555,14 +2555,15 @@ Theorem loadbytes_drop:
 Proof.
   intros.
   unfold loadbytes.
-  destruct (range_perm_dec m b' ofs (ofs + n) Cur Readable).
+  destruct (range_perm_dec m (MemBlock b') ofs (ofs + n) Cur Readable).
   rewrite pred_dec_true.
-  unfold drop_perm in DROP. destruct (range_perm_dec m b lo hi Cur Freeable); inv DROP. simpl. auto.
+  unfold drop_perm in DROP. destruct (range_perm_dec m (MemBlock b) lo hi Cur Freeable); inv DROP. simpl. auto.
   red; intros.
   destruct (eq_block b' b). subst b'.
   destruct (zlt ofs0 lo). eapply perm_drop_3; eauto.
   destruct (zle hi ofs0). eapply perm_drop_3; eauto.
   apply perm_implies with p. eapply perm_drop_1; eauto. omega. intuition.
+  assert (MemBlock (stackblock:=block) b' <> MemBlock b). congruence.
   eapply perm_drop_3; eauto.
   rewrite pred_dec_false; eauto.
   red; intros; elim n0; red; intros.
@@ -2570,6 +2571,7 @@ Proof.
 Qed.
 
 End DROP.
+
 
 (** * Generic injections *)
 
