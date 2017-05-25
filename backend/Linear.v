@@ -244,14 +244,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f rs m rs' m' stk,
         Mem.push_frame
           m (frame_layout f)
-          Vundef
-          {|
-            frame_ofs_link_perm := Freeable;
-            frame_ofs_retaddr_perm := Freeable;
-            frame_locals_perm := Freeable;
-            frame_outgoings_perm := Freeable;
-            frame_callee_saves_perm := Nonempty;
-          |}  = Some (m', stk) ->
+          Vundef frame_permission_none = Some (m', stk) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f stk f.(fn_code) rs' m')

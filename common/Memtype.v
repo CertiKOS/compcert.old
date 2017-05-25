@@ -145,6 +145,23 @@ Record frame_permission :=
     frame_callee_saves_perm: permission;
   }.
 
+Definition frame_permission_none :=
+  {|
+    frame_ofs_link_perm := Nonempty;
+    frame_ofs_retaddr_perm := Nonempty;
+    frame_locals_perm := Nonempty;
+    frame_outgoings_perm := Nonempty;
+    frame_callee_saves_perm := Nonempty;
+  |}.
+
+Definition frame_permission_full :=
+  {|
+    frame_ofs_link_perm := Freeable;
+    frame_ofs_retaddr_perm := Freeable;
+    frame_locals_perm := Freeable;
+    frame_outgoings_perm := Freeable;
+    frame_callee_saves_perm := Freeable;
+  |}.
  
 Module Mem.
 
