@@ -3116,14 +3116,15 @@ Section WITHMEMINIT.
 - Well-typedness of [f].
 *)
 
-Require Linear2.
 
-Definition state_mem (s: Linear.state) :=
-  match s with
-  | Linear.State stack f sp c rs m => m
-  | Linear.Callstate stack f rs m => m
-  | Linear.Returnstate stack rs m => m
-  end.
+(* Require Linear2. *)
+
+(* Definition state_mem (s: Linear.state) := *)
+(*   match s with *)
+(*   | Linear.State stack f sp c rs m => m *)
+(*   | Linear.Callstate stack f rs m => m *)
+(*   | Linear.Returnstate stack rs m => m *)
+(*   end. *)
 
 
 Opaque Z.mul.
@@ -3242,7 +3243,7 @@ Qed.
 
 Variables init_m : mem.
 
-Inductive match_states: Linear2.state -> Mach.state -> Prop :=
+Inductive match_states: Linear.state -> Mach.state -> Prop :=
 | match_states_intro:
     forall sg_ cs f sp c ls m cs' fb rs m' tf
         (STACKS: match_stacks cs cs' f.(Linear.fn_sig) sg_)
@@ -3260,10 +3261,10 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (INIT_VB: forall b, Mem.valid_block init_m b -> Mem.valid_block m b)
         (INIT_VB': forall b, Mem.valid_block init_m b -> Mem.valid_block m' b)
         (TAIL: is_tail c (Linear.fn_code f))
-        s2_
-        (Hs2: Linear2.state_lower s2_ = Linear.State cs f sp c ls m)
-        (Hno_init_args: init_args_out_of_bounds sg_ (state_mem (Linear2.state_higher s2_)))
-        (Hinit_ls: Some (Linear2.state_init_ls s2_) = Some init_ls)
+        (* s2_ *)
+        (* (Hs2: Linear2.state_lower s2_ = Linear.State cs f sp c ls m) *)
+        (* (Hno_init_args: init_args_out_of_bounds sg_ (state_mem (Linear2.state_higher s2_))) *)
+        (* (Hinit_ls: Some (Linear2.state_init_ls s2_) = Some init_ls) *)
         (* (Hsome_init_args: init_args_in_bounds sg_ m') *)
         (SP_NOT_INIT: init_sp <> sp)
         (SEP: m' |= frame_contents f sp ls (parent_locset init_ls cs) (parent_sp init_sp cs') (parent_ra init_ra cs')
@@ -3277,7 +3278,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
             in_segment (frame_callee_saves fr) ofs \/ in_segment (frame_locals fr) ofs \/ in_segment (frame_outgoings fr) ofs ->
             perm_order Nonempty p)
         (BS: bounds_stack m cs),
-      match_states s2_
+      match_states (Linear.State cs f sp c ls m) (* s2_ *)
                    (Mach.State cs' fb sp (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
 
@@ -3291,10 +3292,10 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (* (INCR_sep: lessdef_separated (Mem.flat_inj (Mem.nextblock init_m)) init_m init_m) *)
         (INIT_VB: forall b, Mem.valid_block init_m b -> Mem.valid_block m b)
         (INIT_VB': forall b, Mem.valid_block init_m b -> Mem.valid_block m' b)
-        s2_
-        (Hs2: Linear2.state_lower s2_ = Linear.Callstate cs f ls m)
-        (Hno_init_args: init_args_out_of_bounds sg_ (state_mem (Linear2.state_higher s2_)))
-        (Hinit_ls: Some (Linear2.state_init_ls s2_) = Some init_ls)
+        (* s2_ *)
+        (* (Hs2: Linear2.state_lower s2_ = Linear.Callstate cs f ls m) *)
+        (* (Hno_init_args: init_args_out_of_bounds sg_ (state_mem (Linear2.state_higher s2_))) *)
+        (* (Hinit_ls: Some (Linear2.state_init_ls s2_) = Some init_ls) *)
         (* (Hsome_init_args: init_args_in_bounds sg_ m') *)
         (* (INJ_INIT_SP: block_prop (fun b => b = Some (b,0)) init_sp) *)
         (* (HAMOA: has_at_most_one_antecedent init_sp) *)
@@ -3302,7 +3303,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (SEP: m' |= stack_contents cs cs' ** minit_args_mach sg_)
         (EXT: Mem.extends m m')
         (BS: bounds_stack m cs),
-      match_states s2_ (Mach.Callstate cs' fb rs m')
+      match_states (Linear.Callstate cs f ls m) (Mach.Callstate cs' fb rs m')
   | match_states_return:
       forall sg_ cs ls m cs' rs m' sg
         (STACKS: match_stacks cs cs' sg sg_)
@@ -3312,10 +3313,10 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
         (* (INCR_sep: lessdef_separated (Mem.flat_inj (Mem.nextblock init_m)) init_m init_m) *)
         (INIT_VB: forall b, Mem.valid_block init_m b -> Mem.valid_block m b)
         (INIT_VB': forall b, Mem.valid_block init_m b -> Mem.valid_block m' b)
-        s2_
-        (Hs2: Linear2.state_lower s2_ = Linear.Returnstate cs ls m)
-        (Hno_init_args: init_args_out_of_bounds sg_ (state_mem (Linear2.state_higher s2_)))
-        (Hinit_ls: Some (Linear2.state_init_ls s2_) = Some init_ls)
+        (* s2_ *)
+        (* (Hs2: Linear2.state_lower s2_ = Linear.Returnstate cs ls m) *)
+        (* (Hno_init_args: init_args_out_of_bounds sg_ (state_mem (Linear2.state_higher s2_))) *)
+        (* (Hinit_ls: Some (Linear2.state_init_ls s2_) = Some init_ls) *)
         (* (Hsome_init_args: init_args_in_bounds sg_ m') *)
         (* (INJ_INIT_SP: block_prop (fun b => b = Some (b,0)) init_sp) *)
         (* (HAMOA: has_at_most_one_antecedent init_sp) *)
@@ -3324,7 +3325,7 @@ Inductive match_states: Linear2.state -> Mach.state -> Prop :=
                  ** minit_args_mach sg_)
         (EXT: Mem.extends m m')
         (BS: bounds_stack m cs),
-      match_states s2_ (Mach.Returnstate cs' rs m').
+      match_states (Linear.Returnstate cs ls m) (Mach.Returnstate cs' rs m').
 
 (** Record [massert_eqv] and [massert_imp] as relations so that they can be used by rewriting tactics. *)
 Local Add Relation massert massert_imp
@@ -3535,8 +3536,8 @@ Qed.
 Ltac constr_match_states :=
   econstructor;
   match goal with
-    |- Linear2.state_lower _ = _ =>
-    symmetry; eassumption
+    (* |- Linear2.state_lower _ = _ => *)
+    (* symmetry; eassumption *)
   | |- _ => idtac
   end.
 
@@ -3859,23 +3860,13 @@ Hypothesis frame_layout_correct:
 
 
 Theorem transf_step_correct:
-  forall s1 t s2, Linear2.step F_frame_layout ge s1 t s2 ->
-  forall (WTS: wt_state init_ls (Linear2.state_lower s1)) s1' (MS: match_states s1 s1'),
+  forall s1 t s2, Linear.step init_ls F_frame_layout ge s1 t s2 ->
+  forall (WTS: wt_state init_ls s1) s1' (MS: match_states s1 s1'),
   exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
-  induction 1;
-    clear step_ge_eq_before step_ge_eq_after.
- inversion step_low; subst; intros;
+  induction 1 ; subst; intros;
   inv MS; (try congruence);
-  (repeat
-  match goal with
-      K1: _ = Linear2.state_lower ?s1,
-      K2: Linear2.state_lower ?s1 = _
-      |- _ =>
-      rewrite K2 in K1;
-        symmetry in K1;
-        inv K1
-  end);
+    
   try rewrite transl_code_eq;
   try (generalize (function_is_within_bounds f _ (is_tail_in TAIL));
        intro BOUND; simpl in BOUND);
@@ -3894,10 +3885,10 @@ Proof.
       4: apply agree_locs_set_reg; eauto.
       all: eauto with mem.
       eapply is_tail_cons_left; eauto.
-      revert Hno_init_args.
-      generalize (Linear2.state_invariant s1). rewrite Hs2.
-      inversion step_high; inversion 1; subst; simpl in *; now intuition congruence.
-      congruence.
+      (* revert Hno_init_args. *)
+      (* generalize (Linear2.state_invariant s1). rewrite Hs2. *)
+      (* inversion step_high; inversion 1; subst; simpl in *; now intuition congruence. *)
+      (* congruence. *)
 
     + (* Lgetstack, incoming *)
       unfold slot_valid in SV. InvBooleans.
@@ -3934,11 +3925,7 @@ Proof.
                  apply caller_save_reg_within_bounds.
                  reflexivity.
               ** eapply is_tail_cons_left; eauto.
-              ** revert Hno_init_args.
-                 generalize (Linear2.state_invariant s1). rewrite Hs2.
-                 inversion step_high; inversion 1; subst; simpl in *; now intuition congruence.
-              ** congruence.
-
+              
       * subst sg isg.
         subst s cs'.
         
@@ -3966,11 +3953,7 @@ Proof.
               apply caller_save_reg_within_bounds.
               reflexivity.
            ++ eapply is_tail_cons_left; eauto.
-           ++ revert Hno_init_args.
-              generalize (Linear2.state_invariant s1). rewrite Hs2.
-              inversion step_high; inversion 1; subst; simpl in *; now intuition congruence.
-           ++ congruence.
-
+           
     + (* Lgetstack, outgoing *)
       exploit frame_get_outgoing; eauto. intros (v & A & B).
       econstructor; split.
@@ -3978,12 +3961,7 @@ Proof.
       constr_match_states. all: eauto with coqlib.
       apply agree_regs_set_reg; auto.
       apply agree_locs_set_reg; auto.
-      revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; subst; simpl in * |- * ; now intuition congruence.
-      congruence.
-
+      
   - (* Lsetstack *)
     exploit wt_state_setstack; eauto. intros (SV & SW).
     set (ofs' := match sl with
@@ -4015,13 +3993,8 @@ Proof.
       * unfold store_stack in STORE. eapply valid_block_set_stack_1; eauto. 
       * unfold store_stack in STORE. intros. eapply valid_block_set_stack_1. eauto.
         apply INIT_VB'. auto.
-      * revert Hno_init_args.
-        generalize (Linear2.state_invariant s1).
-        rewrite Hs2.
-        inversion step_high; inversion 1; subst; simpl in * |- * ; now intuition congruence.
-      * congruence.
       * unfold store_stack in STORE. eapply set_stack_outside_extends. eauto. eauto.
-        intros.
+        intros ofs0 H H1.
         generalize (PERM_stack _ _ (Mem.perm_cur_max _ _ _ _ H)). 
         intro A.
         assert (0 <= ofs).
@@ -4067,11 +4040,6 @@ Proof.
     * apply agree_regs_set_reg; auto.
       rewrite transl_destroyed_by_op.  apply agree_regs_undef_regs; auto.
     * apply agree_locs_set_reg; auto. apply agree_locs_undef_locs. auto. apply destroyed_by_op_caller_save.
-    * revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; subst; simpl in * |- * ; now intuition congruence.
-    * congruence.
     * apply frame_set_reg. apply frame_undef_regs. exact SEP.
 
 - (* Lload *)
@@ -4094,12 +4062,7 @@ Proof.
   + constr_match_states. all: eauto with coqlib.
     * apply agree_regs_set_reg. rewrite transl_destroyed_by_load. apply agree_regs_undef_regs; auto. auto.
     * apply agree_locs_set_reg. apply agree_locs_undef_locs. auto. apply destroyed_by_load_caller_save. auto.
-    * revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; subst; simpl in * |- * ; now intuition congruence.
-    * congruence.
-
+    
 - (* Lstore *)
   assert (STORE_INJ:
             exists a',
@@ -4117,25 +4080,17 @@ Proof.
   + apply plus_one. econstructor.
     instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
     eexact C. eauto.
-  + revert Hno_init_args.
-    generalize (Linear2.state_invariant s1).
-    rewrite Hs2.
-    Opaque sepconj.
-    inversion step_high; inversion 1; subst; simpl in * |- * ; try now intuition congruence.
+  + Opaque sepconj.
     exploit eval_addressing_lessdef_strong. apply reglist_lessdef.
     eauto. eauto. eauto. intros (v2 & EA & LD).
-    rewrite EA in H1; inv H1.
-    destruct a0; try discriminate. inv LD. inv B. simpl in *.
-    intro OOB.
+    rewrite EA in H; inv H.
+    destruct a; try discriminate. inv LD. inv B. simpl in *.
     constr_match_states. all: eauto with coqlib.
     * rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.
     * apply agree_locs_undef_locs. auto. apply destroyed_by_store_caller_save.
     * eapply Mem.store_valid_block_1. eauto. auto.
     * intros. eapply Mem.store_valid_block_1. eauto. apply INIT_VB. auto.
     * intros. eapply Mem.store_valid_block_1. eauto. apply INIT_VB'. auto.
-    * rewrite <- H3. simpl.
-      eapply init_args_out_of_bounds_store; eauto.
-    * congruence.
     * eapply frame_undef_regs; eauto.
       eapply store_footprint_preserves; eauto.
       simpl; intros.
@@ -4174,7 +4129,7 @@ Proof.
       generalize (frame_env_range (function_bounds f)).
       generalize (bound_stack_data_pos (function_bounds f)). simpl.
       omega.
-    * unfold find_function, Genv.find_funct in H1.
+    * unfold find_function, Genv.find_funct in H.
       unfold find_function_ptr in A.
       destruct ros.
       -- destruct (rs0 m0) eqn:?; try discriminate.
@@ -4184,14 +4139,9 @@ Proof.
          generalize (Ptrofs.eq_spec i Ptrofs.zero); rewrite Heqb1. intro; subst.
          destruct (Ptrofs.eq_dec Ptrofs.zero Ptrofs.zero). eauto. discriminate.
       --
-        unfold ge in H1. erewrite <- Genv.find_symbol_transf_partial in H1.
-        unfold tge in A. rewrite A in H1. exact H1. eauto.
+        unfold ge in H. erewrite <- Genv.find_symbol_transf_partial in H.
+        unfold tge in A. rewrite A in H. exact H. eauto.
     * simpl; red; auto.
-    * revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; subst; simpl in * |- * ; now intuition congruence.
-    * congruence.
     * simpl. rewrite sep_assoc. exact SEP.
     * simpl. split; auto.
 
@@ -4199,7 +4149,6 @@ Proof.
   exploit function_epilogue_correct; eauto.
   admit.
   rename SEP into SEP_init. intros (rs1 & m1' & P & Q & RR & S & T & U & EXT' & SEP).
-  inv Hinit_ls.
   exploit find_function_translated; eauto.
   intros [bf [tf' [A [B C]]]].
   econstructor; split.
@@ -4216,12 +4165,12 @@ Proof.
     erewrite wt_state_tailcall. vm_compute. congruence. eauto.
     intros MS'. 
     constr_match_states.  all: eauto.
-    * unfold find_function, Genv.find_funct in H2.
+    * unfold find_function, Genv.find_funct in H0.
       unfold find_function_ptr in A.
       destruct ros.
       -- destruct (rs1 m0) eqn:?; try discriminate.
          move H2 at bottom.
-         destruct (return_regs (parent_locset (Linear2.state_init_ls s1) s) rs (R m0)) eqn:?; try discriminate.
+         destruct (return_regs (parent_locset init_ls s) rs (R m0)) eqn:?; try discriminate.
          
          destruct (Ptrofs.eq i Ptrofs.zero) eqn:?; try discriminate. inversion A. subst b0. clear A.
          destruct (Ptrofs.eq_dec i0 Ptrofs.zero) eqn:?; try discriminate. subst i0.
@@ -4229,25 +4178,13 @@ Proof.
          generalize (T m0).
          rewrite Heqv0, Heqv. intro E; inversion E. subst v b1. clear E. eauto.
       --
-        unfold ge in H2. erewrite <- Genv.find_symbol_transf_partial in H2.
-        unfold tge in A. rewrite A in H2. exact H2. eauto.
-    * subst; eauto.
+        unfold ge in H0. erewrite <- Genv.find_symbol_transf_partial in H0.
+        unfold tge in A. rewrite A in H0. exact H0. eauto.
     * intros.
       eapply pop_frame_valid_block. eauto.
       eapply INIT_VB. auto.
     * intros. eapply pop_frame_valid_block. eauto.
       apply INIT_VB'. auto. 
-    * revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-      destruct s eqn:?.
-      -- clear H1. subst.
-         intros _.
-         clear - TAILCALL. red; red; intros.
-         apply TAILCALL in H. easy.
-      -- eapply init_args_out_of_bounds_pop_frame; eauto.
-    * congruence.
     * eapply pop_frame_valid_block; eauto.
     * split. 2:split.
       -- apply SEP.
@@ -4259,8 +4196,8 @@ Proof.
       -- destruct SEP as (A1 & A2 & A3). revert A3. destruct s; auto.
          red; intros.
          eapply A3; eauto.
-         destruct H3. decompose [ex and] H4.
-         exploit TAILCALL. apply H7. simpl. easy.
+         destruct H1. decompose [ex and] H3.
+         exploit TAILCALL. apply H5. simpl. easy.
     * eapply bounds_stack_pop_frame; eauto.
 
 - (* Lbuiltin *)
@@ -4326,14 +4263,6 @@ Proof.
     * intros. eapply external_call_valid_block; eauto. 
     * intros. eapply external_call_valid_block; eauto. 
     * eauto with coqlib.
-    * revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-      eapply init_args_out_of_bounds_external_call; eauto.
-      rewrite Mem.valid_block_extends. 2: eauto.
-      rewrite Mem.valid_block_extends. 2: eauto. auto.
-    * congruence.
     (* * revert Hsome_init_args Hno_init_args. *)
     (*   generalize (Linear2.state_invariant s1). *)
     (*   rewrite Hs2. *)
@@ -4359,7 +4288,7 @@ Proof.
     (*      eapply Events.eval_builtin_args_lessdef'. 3: eauto. 3: eauto. all: eauto. *)
     * apply frame_set_res. apply frame_undef_regs. auto.
     * intros.
-      exploit external_call_max_perm. eexact H2. 2: apply H.
+      exploit external_call_max_perm. eexact H0. 2: apply H1.
 
       eapply Mem.valid_block_extends.
       2: eapply frame_contents_valid_block; eauto.
@@ -4379,12 +4308,7 @@ Proof.
   apply plus_one; apply exec_Mlabel.
   constr_match_states.
   all: eauto with coqlib.
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-  rewrite Hs2.
-  inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-  congruence.
-
+  
 - (* Lgoto *)
   econstructor; split.
   apply plus_one; eapply exec_Mgoto; eauto.
@@ -4392,12 +4316,7 @@ Proof.
   apply transl_find_label; eauto.
   constr_match_states; eauto.
   eapply find_label_tail; eauto.
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-  rewrite Hs2.
-  inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-  congruence.
-
+  
 - (* Lcond, true *)
   econstructor; split.
   apply plus_one. eapply exec_Mcond_true; eauto.
@@ -4410,12 +4329,7 @@ Proof.
   apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
   all: eauto.
   eapply find_label_tail; eauto.
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-  rewrite Hs2.
-  inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-  congruence.
-
+  
 - (* Lcond, false *)
   econstructor; split.
   apply plus_one. eapply exec_Mcond_false; eauto.
@@ -4426,15 +4340,10 @@ Proof.
   apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
   all: eauto.
   eauto with coqlib.
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-  rewrite Hs2.
-  inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-  congruence.
-
+  
 - (* Ljumptable *)
   assert (rs0 arg = Vint n).
-  { generalize (AGREGS arg). rewrite H1. intro IJ; inv IJ; auto. }
+  { generalize (AGREGS arg). rewrite H. intro IJ; inv IJ; auto. }
   econstructor; split.
   apply plus_one; eapply exec_Mjumptable; eauto.
   eapply find_funct_ptr_transf. 2: eauto. eauto.
@@ -4444,12 +4353,7 @@ Proof.
   apply agree_locs_undef_locs. auto. apply destroyed_by_jumptable_caller_save.
   all: eauto.
   eapply find_label_tail; eauto.
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-  rewrite Hs2.
-  inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-  congruence.
-
+  
 - (* Lreturn *)
   exploit function_epilogue_correct; eauto. admit.
   intros (rs' & m1' & A & B & C & D & E & F & EXT' & G).
@@ -4459,16 +4363,9 @@ Proof.
   erewrite frame_layout_correct; eauto.
   erewrite frame_layout_correct; eauto.
   traceEq.
-  inv Hinit_ls.
   constr_match_states. all: try subst; eauto.
   + intros. eapply pop_frame_valid_block. eauto. apply INIT_VB; auto.
   + intros. eapply pop_frame_valid_block. eauto. apply INIT_VB'; auto.
-  + revert Hno_init_args.
-    generalize (Linear2.state_invariant s1).
-    rewrite Hs2.
-    inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-    intros; eapply init_args_out_of_bounds_pop_frame; eauto.
-  + congruence.
   + eapply pop_frame_valid_block; eauto.
   + eapply bounds_stack_pop_frame; eauto.
 
@@ -4483,7 +4380,7 @@ Proof.
   reflexivity.
   reflexivity.
   Transparent F_frame_layout.
-  unfold F_frame_layout in H1. eassumption.
+  unfold F_frame_layout in H. eassumption.
   eapply match_stacks_type_retaddr. eauto.
   apply EXT. apply SEP. admit.
   rename SEP into SEP_init;
@@ -4509,31 +4406,19 @@ Proof.
 
       exploit push_frame_extends_new_block. eexact EXT. eauto. eauto. intro; subst.
     constr_match_states. all: eauto with coqlib.
-    * revert Hno_init_args.
-      generalize (Linear2.state_invariant s1).
-      rewrite Hs2.
-      inversion step_high; inversion 1; try subst; simpl in * |- * ; try now intuition congruence.
-      eapply init_args_out_of_bounds_push_frame. eauto.
-      {
-        revert ISP'VALID.
-        rewrite <- Mem.valid_block_extends. 2: eauto.
-        eapply Mem.valid_block_extends. auto.
-      }
-      eauto. eauto. eauto.
-    * congruence.
     * intro; subst sp'. exploit push_frame_fresh_block. apply A. congruence. auto.
-    * intros.
-      destruct H2. eapply push_frame_perm_cs in H2. 3: eauto. 2: eauto. simpl in H2; eauto.
-      destruct H2. eapply push_frame_perm_locals in H2. 3: eauto. 2: eauto. simpl in H2; eauto.
+    * intros ofs p H0 fr H2.
+      destruct H2 as [H2|[H2|H2]].
+      eapply push_frame_perm_cs in H2. 3: eauto. 2: eauto. simpl in H2; eauto.
+      eapply push_frame_perm_locals in H2. 3: eauto. 2: eauto. simpl in H2; eauto.
       eapply push_frame_perm_outgoings in H2. 3: eauto. 2: eauto. simpl in H2; eauto.
     * eapply bounds_stack_perm. eauto.
-
       eapply valid_stack_same_valid_block. 
       2: eapply stack_contents_valid_stack; eauto.
       2: apply SEP_init.
       intro; apply Mem.valid_block_extends; now auto.
       intros. eapply push_frame_perm_diff_block; eauto.
-      eapply push_frame_fresh_block in H1. congruence.
+      eapply push_frame_fresh_block in H. congruence.
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.
@@ -4549,18 +4434,12 @@ Proof.
   intros; apply stack_contents_stack_footprint.
   intros; apply minit_args_stack_footprint.
   intros (res' & m1' & A & B & C & D).
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-	rewrite Hs2.
-	inversion step_high; inversion 1; subst; try (simpl in * |- * ; now intuition congruence).
-  intro Hno_init_args.
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   unfold tge, ge in *.
   edestruct (Genv.find_funct_ptr_transf_partial TRANSF) as [tf' [find' transf']]. eauto.
   rewrite find'. simpl in transf'. f_equal. congruence.
 
-  inv f_eq.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constr_match_states.
   all:eauto.
@@ -4568,11 +4447,6 @@ Proof.
   apply agree_callee_save_set_result; auto.
   * intros. eapply external_call_valid_block; eauto.
   * intros. eapply external_call_valid_block; eauto. 
-  * rewrite <- H1. simpl in *.
-    eapply init_args_out_of_bounds_external_call. 2: eauto. 3: apply m_ext.
-    rewrite Mem.valid_block_extends. eauto. eapply Mem.extends_extends_compose; eauto.
-    all: eauto.
-  * congruence.
   * intros; eapply external_call_valid_block; eauto.
   * eapply bounds_stack_perm. eauto.
     eapply valid_stack_same_valid_block. 
@@ -4585,15 +4459,8 @@ Proof.
   inv STACKS. simpl in AGLOCS. simpl in SEP. rewrite sep_assoc in SEP. 
   econstructor; split.
   apply plus_one. apply exec_return.
-  revert Hno_init_args.
-  generalize (Linear2.state_invariant s1).
-  rewrite Hs2.
-  inversion step_high; inversion 1; subst; simpl in * |- * ; try now intuition congruence.
-  intro IAOOB.
   constr_match_states; eauto.
   apply agree_locs_return with rs0; auto.
-  rewrite <- H0; simpl; eassumption.
-  congruence.
   apply frame_contents_exten with rs0 (parent_locset init_ls s); auto.
   intros. eapply BS. eauto. eauto. eapply BS.
   Unshelve. eauto.
@@ -4611,7 +4478,7 @@ Definition frame_layout_mach (prog: Linear.program) b :=
   | _ => Build_frame 0 0 0 (Build_segment 0 0) (Build_segment 0 0) (Build_segment 0 0) (Build_segment 0 0)
   end.
 
-Inductive match_states' init_sp fl (s : Linear2.state) (s': Mach.state): Prop :=
+Inductive match_states' init_sp fl (s : Linear.state) (s': Mach.state): Prop :=
 | match_states'_intro:
     match_states init_sp Vnullptr fl (Locmap.init Vundef) (signature_main) Mem.empty s s' ->
     match_states' init_sp fl s s'.
@@ -4621,11 +4488,10 @@ Axiom valid_block_empty:
     ~ Mem.valid_block Mem.empty b.
 
 Lemma transf_initial_states init_sp fl:
-  forall st1, Linear2.initial_state prog st1 ->
+  forall st1, Linear.initial_state prog st1 ->
   exists st2, Mach.initial_state tprog st2 /\ match_states' init_sp fl st1 st2.
 Proof.
   intros. inv H.
-  inv init_lower.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   econstructor; split.
   econstructor.
@@ -4633,17 +4499,14 @@ Proof.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
   constructor.
-  econstructor. 8: eauto. all: eauto.
+  econstructor. all: eauto.
   - rewrite H3. constructor.
     left; red; simpl. easy.
     vm_compute. congruence.
   - unfold Locmap.init. red; intros; auto.
   - unfold Locmap.init. red; intros; auto.
-  - intros. eapply valid_block_empty in H4; easy.
-  - intros. eapply valid_block_empty in H4; easy.
-  - red.  red.
-    rewrite loc_arguments_main. simpl; eauto.
-  - congruence. 
+  - intros. eapply valid_block_empty in H; easy.
+  - intros. eapply valid_block_empty in H; easy.
   - admit. (* need to make init_sp an option type *)
   - simpl stack_contents. rewrite sep_pure. split; auto. simpl.
     red. simpl. easy.
@@ -4653,9 +4516,9 @@ Admitted.
 
 Lemma transf_final_states:
   forall init_sp fl st1 st2 r,
-  match_states' init_sp fl st1 st2 -> Linear2.final_state st1 r -> Mach.final_state st2 r.
+  match_states' init_sp fl st1 st2 -> Linear.final_state st1 r -> Mach.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv fin_higher. inv fin_lower. inv H0; try congruence.
+  intros. inv H0. inv H. inv H0; try congruence.
   inv STACKS; try congruence.
   assert (R: exists r, loc_result signature_main = One r).
   { destruct (loc_result signature_main) as [r1 | r1 r2] eqn:LR.
@@ -4663,16 +4526,9 @@ Proof.
   - generalize (loc_result_type signature_main). rewrite LR. discriminate.
   }
   destruct R as [rres EQ]. rewrite EQ in H1. simpl in H1.
-  rewrite <- H2 in Hs2; inv Hs2.
-  generalize (Linear2.state_invariant st1).
-  rewrite <- H, <- H2. intro A; inv A.
   generalize (AGREGS rres).
-  specialize (rs_lessdef (R rres)); rewrite H1 in rs_lessdef. inv rs_lessdef. intro A; inv A.
+  rewrite H1. intro A; inv A.
   econstructor; eauto.
-  unfold Locmap.getpair in H3. simpl in H3.
-  rewrite EQ in H3. simpl in H3.
-  unfold signature_main in EQ. vm_compute in EQ. inv EQ.
-  congruence.
 Qed.
 
 Lemma wt_prog:
@@ -4688,42 +4544,28 @@ Proof.
 - auto.
 Qed.
 
-Theorem transf_program_correct' init_sp:
-  forward_simulation (Linear2.semantics prog (F_frame_layout)) (Mach.semantics init_sp return_address_offset (frame_layout_mach prog) tprog).
+Theorem transf_program_correct init_sp:
+  forward_simulation (Linear.semantics prog (F_frame_layout)) (Mach.semantics init_sp return_address_offset (frame_layout_mach prog) tprog).
 Proof. 
-  set (ms := fun s s' => wt_state (Locmap.init Vundef) (Linear2.state_lower s) /\ match_states' init_sp (frame_layout_mach prog) s s').
+  set (ms := fun s s' => wt_state (Locmap.init Vundef) s /\ match_states' init_sp (frame_layout_mach prog) s s').
   eapply forward_simulation_plus with (match_states := ms).
 - apply senv_preserved.
 - intros. exploit transf_initial_states; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.
   apply wt_initial_state with (prog0 := prog); auto. exact wt_prog.
-  inv H. congruence. eauto.
+  inv H. eauto. 
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros.
   destruct H0. destruct H1.
   exploit transf_step_correct; eauto.
   apply Val.Vnullptr_has_type. 
   intros. unfold frame_layout_mach.
-  unfold ge in H2; rewrite H2. auto.
+  unfold ge in H2; rewrite H2. auto. apply H.
   intros [s2' [A B]].
   exists s2'; split. exact A. split.
-  inv H.
   eapply step_type_preservation; eauto. eexact wt_prog.
-  assert (Linear2.state_init_ls s1 = Locmap.init Vundef) as INIT.
-  {
-    inversion H1; congruence.
-  }
-  rewrite <- INIT.
-  eexact step_low.
+  apply H. 
   repeat eexists; eauto. 
-Qed.
-
-Theorem transf_program_correct init_sp:
-  forward_simulation (Linear.semantics prog F_frame_layout) (Mach.semantics init_sp return_address_offset (frame_layout_mach prog) tprog).
-Proof.
-  eapply compose_forward_simulations.
-  eapply Linear2.whole_program_linear_to_linear2.
-  apply transf_program_correct' .
 Qed.
 
 
