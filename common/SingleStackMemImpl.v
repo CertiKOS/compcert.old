@@ -65,6 +65,28 @@ Definition perm_order'' (po1 po2: option permission) :=
 (* The type of stackblock is just the regular block *)
 Definition stackblock := block.
 
+(** The Call Tree *)
+
+(* A call tree is a tree of stack blocks, where each node
+   represents an activation record in the execution history.
+   The list of child nodes of a node represents the activation 
+   records whose owners are invoked by the owner of the node
+   in reverse chronological order *)
+Inductive CallTree : Type :=
+| ctree_empty : CallTree
+| ctree_node : stackblock -> list CallTree -> CallTree.
+
+(* Get the active stack blocks from the call tree *) 
+Fixpoint active_stack_blocks (ctree: CallTree) : list stackblock :=
+  match ctree with
+  | ctree_empty => nil
+  | ctree_node b children => 
+    match children with
+    | nil => (b :: nil)
+    | h :: l => (active_stack_blocks h) ++ (b::nil)
+    end
+  end.
+
 Record mem' : Type := mkmem {
   (* Contents of the stack blocks *)
   sb_contents : PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
@@ -73,6 +95,8 @@ Record mem' : Type := mkmem {
                                          (**r [block -> offset -> kind -> option permission] *)
   (* The next unused block identifier for memory blocks *)
   next_stack_block: block;
+  (* The call tree *)
+  call_tree : CallTree;
   (* Contents of the regular memory blocks *)
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   (* Permissions of the memory blocks *)
@@ -102,15 +126,17 @@ Definition mem := mem'.
 Lemma mkmem_ext:
  forall 
   sbcont1 sbcont2 sbacc1 sbacc2 
+  ctree1 ctree2
   memcont1 memcont2 memacc1 memacc2
   snext1 snext2 mnext1 mnext2 sba1 sba2 sbb1 sbb2 sbc1 sbc2
   mema1 mema2 memb1 memb2 memc1 memc2,
   sbcont1 = sbcont2 -> sbacc1 = sbacc2 -> 
   memcont1 = memcont2 -> memacc1 = memacc2 ->
   snext1=snext2 -> mnext1=mnext2 ->
-  (mkmem sbcont1 sbacc1 snext1 memcont1 memacc1 mnext1 sba1 sbb1 sbc1 mema1 memb1 memc1)
+  ctree1 = ctree2 ->
+  (mkmem sbcont1 sbacc1 snext1 ctree1 memcont1 memacc1 mnext1 sba1 sbb1 sbc1 mema1 memb1 memc1)
   = 
-  (mkmem sbcont2 sbacc2 snext2 memcont2 memacc2 mnext2 sba2 sbb2 sbc2 mema2 memb2 memc2).
+  (mkmem sbcont2 sbacc2 snext2 ctree2 memcont2 memacc2 mnext2 sba2 sbb2 sbc2 mema2 memb2 memc2).
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -452,6 +478,7 @@ Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
         (1%positive)
+        (ctree_empty)
         (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
         (1%positive)
@@ -484,6 +511,7 @@ Program Definition alloc (m: mem) (lo hi: Z) :=
   (mkmem (m.(sb_contents))
          (m.(sb_access))
          (m.(next_stack_block))
+         (m.(call_tree))
          (PMap.set m.(nextblock)
                    (ZMap.init Undef)
                    m.(mem_contents))
@@ -529,6 +557,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
   mkmem (m.(sb_contents))
         (m.(sb_access))
         (m.(next_stack_block))
+        (m.(call_tree))
         (m.(mem_contents))
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
@@ -699,6 +728,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
     Some (mkmem (m.(sb_contents))
                 (m.(sb_access))
                 (m.(next_stack_block))
+                (m.(call_tree))
                 (PMap.set b
                           (setN (encode_val chunk v) ofs (m.(mem_contents)#b))
                           m.(mem_contents))
@@ -743,6 +773,7 @@ Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) 
     Some (mkmem (m.(sb_contents))
                 (m.(sb_access))
                 (m.(next_stack_block))
+                (m.(call_tree))
                 (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
                 m.(mem_access)
                 m.(nextblock)
@@ -777,6 +808,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
     Some (mkmem (m.(sb_contents))
                 (m.(sb_access))
                 (m.(next_stack_block))
+                (m.(call_tree))
                 (m.(mem_contents))
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
@@ -2571,6 +2603,83 @@ Proof.
 Qed.
 
 End DROP.
+
+
+(** * Operations over stacks *)
+
+Definition eq_stackblock: 
+  forall (sb1 sb2 : stackblock), {sb1 = sb2} + {sb1 <> sb2} := peq.
+
+Definition footprint (bfp: block -> Z -> Prop) (nfp: stackblock -> Z -> Prop) al ofs :=
+    match al with
+      MemBlock b => bfp b ofs
+    | StackBlock n => nfp n ofs
+    end.
+
+Definition block_footprint fp := footprint  fp (fun _ _ => False).
+Definition stack_footprint fp := footprint (fun _ _ => False) fp.
+
+Fixpoint get_sp' (i:nat) (bs: list stackblock) : option stackblock :=
+  match i, bs with
+  | O, (h::bs') => Some h
+  | S i', (h::bs') => get_sp' i' bs'
+  | _, _ => None
+  end.
+
+Definition get_sp (m: mem) (i:nat) : option stackblock :=
+  let bs := active_stack_blocks m.(call_tree) in
+  get_sp' i bs.
+
+Definition get_cur_sp (m:mem) : option stackblock :=
+  get_sp m O.
+
+Definition set_frame_perm m b f p : option mem :=
+  match (drop_perm m b 
+                   f.(frame_ofs_link) 
+                   (f.(frame_ofs_link)+(size_chunk Mptr)) 
+                   p.(frame_ofs_link_perm)) with
+  | None => None
+  | Some m => 
+    match (drop_perm m b 
+                     f.(frame_ofs_retaddr )
+                     (f.(frame_ofs_retaddr)+(size_chunk Mptr)) 
+                     p.(frame_ofs_retaddr_perm)) with
+    | None => None
+    | Some m =>
+      let seg := f.(frame_locals) in
+      match (drop_perm m b
+                       seg.(seg_ofs)
+                       (seg.(seg_ofs)+seg.(seg_size))
+                       p.(frame_locals_perm)) with
+      | None => None
+      | Some m =>
+        let seg := f.(frame_outgoings) in
+        match (drop_perm m b
+                         seg.(seg_ofs)
+                         (seg.(seg_ofs)+seg.(seg_size))
+                         p.(frame_outgoings_perm)) with
+        | None => None
+        | Some m =>
+        let seg := f.(frame_callee_saves) in
+        (drop_perm m b
+                         seg.(seg_ofs)
+                         (seg.(seg_ofs)+seg.(seg_size))
+                         p.(frame_callee_saves_perm))
+        end
+      end
+    end
+  end.
+
+
+(* Definition push_frame (m: mem) (f: frame) (parent_ra: val)  *)
+(*   (perm: frame_permission) : option (mem * stackblock) := *)
+(*   let parent_sb := get_cur_sp m in *)
+(*   let (m, b) := alloc m 0 f.(frame_size) in *)
+(*   match (set_frame_perm m b f p) with *)
+(*   | None => None *)
+(*   | Some m =>  *)
+(*     store v *)
+  
 
 
 (** * Generic injections *)
