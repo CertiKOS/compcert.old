@@ -189,11 +189,12 @@ Class MemoryModelOps
     end;
   block_footprint fp := footprint  fp (fun _ _ => False);
   stack_footprint fp := footprint (fun _ _ => False) fp;
-  get_sp (m: mem): option stackblock;
 
-  is_global_block (m: mem) (b: block): bool;
-  stack_inj (m: mem) (b: block): option Z;
-  mem_stack (m: mem): stack;
+  get_stack_blocks (m: mem): list stackblock;
+  get_sp (m: mem) := hd_error (get_stack_blocks m);
+
+  (* stack_inj (m: mem) (b: block): option Z; *)
+  (* mem_stack (m: mem): stack; *)
   push_frame (m: mem) (f: frame) (parent_ra: val) 
     (perm: frame_permission) : option (mem * stackblock);
   pop_frame (m: mem): option mem;
@@ -204,12 +205,7 @@ Class MemoryModelOps
 
   (* load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
   check_link_correct:
-    mem -> stackblock -> frame -> stackblock -> Prop;
-
-  (* load_stack m stk Tptr (frame_ofs_retaddr fl) = Some (parent_ra s) -> *)
-  check_retaddr_correct:
-    mem -> stackblock -> frame -> val -> Prop;
-
+    mem -> stackblock -> frame -> option stackblock -> Prop;
 
 (** * Operations on memory states *)
 

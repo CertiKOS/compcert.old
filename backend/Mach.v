@@ -122,8 +122,11 @@ store in the reserved location.
 Section WITHMEMORYMODELOPS.
 Context `{memory_model_ops: Mem.MemoryModelOps}.
 
-Definition load_stack (m: mem) (sp: Mem.stackblock) (ty: typ) (ofs: ptrofs) :=
-  Mem.get_stack sp m ty (Ptrofs.unsigned ofs).
+Definition load_stack (m: mem) (sp: option Mem.stackblock) (ty: typ) (ofs: ptrofs) :=
+  match sp with
+    Some sp => Mem.get_stack sp m ty (Ptrofs.unsigned ofs)
+  | None => None
+  end.
 
 Definition store_stack (m: mem) (sp: Mem.stackblock) (ty: typ) (ofs: ptrofs) (v: val) :=
   Mem.set_stack sp m ty (Ptrofs.unsigned ofs) v.
@@ -219,14 +222,14 @@ Definition find_function_ptr
 Section WITHMEMORYMODELOPS2.
 Context `{memory_model_ops: Mem.MemoryModelOps}.
 
-Inductive extcall_arg (rs: regset) (m: mem) (sp: Mem.stackblock): loc -> val -> Prop :=
+Inductive extcall_arg (rs: regset) (m: mem) (sp: option Mem.stackblock): loc -> val -> Prop :=
   | extcall_arg_reg: forall r,
       extcall_arg rs m sp (R r) (rs r)
   | extcall_arg_stack: forall ofs ty v,
       load_stack m sp ty (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)) = Some v ->
       extcall_arg rs m sp (S Outgoing ofs ty) v.
 
-Inductive extcall_arg_pair (rs: regset) (m: mem) (sp: Mem.stackblock): rpair loc -> val -> Prop :=
+Inductive extcall_arg_pair (rs: regset) (m: mem) (sp: option Mem.stackblock): rpair loc -> val -> Prop :=
   | extcall_arg_one: forall l v,
       extcall_arg rs m sp l v ->
       extcall_arg_pair rs m sp (One l) v
@@ -236,7 +239,7 @@ Inductive extcall_arg_pair (rs: regset) (m: mem) (sp: Mem.stackblock): rpair loc
       extcall_arg_pair rs m sp (Twolong hi lo) (Val.longofwords vhi vlo).
 
 Definition extcall_arguments
-    (rs: regset) (m: mem) (sp: Mem.stackblock) (sg: signature) (args: list val) : Prop :=
+    (rs: regset) (m: mem) (sp: option Mem.stackblock) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg_pair rs m sp) (loc_arguments sg) args.
 
 End WITHMEMORYMODELOPS2.
@@ -276,13 +279,13 @@ Section WITHEXTERNALCALLSOPS.
 Context `{external_calls: ExternalCalls}.
 
 Section RELSEM.
-  Variables init_sp : Mem.stackblock.
+  Variables init_sp : option Mem.stackblock.
   Variable init_ra: val.
 
-Definition parent_sp (s: list stackframe) : Mem.stackblock :=
+Definition parent_sp (s: list stackframe) : option Mem.stackblock :=
   match s with
   | nil => init_sp
-  | Stackframe f sp ra c :: s' => sp
+  | Stackframe f sp ra c :: s' => Some sp
   end.
 
 Definition parent_ra (s: list stackframe) : val :=
@@ -304,7 +307,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs m)
   | exec_Mgetstack:
       forall s f sp ofs ty dst c rs m v,
-      load_stack m sp ty ofs = Some v ->
+      load_stack m (Some sp) ty ofs = Some v ->
       step (State s f sp (Mgetstack ofs ty dst :: c) rs m)
         E0 (State s f sp c (rs#dst <- v) m)
   | exec_Msetstack:
@@ -317,8 +320,8 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb f sp ofs ty dst c rs m v rs',
         Genv.find_funct_ptr ge fb = Some (Internal f) ->
         Mem.check_link_correct m sp (frame_layout fb) (parent_sp s) ->
-      (* load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
-      load_stack m (parent_sp s) ty ofs = Some v ->
+        (* load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
+        load_stack m (parent_sp s) ty ofs = Some v ->
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
         E0 (State s fb sp c rs' m)
@@ -357,7 +360,7 @@ Inductive step: state -> trace -> state -> Prop :=
       let fl := frame_layout fb in
       (* load_stack m stk Tptr (frame_ofs_link fl) = Some (parent_sp s) -> *)
       Mem.check_link_correct m stk fl (parent_sp s) ->
-      load_stack m stk Tptr (Ptrofs.repr (frame_ofs_retaddr fl)) = Some (parent_ra s) ->
+      load_stack m (Some stk) Tptr (Ptrofs.repr (frame_ofs_retaddr fl)) = Some (parent_ra s) ->
       (* Mem.check_retaddr_correct m stk fl (parent_ra s) -> *)
 
       (* Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' -> *)
@@ -406,7 +409,7 @@ Inductive step: state -> trace -> state -> Prop :=
         Genv.find_funct_ptr ge fb = Some (Internal f) ->
         let fl := frame_layout fb in
         Mem.check_link_correct m stk fl (parent_sp s) ->
-        load_stack m stk Tptr (Ptrofs.repr (frame_ofs_retaddr fl)) = Some (parent_ra s) ->
+        load_stack m (Some stk) Tptr (Ptrofs.repr (frame_ofs_retaddr fl)) = Some (parent_ra s) ->
         (* Mem.check_retaddr_correct m stk fl (parent_ra s) -> *)
         Mem.pop_frame m = Some m' ->
         step (State s fb stk (Mreturn :: c) rs m)
@@ -424,7 +427,7 @@ Inductive step: state -> trace -> state -> Prop :=
              E0 (State s fb stk f.(fn_code) rs' m1)
   | exec_function_external:
       forall s fb rs m t rs' ef args res m',
-      Genv.find_funct_ptr ge fb = Some (External ef) ->
+        Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       (* forall *) (* CompCertX: BEGIN additional conditions for calling convention *)
         (* (STACK: *)
@@ -459,7 +462,7 @@ Inductive final_state: state -> int -> Prop :=
       rs r = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (init_sp: Mem.stackblock) (rao: function -> code -> ptrofs -> Prop) (fl: block -> frame) (p: program) :=
-  Semantics (step init_sp Vnullptr rao fl) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (rao: function -> code -> ptrofs -> Prop) (fl: block -> frame) (p: program) :=
+  Semantics (step None Vnullptr rao fl) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.
