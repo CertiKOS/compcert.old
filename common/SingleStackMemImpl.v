@@ -74,10 +74,10 @@ Definition stackblock := block.
    in reverse chronological order *)
 Inductive CallTree : Type :=
 | ctree_empty : CallTree
-| ctree_node : stackblock -> list CallTree -> CallTree.
+| ctree_node : block -> list CallTree -> CallTree.
 
 (* Get the active stack blocks from the call tree *) 
-Fixpoint active_stack_blocks (ctree: CallTree) : list stackblock :=
+Fixpoint active_stack_blocks (ctree: CallTree) : list block :=
   match ctree with
   | ctree_empty => nil
   | ctree_node b children => 
@@ -2619,19 +2619,17 @@ Definition footprint (bfp: block -> Z -> Prop) (nfp: stackblock -> Z -> Prop) al
 Definition block_footprint fp := footprint  fp (fun _ _ => False).
 Definition stack_footprint fp := footprint (fun _ _ => False) fp.
 
-Fixpoint get_sp' (i:nat) (bs: list stackblock) : option stackblock :=
+Fixpoint get_sp' (i:nat) (bs: list block) : option block :=
   match i, bs with
   | O, (h::bs') => Some h
   | S i', (h::bs') => get_sp' i' bs'
   | _, _ => None
   end.
 
-Definition get_sp (m: mem) (i:nat) : option stackblock :=
-  let bs := active_stack_blocks m.(call_tree) in
-  get_sp' i bs.
+Definition get_stack_blocks (m: mem): list block :=
+  active_stack_blocks m.(call_tree).
 
-Definition get_cur_sp (m:mem) : option stackblock :=
-  get_sp m O.
+Definition get_sp (m: mem) := hd_error (get_stack_blocks m).
 
 Definition set_frame_perm m b f p : option mem :=
   match (drop_perm m b 
@@ -2671,15 +2669,28 @@ Definition set_frame_perm m b f p : option mem :=
   end.
 
 
-(* Definition push_frame (m: mem) (f: frame) (parent_ra: val)  *)
-(*   (perm: frame_permission) : option (mem * stackblock) := *)
-(*   let parent_sb := get_cur_sp m in *)
-(*   let (m, b) := alloc m 0 f.(frame_size) in *)
-(*   match (set_frame_perm m b f p) with *)
-(*   | None => None *)
-(*   | Some m =>  *)
-(*     store v *)
-  
+Definition push_frame (m: mem) (f: frame) (parent_ra: val)
+  (perm: frame_permission) : option (mem * block) :=
+  let (m, b) := alloc m 0 f.(frame_size) in
+  match (set_frame_perm m b f perm) with
+  | None => None
+  | Some m =>
+    let link := 
+      match (get_sp m) with
+      | Some pb => Vptr pb (Ptrofs.repr 0)
+      | None => Vnullptr
+      end
+    in
+    match (storev Mptr m (Vptr b (Ptrofs.repr f.(frame_ofs_link))) link) with
+    | None => None
+    | Some m => 
+      match (storev Mptr m (Vptr b (Ptrofs.repr f.(frame_ofs_retaddr))) parent_ra) with
+      | None => None
+      | Some m => Some (m, b)
+      end
+    end
+  end.
+
 
 
 (** * Generic injections *)
