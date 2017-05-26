@@ -418,7 +418,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb rs m f m1 stk rs',
         Genv.find_funct_ptr ge fb = Some (Internal f) ->
         let fl := frame_layout fb in
-        Mem.push_frame m fl (parent_ra s) frame_permission_full = Some (m1, stk) ->
+        Mem.push_frame m fl init_sp (parent_ra s) frame_permission_full = Some (m1, stk) ->
         (* Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) -> *)
         (* store_stack m1 sp Tptr (frame_ofs_link fl) (parent_sp s) = Some m2 -> *)
         (* store_stack m2 sp Tptr (frame_ofs_retaddr fl) (parent_ra s) = Some m3 -> *)

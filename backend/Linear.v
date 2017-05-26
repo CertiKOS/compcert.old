@@ -135,6 +135,8 @@ Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
+  Variable init_sp: option Mem.stackblock.
+
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
 
@@ -244,6 +246,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f rs m rs' m' stk,
         Mem.push_frame
           m (frame_layout f)
+          init_sp
           Vundef frame_permission_none = Some (m', stk) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
@@ -276,7 +279,7 @@ Inductive final_state: state -> int -> Prop :=
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (p: program) fl :=
-  Semantics (step (Locmap.init Vundef) fl) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) init_sp fl :=
+  Semantics (step init_sp (Locmap.init Vundef) fl) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.

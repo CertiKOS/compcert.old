@@ -275,12 +275,13 @@ Qed.
 
 Section WITHINITLS.
 
-Variable init_ls: locset.
+  Variable init_ls: locset.
+  Variable init_sp: option Mem.stackblock.
 
 Variable fl: function -> frame.
 
 Theorem step_type_preservation:
-  forall S1 t S2, step init_ls fl ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
+  forall S1 t S2, step init_sp init_ls fl ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
 Proof.
 Local Opaque mreg_type.
   induction 1; intros WTS; inv WTS.

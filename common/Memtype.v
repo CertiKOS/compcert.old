@@ -195,7 +195,11 @@ Class MemoryModelOps
 
   (* stack_inj (m: mem) (b: block): option Z; *)
   (* mem_stack (m: mem): stack; *)
-  push_frame (m: mem) (f: frame) (parent_ra: val) 
+  (* The parent_sp parameter below is the link to the parent frame, when get_sp
+  gives None: it is the sp of the initial (possibly external) caller. In
+  whole-program settings, this will be instantiated with None; whereas in
+  modular setting it will be an actual stackblock. *)
+  push_frame (m: mem) (f: frame) (parent_sp: option stackblock) (parent_ra: val) 
     (perm: frame_permission) : option (mem * stackblock);
   pop_frame (m: mem): option mem;
   get_stack (sb: stackblock) (m: mem) (ty: typ) (ofs: Z): option val;
