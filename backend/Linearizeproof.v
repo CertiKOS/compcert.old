@@ -88,6 +88,15 @@ Proof.
   intros. monadInv H. auto.
 Qed.
 
+Lemma stack_requirements_preserved:
+  forall f tf,
+  transf_function f = OK tf ->
+  Linear.fn_stack_requirements tf = LTL.fn_stack_requirements f.
+Proof.
+  intros. monadInv H. auto.
+Qed.
+
+
 Lemma find_function_translated:
   forall ros ls f,
   LTL.find_function ge ros ls = Some f ->
@@ -643,6 +652,7 @@ Proof.
   rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
+  rewrite (stack_requirements_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
 
@@ -692,14 +702,16 @@ Proof.
   left; econstructor; split.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). eauto.
+  rewrite (stack_requirements_preserved _ _ TRF). eauto.
   rewrite (match_parent_locset _ _ STACKS). econstructor; eauto.
 
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H7.
+  monadInv H8.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
+  rewrite (stack_requirements_preserved _ _ EQ). eauto.
   rewrite (stacksize_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.

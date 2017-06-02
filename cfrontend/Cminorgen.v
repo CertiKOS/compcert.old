@@ -265,7 +265,8 @@ Definition transl_funbody
               (Csharpminor.fn_params f)
               (Csharpminor.fn_temps f)
               stacksize
-              tbody).
+              tbody
+              (Csharpminor.fn_stack_requirements f)).
 
 Definition transl_function (f: Csharpminor.function): res function :=
   let (cenv, stacksize) := build_compilenv f in

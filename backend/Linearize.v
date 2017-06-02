@@ -208,7 +208,9 @@ Definition transf_function (f: LTL.function) : res Linear.function :=
   OK (mkfunction
        (LTL.fn_sig f)
        (LTL.fn_stacksize f)
-       (add_branch (LTL.fn_entrypoint f) (linearize_body f enum))).
+       (add_branch (LTL.fn_entrypoint f) (linearize_body f enum))
+       (LTL.fn_stack_requirements f)
+     ).
 
 Definition transf_fundef (f: LTL.fundef) : res Linear.fundef :=
   AST.transf_partial_fundef transf_function f.

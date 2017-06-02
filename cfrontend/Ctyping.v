@@ -901,7 +901,8 @@ Definition retype_function (ce: composite_env) (e: typenv) (f: function) : res f
                  f.(fn_callconv)
                  f.(fn_params)
                  f.(fn_vars)
-                 s).
+                 s
+                 (fn_stack_requirements f)).
 
 Definition retype_fundef (ce: composite_env) (e: typenv) (fd: fundef) : res fundef :=
   match fd with

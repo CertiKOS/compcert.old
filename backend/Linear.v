@@ -44,7 +44,8 @@ Definition code: Type := list instruction.
 Record function: Type := mkfunction {
   fn_sig: signature;
   fn_stacksize: Z;
-  fn_code: code
+  fn_code: code;
+  fn_stack_requirements: Z;
 }.
 
 Definition fundef := AST.fundef function.
@@ -186,13 +187,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
-      forall s f stk sig ros b rs m rs' f' m',
+      forall s f stk sig ros b rs m rs' f' m' m'',
       rs' = return_regs (parent_locset s) rs ->
       find_function ge ros rs' = Some f' ->
       sig = funsig f' ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f)) = Some m'' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
-        E0 (Callstate s f' rs' m')
+        E0 (Callstate s f' rs' m'')
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
@@ -232,16 +234,18 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Ljumptable arg tbl :: b) rs m)
         E0 (State s f sp b' rs' m)
   | exec_Lreturn:
-      forall s f stk b rs m m',
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      forall s f stk b rs m m' m'',
+        Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+        Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f)) = Some m'' ->
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
+        E0 (Returnstate s (return_regs (parent_locset s) rs) m'')
   | exec_function_internal:
-      forall s f rs m rs' m' stk,
-      Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
+      forall s f rs m rs' m' m'' stk ,
+        Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (m') ->
+        Mem.alloc m' 0 f.(fn_stacksize) = (m'', stk) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
-        E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')
+        E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m'')
   | exec_function_external:
       forall s ef args res rs1 rs2 m t m',
       args = map (fun p => Locmap.getpair p rs1) (loc_arguments (ef_sig ef)) ->

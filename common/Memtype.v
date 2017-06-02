@@ -84,6 +84,31 @@ Inductive perm_kind: Type :=
   | Max: perm_kind
   | Cur: perm_kind.
 
+
+Record segment :=
+  {
+    seg_ofs: Z;
+    seg_size: Z;
+  }.
+
+Record frame :=
+  {
+    frame_size: Z;
+    frame_ofs_link: Z;
+    frame_ofs_retaddr: Z;
+    frame_locals: segment;
+    frame_outgoings: segment;
+    frame_callee_saves: segment;
+    frame_data: segment;
+  }.
+
+Record stack :=
+  {
+    stack_size: Z;
+    stack_block: block;
+    stack_frames: list (frame * block * Z);
+  }.
+
 Module Mem.
 
 Definition locset := block -> Z -> Prop.
@@ -99,6 +124,19 @@ Class MemoryModelOps
 
 (** * Operations on memory states *)
 
+  (* [reserve_stackspace m n = Some (m', ofs)] means that there are at least n
+  bytes available on the stack. [m'] is the updated memory (threshold moved) and
+  [ofs] is the previous threshold, i.e. the offset at which a block could be
+  injected. *)
+  reserve_stackspace: mem -> nat -> option mem;
+  release_stackspace: mem -> nat -> option mem;
+
+  (* Probably needed in the implementation. *)
+  (* set_stack_inject: mem -> block -> Z -> mem; *)
+  (* get_stack_inject: mem -> block -> option Z; *)
+  (* set_frame: mem -> block -> frame -> mem; *)
+  (* get_frame: mem -> block -> option frame; *)
+
 (** [empty] is the initial memory state. *)
   empty: mem;
 
@@ -110,6 +148,17 @@ Class MemoryModelOps
   the identifier [b] of the newly-allocated block.
   Note that [alloc] never fails: we are modeling an infinite memory. *)
  alloc: forall (m: mem) (lo hi: Z), mem * block;
+
+ push_frame : mem -> frame -> option (mem * block);
+   (* match reserve_stackspace m (Z.to_nat (frame_size f)) with *)
+   (* | None => None *)
+   (* | Some (m1,ofs) => *)
+   (*   let (m2,b) := alloc m1 0 (frame_size f) in *)
+   (*   let m3 := set_frame m2 b f in *)
+   (*   let m4 := set_stack_inject m3 b ofs in *)
+   (*   Some (m4, b) *)
+   (* end; *)
+
 
 (** [free m b lo hi] frees (deallocates) the range of offsets from [lo]
   included to [hi] excluded in block [b].  Returns the updated memory
@@ -1595,8 +1644,113 @@ for [unchanged_on]. *)
         exists (b0 : block) (delta : Z),
           j b0 = Some (b, delta) /\
           perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
-   inject j m0 m'
+   inject j m0 m';
+
+ push_frame_extends:
+   forall m1 f m1' b m2,
+     extends m1 m2 ->
+     push_frame m1 f = Some (m1', b) ->
+     exists m2', push_frame m2 f = Some (m2', b) /\ extends m1' m2';
+
+ reserve_stackspace_unchanged:
+   forall m1 n m2,
+     reserve_stackspace m1 n = Some (m2) ->
+     strong_unchanged_on (fun _ _ => True) m1 m2;
+
+ release_stackspace_unchanged:
+   forall m1 n m2,
+     release_stackspace m1 n = Some m2 ->
+     strong_unchanged_on (fun _ _ => True) m1 m2;
+
+ reserve_stackspace_inject_fewer:
+   forall j m1 m1' n n' m2,
+     inject j m1 m1' ->
+     reserve_stackspace m1 n = Some (m2) ->
+     (n' <= n)%nat ->
+     exists m2',
+       reserve_stackspace m1' n' = Some (m2')
+       /\ inject j m2 m2';
+
+ (* The following is technically false; however it will be possible to maintain
+ invariants so that it holds.
+  TODO PW: add details here. *)
+ release_stackspace_inject_fewer:
+   forall j m1 m1' n n' m2,
+     inject j m1 m1' ->
+     release_stackspace m1 n = Some m2 ->
+     (n' <= n)%nat ->
+     exists m2',
+       release_stackspace m1' n' = Some m2'
+       /\ inject j m2 m2';
+ 
+
+ reserve_stackspace_valid_block:
+   forall m b m' n,
+     reserve_stackspace m n = Some (m') ->
+     valid_block m b <->
+     valid_block m' b;
+
+ release_stackspace_valid_block:
+   forall m b m' n,
+     release_stackspace m n = Some m' ->
+     valid_block m b <->
+     valid_block m' b;
+
+ reserve_stackspace_same_nextblock:
+   forall m n m',
+     reserve_stackspace m n = Some (m') ->
+     nextblock m = nextblock m';
+
+ release_stackspace_same_nextblock:
+   forall m n m',
+     release_stackspace m n = Some m' ->
+     nextblock m = nextblock m';
+
+ release_stackspace_extends:
+   forall m1 n m1' m2,
+     extends m1 m2 ->
+     release_stackspace m1 n = Some m1' ->
+     exists m2',
+       release_stackspace m2 n = Some m2' /\ extends m1' m2';
+
+ reserve_stackspace_extends:
+    forall m1 n m1' m2,
+      extends m1 m2 ->
+      reserve_stackspace m1 n = Some (m1') ->
+      exists m2',
+        reserve_stackspace m2 n = Some (m2') /\ extends m1' m2';
+
+ push_frame_alloc_reserve:
+   forall m n m1 m2 b f,
+     reserve_stackspace m n = Some m1 ->
+     alloc m1 0 (frame_size f) = (m2, b) ->
+     frame_size f = Z.of_nat n ->
+     exists m2',
+       push_frame m f = Some (m2', b) /\
+       strong_unchanged_on (fun _ _ => True) m2 m2';
+
+ alloc_reserve_push_frame:
+   forall m m2' b f,
+     push_frame m f = Some (m2',b) ->
+     exists m1 m2,
+       reserve_stackspace m (Z.to_nat (frame_size f)) = Some m1 /\
+       alloc m1 0 (frame_size f) = (m2, b) /\ 
+       extends m2' m2;
+
+ valid_block_push_frame:
+   forall m1 f m2 b,
+     push_frame m1 f = Some(m2,b) ->
+     forall b', valid_block m1 b' -> valid_block m2 b'; 
+
+ perm_push_frame_1:
+  forall m1 f m2 b,
+    push_frame m1 f = Some (m2, b) ->
+    forall b' ofs k p,
+      perm m1 b' ofs k p -> perm m2 b' ofs k p;
+
 }.
+
+
 
 Section WITHMEMORYMODEL.
 
@@ -1741,6 +1895,76 @@ Proof.
   generalize (perm_free_3 _ _ _ _ _ H b' o' k p).
   tauto.
 Qed.
+
+Lemma reserve_perm:
+  forall m b o k p n m',
+    reserve_stackspace m n = Some (m') ->
+    perm m b o k p <->
+    perm m' b o k p.
+Proof.
+  split; intros.
+  eapply perm_unchanged_on; eauto.
+  eapply strong_unchanged_on_weak; eauto.
+  eapply reserve_stackspace_unchanged; eauto. simpl; auto.
+  eapply perm_unchanged_on_2; eauto.
+  eapply strong_unchanged_on_weak; eauto.
+  eapply reserve_stackspace_unchanged; eauto. simpl; auto.
+  eapply perm_valid_block in H0.
+  rewrite <- reserve_stackspace_valid_block in H0; eauto.
+Qed.
+
+Lemma release_perm:
+  forall m b o k p n m',
+    release_stackspace m n = Some m' ->
+    perm m b o k p <->
+    perm m' b o k p.
+Proof.
+  split; intros.
+  eapply perm_unchanged_on; eauto.
+  eapply strong_unchanged_on_weak; eauto.
+  eapply release_stackspace_unchanged; eauto. simpl; auto.
+  eapply perm_unchanged_on_2; eauto.
+  eapply strong_unchanged_on_weak; eauto.
+  eapply release_stackspace_unchanged; eauto. simpl; auto.
+  eapply perm_valid_block in H0.
+  rewrite <- release_stackspace_valid_block in H0; eauto.
+Qed.
+
+  
+Lemma perm_push_frame_4
+  : forall (m1 : mem) f (m2 : mem) (b : block),
+    push_frame m1 f = Some (m2, b) ->
+    forall (b' : block) (ofs : Z) (k : perm_kind) (p : permission), perm m2 b' ofs k p -> b' <> b -> perm m1 b' ofs k p.
+Proof.
+  intros.
+  destruct (alloc_reserve_push_frame _ _ _ _ H) as (m2' & m3 & ALLOC & RES & EXT).
+  eapply perm_extends in H0. 2: eauto.
+  eapply perm_alloc_4 in H0. 2: eauto. 2: auto.
+  rewrite reserve_perm; eauto.
+Qed.
+
+Lemma perm_push_frame_3
+  : forall (m1 : mem) f (m2 : mem) (b : block),
+    push_frame m1 f = Some (m2, b) ->
+    forall (ofs : Z) (k : perm_kind) (p : permission), perm m2 b ofs k p -> 0 <= ofs < frame_size f.
+Proof.
+  intros.
+  destruct (alloc_reserve_push_frame _ _ _ _ H) as (m2' & m3 & ALLOC & RES & EXT).
+  eapply perm_extends in H0. 2: eauto.
+  eapply perm_alloc_3 in H0. 2: eauto. eauto.
+Qed.
+
+Lemma push_frame_fresh:
+  forall m f m' b,
+    push_frame m f = Some (m',b) ->
+    ~ valid_block m b.
+Proof.
+  intros.
+  destruct (alloc_reserve_push_frame _ _ _ _ H) as (m2' & m3 & ALLOC & RES & EXT).
+  eapply fresh_block_alloc in RES.
+  erewrite (reserve_stackspace_valid_block); eauto.
+Qed.
+
 
 End WITHMEMORYMODEL.
 

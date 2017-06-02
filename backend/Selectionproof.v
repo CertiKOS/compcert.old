@@ -897,6 +897,16 @@ Definition measure (s: Cminor.state) : nat :=
   | Cminor.Returnstate _ _ _ => 2%nat
   end.
 
+Lemma stack_requirements_preserved:
+  forall dm hf f f',
+    sel_function dm hf f = OK f' ->
+    Cminor.fn_stack_requirements f = CminorSel.fn_stack_requirements f'.
+Proof.
+  intros.
+  monadInv H.
+  reflexivity.
+Qed.
+
 Lemma sel_step_correct:
   forall S1 t S2, Cminor.step ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
@@ -910,10 +920,12 @@ Proof.
   inv MC. left; econstructor; split. econstructor. econstructor; eauto.
 - (* skip call *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & C & D).
   left; econstructor; split.
   econstructor. inv MC; simpl in H; simpl; auto.
   eauto.
   erewrite stackspace_function_translated; eauto.
+  erewrite <- stack_requirements_preserved; eauto.
   econstructor; eauto. eapply match_is_call_cont; eauto.
 - (* assign *)
   exploit sel_expr_correct; eauto. intros [v' [A B]].
@@ -956,7 +968,9 @@ Proof.
   econstructor; eauto.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S).
   erewrite <- stackspace_function_translated in P by eauto.
+  erewrite stack_requirements_preserved in R by eauto.
   exploit sel_expr_correct; eauto. intros [vf' [A B]].
   exploit sel_exprlist_correct; eauto. intros [vargs' [C D]].
   exploit functions_translated; eauto. intros (cunit' & fd' & E & F & G).
@@ -1015,12 +1029,16 @@ Proof.
 - (* Sreturn None *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S).
+  erewrite stack_requirements_preserved in R by eauto.
   left; econstructor; split.
-  econstructor. simpl; eauto.
+  econstructor. simpl; eauto. simpl; eauto.
   econstructor; eauto. eapply call_cont_commut; eauto.
 - (* Sreturn Some *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S).
+  erewrite stack_requirements_preserved in R by eauto.
   exploit sel_expr_correct; eauto. intros [v' [A B]].
   left; econstructor; split.
   econstructor; eauto.
@@ -1040,7 +1058,8 @@ Proof.
   econstructor; eauto.
   econstructor; eauto.
 - (* internal function *)
-  destruct TF as (hf & HF & TF). specialize (MC cunit hf). 
+  destruct TF as (hf & HF & TF). specialize (MC cunit hf).
+  exploit Mem.reserve_stackspace_extends; eauto. intros (mm2 & Y & ZZ).
   monadInv TF. generalize EQ; intros TF; monadInv TF.
   exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.
   intros [m2' [A B]].

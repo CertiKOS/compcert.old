@@ -86,7 +86,8 @@ Record function : Type := mkfunction {
   fn_params: list ident;
   fn_vars: list (ident * Z);
   fn_temps: list ident;
-  fn_body: stmt
+  fn_body: stmt;
+  fn_stack_requirements: Z;
 }.
 
 Definition fundef := AST.fundef function.
@@ -367,9 +368,10 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k e le m,
       step (State f Sskip (Kblock k) e le m)
         E0 (State f Sskip k e le m)
-  | step_skip_call: forall f k e le m m',
+  | step_skip_call: forall f k e le m m' mm,
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f Sskip k e le m)
         E0 (Returnstate Vundef k m')
 
@@ -434,13 +436,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sswitch islong a cases) k e le m)
         E0 (State f (seq_of_lbl_stmt (select_switch n cases)) k e le m)
 
-  | step_return_0: forall f k e le m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+  | step_return_0: forall f k e le m mm m',
+      Mem.free_list m (blocks_of_env e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f (Sreturn None) k e le m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k e le m v m',
+  | step_return_1: forall f a k e le m v mm m',
       eval_expr e le m a v ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
         E0 (Returnstate v (call_cont k) m')
   | step_label: forall f lbl s k e le m,
@@ -452,11 +456,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k e le m)
         E0 (State f s' k' e le m)
 
-  | step_internal_function: forall f vargs k m m1 e le,
+  | step_internal_function: forall f vargs k m mm m1 e le,
       list_norepet (map fst f.(fn_vars)) ->
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
-      alloc_variables empty_env m (fn_vars f) e m1 ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      alloc_variables empty_env mm (fn_vars f) e m1 ->
       bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)

@@ -177,7 +177,8 @@ Record function : Type := mkfunction {
   fn_callconv: calling_convention;
   fn_params: list (ident * type);
   fn_vars: list (ident * type);
-  fn_body: statement
+  fn_body: statement;
+  fn_stack_requirements: Z;
 }.
 
 Definition var_names (vars: list(ident * type)) : list ident :=

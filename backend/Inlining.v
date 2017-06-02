@@ -448,7 +448,8 @@ Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
                    (sregs ctx f.(fn_params))
                    s.(st_stksize)
                    s.(st_code)
-                   (spc ctx f.(fn_entrypoint)))
+                   (spc ctx f.(fn_entrypoint))
+                   (fn_stack_requirements f))
   else
     Error(msg "Inlining: stack too big").
 

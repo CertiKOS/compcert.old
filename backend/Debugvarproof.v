@@ -70,7 +70,7 @@ Qed.
 Inductive match_function: function -> function -> Prop :=
   | match_function_intro: forall f c,
       match_code f.(fn_code) c ->
-      match_function f (mkfunction f.(fn_sig) f.(fn_stacksize) c).
+      match_function f (mkfunction f.(fn_sig) f.(fn_stacksize) c (fn_stack_requirements f)).
 
 Lemma transf_function_match:
   forall f tf, transf_function f = OK tf -> match_function f tf.
@@ -481,7 +481,7 @@ Proof.
   apply plus_one.
   econstructor. eauto. rewrite PLS. eexact A.
   symmetry; apply sig_preserved; auto.
-  inv TRF; eauto. traceEq.
+  inv TRF; eauto. inv TRF; eauto.
   rewrite PLS. constructor; auto.
 - (* builtin *)
   econstructor; split.
@@ -517,14 +517,14 @@ Proof.
   constructor; auto.
 - (* return *)
   econstructor; split.
-  apply plus_one.  constructor. inv TRF; eauto. traceEq.
+  apply plus_one. econstructor. inv TRF; eauto. inv TRF; eauto.
   rewrite (parent_locset_match _ _ STACKS). constructor; auto.
 - (* internal function *)
-  monadInv H7. rename x into tf.
+  monadInv H8. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
-  apply plus_one. constructor. simpl; eauto. reflexivity.
+  apply plus_one. econstructor. simpl; eauto. simpl; eauto. reflexivity.
   constructor; auto.
 - (* external function *)
   monadInv H8. econstructor; split.

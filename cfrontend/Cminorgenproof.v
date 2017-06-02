@@ -678,6 +678,49 @@ Proof.
   eapply BOUND0; eauto. eapply Mem.perm_max. eauto.
 Qed.
 
+Lemma match_callstack_release_stackspace:
+  forall n f cs m m' tm,
+  Mem.inject f m tm ->
+  Mem.release_stackspace m n = Some m' ->
+  match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
+  exists tm',
+  Mem.release_stackspace tm n = Some tm'
+  /\ match_callstack f m' tm' cs (Mem.nextblock m') (Mem.nextblock tm')
+  /\ Mem.inject f m' tm'.
+Proof.
+  intros until tm; intros INJ REL MCS.
+  exploit Mem.release_stackspace_inject_fewer; eauto. intros (tm2' & S & T).
+  exists tm2'. split. auto. split; auto.
+  rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ REL).
+  rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ S).
+  apply match_callstack_invariant with f m tm; auto.
+  intros. eapply Mem.release_perm; eauto. 
+  intros. erewrite <- Mem.release_perm; eauto.
+Qed.
+
+
+Lemma match_callstack_reserve_stackspace:
+  forall n f cs m m' tm,
+  Mem.inject f m tm ->
+  Mem.reserve_stackspace m n = Some (m') ->
+  match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
+  exists tm' ,
+  Mem.reserve_stackspace tm n = Some (tm')
+  /\ match_callstack f m' tm' cs (Mem.nextblock m') (Mem.nextblock tm')
+  /\ Mem.inject f m' tm'.
+Proof.
+  intros until tm; intros INJ REL MCS.
+  exploit Mem.reserve_stackspace_inject_fewer; eauto. intros (tm2' & S & T).
+  exists tm2'. split. auto. split; auto.
+  rewrite <- (Mem.reserve_stackspace_same_nextblock _ _ _ REL).
+  rewrite <- (Mem.reserve_stackspace_same_nextblock _ _ _ S).
+  apply match_callstack_invariant with f m tm; auto.
+  intros. eapply Mem.reserve_perm; eauto. 
+  intros. erewrite <- Mem.reserve_perm; eauto.
+Qed.
+
+
+
 (** Preservation of [match_callstack] by external calls. *)
 
 Lemma match_callstack_external_call:
@@ -1993,6 +2036,15 @@ Proof.
   instantiate (1 := lbl). rewrite H1. auto.
 Qed.
 
+Lemma stack_requirements_preserved:
+  forall cenv sz f tf,
+    transl_funbody cenv sz f = OK tf ->
+    Csharpminor.fn_stack_requirements f = fn_stack_requirements tf.
+Proof.
+  intros. 
+  monadInv H. reflexivity.
+Qed.
+
 (** The simulation diagram. *)
 
 Fixpoint seq_left_depth (s: Csharpminor.stmt) : nat :=
@@ -2044,8 +2096,11 @@ Proof.
   monadInv TR. left.
   exploit match_is_call_cont; eauto. intros [tk' [A [B C]]].
   exploit match_callstack_freelist; eauto. intros [tm' [P [Q R]]].
+  exploit match_callstack_release_stackspace; eauto. intros (tm2' & S & T & U).
   econstructor; split.
-  eapply plus_right. eexact A. apply step_skip_call. auto. eauto. traceEq.
+  eapply plus_right. eexact A. eapply step_skip_call. eauto. eauto.
+  erewrite <- stack_requirements_preserved; eauto.
+  traceEq.
   econstructor; eauto.
 
 (* set *)
@@ -2208,8 +2263,10 @@ Opaque PTree.set.
 (* return none *)
   monadInv TR. left.
   exploit match_callstack_freelist; eauto. intros [tm' [A [B C]]].
+  exploit match_callstack_release_stackspace; eauto. intros (tm2' & S & T & U).
   econstructor; split.
   apply plus_one. eapply step_return_0. eauto.
+  erewrite <- stack_requirements_preserved; eauto.
   econstructor; eauto. eapply match_call_cont; eauto.
   simpl; auto.
 
@@ -2217,8 +2274,10 @@ Opaque PTree.set.
   monadInv TR. left.
   exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
   exploit match_callstack_freelist; eauto. intros [tm' [A [B C]]].
+  exploit match_callstack_release_stackspace; eauto. intros (tm2' & S & T & U).
   econstructor; split.
   apply plus_one. eapply step_return_1. eauto. eauto.
+  erewrite <- stack_requirements_preserved; eauto.  
   econstructor; eauto. eapply match_call_cont; eauto.
 
 (* label *)
@@ -2245,12 +2304,14 @@ Opaque PTree.set.
                         (Csharpminor.fn_params f)
                         (Csharpminor.fn_temps f)
                         sz
-                        x0) in *.
-  caseEq (Mem.alloc tm 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
+                        x0
+                        (Csharpminor.fn_stack_requirements f)) in *.
+  exploit match_callstack_reserve_stackspace; eauto. intros (tmm & RES & MCS' & INJ').
+  caseEq (Mem.alloc tmm 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 MINJ2]].
   left; econstructor; split.
-  apply plus_one. constructor; simpl; eauto.
+  apply plus_one. econstructor; simpl; eauto.
   econstructor. eexact TRBODY. eauto. eexact MINJ2. eexact MCS2.
   inv MK; simpl in ISCC; contradiction || econstructor; eauto.
 

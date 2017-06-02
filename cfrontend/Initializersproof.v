@@ -761,7 +761,7 @@ Qed.
 
 (** A semantics for general initializers *)
 
-Definition dummy_function := mkfunction Tvoid cc_default nil nil Sskip.
+Definition dummy_function := mkfunction Tvoid cc_default nil nil Sskip 0.
 
 Fixpoint fields_of_struct (fl: members) (pos: Z) : list (Z * type) :=
   match fl with

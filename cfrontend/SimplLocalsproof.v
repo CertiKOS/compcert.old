@@ -2001,6 +2001,88 @@ Qed.
 
 End FIND_LABEL.
 
+Lemma stack_requirements_preserved:
+  forall f tf,
+    transf_function f = OK tf ->
+    fn_stack_requirements f = fn_stack_requirements tf.
+Proof.
+  intros.
+  monadInv H. reflexivity.
+Qed.
+
+Lemma match_envs_reserve_stackspace:
+  forall cenv cenv' e t mm lo hi te tle tlo thi n m',
+    match_envs cenv cenv' e t mm lo hi te tle tlo thi ->
+    Mem.reserve_stackspace mm n = Some (m') ->
+    match_envs cenv cenv' e t m' lo hi te tle tlo thi.
+Proof.
+  intros cenv cenv' e t mm lo hi te tle tlo thi n m' ME RES.
+  inv ME; constructor; eauto.
+  intro id.
+  destruct (me_vars0 id).
+  - eapply match_var_lifted; eauto.
+    eapply Mem.load_unchanged_on; eauto.
+    eapply Mem.strong_unchanged_on_weak; eauto.
+    eapply Mem.reserve_stackspace_unchanged; eauto.
+    simpl; auto.
+  - eapply match_var_not_lifted; eauto.
+  - eapply match_var_not_local; eauto.
+Qed.
+
+Lemma match_cont_reserve_stackspace:
+  forall mm n m' tm' tm2', 
+    Mem.reserve_stackspace mm n = Some (m') ->
+    Mem.reserve_stackspace tm' n = Some (tm2') ->
+    forall k tk cenv j,
+    match_cont j cenv k tk mm (Mem.nextblock mm) (Mem.nextblock tm') ->
+    match_cont j cenv k tk m' (Mem.nextblock m') (Mem.nextblock tm2').
+Proof.
+  intros mm n m' tm' tm2' RES1 RES2.
+  rewrite (Mem.reserve_stackspace_same_nextblock _ _ _ RES1).
+  rewrite (Mem.reserve_stackspace_same_nextblock _ _ _ RES2).
+  intro k.
+  generalize (Mem.nextblock m') (Mem.nextblock tm2'). 
+  induction k; simpl; intros b b0 tk cenv j MC; inv MC; try now (econstructor; eauto).
+  econstructor; eauto.
+  eapply match_envs_reserve_stackspace; eauto.
+Qed.
+
+Lemma match_envs_release_stackspace:
+  forall cenv cenv' e t mm lo hi te tle tlo thi n m',
+    match_envs cenv cenv' e t mm lo hi te tle tlo thi ->
+    Mem.release_stackspace mm n = Some m' ->
+    match_envs cenv cenv' e t m' lo hi te tle tlo thi.
+Proof.
+  intros cenv cenv' e t mm lo hi te tle tlo thi n m' ME RES.
+  inv ME; constructor; eauto.
+  intro id.
+  destruct (me_vars0 id).
+  - eapply match_var_lifted; eauto.
+    eapply Mem.load_unchanged_on; eauto.
+    eapply Mem.strong_unchanged_on_weak; eauto.
+    eapply Mem.release_stackspace_unchanged; eauto.
+    simpl; auto.
+  - eapply match_var_not_lifted; eauto.
+  - eapply match_var_not_local; eauto.
+Qed.
+
+Lemma match_cont_release_stackspace:
+  forall mm n m' tm' tm2' ,
+    Mem.release_stackspace mm n = Some m' ->
+    Mem.release_stackspace tm' n = Some tm2' ->
+    forall k tk cenv j,
+    match_cont j cenv k tk mm (Mem.nextblock mm) (Mem.nextblock tm') ->
+    match_cont j cenv k tk m' (Mem.nextblock m') (Mem.nextblock tm2').
+Proof.
+  intros mm n m' tm' tm2' RES1 RES2.
+  rewrite (Mem.release_stackspace_same_nextblock _ _ _ RES1).
+  rewrite (Mem.release_stackspace_same_nextblock _ _ _ RES2).
+  intro k.
+  generalize (Mem.nextblock m') (Mem.nextblock tm2'). 
+  induction k; simpl; intros b b0 tk cenv j MC; inv MC; try now (econstructor; eauto).
+  econstructor; eauto.
+  eapply match_envs_release_stackspace; eauto.
+Qed.
 
 Lemma step_simulation:
   forall S1 t S2, step1 ge S1 t S2 ->
@@ -2117,26 +2199,38 @@ Proof.
 
 (* return none *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
+  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. apply le_refl. intros [tm2' [R S]].
   econstructor; split. apply plus_one. econstructor; eauto.
+  erewrite <- stack_requirements_preserved; eauto.
   econstructor; eauto.
-  intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
+  intros. eapply match_cont_call_cont.
+  eapply match_cont_release_stackspace; eauto.
+  eapply match_cont_free_env; eauto.
 
 (* return some *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   exploit sem_cast_inject; eauto. intros [tv' [C D]].
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
+  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. apply le_refl. intros [tm2' [R S]].
   econstructor; split. apply plus_one. econstructor; eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
+  erewrite <- stack_requirements_preserved; eauto.
   econstructor; eauto.
-  intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
+  intros. eapply match_cont_call_cont.
+  eapply match_cont_release_stackspace; eauto.
+  eapply match_cont_free_env; eauto.
 
 (* skip call *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
+  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. apply le_refl. intros [tm2' [R S]].
   econstructor; split. apply plus_one. econstructor; eauto.
   eapply match_cont_is_call_cont; eauto.
+  erewrite <- stack_requirements_preserved; eauto.
   monadInv TRF; auto.
   econstructor; eauto.
-  intros. apply match_cont_change_cenv with (cenv_for f); auto. eapply match_cont_free_env; eauto.
+  intros. apply match_cont_change_cenv with (cenv_for f); auto.
+  eapply match_cont_release_stackspace; eauto.
+  eapply match_cont_free_env; eauto.
 
 (* switch *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
@@ -2180,10 +2274,11 @@ Proof.
   generalize EQ; intro EQ'; monadInv EQ'.
   assert (list_norepet (var_names (fn_params f ++ fn_vars f))).
     unfold var_names. rewrite map_app. auto.
+  exploit Mem.reserve_stackspace_inject_fewer; eauto. intros [mm' [RES' INJ']].
   exploit match_envs_alloc_variables; eauto.
     instantiate (1 := cenv_for_gen (addr_taken_stmt f.(fn_body)) (fn_params f ++ fn_vars f)).
-    intros. eapply cenv_for_gen_by_value; eauto. rewrite VSF.mem_iff. eexact H4.
-    intros. eapply cenv_for_gen_domain. rewrite VSF.mem_iff. eexact H3.
+    intros. eapply cenv_for_gen_by_value; eauto. rewrite VSF.mem_iff. eexact H5.
+    intros. eapply cenv_for_gen_domain. rewrite VSF.mem_iff. eexact H4.
   intros [j' [te [tm0 [A [B [C [D [E [F G]]]]]]]]].
   assert (K: list_forall2 val_casted vargs (map snd (fn_params f))).
   { apply val_casted_list_params. unfold type_of_function in FUNTY. congruence. }
@@ -2203,22 +2298,24 @@ Proof.
   intros [X [Y Z]]. auto. auto.
   econstructor; split.
   eapply plus_left. econstructor.
-  econstructor. exact Y. exact X. exact Z. simpl. eexact A. simpl. eexact Q.
+  econstructor. exact Y. exact X. exact Z. simpl. eexact RES'. simpl. eexact A. simpl. eexact Q.
   simpl. eapply star_trans. eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
   eapply star_trans. eexact P. eapply step_add_debug_vars.
-  unfold remove_lifted; intros. rewrite List.filter_In in H3. destruct H3.
-  apply negb_true_iff in H4. eauto.
+  unfold remove_lifted; intros. rewrite List.filter_In in H4. destruct H4.
+  apply negb_true_iff in H5. eauto.
   reflexivity. reflexivity. traceEq.
+
   econstructor; eauto.
+  exploit match_cont_reserve_stackspace. apply H1. eauto. eauto. intros MC'.
   eapply match_cont_invariant; eauto.
   intros. transitivity (Mem.load chunk m0 b 0).
   eapply bind_parameters_load; eauto. intros.
-  exploit alloc_variables_range. eexact H1. eauto.
+  exploit alloc_variables_range. eexact H2. eauto.
   unfold empty_env. rewrite PTree.gempty. intros [?|?]. congruence.
   red; intros; subst b'. xomega.
   eapply alloc_variables_load; eauto.
   apply compat_cenv_for.
-  rewrite (bind_parameters_nextblock _ _ _ _ _ _ H2). xomega.
+  rewrite (bind_parameters_nextblock _ _ _ _ _ _ H3). xomega.
   rewrite T; xomega.
 
 (* external function *)

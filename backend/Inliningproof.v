@@ -338,6 +338,35 @@ Proof.
   intros; red; intros. eelim B; eauto. eapply Mem.perm_free_3; eauto.
 Qed.
 
+Lemma range_private_release_stackspace_left:
+  forall F m m' sp base hi n m1,
+  range_private F m m' sp base hi ->
+  Mem.release_stackspace m n = Some m1 ->
+  range_private F m1 m' sp base hi.
+Proof.
+  intros; red; intros.
+  red.
+  split. apply H; auto.
+  intros. 
+  rewrite <- (Mem.release_perm _ _ _ _ _ _ _ H0).
+  apply H; auto.
+Qed.
+
+
+Lemma range_private_reserve_stackspace_left:
+  forall F m m' sp base hi n m1 ofs,
+  range_private F m m' sp base hi ->
+  Mem.reserve_stackspace m n = Some (m1,ofs) ->
+  range_private F m1 m' sp base hi.
+Proof.
+  intros; red; intros.
+  red.
+  split. apply H; auto.
+  intros. 
+  rewrite <- (Mem.reserve_perm _ _ _ _ _ _ _ _ H0).
+  apply H; auto.
+Qed.
+
 Lemma range_private_extcall:
   forall F F' m1 m2 m1' m2' sp base hi,
   range_private F m1 m1' sp base hi ->
@@ -1113,7 +1142,8 @@ Proof.
   exploit match_stacks_inside_globalenvs; eauto. intros [bound G].
   exploit find_function_agree; eauto. intros (cu & fd' & A & B & C).
   assert (PRIV': range_private F m' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
-  { eapply range_private_free_left; eauto. inv FB. rewrite <- H4. auto. }
+  { eapply range_private_release_stackspace_left.
+    eapply range_private_free_left; eauto. inv FB. rewrite <- H5. auto. eauto. }
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* within the original function *)
   inv MS0; try congruence.

@@ -3648,6 +3648,53 @@ Proof.
   intros. eauto with mem.
 Qed.
 
+Lemma romatch_reserve_stackspace:
+  forall m n m' rm,
+  Mem.reserve_stackspace m n = Some (m') ->
+  romatch m rm ->
+  romatch m' rm.
+Proof.
+  intros. apply romatch_ext with m; auto.
+  - intros.
+    destruct (zlt 0 n0 ).
+    + erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
+      * eapply Mem.strong_unchanged_on_weak.
+        eapply Mem.reserve_stackspace_unchanged; eauto.
+      * erewrite Mem.reserve_stackspace_valid_block by eauto.
+        eapply Mem.perm_valid_block.
+        eapply Mem.loadbytes_range_perm. eauto.
+        instantiate (1 := ofs). omega.
+      * simpl; auto.
+    + rewrite Mem.loadbytes_empty in H2 by omega.
+      rewrite Mem.loadbytes_empty by omega. auto. 
+  - intros.
+    erewrite Mem.reserve_perm; eauto.
+Qed.
+
+Lemma romatch_release_stackspace:
+  forall m n m' rm,
+  Mem.release_stackspace m n = Some m' ->
+  romatch m rm ->
+  romatch m' rm.
+Proof.
+  intros. apply romatch_ext with m; auto.
+  - intros.
+    destruct (zlt 0 n0 ).
+    + erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
+      * eapply Mem.strong_unchanged_on_weak.
+        eapply Mem.release_stackspace_unchanged; eauto.
+      * erewrite Mem.release_stackspace_valid_block by eauto.
+        eapply Mem.perm_valid_block.
+        eapply Mem.loadbytes_range_perm. eauto.
+        instantiate (1 := ofs). omega.
+      * simpl; auto.
+    + rewrite Mem.loadbytes_empty in H2 by omega.
+      rewrite Mem.loadbytes_empty by omega. auto. 
+  - intros.
+    erewrite Mem.release_perm; eauto.
+Qed.
+
+
 Lemma romatch_alloc:
   forall m b lo hi m' rm,
   Mem.alloc m lo hi = (m', b) ->
@@ -4047,6 +4094,54 @@ Proof.
   intros. apply mmatch_ext with m; auto.
   intros. eapply Mem.loadbytes_free_2; eauto.
   erewrite <- Mem.nextblock_free by eauto. xomega.
+Qed.
+
+
+Lemma mmatch_reserve_stackspace:
+  forall m n m' rm,
+  Mem.reserve_stackspace m n = Some (m') ->
+  mmatch m rm ->
+  mmatch m' rm.
+Proof.
+  intros. apply mmatch_ext with m; auto.
+  - intros.
+    destruct (zlt 0 n0 ).
+    + erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
+      * eapply Mem.strong_unchanged_on_weak.
+        eapply Mem.reserve_stackspace_unchanged; eauto.
+      * erewrite Mem.reserve_stackspace_valid_block by eauto.
+        eapply Mem.perm_valid_block.
+        eapply Mem.loadbytes_range_perm. eauto.
+        instantiate (1 := ofs ). omega.
+      * simpl; auto.
+    + rewrite Mem.loadbytes_empty in H3 by omega.
+      rewrite Mem.loadbytes_empty by omega. auto. 
+  - intros.
+    erewrite (Mem.reserve_stackspace_same_nextblock _ _ _ H); eauto.
+    apply Ple_refl.
+Qed.
+
+Lemma mmatch_release_stackspace:
+  forall m n m' rm,
+  Mem.release_stackspace m n = Some m' ->
+  mmatch m rm ->
+  mmatch m' rm.
+Proof.
+  intros. apply mmatch_ext with m; auto.
+  - intros.
+    destruct (zlt 0 n0 ).
+    + erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
+      * eapply Mem.strong_unchanged_on_weak.
+        eapply Mem.release_stackspace_unchanged; eauto.
+      * erewrite Mem.release_stackspace_valid_block by eauto.
+        eapply Mem.perm_valid_block.
+        eapply Mem.loadbytes_range_perm. eauto.
+        instantiate (1 := ofs). omega.
+      * simpl; auto.
+    + rewrite Mem.loadbytes_empty in H3 by omega.
+      rewrite Mem.loadbytes_empty by omega. auto. 
+  - intros.
+    rewrite (Mem.release_stackspace_same_nextblock _ _ _ H). xomega.
 Qed.
 
 Lemma mmatch_top':

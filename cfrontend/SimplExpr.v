@@ -502,7 +502,8 @@ Definition transl_function (f: Csyntax.function) : res function :=
               f.(Csyntax.fn_params)
               f.(Csyntax.fn_vars)
               g.(gen_trail)
-              tbody)
+              tbody
+              (Csyntax.fn_stack_requirements f))
   end.
 
 Local Open Scope error_monad_scope.

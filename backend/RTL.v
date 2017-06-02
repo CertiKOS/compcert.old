@@ -87,7 +87,8 @@ Record function: Type := mkfunction {
   fn_params: list reg;
   fn_stacksize: Z;
   fn_code: code;
-  fn_entrypoint: node
+  fn_entrypoint: node;
+  fn_stack_requirements: Z;
 }.
 
 (** A function description comprises a control-flow graph (CFG) [fn_code]
@@ -236,11 +237,12 @@ Inductive step : state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd m',
+      forall s f stk pc rs m sig ros args fd m' mm,
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
@@ -266,14 +268,16 @@ Inductive step : state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m)
   | exec_Ireturn:
-      forall s f stk pc rs m or m',
+      forall s f stk pc rs m or m' mm,
       (fn_code f)!pc = Some(Ireturn or) ->
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
-      forall s f args m m' stk,
-      Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
+      forall s f args m mm m' stk,
+        Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.alloc mm 0 f.(fn_stacksize) = (m', stk) ->
       step (Callstate s (Internal f) args m)
         E0 (State s
                   f
@@ -379,7 +383,8 @@ Definition transf_function (f: function) : function :=
     f.(fn_params)
     f.(fn_stacksize)
     (PTree.map transf f.(fn_code))
-    f.(fn_entrypoint).
+    f.(fn_entrypoint)
+    f.(fn_stack_requirements).
 
 End TRANSF.
 

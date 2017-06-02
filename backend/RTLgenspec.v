@@ -919,7 +919,9 @@ Inductive tr_function: CminorSel.function -> RTL.function -> Prop :=
                        rparams
                        f.(CminorSel.fn_stackspace)
                        code
-                       nentry).
+                       nentry
+                       (CminorSel.fn_stack_requirements f)
+                    ).
 
 (** * Correctness proof of the translation functions *)
 

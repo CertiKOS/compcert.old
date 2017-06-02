@@ -702,21 +702,24 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f Sskip (Kfor4 a2 a3 s k) e m)
          E0 (State f (Sfor Sskip a2 a3 s) k e m)
 
-  | step_return_0: forall f k e m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+  | step_return_0: forall f k e m mm m',
+      Mem.free_list m (blocks_of_env e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       sstep (State f (Sreturn None) k e m)
          E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f x k e m,
       sstep (State f (Sreturn (Some x)) k e m)
          E0 (ExprState f x (Kreturn k) e  m)
-  | step_return_2:  forall f v1 ty k e m v2 m',
+  | step_return_2:  forall f v1 ty k e m v2 m' mm,
       sem_cast v1 ty f.(fn_return) m = Some v2 ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       sstep (ExprState f (Eval v1 ty) (Kreturn k) e m)
          E0 (Returnstate v2 (call_cont k) m')
-  | step_skip_call: forall f k e m m',
+  | step_skip_call: forall f k e m mm m',
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       sstep (State f Sskip k e m)
          E0 (Returnstate Vundef k m')
 
@@ -744,9 +747,10 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f (Sgoto lbl) k e m)
          E0 (State f s' k' e m)
 
-  | step_internal_function: forall f vargs k m e m1 m2,
+  | step_internal_function: forall f vargs k m e m1 m2 mm ,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
-      alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      alloc_variables empty_env mm (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters e m1 f.(fn_params) vargs m2 ->
       sstep (Callstate (Internal f) vargs k m)
          E0 (State f f.(fn_body) k e m2)

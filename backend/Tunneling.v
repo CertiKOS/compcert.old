@@ -92,7 +92,8 @@ Definition tunnel_function (f: LTL.function) : LTL.function :=
     (fn_sig f)
     (fn_stacksize f)
     (PTree.map1 (tunnel_block uf) (fn_code f))
-    (U.repr uf (fn_entrypoint f)).
+    (U.repr uf (fn_entrypoint f))
+    (fn_stack_requirements f).
 
 Definition tunnel_fundef (f: LTL.fundef) : LTL.fundef :=
   transf_fundef tunnel_function f.

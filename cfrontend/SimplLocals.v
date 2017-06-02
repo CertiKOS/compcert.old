@@ -274,7 +274,8 @@ Definition transf_function (f: function) : res function :=
         fn_temps := temps';
         fn_body := add_debug_params f.(fn_params)
                       (store_params cenv f.(fn_params)
-                        (add_debug_vars vars' body')) |}.
+                                             (add_debug_vars vars' body'));     
+        fn_stack_requirements := fn_stack_requirements f |}.
 
 (** Whole-program transformation *)
 

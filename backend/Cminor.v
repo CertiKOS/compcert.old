@@ -165,7 +165,8 @@ Record function : Type := mkfunction {
   fn_params: list ident;
   fn_vars: list ident;
   fn_stackspace: Z;
-  fn_body: stmt
+  fn_body: stmt;
+  fn_stack_requirements: Z;
 }.
 
 Definition fundef := AST.fundef function.
@@ -441,9 +442,10 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k sp e m,
       step (State f Sskip (Kblock k) sp e m)
         E0 (State f Sskip k sp e m)
-  | step_skip_call: forall f k sp e m m',
+  | step_skip_call: forall f k sp e m mm m',
       is_call_cont k ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
@@ -467,12 +469,13 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' mm,
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
@@ -517,13 +520,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sswitch islong a cases default) k sp e m)
         E0 (State f (Sexit (switch_target n default cases)) k sp e m)
 
-  | step_return_0: forall f k sp e m m',
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+  | step_return_0: forall f k sp e m mm m',
+      Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k sp e m v m',
+  | step_return_1: forall f a k sp e m v m' mm,
       eval_expr (Vptr sp Ptrofs.zero) e m a v ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
 
@@ -536,8 +541,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
-      Mem.alloc m 0 f.(fn_stackspace) = (m', sp) ->
+  | step_internal_function: forall f vargs k m mm m' sp e,
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.alloc mm 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
@@ -627,10 +633,12 @@ Definition outcome_result_value
   end.
 
 Definition outcome_free_mem
-    (out: outcome) (m: mem) (sp: block) (sz: Z) (m': mem) :=
+    (out: outcome) (m: mem) (sp: block) (sz: Z) stkreq (m': mem) :=
   match out with
   | Out_tailcall_return _ => m' = m
-  | _ => Mem.free m sp 0 sz = Some m'
+  | _ => exists mm,
+        Mem.free m sp 0 sz = Some mm /\
+        Mem.release_stackspace mm (Z.to_nat stkreq) = Some m'
   end.
 
 Section NATURALSEM.
@@ -647,12 +655,13 @@ Inductive eval_funcall:
         mem -> fundef -> list val -> trace ->
         mem -> val -> Prop :=
   | eval_funcall_internal:
-      forall m f vargs m1 sp e t e2 m2 out vres m3,
-      Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
+      forall m mm f vargs m1 sp e t e2 m2 out vres m3,
+        Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.alloc mm 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
       outcome_result_value out f.(fn_sig).(sig_res) vres ->
-      outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
+      outcome_free_mem out m2 sp f.(fn_stackspace) (fn_stack_requirements f) m3 ->
       eval_funcall m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef m args t res m',
@@ -749,12 +758,13 @@ with exec_stmt:
       eval_expr ge sp e m a v ->
       exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
-      forall f sp e m sig a bl vf vargs fd t m' m'' vres,
+      forall f sp e m sig a bl vf vargs fd t m' m'' vres mm,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       eval_funcall m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
@@ -773,8 +783,9 @@ Combined Scheme eval_funcall_exec_stmt_ind2
 CoInductive evalinf_funcall:
         mem -> fundef -> list val -> traceinf -> Prop :=
   | evalinf_funcall_internal:
-      forall m f vargs m1 sp e t,
-      Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
+      forall m mm f vargs m1 sp e t,
+        Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.alloc mm 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t
@@ -824,12 +835,13 @@ with execinf_stmt:
       execinf_stmt f sp e m s t ->
       execinf_stmt f sp e m (Sblock s) t
   | execinf_Stailcall:
-      forall f sp e m sig a bl vf vargs fd m' t,
+      forall f sp e m sig a bl vf vargs fd m' t mm,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       evalinf_funcall m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
@@ -925,22 +937,22 @@ Proof.
   apply eval_funcall_exec_stmt_ind2; intros.
 
 (* funcall internal *)
-  destruct (H2 k) as [S [A B]].
+  destruct (H3 k) as [S [A B]].
   assert (call_cont k = k) by (apply call_cont_is_call_cont; auto).
   eapply star_left. econstructor; eauto.
-  eapply star_trans. eexact A.
-  inversion B; clear B; subst out; simpl in H3; simpl; try contradiction.
+  eapply star_trans. eexact A. 
+  inversion B; clear B; subst out; simpl in *; decompose [ex and] H5; try contradiction.
   (* Out normal *)
-  subst vres. apply star_one. apply step_skip_call; auto.
+  subst vres. apply star_one. eapply step_skip_call; eauto.
   (* Out_return None *)
   subst vres. replace k with (call_cont k') by congruence.
-  apply star_one. apply step_return_0; auto.
+  apply star_one. eapply step_return_0; eauto.
   (* Out_return Some *)
-  destruct H3. subst vres.
+  destruct H4. subst vres.
   replace k with (call_cont k') by congruence.
   apply star_one. eapply step_return_1; eauto.
   (* Out_tailcall_return *)
-  subst vres. red in H4. subst m3. rewrite H6. apply star_refl.
+  subst vres. subst m3. rewrite H7. apply star_refl.
 
   reflexivity. traceEq.
 
@@ -1066,7 +1078,7 @@ Proof.
 (* tailcall *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  apply H5. apply is_call_cont_call_cont. traceEq.
+  apply H6. apply is_call_cont_call_cont. traceEq.
   econstructor.
 Qed.
 

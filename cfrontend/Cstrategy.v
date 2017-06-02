@@ -1901,13 +1901,15 @@ with exec_stmt: env -> mem -> statement -> trace -> mem -> outcome -> Prop :=
   by the call.  *)
 
 with eval_funcall: mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
-  | eval_funcall_internal: forall m f vargs t e m1 m2 m3 out vres m4,
+  | eval_funcall_internal: forall m f vargs t e m1 m2 m3 out vres m4 mm ,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
-      alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      alloc_variables ge empty_env mm (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       exec_stmt e m2 f.(fn_body) t m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
-      Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
+      Mem.free_list m3 (blocks_of_env ge e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m4 ->
       eval_funcall m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall m ef targs tres cconv vargs t vres m',
       external_call ef ge vargs m t vres m' ->
@@ -2123,9 +2125,10 @@ with execinf_stmt: env -> mem -> statement -> traceinf -> Prop :=
   invocation of function [fd] with arguments [args].  *)
 
 with evalinf_funcall: mem -> fundef -> list val -> traceinf -> Prop :=
-  | evalinf_funcall_internal: forall m f vargs t e m1 m2,
+  | evalinf_funcall_internal: forall m f vargs t e m1 m2 mm ,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
-      alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      alloc_variables ge empty_env mm (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       execinf_stmt e m2 f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t.
@@ -2596,22 +2599,22 @@ Proof.
   unfold S2. inv B1; simpl; econstructor; eauto.
 
 (* call internal *)
-  destruct (H3 f k) as [S1 [A1 B1]].
+  destruct (H4 f k) as [S1 [A1 B1]].
   eapply star_left. right; eapply step_internal_function; eauto.
   eapply star_right. eexact A1.
   inv B1; simpl in H4; try contradiction.
   (* Out_normal *)
-  assert (fn_return f = Tvoid /\ vres = Vundef).
+  assert (fn_return f = Tvoid /\ vres = Vundef) as RET.
     destruct (fn_return f); auto || contradiction.
-  destruct H7 as [P Q]. subst vres. right; eapply step_skip_call; eauto.
+  destruct RET as [P Q]. subst vres. right; eapply step_skip_call; eauto.
   (* Out_return None *)
-  assert (fn_return f = Tvoid /\ vres = Vundef).
+  assert (fn_return f = Tvoid /\ vres = Vundef) as RET.
     destruct (fn_return f); auto || contradiction.
-  destruct H8 as [P Q]. subst vres.
-  rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
-  right; apply step_return_0; auto.
+  destruct RET as [P Q]. subst vres.
+  rewrite <- (is_call_cont_call_cont k H8). rewrite <- H9.
+  right; eapply step_return_0; eauto.
   (* Out_return Some *)
-  destruct H4. rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
+  destruct H5. rewrite <- (is_call_cont_call_cont k H8). rewrite <- H9.
   right; eapply step_return_2; eauto.
   reflexivity. traceEq.
 

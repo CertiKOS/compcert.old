@@ -1535,6 +1535,15 @@ Proof.
   split; auto; econstructor; eauto.
 Qed.
 
+Lemma stack_requirements_preserved:
+  forall cenv f tf,
+    transl_function cenv f = OK tf ->
+    Clight.fn_stack_requirements f = fn_stack_requirements tf.
+Proof.
+  unfold transl_function. simpl; intros.
+  monadInv H. reflexivity.
+Qed.
+
 (** The simulation proof *)
 
 Lemma transl_step:
@@ -1671,17 +1680,19 @@ Proof.
 - (* return none *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
+  apply plus_one. econstructor.
   eapply match_env_free_blocks; eauto.
+  erewrite stack_requirements_preserved in H0; eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
 
 - (* return some *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
+  apply plus_one. econstructor.
   eapply make_cast_correct; eauto. eapply transl_expr_correct; eauto.
   eapply match_env_free_blocks; eauto.
+  erewrite stack_requirements_preserved in H2; eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
 
@@ -1689,8 +1700,9 @@ Proof.
   monadInv TR. inv MTR.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   econstructor; split.
-  apply plus_one. apply step_skip_call. auto.
+  apply plus_one. eapply step_skip_call. auto.
   eapply match_env_free_blocks; eauto.
+  erewrite stack_requirements_preserved in H1; eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
 
 - (* switch *)
@@ -1740,7 +1752,7 @@ Proof.
   econstructor; eauto. constructor.
 
 - (* internal function *)
-  inv H. inv TR. monadInv H5.
+  inv H. inv TR. monadInv H6.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   exploit match_env_alloc_variables; eauto.
   apply match_env_empty.
@@ -1750,6 +1762,7 @@ Proof.
   simpl. erewrite transl_vars_names by eauto. assumption.
   simpl. assumption.
   simpl. assumption.
+  simpl; eauto.
   simpl; eauto.
   simpl. rewrite create_undef_temps_match. eapply bind_parameter_temps_match; eauto.
   simpl. econstructor; eauto.

@@ -169,11 +169,12 @@ Inductive exec_stmt: env -> temp_env -> mem -> statement -> trace -> temp_env ->
   by the call.  *)
 
 with eval_funcall: mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
-  | eval_funcall_internal: forall le m f vargs t e le' m2 m3 out vres m4,
+  | eval_funcall_internal: forall le m f vargs t e le' m2 m3 out vres mm m4,
       function_entry ge f vargs m e le m2 ->
       exec_stmt e le m2 f.(fn_body) t le' m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
-      Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
+      Mem.free_list m3 (blocks_of_env ge e) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m4 ->
       eval_funcall m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall m ef targs tres cconv vargs t vres m',
       external_call ef ge vargs m t vres m' ->
@@ -469,16 +470,16 @@ Proof.
   (* Out_normal *)
   assert (fn_return f = Tvoid /\ vres = Vundef).
     destruct (fn_return f); auto || contradiction.
-  destruct H5. subst vres. apply step_skip_call; auto.
+  destruct H6. subst vres. eapply step_skip_call; eauto.
   (* Out_return None *)
   assert (fn_return f = Tvoid /\ vres = Vundef).
     destruct (fn_return f); auto || contradiction.
-  destruct H6. subst vres.
-  rewrite <- (is_call_cont_call_cont k H4). rewrite <- H5.
-  apply step_return_0; auto.
+  destruct H7. subst vres.
+  rewrite <- (is_call_cont_call_cont k H5). rewrite <- H6.
+  eapply step_return_0; eauto.
   (* Out_return Some *)
   destruct H2.
-  rewrite <- (is_call_cont_call_cont k H4). rewrite <- H5.
+  rewrite <- (is_call_cont_call_cont k H5). rewrite <- H6.
   eapply step_return_1; eauto.
   reflexivity. traceEq.
 

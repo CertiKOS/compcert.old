@@ -1217,6 +1217,7 @@ Definition check_entrypoints_aux (rtl: RTL.function) (ltl: LTL.function)
                           (loc_parameters (RTL.fn_sig rtl)) e2);
   assertion (can_undef destroyed_at_function_entry e2);
   assertion (zeq (RTL.fn_stacksize rtl) (LTL.fn_stacksize ltl));
+  assertion (zeq (RTL.fn_stack_requirements rtl) (LTL.fn_stack_requirements ltl));
   assertion (signature_eq (RTL.fn_sig rtl) (LTL.fn_sig ltl));
   Some tt.
 

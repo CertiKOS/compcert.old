@@ -738,7 +738,10 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (axp: boo
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
   OK (mkfunction f.(Mach.fn_sig)
-        (Pallocframe f.(fn_stacksize) f.(fn_retaddr_ofs) f.(fn_link_ofs) :: c)).
+                     (Pallocframe (Mach.fn_frame f) f.(fn_retaddr_ofs) f.(fn_link_ofs) :: c)
+                     (Mach.fn_frame f)
+     ).
+
 
 Definition transf_function (f: Mach.function) : res Asm.function :=
   do tf <- transl_function f;

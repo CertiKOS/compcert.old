@@ -49,7 +49,8 @@ Record function: Type := mkfunction {
   fn_sig: signature;
   fn_stacksize: Z;
   fn_code: code;
-  fn_entrypoint: node
+  fn_entrypoint: node;
+  fn_stack_requirements: Z;
 }.
 
 Definition fundef := AST.fundef function.
@@ -224,11 +225,12 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
-  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
+  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' mm m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
       funsig fd = sig ->
-      Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m sp 0 f.(fn_stacksize) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
@@ -253,12 +255,14 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_jumptable) rs ->
       step (Block s f sp (Ljumptable arg tbl :: bb) rs m)
         E0 (State s f sp pc rs' m)
-  | exec_Lreturn: forall s f sp bb rs m m',
-      Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
+  | exec_Lreturn: forall s f sp bb rs m m' mm,
+      Mem.free m sp 0 f.(fn_stacksize) = Some mm ->
+      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
-  | exec_function_internal: forall s f rs m m' sp rs',
-      Mem.alloc m 0 f.(fn_stacksize) = (m', sp) ->
+  | exec_function_internal: forall s f rs m m' sp rs' mm ,
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.alloc mm 0 f.(fn_stacksize) = (m', sp) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')

@@ -1035,6 +1035,7 @@ Proof.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
+  exploit Mem.release_stackspace_inject_fewer; eauto. intros (tm2 & E & F).
   econstructor; split.
   eapply exec_Itailcall; eauto.
   econstructor; eauto.
@@ -1042,7 +1043,7 @@ Proof.
   apply Plt_Ple.
   change (Mem.valid_block m' stk). eapply Mem.valid_block_inject_1; eauto.
   apply Plt_Ple.
-  change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
+  change (Mem.valid_block tm2 tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
 
 - (* builtin *)
@@ -1078,6 +1079,7 @@ Proof.
 
 - (* return *)
   exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
+  exploit Mem.release_stackspace_inject_fewer; eauto. intros (tm2 & E & F).
   econstructor; split.
   eapply exec_Ireturn; eauto.
   econstructor; eauto.
@@ -1085,20 +1087,23 @@ Proof.
   apply Plt_Ple.
   change (Mem.valid_block m' stk). eapply Mem.valid_block_inject_1; eauto.
   apply Plt_Ple.
-  change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
+  change (Mem.valid_block tm2 tsp). eapply Mem.valid_block_inject_2; eauto.
   destruct or; simpl; auto.
 
 - (* internal function *)
+  exploit Mem.reserve_stackspace_inject_fewer; eauto. intros (tmm & RES' & INJ).
   exploit Mem.alloc_parallel_inject. eauto. eauto. apply Zle_refl. apply Zle_refl.
   intros (j' & tm' & tstk & C & D & E & F & G).
-  assert (STK: stk = Mem.nextblock m) by (eapply Mem.alloc_result; eauto).
-  assert (TSTK: tstk = Mem.nextblock tm) by (eapply Mem.alloc_result; eauto).
+  assert (STK: stk = Mem.nextblock mm) by (eapply Mem.alloc_result; eauto).
+  assert (TSTK: tstk = Mem.nextblock tmm) by (eapply Mem.alloc_result; eauto).
   assert (STACKS': match_stacks j' s ts stk tstk).
   { rewrite STK, TSTK.
     apply match_stacks_incr with j; auto.
+    rewrite <- (Mem.reserve_stackspace_same_nextblock _ _ _ H),
+    <- (Mem.reserve_stackspace_same_nextblock _ _ _ RES'). auto.
     intros. destruct (eq_block b1 stk).
-    subst b1. rewrite F in H1; inv H1. split; apply Ple_refl.
-    rewrite G in H1 by auto. congruence. }
+    subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
+    rewrite G in H2 by auto. congruence. }
   econstructor; split.
   eapply exec_function_internal; eauto.
   eapply match_states_regular with (j := j'); eauto.

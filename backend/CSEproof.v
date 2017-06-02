@@ -869,7 +869,8 @@ Definition transf_function' (f: function) (approxs: PMap.t numbering) : function
     f.(fn_params)
     f.(fn_stacksize)
     (transf_code approxs f.(fn_code))
-    f.(fn_entrypoint).
+    f.(fn_entrypoint)
+        (fn_stack_requirements f).
 
 Definition regs_lessdef (rs1 rs2: regset) : Prop :=
   forall r, Val.lessdef (rs1#r) (rs2#r).
@@ -1120,6 +1121,7 @@ Proof.
 - (* Itailcall *)
   exploit find_function_translated; eauto. intros (cu' & tf & FIND' & TRANSF' & LINK').
   exploit Mem.free_parallel_extends; eauto. intros [m'' [A B]].
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & E & D).
   econstructor; split.
   eapply exec_Itailcall; eauto.
   eapply sig_preserved; eauto.
@@ -1198,6 +1200,7 @@ Proof.
 
 - (* Ireturn *)
   exploit Mem.free_parallel_extends; eauto. intros [m'' [A B]].
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & E & D).
   econstructor; split.
   eapply exec_Ireturn; eauto.
   econstructor; eauto.
@@ -1206,6 +1209,7 @@ Proof.
 - (* internal function *)
   monadInv TFD. unfold transf_function in EQ. fold (analyze cu f) in EQ.
   destruct (analyze cu f) as [approx|] eqn:?; inv EQ.
+  exploit Mem.reserve_stackspace_extends; eauto. intros (tm & E & D).
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
   intros (m'' & A & B).
   econstructor; split.

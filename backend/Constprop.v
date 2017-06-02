@@ -205,7 +205,9 @@ Definition transf_function (rm: romem) (f: function) : function :=
     f.(fn_params)
     f.(fn_stacksize)
     (PTree.map (transf_instr f an rm) f.(fn_code))
-    f.(fn_entrypoint).
+    f.(fn_entrypoint)
+    (fn_stack_requirements f).
+
 
 Definition transf_fundef (rm: romem) (fd: fundef) : fundef :=
   AST.transf_fundef (transf_function rm) fd.

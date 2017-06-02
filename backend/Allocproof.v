@@ -1520,6 +1520,7 @@ Inductive transf_function_spec (f: RTL.function) (tf: LTL.function) : Prop :=
       compat_entry (RTL.fn_params f) (loc_parameters (fn_sig tf)) e2 = true ->
       can_undef destroyed_at_function_entry e2 = true ->
       RTL.fn_stacksize f = LTL.fn_stacksize tf ->
+      RTL.fn_stack_requirements f = LTL.fn_stack_requirements tf ->
       RTL.fn_sig f = LTL.fn_sig tf ->
       transf_function_spec f tf.
 
@@ -2114,6 +2115,7 @@ Proof.
 - set (sg := RTL.funsig fd) in *.
   set (args' := loc_arguments sg) in *.
   exploit Mem.free_parallel_extends; eauto. intros [m'' [P Q]].
+  exploit Mem.release_stackspace_extends; eauto. intros (tm'' & R & S).
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
@@ -2124,14 +2126,16 @@ Proof.
   rewrite <- E. apply find_function_tailcall; auto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
+  replace (fn_stack_requirements tf) with (RTL.fn_stack_requirements f); eauto.
+  destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
   econstructor; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
   rewrite SIG. rewrite return_regs_arg_values; auto. eapply add_equations_args_lessdef; eauto.
-  inv WTI. rewrite <- H6. apply wt_regset_list; auto.
+  inv WTI. rewrite <- H7. apply wt_regset_list; auto.
   apply return_regs_agree_callee_save.
-  rewrite SIG. inv WTI. rewrite <- H6. apply wt_regset_list; auto.
+  rewrite SIG. inv WTI. rewrite <- H7. apply wt_regset_list; auto.
 
 (* builtin *)
 - exploit (exec_moves mv1); eauto. intros [ls1 [A1 B1]].
@@ -2187,14 +2191,17 @@ Proof.
 
 (* return *)
 - destruct (transf_function_inv _ _ FUN).
-  exploit Mem.free_parallel_extends; eauto. rewrite H10. intros [m'' [P Q]].
+  exploit Mem.free_parallel_extends; eauto.
+  rewrite H11. intros [m'' [P Q]].
+  exploit Mem.release_stackspace_extends; eauto. intros (tm'' & RR & S).
+  rewrite H12 in RR.
   inv WTI; MonadInv.
 + (* without an argument *)
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1.
-  econstructor. eauto. eauto. traceEq.
+  econstructor. eauto. eauto. eauto. traceEq.
   simpl. econstructor; eauto.
   apply return_regs_agree_callee_save.
   constructor.
@@ -2203,34 +2210,35 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1.
-  econstructor. eauto. eauto. traceEq.
-  simpl. econstructor; eauto. rewrite <- H11.
+  econstructor. eauto. eauto. eauto. traceEq.
+  simpl. econstructor; eauto. rewrite <- H13.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
                           (return_regs (parent_locset init_ls ts) ls1))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
   eapply add_equations_res_lessdef; eauto.
-  rewrite H13. apply WTRS.
+  rewrite H15. apply WTRS.
   generalize (loc_result_caller_save (RTL.fn_sig f)). 
   destruct (loc_result (RTL.fn_sig f)); simpl.
   intros A; rewrite A; auto.
   intros [A B]; rewrite A, B; auto.
   apply return_regs_agree_callee_save.
-  unfold proj_sig_res. rewrite <- H11; rewrite H13. apply WTRS.
+  unfold proj_sig_res. rewrite <- H13; rewrite H15. apply WTRS.
 
 (* internal function *)
 - monadInv FUN. simpl in *.
   destruct (transf_function_inv _ _ EQ).
-  exploit Mem.alloc_extends; eauto. apply Zle_refl. rewrite H8; apply Zle_refl.
+  exploit Mem.reserve_stackspace_extends; eauto. intros (tm' & R & S).
+  exploit Mem.alloc_extends; eauto. apply Zle_refl. rewrite H9; apply Zle_refl.
   intros [m'' [U V]].
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
-  { apply wt_init_regs. inv H0. rewrite wt_params. rewrite H9. auto. }
+  { apply wt_init_regs. inv H1. rewrite wt_params. rewrite H11. auto. }
   exploit (exec_moves mv). eauto. eauto.
     eapply can_undef_satisf; eauto. eapply compat_entry_satisf; eauto.
     rewrite call_regs_param_values. eexact ARGS.
     exact WTRS.
   intros [ls1 [A B]].
   econstructor; split.
-  eapply plus_left. econstructor; eauto.
+  eapply plus_left. econstructor; eauto. rewrite <- H10. eauto. 
   eapply star_left. econstructor; eauto.
   eapply star_right. eexact A.
   econstructor; eauto.

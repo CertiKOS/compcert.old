@@ -120,6 +120,16 @@ Qed.
 
 Hint Resolve massert_imp_refl massert_eqv_refl.
 
+Lemma strong_or_weak_unchanged:
+  forall P (c:bool) m m',
+    Mem.strong_unchanged_on P m m' ->
+    (if c then Mem.strong_unchanged_on else Mem.unchanged_on) P m m'.
+Proof.
+  intros.
+  destruct c; auto.
+  eapply Mem.strong_unchanged_on_weak; eauto.
+Qed.
+
 (** * Separating conjunction *)
 
 Definition disjoint_footprint (P Q: massert) : Prop :=
@@ -173,6 +183,20 @@ Qed.
 Infix "**" := sepconj (at level 60, right associativity) : sep_scope.
 
 Local Open Scope sep_scope.
+
+
+Lemma sep_strong_unchanged_true:
+  forall m1 m2 P,
+    m1 |= P ->
+    Mem.strong_unchanged_on (fun _ _ => True) m1 m2 ->
+    m2 |= P.
+Proof.
+  intros.
+  eapply m_invar; eauto.
+  eapply strong_or_weak_unchanged.
+  eapply Mem.strong_unchanged_on_implies; eauto.
+  simpl; auto.
+Qed.
 
 Lemma sep_imp:
   forall P P' Q Q' m, 
@@ -658,6 +682,15 @@ Proof.
   intros. destruct H, H0. split; apply mconj_morph_1; auto. 
 Qed.
 
+Lemma sep_dup2:
+  forall P Q R m,
+    m |= (P ** Q ** R) -> m |= (mconj (P ** Q) (P ** Q) ** R).
+Proof.
+  simpl; intros.
+  unfold disjoint_footprint in *; simpl in *.
+  intuition eauto.
+Qed.
+
 (** The image of a memory injection *)
 
 Program Definition minjection (j: meminj) (m0: mem) : massert := {|
@@ -781,6 +814,74 @@ Proof.
   subst b0. rewrite J2 in A. inversion A; clear A; subst b delta0. contradiction.
   rewrite J3 in A by auto. exists b0, delta0; auto.
 Qed.
+
+Lemma reserve_parallel_rule:
+  forall m1 m2 n n' j P m1' ,
+    m2 |= minjection j m1 ** P ->
+    Mem.reserve_stackspace m1 n = Some (m1') ->
+    (n' <= n)%nat ->
+    exists m2' ,
+      Mem.reserve_stackspace m2 n' = Some (m2') /\
+      m2' |= minjection j m1' ** P.
+Proof.
+  intros.
+  exploit Mem.reserve_stackspace_inject_fewer; eauto. apply H.
+  intros [m2' [RES INJ]].
+  exists m2'; split; auto.
+  split. auto.
+  split.
+  - eapply m_invar. apply H.
+    apply strong_or_weak_unchanged.
+    eapply Mem.strong_unchanged_on_implies.
+    eapply Mem.reserve_stackspace_unchanged; eauto.
+    simpl; auto.
+  - red; simpl; intros.
+    destruct H as (INJ' & (_ & H)).
+    apply H in H3; auto.
+    simpl.
+    decompose [ex and] H2.
+    exists x, x0; split; eauto.
+    eapply Mem.perm_unchanged_on_2.
+    eapply Mem.strong_unchanged_on_weak; eauto.
+    eapply Mem.reserve_stackspace_unchanged; eauto.
+    simpl; auto.
+    eapply Mem.valid_block_inject_1; eauto. auto.
+Qed.
+
+
+Lemma release_parallel_rule:
+  forall m1 m2 n n' j P m1' ,
+    m2 |= minjection j m1 ** P ->
+    Mem.release_stackspace m1 n = Some m1' ->
+    (n' <= n)%nat ->
+    exists m2',
+      Mem.release_stackspace m2 n' = Some m2' /\
+      m2' |= minjection j m1' ** P.
+Proof.
+  intros.
+  exploit Mem.release_stackspace_inject_fewer; eauto. apply H.
+  intros [m2' [RES INJ]].
+  exists m2'; split; auto.
+  split. auto.
+  split.
+  - eapply m_invar. apply H.
+    apply strong_or_weak_unchanged.
+    eapply Mem.strong_unchanged_on_implies.
+    eapply Mem.release_stackspace_unchanged; eauto.
+    simpl; auto.
+  - red; simpl; intros.
+    destruct H as (INJ' & (_ & H)).
+    apply H in H3; auto.
+    simpl.
+    decompose [ex and] H2.
+    exists x, x0; split; eauto.
+    eapply Mem.perm_unchanged_on_2.
+    eapply Mem.strong_unchanged_on_weak; eauto.
+    eapply Mem.release_stackspace_unchanged; eauto.
+    simpl; auto.
+    eapply Mem.valid_block_inject_1; eauto. auto.
+Qed.
+
 
 Lemma free_parallel_rule:
   forall j m1 b1 sz1 m1' m2 b2 sz2 lo hi delta P,

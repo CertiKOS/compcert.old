@@ -1085,6 +1085,7 @@ Inductive tr_function: Csyntax.function -> Clight.function -> Prop :=
       fn_callconv tf = Csyntax.fn_callconv f ->
       fn_params tf = Csyntax.fn_params f ->
       fn_vars tf = Csyntax.fn_vars f ->
+      fn_stack_requirements tf = Csyntax.fn_stack_requirements f ->
       tr_function f tf.
 
 Inductive tr_fundef: Csyntax.fundef -> Clight.fundef -> Prop :=

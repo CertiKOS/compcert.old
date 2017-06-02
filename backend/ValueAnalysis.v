@@ -1232,6 +1232,48 @@ Proof.
   eapply Mem.loadbytes_free_2; eauto.
 Qed.
 
+Lemma sound_stack_release_stackspace:
+forall m n m' bc stk bound,
+  Mem.release_stackspace m n = Some m' ->
+  sound_stack bc stk m bound ->
+  sound_stack bc stk m' bound.
+Proof.
+  intros. eapply sound_stack_ext; eauto. intros.
+  destruct (zlt 0 n0).
+  - erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
+    eapply Mem.strong_unchanged_on_weak.
+    eapply Mem.release_stackspace_unchanged; eauto.
+    2: simpl; auto.
+    erewrite Mem.release_stackspace_valid_block by eauto.
+    eapply Mem.perm_valid_block.
+    eapply Mem.loadbytes_range_perm. eauto.
+    instantiate (1 := ofs). omega.
+  - replace n0 with 0 in * by omega.
+    rewrite Mem.loadbytes_empty in H4 by omega.
+    rewrite Mem.loadbytes_empty by omega. auto.
+Qed.
+
+Lemma sound_stack_reserve_stackspace:
+forall m n m' bc stk bound,
+  Mem.reserve_stackspace m n = Some (m') ->
+  sound_stack bc stk m bound ->
+  sound_stack bc stk m' bound.
+Proof.
+  intros. eapply sound_stack_ext; eauto. intros.
+  destruct (zlt 0 n0).
+  - erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
+    eapply Mem.strong_unchanged_on_weak.
+    eapply Mem.reserve_stackspace_unchanged; eauto.
+    2: simpl; auto.
+    erewrite Mem.reserve_stackspace_valid_block by eauto.
+    eapply Mem.perm_valid_block.
+    eapply Mem.loadbytes_range_perm. eauto.
+    instantiate (1 := ofs). omega.
+  - replace n0 with 0 in * by omega.
+    rewrite Mem.loadbytes_empty in H4 by omega.
+    rewrite Mem.loadbytes_empty by omega. auto.
+Qed.
+
 Lemma sound_stack_new_bound:
   forall bc stk m bound bound',
   sound_stack bc stk m bound ->
@@ -1344,15 +1386,19 @@ Proof.
 - (* tailcall *)
   exploit anonymize_stack; eauto. intros (bc' & A & B & C & D & E & F & G).
   apply sound_call_state with bc'; auto.
+  erewrite <- Mem.release_stackspace_same_nextblock by eauto.
   erewrite Mem.nextblock_free by eauto.
   apply sound_stack_new_bound with stk.
   apply sound_stack_exten with bc.
+  eapply sound_stack_release_stackspace; eauto.
   eapply sound_stack_free; eauto.
   intros. apply C. apply Plt_ne; auto.
   apply Plt_Ple. eapply mmatch_below; eauto. congruence.
   intros. exploit list_in_map_inv; eauto. intros (r & P & Q). subst v.
   apply D with (areg ae r). auto with va.
+  eapply romatch_release_stackspace; eauto.
   eapply romatch_free; eauto.
+  eapply mmatch_release_stackspace; eauto.
   eapply mmatch_free; eauto.
 
 - (* builtin *)
@@ -1480,25 +1526,33 @@ Proof.
 - (* return *)
   exploit anonymize_stack; eauto. intros (bc' & A & B & C & D & E & F & G).
   apply sound_return_state with bc'; auto.
+  erewrite <- Mem.release_stackspace_same_nextblock by eauto.
   erewrite Mem.nextblock_free by eauto.
   apply sound_stack_new_bound with stk.
   apply sound_stack_exten with bc.
+  eapply sound_stack_release_stackspace; eauto.
   eapply sound_stack_free; eauto.
   intros. apply C. apply Plt_ne; auto.
   apply Plt_Ple. eapply mmatch_below; eauto with va.
   destruct or; simpl. eapply D; eauto. constructor.
+  eapply romatch_release_stackspace; eauto.
   eapply romatch_free; eauto.
+  eapply mmatch_release_stackspace; eauto.
   eapply mmatch_free; eauto.
 
 - (* internal function *)
   exploit allocate_stack; eauto.
+  eapply romatch_reserve_stackspace; eauto.
+  eapply mmatch_reserve_stackspace; eauto.
   intros (bc' & A & B & C & D & E & F & G).
   exploit (analyze_entrypoint rm f args m' bc'); eauto.
   intros (ae & am & AN & EM & MM').
   econstructor; eauto.
   erewrite Mem.alloc_result by eauto.
   apply sound_stack_exten with bc; auto.
-  apply sound_stack_inv with m; auto.
+  exploit sound_stack_reserve_stackspace; eauto. intro SS.
+  rewrite (Mem.reserve_stackspace_same_nextblock _ _ _ H) in SS.
+  apply sound_stack_inv with mm; auto.
   intros. eapply Mem.loadbytes_alloc_unchanged; eauto.
   intros. apply F. erewrite Mem.alloc_result by eauto. auto.
 

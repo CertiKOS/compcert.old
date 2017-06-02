@@ -1997,7 +1997,8 @@ Definition do_step (w: world) (s: state) : list transition :=
             else ret "step_for_false" (State f Sskip k e m)
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
-            do m' <- Mem.free_list m (blocks_of_env ge e);
+              do m' <- Mem.free_list m (blocks_of_env ge e);
+              do m' <- Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f));
             ret "step_return_2" (Returnstate v' (call_cont k) m')
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
@@ -2049,12 +2050,14 @@ Definition do_step (w: world) (s: state) : list transition :=
       ret "step_skip_for4" (State f (Sfor Sskip a2 a3 s) k e m)
 
   | State f (Sreturn None) k e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+    do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f));
       ret "step_return_0" (Returnstate Vundef (call_cont k) m')
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
   | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+    do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f));
       ret "step_skip_call" (Returnstate Vundef k m')
 
   | State f (Sswitch x sl) k e m =>
@@ -2073,7 +2076,8 @@ Definition do_step (w: world) (s: state) : list transition :=
       end
 
   | Callstate (Internal f) vargs k m =>
-      check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
+    check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
+      do m <- Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
@@ -2147,10 +2151,11 @@ Proof with try (left; right; econstructor; eauto; fail).
 (* callstate *)
   destruct fd; myinv.
   (* internal *)
-  destruct (do_alloc_variables empty_env m (fn_params f ++ fn_vars f)) as [e m1] eqn:?.
-  myinv. left; right; apply step_internal_function with m1. auto.
+  destruct (do_alloc_variables empty_env m0 (fn_params f ++ fn_vars f)) as [e m1] eqn:?.
+  myinv. left; right; eapply step_internal_function. auto. eauto.
   change e with (fst (e,m1)). change m1 with (snd (e,m1)) at 2. rewrite <- Heqp.
   apply do_alloc_variables_sound. eapply sem_bind_parameters_sound; eauto.
+  rewrite Heqp. simpl. eauto.
   (* external *)
   destruct p as [[[w' tr] v] m']. myinv. left; right; constructor.
   eapply do_ef_external_sound; eauto.
@@ -2231,16 +2236,16 @@ Proof with (unfold ret; eauto with coqlib).
   rewrite H0...
   rewrite H0...
   destruct H0; subst x...
-  rewrite H0...
-  rewrite H0; rewrite H1...
-  rewrite H1. red in H0. destruct k; try contradiction...
+  rewrite H0... rewrite H1...
+  rewrite H0; rewrite H1; rewrite H2...
+  rewrite H1, H2. red in H0. destruct k; try contradiction...
   rewrite H0...
   destruct H0; subst x...
   rewrite H0...
 
   (* Call step *)
-  rewrite pred_dec_true; auto. rewrite (do_alloc_variables_complete _ _ _ _ _ H1).
-  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H2)...
+  rewrite pred_dec_true; auto. rewrite H1, (do_alloc_variables_complete _ _ _ _ _ H2).
+  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H3)...
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
 Qed.
 

@@ -233,6 +233,14 @@ Proof.
   unfold transf_function; intros. destruct (analyze (ValueAnalysis.analyze rm f) f); inv H; auto.
 Qed.
 
+Lemma stack_requirements_translated:
+  forall rm f tf,
+  transf_function rm f = OK tf -> tf.(fn_stack_requirements) = f.(fn_stack_requirements).
+Proof.
+  unfold transf_function; intros. destruct (analyze (ValueAnalysis.analyze rm f) f); inv H; auto.
+Qed.
+
+
 Definition vanalyze (cu: program) (f: function) :=
   ValueAnalysis.analyze (romem_for cu) f.
 
@@ -676,11 +684,14 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & C & D).
+  exploit Mem.release_stackspace_extends; eauto. eapply magree_extends; eauto.
+  apply nlive_all.
+  intros (m2' & E & F).
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   erewrite stacksize_translated by eauto. eexact C.
+  erewrite stack_requirements_translated by eauto. eexact E.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
-  eapply magree_extends; eauto. apply nlive_all.
 
 - (* builtin *)
   TransfInstr; UseTransfer. revert ENV MEM TI.
@@ -866,16 +877,19 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & A & B).
+  exploit Mem.release_stackspace_extends; eauto. eapply magree_extends; eauto.
+  apply nlive_all. intros (m2' & E & F).
   econstructor; split.
   eapply exec_Ireturn; eauto.
   erewrite stacksize_translated by eauto. eexact A.
+  erewrite stack_requirements_translated by eauto. eexact E.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.
-  eapply magree_extends; eauto. apply nlive_all.
-
+  
 - (* internal function *)
   monadInv FUN. generalize EQ. unfold transf_function. fold (vanalyze cu f). intros EQ'.
   destruct (analyze (vanalyze cu f) f) as [an|] eqn:AN; inv EQ'.
+  exploit Mem.reserve_stackspace_extends; eauto. intros (m2' & E & F).
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
   intros (tm' & A & B).
   econstructor; split.
