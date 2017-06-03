@@ -364,10 +364,10 @@ Ltac TransfInstr :=
   taken in the source code. *)
 
 Lemma transf_step_correct:
-  forall s1 t s2,
-  step ge s1 t s2 ->
+  forall fsr s1 t s2,
+  step fsr ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  (exists n2, exists s2', step tge s1' t s2' /\ match_states n2 s2 s2')
+  (exists n2, exists s2', step fsr tge s1' t s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try InvSoundState; try (inv PC; try congruence).
@@ -608,8 +608,8 @@ Qed.
 (** The preservation of the observable behavior of the program then
   follows. *)
 
-Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (RTL.semantics fsr prog) (RTL.semantics fsr tprog).
 Proof.
   apply Forward_simulation with lt (fun n s1 s2 => sound_state prog s1 /\ match_states n s1 s2); constructor.
 - apply lt_wf.

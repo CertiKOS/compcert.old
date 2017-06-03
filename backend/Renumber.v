@@ -67,12 +67,13 @@ End RENUMBER.
 Definition transf_function (f: function) : function :=
   let pnum := postorder (successors_map f) f.(fn_entrypoint) in
   mkfunction
+    (fn_id f)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)
     (renum_cfg pnum f.(fn_code))
     (renum_pc pnum f.(fn_entrypoint))
-    (fn_stack_requirements f).
+    .
 
 Definition transf_fundef (fd: fundef) : fundef :=
   AST.transf_fundef transf_function fd.

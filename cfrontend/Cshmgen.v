@@ -674,12 +674,13 @@ Definition transl_function (ce: composite_env) (f: Clight.function) : res functi
   do tbody <- transl_statement ce f.(Clight.fn_return) 1%nat 0%nat (Clight.fn_body f);
   do tvars <- mmap (transl_var ce) (Clight.fn_vars f);
   OK (mkfunction
-       (signature_of_function f)
+        (Clight.fn_id f)
+        (signature_of_function f)
        (map fst (Clight.fn_params f))
        tvars
        (map fst (Clight.fn_temps f))
        tbody
-       (Clight.fn_stack_requirements f)).
+       ).
 
 Definition transl_fundef (ce: composite_env) (id: ident) (f: Clight.fundef) : res fundef :=
   match f with

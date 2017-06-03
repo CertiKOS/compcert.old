@@ -88,10 +88,10 @@ Proof.
   intros. monadInv H. auto.
 Qed.
 
-Lemma stack_requirements_preserved:
+Lemma fn_id_preserved:
   forall f tf,
   transf_function f = OK tf ->
-  Linear.fn_stack_requirements tf = LTL.fn_stack_requirements f.
+  Linear.fn_id tf = LTL.fn_id f.
 Proof.
   intros. monadInv H. auto.
 Qed.
@@ -263,13 +263,13 @@ Qed.
 (** Correctness of the [starts_with] test. *)
 
 Lemma starts_with_correct:
-  forall lm,
+  forall lm fsr,
   forall lbl c1 c2 c3 s f sp ls m,
   is_tail c1 c2 ->
   unique_labels c2 ->
   starts_with lbl c1 = true ->
   find_label lbl c2 = Some c3 ->
-  plus (step lm) tge (State s f sp c1 ls m)
+  plus (step lm fsr) tge (State s f sp c1 ls m)
              E0 (State s f sp c3 ls m).
 Proof.
   induction c1.
@@ -469,12 +469,12 @@ Proof.
 Qed.
 
 Lemma add_branch_correct:
-  forall lm,
+  forall lm fsr,
   forall lbl c k s f tf sp ls m,
   transf_function f = OK tf ->
   is_tail k tf.(fn_code) ->
   find_label lbl tf.(fn_code) = Some c ->
-  plus (step lm) tge (State s tf sp (add_branch lbl k) ls m)
+  plus (step lm fsr) tge (State s tf sp (add_branch lbl k) ls m)
              E0 (State s tf sp c ls m).
 Proof.
   intros. unfold add_branch.
@@ -575,10 +575,10 @@ Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
-Theorem transf_step_correct:
-  forall s1 t s2, LTL.step init_ls ge s1 t s2 ->
+Theorem transf_step_correct fsr:
+  forall s1 t s2, LTL.step init_ls fsr ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', plus (Linear.step init_ls) tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', plus (Linear.step init_ls fsr) tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; try (inv MS).
@@ -652,7 +652,6 @@ Proof.
   rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
-  rewrite (stack_requirements_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
 
@@ -702,7 +701,6 @@ Proof.
   left; econstructor; split.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). eauto.
-  rewrite (stack_requirements_preserved _ _ TRF). eauto.
   rewrite (match_parent_locset _ _ STACKS). econstructor; eauto.
 
   (* internal functions *)
@@ -711,7 +709,7 @@ Proof.
   monadInv H8.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
-  rewrite (stack_requirements_preserved _ _ EQ). eauto.
+  rewrite (fn_id_preserved _ _ EQ). eauto.
   rewrite (stacksize_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
@@ -752,8 +750,8 @@ Qed.
 
 End WITHINITLS.
 
-Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (Linear.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (LTL.semantics fsr prog) (Linear.semantics fsr tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

@@ -278,7 +278,7 @@ Section WITHINITLS.
 Variable init_ls: locset.
 
 Theorem step_type_preservation:
-  forall S1 t S2, step init_ls ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
+  forall fsr S1 t S2, step init_ls fsr ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
 Proof.
 Local Opaque mreg_type.
   induction 1; intros WTS; inv WTS.

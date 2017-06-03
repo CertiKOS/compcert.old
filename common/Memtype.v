@@ -129,7 +129,7 @@ Class MemoryModelOps
   [ofs] is the previous threshold, i.e. the offset at which a block could be
   injected. *)
   reserve_stackspace: mem -> nat -> option mem;
-  release_stackspace: mem -> nat -> option mem;
+  release_stackspace: mem -> option mem;
 
   (* Probably needed in the implementation. *)
   (* set_stack_inject: mem -> block -> Z -> mem; *)
@@ -1658,8 +1658,8 @@ for [unchanged_on]. *)
      strong_unchanged_on (fun _ _ => True) m1 m2;
 
  release_stackspace_unchanged:
-   forall m1 n m2,
-     release_stackspace m1 n = Some m2 ->
+   forall m1 m2,
+     release_stackspace m1 = Some m2 ->
      strong_unchanged_on (fun _ _ => True) m1 m2;
 
  reserve_stackspace_inject_fewer:
@@ -1671,16 +1671,12 @@ for [unchanged_on]. *)
        reserve_stackspace m1' n' = Some (m2')
        /\ inject j m2 m2';
 
- (* The following is technically false; however it will be possible to maintain
- invariants so that it holds.
-  TODO PW: add details here. *)
  release_stackspace_inject_fewer:
-   forall j m1 m1' n n' m2,
+   forall j m1 m1' m2,
      inject j m1 m1' ->
-     release_stackspace m1 n = Some m2 ->
-     (n' <= n)%nat ->
+     release_stackspace m1 = Some m2 ->
      exists m2',
-       release_stackspace m1' n' = Some m2'
+       release_stackspace m1' = Some m2'
        /\ inject j m2 m2';
  
 
@@ -1691,8 +1687,8 @@ for [unchanged_on]. *)
      valid_block m' b;
 
  release_stackspace_valid_block:
-   forall m b m' n,
-     release_stackspace m n = Some m' ->
+   forall m b m',
+     release_stackspace m = Some m' ->
      valid_block m b <->
      valid_block m' b;
 
@@ -1702,16 +1698,16 @@ for [unchanged_on]. *)
      nextblock m = nextblock m';
 
  release_stackspace_same_nextblock:
-   forall m n m',
-     release_stackspace m n = Some m' ->
+   forall m m',
+     release_stackspace m = Some m' ->
      nextblock m = nextblock m';
 
  release_stackspace_extends:
-   forall m1 n m1' m2,
+   forall m1 m1' m2,
      extends m1 m2 ->
-     release_stackspace m1 n = Some m1' ->
+     release_stackspace m1 = Some m1' ->
      exists m2',
-       release_stackspace m2 n = Some m2' /\ extends m1' m2';
+       release_stackspace m2 = Some m2' /\ extends m1' m2';
 
  reserve_stackspace_extends:
     forall m1 n m1' m2,
@@ -1914,8 +1910,8 @@ Proof.
 Qed.
 
 Lemma release_perm:
-  forall m b o k p n m',
-    release_stackspace m n = Some m' ->
+  forall m b o k p m',
+    release_stackspace m = Some m' ->
     perm m b o k p <->
     perm m' b o k p.
 Proof.

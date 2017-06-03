@@ -223,11 +223,11 @@ Proof.
 Qed.
 
 Lemma eval_store:
-  forall chunk a1 a2 v1 v2 f k m',
+  forall fsr chunk a1 a2 v1 v2 f k m',
   eval_expr tge sp e m nil a1 v1 ->
   eval_expr tge sp e m nil a2 v2 ->
   Mem.storev chunk m v1 v2 = Some m' ->
-  step tge (State f (store chunk a1 a2) k sp e m)
+  step fsr tge (State f (store chunk a1 a2) k sp e m)
         E0 (State f Sskip k sp e m').
 Proof.
   intros. generalize H1; destruct v1; simpl; intro; try discriminate.
@@ -897,20 +897,20 @@ Definition measure (s: Cminor.state) : nat :=
   | Cminor.Returnstate _ _ _ => 2%nat
   end.
 
-Lemma stack_requirements_preserved:
+Lemma fn_id_preserved:
   forall dm hf f f',
     sel_function dm hf f = OK f' ->
-    Cminor.fn_stack_requirements f = CminorSel.fn_stack_requirements f'.
+    Cminor.fn_id f = CminorSel.fn_id f'.
 Proof.
   intros.
   monadInv H.
   reflexivity.
 Qed.
 
-Lemma sel_step_correct:
-  forall S1 t S2, Cminor.step ge S1 t S2 ->
+Lemma sel_step_correct fsr:
+  forall S1 t S2, Cminor.step fsr ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists T2, step tge T1 t T2 /\ match_states S2 T2)
+  (exists T2, step fsr tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
   induction 1; intros T1 ME; inv ME; try (monadInv TS).
@@ -924,8 +924,7 @@ Proof.
   left; econstructor; split.
   econstructor. inv MC; simpl in H; simpl; auto.
   eauto.
-  erewrite stackspace_function_translated; eauto.
-  erewrite <- stack_requirements_preserved; eauto.
+  erewrite stackspace_function_translated; eauto. eauto.
   econstructor; eauto. eapply match_is_call_cont; eauto.
 - (* assign *)
   exploit sel_expr_correct; eauto. intros [v' [A B]].
@@ -968,9 +967,8 @@ Proof.
   econstructor; eauto.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
-  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S).
+  exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S). 
   erewrite <- stackspace_function_translated in P by eauto.
-  erewrite stack_requirements_preserved in R by eauto.
   exploit sel_expr_correct; eauto. intros [vf' [A B]].
   exploit sel_exprlist_correct; eauto. intros [vargs' [C D]].
   exploit functions_translated; eauto. intros (cunit' & fd' & E & F & G).
@@ -1030,7 +1028,6 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
   exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S).
-  erewrite stack_requirements_preserved in R by eauto.
   left; econstructor; split.
   econstructor. simpl; eauto. simpl; eauto.
   econstructor; eauto. eapply call_cont_commut; eauto.
@@ -1038,7 +1035,6 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
   exploit Mem.release_stackspace_extends; eauto. intros (tm2' & R & S).
-  erewrite stack_requirements_preserved in R by eauto.
   exploit sel_expr_correct; eauto. intros [v' [A B]].
   left; econstructor; split.
   econstructor; eauto.
@@ -1117,8 +1113,8 @@ Proof.
   inv MC. inv LD. constructor.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (Cminor.semantics prog) (CminorSel.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (Cminor.semantics fsr prog) (CminorSel.semantics fsr tprog).
 Proof.
   apply forward_simulation_opt with (match_states := match_states) (measure := measure).
   apply senv_preserved. 

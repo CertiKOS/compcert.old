@@ -46,11 +46,11 @@ Definition bblock := list instruction.
 Definition code: Type := PTree.t bblock.
 
 Record function: Type := mkfunction {
+                             fn_id: ident;
   fn_sig: signature;
   fn_stacksize: Z;
   fn_code: code;
   fn_entrypoint: node;
-  fn_stack_requirements: Z;
 }.
 
 Definition fundef := AST.fundef function.
@@ -162,7 +162,7 @@ Definition parent_locset (stack: list stackframe) : locset :=
   | nil => init_ls
   | Stackframe f sp ls bb :: stack' => ls
   end.
-
+Variable fn_stack_requirements : ident -> Z.
 Variable ge: genv.
 
 Definition reglist (rs: locset) (rl: list mreg) : list val :=
@@ -230,7 +230,7 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function ros rs' = Some fd ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stacksize) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
@@ -257,11 +257,11 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp pc rs' m)
   | exec_Lreturn: forall s f sp bb rs m m' mm,
       Mem.free m sp 0 f.(fn_stacksize) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal: forall s f rs m m' sp rs' mm ,
-      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements (fn_id f))) = Some (mm) ->
       Mem.alloc mm 0 f.(fn_stacksize) = (m', sp) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
@@ -297,8 +297,8 @@ Inductive final_state: state -> int -> Prop :=
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (p: program) :=
-  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics fsr (p: program) :=
+  Semantics (step (Locmap.init Vundef) fsr) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.
 

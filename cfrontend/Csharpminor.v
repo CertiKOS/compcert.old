@@ -82,13 +82,13 @@ with lbl_stmt : Type :=
   and a statement representing the function body.  *)
 
 Record function : Type := mkfunction {
-  fn_sig: signature;
-  fn_params: list ident;
-  fn_vars: list (ident * Z);
-  fn_temps: list ident;
-  fn_body: stmt;
-  fn_stack_requirements: Z;
-}.
+                              fn_id: ident;
+                              fn_sig: signature;
+                              fn_params: list ident;
+                              fn_vars: list (ident * Z);
+                              fn_temps: list ident;
+                              fn_body: stmt;
+                            }.
 
 Definition fundef := AST.fundef function.
 
@@ -291,7 +291,7 @@ Definition blocks_of_env (e: env) : list (block * Z * Z) :=
   List.map block_of_binding (PTree.elements e).
 
 Section RELSEM.
-
+Variable fn_stack_requirements: ident -> Z.
 Variable ge: genv.
 
 (* Evaluation of the address of a variable:
@@ -371,7 +371,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_call: forall f k e le m m' mm,
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f Sskip k e le m)
         E0 (Returnstate Vundef k m')
 
@@ -438,13 +438,13 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_return_0: forall f k e le m mm m',
       Mem.free_list m (blocks_of_env e) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f (Sreturn None) k e le m)
         E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f a k e le m v mm m',
       eval_expr e le m a v ->
       Mem.free_list m (blocks_of_env e) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
         E0 (Returnstate v (call_cont k) m')
   | step_label: forall f lbl s k e le m,
@@ -460,7 +460,7 @@ Inductive step: state -> trace -> state -> Prop :=
       list_norepet (map fst f.(fn_vars)) ->
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
-      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements (fn_id f))) = Some (mm) ->
       alloc_variables empty_env mm (fn_vars f) e m1 ->
       bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       step (Callstate (Internal f) vargs k m)
@@ -499,7 +499,7 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics fsr (p: program) :=
+  Semantics (step fsr) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.

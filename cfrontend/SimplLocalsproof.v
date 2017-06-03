@@ -288,10 +288,10 @@ Proof.
 Qed.
 
 Lemma step_Sdebug_temp:
-  forall f id ty k e le m v,
+  forall fsr f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tge (State f (Sdebug_temp id ty) k e le m)
+  step2 fsr tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None).
@@ -301,9 +301,9 @@ Proof.
 Qed.
 
 Lemma step_Sdebug_var:
-  forall f id ty k e le m b,
+  forall fsr f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tge (State f (Sdebug_var id ty) k e le m)
+  step2 fsr tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None).
@@ -314,14 +314,14 @@ Proof.
 Qed.
 
 Lemma step_Sset_debug:
-  forall f id ty a k e le m v v',
+  forall fsr f id ty a k e le m v v',
   eval_expr tge e le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus step2 tge (State f (Sset_debug id ty a) k e le m)
+  plus (step2 fsr) tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
-  assert (forall k, step2 tge (State f (Sset id (make_cast a ty)) k e le m)
+  assert (forall k, step2 fsr tge (State f (Sset id (make_cast a ty)) k e le m)
                            E0 (State f Sskip k e (PTree.set id v' le) m)).
   { intros. apply step_set. eapply make_cast_correct; eauto. }
   destruct (Compopts.debug tt).
@@ -335,9 +335,9 @@ Proof.
 Qed.
 
 Lemma step_add_debug_vars:
-  forall f s e le m vars k,
+  forall fsr f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star step2 tge (State f (add_debug_vars vars s) k e le m)
+  star (step2 fsr) tge (State f (add_debug_vars vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -367,11 +367,11 @@ Proof.
 Qed.
 
 Lemma step_add_debug_params:
-  forall f s k e le m params vl le1,
+  forall fsr f s k e le m params vl le1,
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star step2 tge (State f (add_debug_params params s) k e le m)
+  star (step2 fsr) tge (State f (add_debug_params params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -1093,7 +1093,7 @@ Proof.
 Qed.
 
 Theorem store_params_correct:
-  forall j f k cenv le lo hi te tlo thi e m params args m',
+  forall fsr j f k cenv le lo hi te tlo thi e m params args m',
   bind_parameters ge e m params args m' ->
   forall s tm tle1 tle2 targs,
   list_norepet (var_names params) ->
@@ -1104,7 +1104,7 @@ Theorem store_params_correct:
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
-  star step2 tge (State f (store_params cenv params s) k te tle tm)
+  star (step2 fsr) tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
   /\ Mem.inject j m' tm'
@@ -2001,10 +2001,10 @@ Qed.
 
 End FIND_LABEL.
 
-Lemma stack_requirements_preserved:
+Lemma fn_id_preserved:
   forall f tf,
     transf_function f = OK tf ->
-    fn_stack_requirements f = fn_stack_requirements tf.
+    fn_id f = fn_id tf.
 Proof.
   intros.
   monadInv H. reflexivity.
@@ -2048,12 +2048,12 @@ Proof.
 Qed.
 
 Lemma match_envs_release_stackspace:
-  forall cenv cenv' e t mm lo hi te tle tlo thi n m',
+  forall cenv cenv' e t mm lo hi te tle tlo thi m',
     match_envs cenv cenv' e t mm lo hi te tle tlo thi ->
-    Mem.release_stackspace mm n = Some m' ->
+    Mem.release_stackspace mm = Some m' ->
     match_envs cenv cenv' e t m' lo hi te tle tlo thi.
 Proof.
-  intros cenv cenv' e t mm lo hi te tle tlo thi n m' ME RES.
+  intros cenv cenv' e t mm lo hi te tle tlo thi m' ME RES.
   inv ME; constructor; eauto.
   intro id.
   destruct (me_vars0 id).
@@ -2067,16 +2067,16 @@ Proof.
 Qed.
 
 Lemma match_cont_release_stackspace:
-  forall mm n m' tm' tm2' ,
-    Mem.release_stackspace mm n = Some m' ->
-    Mem.release_stackspace tm' n = Some tm2' ->
+  forall mm m' tm' tm2' ,
+    Mem.release_stackspace mm = Some m' ->
+    Mem.release_stackspace tm' = Some tm2' ->
     forall k tk cenv j,
     match_cont j cenv k tk mm (Mem.nextblock mm) (Mem.nextblock tm') ->
     match_cont j cenv k tk m' (Mem.nextblock m') (Mem.nextblock tm2').
 Proof.
-  intros mm n m' tm' tm2' RES1 RES2.
-  rewrite (Mem.release_stackspace_same_nextblock _ _ _ RES1).
-  rewrite (Mem.release_stackspace_same_nextblock _ _ _ RES2).
+  intros mm m' tm' tm2' RES1 RES2.
+  rewrite (Mem.release_stackspace_same_nextblock _ _ RES1).
+  rewrite (Mem.release_stackspace_same_nextblock _ _ RES2).
   intro k.
   generalize (Mem.nextblock m') (Mem.nextblock tm2'). 
   induction k; simpl; intros b b0 tk cenv j MC; inv MC; try now (econstructor; eauto).
@@ -2085,8 +2085,8 @@ Proof.
 Qed.
 
 Lemma step_simulation:
-  forall S1 t S2, step1 ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'), exists S2', plus step2 tge S1' t S2' /\ match_states S2 S2'.
+  forall fsr S1 t S2, step1 fsr ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 fsr) tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS).
 
@@ -2199,9 +2199,8 @@ Proof.
 
 (* return none *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. apply le_refl. intros [tm2' [R S]].
+  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. intros [tm2' [R S]].
   econstructor; split. apply plus_one. econstructor; eauto.
-  erewrite <- stack_requirements_preserved; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont.
   eapply match_cont_release_stackspace; eauto.
@@ -2211,10 +2210,9 @@ Proof.
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   exploit sem_cast_inject; eauto. intros [tv' [C D]].
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. apply le_refl. intros [tm2' [R S]].
+  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. intros [tm2' [R S]].
   econstructor; split. apply plus_one. econstructor; eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
-  erewrite <- stack_requirements_preserved; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont.
   eapply match_cont_release_stackspace; eauto.
@@ -2222,10 +2220,9 @@ Proof.
 
 (* skip call *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. apply le_refl. intros [tm2' [R S]].
+  exploit Mem.release_stackspace_inject_fewer. apply Q. eauto. intros [tm2' [R S]].
   econstructor; split. apply plus_one. econstructor; eauto.
   eapply match_cont_is_call_cont; eauto.
-  erewrite <- stack_requirements_preserved; eauto.
   monadInv TRF; auto.
   econstructor; eauto.
   intros. apply match_cont_change_cenv with (cenv_for f); auto.
@@ -2376,14 +2373,14 @@ Proof.
   inv RINJ. constructor.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (semantics1 prog) (semantics2 tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (semantics1 fsr prog) (semantics2 fsr tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.
   eexact initial_states_simulation.
   eexact final_states_simulation.
-  eexact step_simulation.
+  eapply step_simulation.
 Qed.
 
 End PRESERVATION.

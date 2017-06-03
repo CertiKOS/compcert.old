@@ -897,12 +897,14 @@ with retype_lblstmts (ce: composite_env) (e: typenv) (rt: type) (sl: labeled_sta
 Definition retype_function (ce: composite_env) (e: typenv) (f: function) : res function :=
   let e := bind_vars (bind_vars e f.(fn_params)) f.(fn_vars) in
   do s <- retype_stmt ce e f.(fn_return) f.(fn_body);
-  OK (mkfunction f.(fn_return)
+    OK (mkfunction
+          (fn_id f)
+          f.(fn_return)
                  f.(fn_callconv)
                  f.(fn_params)
                  f.(fn_vars)
                  s
-                 (fn_stack_requirements f)).
+                 ).
 
 Definition retype_fundef (ce: composite_env) (e: typenv) (fd: fundef) : res fundef :=
   match fd with
@@ -2091,7 +2093,7 @@ Proof.
 Qed.
 
 Lemma preservation_sstep:
-  forall S t S', sstep ge S t S' -> wt_state S -> wt_state S'.
+  forall fsr S t S', sstep fsr ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
 - inv WTS; eauto with ty.
@@ -2139,7 +2141,7 @@ Proof.
 Qed.
 
 Theorem preservation:
-  forall S t S', step ge S t S' -> wt_state S -> wt_state S'.
+  forall fsr S t S', step fsr ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   intros. destruct H. eapply preservation_estep; eauto. eapply preservation_sstep; eauto.
 Qed.

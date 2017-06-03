@@ -1122,17 +1122,17 @@ Qed.
   saving of the used callee-save registers). *)
 
 Lemma function_prologue_correct:
-  forall j ls ls0 ls1 rs rs1 m1 m1' m12 m2 sp parent ra cs fb k P,
+  forall fsr j ls ls0 ls1 rs rs1 m1 m1' m12 m2 sp parent ra cs fb k P,
   agree_regs j ls rs ->
   agree_callee_save ls ls0 ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
   ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) ->
   rs1 = undef_regs destroyed_at_function_entry rs ->
-  Mem.reserve_stackspace m1 (Z.to_nat (Linear.fn_stack_requirements f)) = Some (m12) ->
+  Mem.reserve_stackspace m1 (Z.to_nat (fsr (fn_id f))) = Some (m12) ->
   Mem.alloc m12 0 f.(Linear.fn_stacksize) = (m2, sp) ->
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
-  (Z.to_nat (frame_size (frame_of_frame_env b)) <= Z.to_nat (fn_stack_requirements f))%nat ->
+  (Z.to_nat (frame_size (frame_of_frame_env b)) <= Z.to_nat (fsr (fn_id f)))%nat ->
   exists j', exists rs', exists m2', exists sp', exists m3', exists m4', exists m5',
      Mem.push_frame m1' tf.(fn_frame) = Some (m2', sp')
   /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent = Some m3'
@@ -1383,12 +1383,12 @@ Lemma function_epilogue_correct:
   agree_locs ls ls0 ->
   j sp = Some(sp', fe.(fe_stack_data)) ->
   Mem.free m sp 0 f.(Linear.fn_stacksize) = Some mm ->
-  Mem.release_stackspace mm (Z.to_nat (Linear.fn_stack_requirements f)) = Some m1 ->
+  Mem.release_stackspace mm = Some m1 ->
   exists rs1 mm' m1',
      load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) = Some pa
   /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) = Some ra
   /\ Mem.free m' sp' 0 tf.(fn_stacksize) = Some mm'
-  /\ Mem.release_stackspace mm' (Z.to_nat (Linear.fn_stack_requirements f)) = Some m1'
+  /\ Mem.release_stackspace mm' = Some m1'
   /\ star step tge
        (State cs fb (Vptr sp' Ptrofs.zero) (restore_callee_save fe k) rs m')
     E0 (State cs fb (Vptr sp' Ptrofs.zero) k rs1 m')
@@ -1404,7 +1404,7 @@ Proof.
     eexact INJ.
     auto. rewrite Z.max_comm; reflexivity.
   intros (m1' & FREE' & SEP').
-  exploit release_parallel_rule. eauto. eauto. apply le_refl.
+  exploit release_parallel_rule. eauto. eauto. 
   intros (m2' & REL' & SEP'').
   (* Reloading the callee-save registers *)
   exploit restore_callee_save_correct.
@@ -1559,8 +1559,8 @@ Proof.
   eapply H0; eauto.
 Qed.
 
-Lemma init_args_out_of_bounds_release_stackspace sg m n m' :
-  Mem.release_stackspace m n = Some m' ->
+Lemma init_args_out_of_bounds_release_stackspace sg m m' :
+  Mem.release_stackspace m = Some m' ->
   init_args_out_of_bounds sg m ->
   init_args_out_of_bounds sg m' .
 Proof.
@@ -1787,15 +1787,15 @@ Proof.
   tauto.
 Qed.
 
-Lemma init_args_in_bounds_release_stackspace m n m' sg:
-  Mem.release_stackspace m n = Some m' ->
+Lemma init_args_in_bounds_release_stackspace m m' sg:
+  Mem.release_stackspace m = Some m' ->
   init_args_in_bounds sg m ->
   init_args_in_bounds sg m'.
 Proof.
   intros H.
   apply init_args_in_bounds_perm.
   intros b0 o_ H1 o k p.
-  eapply (proj1 (Mem.release_perm _ _ _ _ _ _ _ H)); eauto.
+  eapply (proj1 (Mem.release_perm _ _ _ _ _ _ H)); eauto.
 Qed.
 
 Lemma init_args_in_bounds_alloc m lo hi b m' sg:
@@ -2630,8 +2630,8 @@ Qed.
 
 Lemma bounds_stack_release_stackspace:
   forall s m (* b *) (BS: bounds_stack m s)
-    n m'
-    (FREE: Mem.release_stackspace m n = Some m'),
+    m'
+    (FREE: Mem.release_stackspace m = Some m'),
     bounds_stack m' s.
 Proof.
   induction s; simpl; intros; auto. destruct a; auto.
@@ -3122,13 +3122,14 @@ Proof.
   generalize ( symbols_preserved i). congruence.
 Qed.
 
+Variable fn_stack_requirements: ident -> Z.
 Hypothesis function_stack_requirements_correct:
   forall b f,
     Genv.find_funct_ptr ge b = Some (Internal f) ->
-    frame_size (frame_of_frame_env (function_bounds f)) = fn_stack_requirements f.
+    frame_size (frame_of_frame_env (function_bounds f)) = fn_stack_requirements (fn_id f).
 
 Theorem transf_step_correct:
-  forall s1 t s2, Linear2.step ge s1 t s2 ->
+  forall s1 t s2, Linear2.step fn_stack_requirements ge s1 t s2 ->
   forall (WTS: wt_state init_ls (Linear2.state_lower s1)) s1' (MS: match_states s1 s1'),
   exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
@@ -3515,10 +3516,6 @@ Proof.
   assert (tf = x) by congruence. subst x. subst tf''.
   econstructor; split.
   + eapply plus_right. eexact S. econstructor; eauto.
-    rewrite <- (function_stack_requirements_correct _ _ FIND) in R'.
-    revert R'.
-    simpl.
-    erewrite (unfold_transf_function _ _ TRANSL); eauto.
     traceEq.
   + assert (TAILCALL: tailcall_possible (Linear.funsig f')).
     {
@@ -3535,9 +3532,9 @@ Proof.
     subst; eauto.
     * etransitivity. apply INIT_VB.
       rewrite <- (Mem.nextblock_free _ _ _ _ _ H4).
-      rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ H6). apply Ple_refl.
+      rewrite <- (Mem.release_stackspace_same_nextblock _ _ H6). apply Ple_refl.
     * etransitivity. apply INIT_VB'.
-      rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ R'). 
+      rewrite <- (Mem.release_stackspace_same_nextblock _ _ R'). 
       rewrite (Mem.nextblock_free _ _ _ _ _ R). apply Ple_refl.
     * revert Hno_init_args.
       generalize (Linear2.state_invariant s1).
@@ -3864,18 +3861,14 @@ Proof.
   assert (tf = x) by congruence. subst x.
   econstructor; split.
   eapply plus_right. eexact D'. econstructor; eauto.
-  rewrite <- (function_stack_requirements_correct _ _ FIND) in D.
-  revert D.
-  simpl.
-  erewrite (unfold_transf_function _ _ TRANSL); eauto.
   traceEq.
   inv Hinit_ls.
   constr_match_states. all: try subst; eauto.
   + etransitivity. apply INIT_VB.
-    rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ H3).
+    rewrite <- (Mem.release_stackspace_same_nextblock _ _ H3).
     rewrite (Mem.nextblock_free _ _ _ _ _ H1). apply Ple_refl.
   + etransitivity. apply INIT_VB'.
-    rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ D).
+    rewrite <- (Mem.release_stackspace_same_nextblock _ _ D).
     rewrite (Mem.nextblock_free _ _ _ _ _ C). apply Ple_refl.
   + revert Hno_init_args.
     generalize (Linear2.state_invariant s1).
@@ -3888,7 +3881,7 @@ Proof.
   + eapply init_args_in_bounds_release_stackspace. eauto. eapply init_args_in_bounds_free; eauto.
   + eapply block_prop_impl; try eassumption.
     intros.
-    eapply (proj1 (Mem.release_stackspace_valid_block _ _ _ _  D)); eauto.
+    eapply (proj1 (Mem.release_stackspace_valid_block _ _ _  D)); eauto.
     eapply Mem.valid_block_free_1; eauto.
   + rewrite sep_swap.
     eapply frame_mconj. apply sep_drop in SEP. apply SEP. exact G.
@@ -4310,13 +4303,15 @@ Proof.
 - auto.
 Qed.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Hypothesis function_stack_requirements_correct:
   forall (b : block) (f : Linear.function),
   Genv.find_funct_ptr ge b = Some (Internal f) ->
-  frame_size (frame_of_frame_env (function_bounds f)) = fn_stack_requirements f.
+  frame_size (frame_of_frame_env (function_bounds f)) = fn_stack_requirements (fn_id f).
 
 Theorem transf_program_correct':
-  forward_simulation (Linear2.semantics prog) (Mach.semantics return_address_offset tprog).
+  forward_simulation (Linear2.semantics fn_stack_requirements prog) (Mach.semantics return_address_offset tprog).
 Proof.
   set (ms := fun s s' => wt_state (Locmap.init Vundef) (Linear2.state_lower s) /\ match_states' s s').
   eapply forward_simulation_plus with (match_states := ms).
@@ -4344,7 +4339,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
+  forward_simulation (Linear.semantics fn_stack_requirements prog) (Mach.semantics return_address_offset tprog).
 Proof.
   eapply compose_forward_simulations.
   eapply Linear2.whole_program_linear_to_linear2.

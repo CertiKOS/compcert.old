@@ -850,12 +850,11 @@ Qed.
 
 
 Lemma release_parallel_rule:
-  forall m1 m2 n n' j P m1' ,
+  forall m1 m2 j P m1' ,
     m2 |= minjection j m1 ** P ->
-    Mem.release_stackspace m1 n = Some m1' ->
-    (n' <= n)%nat ->
+    Mem.release_stackspace m1 = Some m1' ->
     exists m2',
-      Mem.release_stackspace m2 n' = Some m2' /\
+      Mem.release_stackspace m2 = Some m2' /\
       m2' |= minjection j m1' ** P.
 Proof.
   intros.
@@ -871,9 +870,9 @@ Proof.
     simpl; auto.
   - red; simpl; intros.
     destruct H as (INJ' & (_ & H)).
-    apply H in H3; auto.
+    apply H in H2; auto.
     simpl.
-    decompose [ex and] H2.
+    decompose [ex and] H1.
     exists x, x0; split; eauto.
     eapply Mem.perm_unchanged_on_2.
     eapply Mem.strong_unchanged_on_weak; eauto.

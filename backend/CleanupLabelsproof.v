@@ -241,10 +241,10 @@ Section WITHINITLS.
 
 Variable init_ls: locset.
 
-Theorem transf_step_correct:
-  forall s1 t s2, step init_ls ge s1 t s2 ->
+Theorem transf_step_correct fsr:
+  forall s1 t s2, step init_ls fsr ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step init_ls tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step init_ls fsr tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try rewrite remove_unused_labels_cons.
@@ -360,8 +360,8 @@ Proof.
   intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (Linear.semantics fsr prog) (Linear.semantics fsr tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

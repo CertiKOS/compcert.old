@@ -915,12 +915,13 @@ Inductive tr_function: CminorSel.function -> RTL.function -> Prop :=
       tr_stmt code map2 f.(CminorSel.fn_body) nentry nret nil ngoto nret orret ->
       code!nret = Some(Ireturn orret) ->
       tr_function f (RTL.mkfunction
+                       (CminorSel.fn_id f)
                        f.(CminorSel.fn_sig)
                        rparams
                        f.(CminorSel.fn_stackspace)
                        code
                        nentry
-                       (CminorSel.fn_stack_requirements f)
+                       
                     ).
 
 (** * Correctness proof of the translation functions *)

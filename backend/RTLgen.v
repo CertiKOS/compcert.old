@@ -682,13 +682,14 @@ Definition transl_function (f: CminorSel.function) : Errors.res RTL.function :=
   match transl_fun f ngoto s0 with
   | Error msg => Errors.Error msg
   | OK (nentry, rparams) s i =>
-      Errors.OK (RTL.mkfunction
+    Errors.OK (RTL.mkfunction
+                 (CminorSel.fn_id f)
                    f.(CminorSel.fn_sig)
                    rparams
                    f.(CminorSel.fn_stackspace)
                    s.(st_code)
                        nentry
-                       (CminorSel.fn_stack_requirements f)
+                       
                 )
   end.
 

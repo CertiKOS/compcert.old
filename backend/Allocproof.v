@@ -1520,7 +1520,7 @@ Inductive transf_function_spec (f: RTL.function) (tf: LTL.function) : Prop :=
       compat_entry (RTL.fn_params f) (loc_parameters (fn_sig tf)) e2 = true ->
       can_undef destroyed_at_function_entry e2 = true ->
       RTL.fn_stacksize f = LTL.fn_stacksize tf ->
-      RTL.fn_stack_requirements f = LTL.fn_stack_requirements tf ->
+      RTL.fn_id f = LTL.fn_id tf ->
       RTL.fn_sig f = LTL.fn_sig tf ->
       transf_function_spec f tf.
 
@@ -1635,6 +1635,7 @@ Qed.
 Section WITHINILS.
 
 Variable init_ls: locset.
+Variable fsr: ident -> Z.
 
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
@@ -1643,7 +1644,7 @@ Lemma exec_moves:
   satisf rs ls e' ->
   wt_regset env rs ->
   exists ls',
-    star (step init_ls) tge (Block s f sp (expand_moves mv bb) ls m)
+    star (step init_ls fsr) tge (Block s f sp (expand_moves mv bb) ls m)
                E0 (Block s f sp bb ls' m)
   /\ satisf rs ls' e.
 Proof.
@@ -1693,7 +1694,7 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
            Val.has_type v (env res) ->
            agree_callee_save ls ls1 ->
            exists ls2,
-           star (LTL.step init_ls) tge (Block ts tf sp bb ls1 m)
+           star (LTL.step init_ls fsr) tge (Block ts tf sp bb ls1 m)
                           E0 (State ts tf sp pc ls2 m)
            /\ satisf (rs#res <- v) ls2 e),
       match_stackframes
@@ -1773,9 +1774,9 @@ Qed.
     "plus" kind. *)
 
 Lemma step_simulation:
-  forall S1 t S2, RTL.step ge S1 t S2 -> wt_state restype S1 ->
+  forall S1 t S2, RTL.step fsr ge S1 t S2 -> wt_state restype S1 ->
   forall S1', match_states S1 S1' ->
-  exists S2', plus (LTL.step init_ls) tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', plus (LTL.step init_ls fsr) tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros WT S1' MS; inv MS; try UseShape.
 
@@ -2126,8 +2127,6 @@ Proof.
   rewrite <- E. apply find_function_tailcall; auto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
-  replace (fn_stack_requirements tf) with (RTL.fn_stack_requirements f); eauto.
-  destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
   econstructor; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG. rewrite e0. decEq.
@@ -2194,7 +2193,6 @@ Proof.
   exploit Mem.free_parallel_extends; eauto.
   rewrite H11. intros [m'' [P Q]].
   exploit Mem.release_stackspace_extends; eauto. intros (tm'' & RR & S).
-  rewrite H12 in RR.
   inv WTI; MonadInv.
 + (* without an argument *)
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
@@ -2276,9 +2274,9 @@ Qed.
 
 End WITHINILS.
 
-Lemma initial_states_simulation:
+Lemma initial_states_simulation fsr:
   forall st1, RTL.initial_state prog st1 ->
-  exists st2, LTL.initial_state tprog st2 /\ match_states (Locmap.init Vundef) (Some Tint) st1 st2.
+  exists st2, LTL.initial_state tprog st2 /\ match_states (Locmap.init Vundef) fsr (Some Tint) st1 st2.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
@@ -2297,9 +2295,9 @@ Proof.
   rewrite SIG, H3. constructor.
 Qed.
 
-Lemma final_states_simulation:
+Lemma final_states_simulation fsr:
   forall st1 st2 r,
-  match_states (Locmap.init Vundef) (Some Tint) st1 st2 -> RTL.final_state st1 r -> LTL.final_state st2 r.
+  match_states (Locmap.init Vundef) fsr (Some Tint) st1 st2 -> RTL.final_state st1 r -> LTL.final_state st2 r.
 Proof.
   intros. inv H0. inv H. inv STACKS. 
   econstructor. rewrite <- (loc_result_exten sg). inv RES; auto.
@@ -2321,20 +2319,20 @@ Proof.
 - constructor.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (LTL.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (RTL.semantics fsr prog) (LTL.semantics fsr tprog).
 Proof.
-  set (ms := fun s s' => wt_state (Some Tint) s /\ match_states (Locmap.init Vundef) (Some Tint) s s').
+  set (ms := fun s s' => wt_state (Some Tint) s /\ match_states (Locmap.init Vundef) fsr (Some Tint) s s').
   eapply forward_simulation_plus with (match_states := ms).
 - apply senv_preserved.
 - intros. exploit initial_states_simulation; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.
-  apply wt_initial_state with (p := prog); auto. exact wt_prog.
+  apply wt_initial_state with (p := prog); auto. exact wt_prog. eauto.
 - intros. destruct H. eapply final_states_simulation; eauto.
 - intros. destruct H0.
-  exploit step_simulation; eauto. intros [s2' [A B]].
+  exploit step_simulation; eauto. apply H. intros [s2' [A B]].
   exists s2'; split. exact A. split.
-  eapply subject_reduction; eauto. eexact wt_prog. eexact H.
+  eapply subject_reduction; eauto. eexact wt_prog. apply H.
   auto.
 Qed.
 

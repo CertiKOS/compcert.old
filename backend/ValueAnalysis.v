@@ -1233,13 +1233,13 @@ Proof.
 Qed.
 
 Lemma sound_stack_release_stackspace:
-forall m n m' bc stk bound,
-  Mem.release_stackspace m n = Some m' ->
+forall m m' bc stk bound,
+  Mem.release_stackspace m = Some m' ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
 Proof.
   intros. eapply sound_stack_ext; eauto. intros.
-  destruct (zlt 0 n0).
+  destruct (zlt 0 n).
   - erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
     eapply Mem.strong_unchanged_on_weak.
     eapply Mem.release_stackspace_unchanged; eauto.
@@ -1248,7 +1248,7 @@ Proof.
     eapply Mem.perm_valid_block.
     eapply Mem.loadbytes_range_perm. eauto.
     instantiate (1 := ofs). omega.
-  - replace n0 with 0 in * by omega.
+  - replace n with 0 in * by omega.
     rewrite Mem.loadbytes_empty in H4 by omega.
     rewrite Mem.loadbytes_empty by omega. auto.
 Qed.
@@ -1325,7 +1325,7 @@ Proof.
 Qed.
 
 Theorem sound_step_base:
-  forall st t st', RTL.step ge st t st' -> sound_state_base st -> sound_state_base st'.
+  forall fsr st t st', RTL.step fsr ge st t st' -> sound_state_base st -> sound_state_base st'.
 Proof.
   induction 1; intros SOUND; inv SOUND.
 
@@ -1607,7 +1607,7 @@ Inductive sound_state: state -> Prop :=
       sound_state st.
 
 Theorem sound_step:
-  forall st t st', RTL.step ge st t st' -> sound_state st -> sound_state st'.
+  forall fsr st t st', RTL.step fsr ge st t st' -> sound_state st -> sound_state st'.
 Proof.
   intros. inv H0. constructor; intros. eapply sound_step_base; eauto. 
 Qed.

@@ -60,10 +60,11 @@ Definition cleanup_labels (c: code) :=
 
 Definition transf_function (f: function) : function :=
   mkfunction
-     (fn_sig f)
+    (fn_id f)
+    (fn_sig f)
      (fn_stacksize f)
      (cleanup_labels (fn_code f))
-     (fn_stack_requirements f).
+     .
 
 Definition transf_fundef (f: fundef) : fundef :=
   AST.transf_fundef transf_function f.

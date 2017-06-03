@@ -958,9 +958,9 @@ Proof.
 Qed.
 
 Theorem step_simulation:
-  forall S1 t S2, step ge S1 t S2 ->
+  forall fsr S1 t S2, step fsr ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step fsr tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS.
 
@@ -1467,23 +1467,23 @@ Proof.
   intros. inv H0. inv H. inv STACKS. inv RESINJ. constructor.
 Qed.
 
-Lemma transf_program_correct_1:
-  forward_simulation (semantics p) (semantics tp).
+Lemma transf_program_correct_1 fsr:
+  forward_simulation (semantics fsr p) (semantics fsr tp).
 Proof.
   intros.
   eapply forward_simulation_step.
   exploit globals_symbols_inject. apply init_meminj_preserves_globals. intros [A B]. exact A.
   eexact transf_initial_states.
   eexact transf_final_states.
-  eexact step_simulation.
+  eapply step_simulation.
 Qed.
 
 End SOUNDNESS.
 
 Theorem transf_program_correct:
-  forall p tp, match_prog p tp -> forward_simulation (semantics p) (semantics tp).
+  forall fsr p tp, match_prog p tp -> forward_simulation (semantics fsr p) (semantics fsr tp).
 Proof.
-  intros p tp (used & A & B).  apply transf_program_correct_1 with used; auto.
+  intros fsr p tp (used & A & B).  apply transf_program_correct_1 with used; auto.
 Qed.
 
 End WITHEXTERNALCALLS.

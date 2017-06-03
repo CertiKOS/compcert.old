@@ -90,13 +90,13 @@ Inductive stmt : Type :=
   | Sgoto: label -> stmt.
 
 Record function : Type := mkfunction {
-  fn_sig: signature;
-  fn_params: list ident;
-  fn_vars: list ident;
-  fn_stackspace: Z;
-  fn_body: stmt;
-  fn_stack_requirements: Z;
-}.
+                              fn_id:ident;
+                              fn_sig: signature;
+                              fn_params: list ident;
+                              fn_vars: list ident;
+                              fn_stackspace: Z;
+                              fn_body: stmt;
+                            }.
 
 Definition fundef := AST.fundef function.
 Definition program := AST.program fundef unit.
@@ -154,7 +154,7 @@ Section WITHEXTCALLSOPS.
 Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
-
+Variable fn_stack_requirements: ident -> Z.
 Variable ge: genv.
 
 (** The evaluation predicates have the same general shape as those
@@ -343,7 +343,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_call: forall f k sp e m mm m',
       is_call_cont k ->
       Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
@@ -374,7 +374,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
@@ -419,13 +419,13 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_return_0: forall f k sp e m mm m',
       Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f a k sp e m v mm m',
       eval_expr (Vptr sp Ptrofs.zero) e m nil a v ->
       Mem.free m sp 0 f.(fn_stackspace) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
 
@@ -439,7 +439,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s' k' sp e m)
 
   | step_internal_function: forall f vargs k m mm m' sp e,
-      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements (fn_id f))) = Some (mm) ->
       Mem.alloc mm 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs k m)
@@ -468,8 +468,8 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate (Vint r) Kstop m) r.
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics fsr (p: program) :=
+  Semantics (step fsr) (initial_state p) final_state (Genv.globalenv p).
 
 Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 

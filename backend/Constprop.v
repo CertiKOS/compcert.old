@@ -201,12 +201,13 @@ Definition transf_instr (f: function) (an: PMap.t VA.t) (rm: romem)
 Definition transf_function (rm: romem) (f: function) : function :=
   let an := ValueAnalysis.analyze rm f in
   mkfunction
+    (fn_id f)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)
     (PTree.map (transf_instr f an rm) f.(fn_code))
     f.(fn_entrypoint)
-    (fn_stack_requirements f).
+    .
 
 
 Definition transf_fundef (rm: romem) (fd: fundef) : fundef :=

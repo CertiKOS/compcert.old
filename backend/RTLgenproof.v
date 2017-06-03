@@ -367,6 +367,8 @@ Hypothesis TRANSL: match_prog prog tprog.
 Let ge : CminorSel.genv := Genv.globalenv prog.
 Let tge : RTL.genv := Genv.globalenv tprog.
 
+Variable fsr: ident -> Z.
+
 (** Relationship between the global environments for the original
   CminorSel program and the generated RTL program. *)
 
@@ -423,7 +425,7 @@ Lemma tr_move_correct:
   forall r1 ns r2 nd cs f sp rs m,
   tr_move f.(fn_code) ns r1 nd r2 ->
   exists rs',
-  star step tge (State cs f sp ns rs m) E0 (State cs f sp nd rs' m) /\
+  star (step fsr) tge (State cs f sp ns rs m) E0 (State cs f sp nd rs' m) /\
   rs'#r2 = rs#r1 /\
   (forall r, r <> r2 -> rs'#r = rs#r).
 Proof.
@@ -481,7 +483,7 @@ Definition transl_expr_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists rs', exists tm',
-     star step tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
+     star (step fsr) tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
   /\ match_env map (set_optvar dst v e) le rs'
   /\ Val.lessdef v rs'#rd
   /\ (forall r, In r pr -> rs'#r = rs#r)
@@ -495,7 +497,7 @@ Definition transl_exprlist_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists rs', exists tm',
-     star step tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
+     star (step fsr) tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
   /\ match_env map e le rs'
   /\ Val.lessdef_list vl rs'##rl
   /\ (forall r, In r pr -> rs'#r = rs#r)
@@ -509,7 +511,7 @@ Definition transl_condexpr_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists rs', exists tm',
-     plus step tge (State cs f sp ns rs tm) E0 (State cs f sp (if v then ntrue else nfalse) rs' tm')
+     plus (step fsr) tge (State cs f sp ns rs tm) E0 (State cs f sp (if v then ntrue else nfalse) rs' tm')
   /\ match_env map e le rs'
   /\ (forall r, In r pr -> rs'#r = rs#r)
   /\ Mem.extends m tm'.
@@ -955,7 +957,7 @@ Definition transl_exitexpr_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists nd, exists rs', exists tm',
-     star step tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
+     star (step fsr) tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
   /\ nth_error nexits x = Some nd
   /\ match_env map e le rs'
   /\ Mem.extends m tm'.
@@ -1175,7 +1177,7 @@ Inductive tr_fun (tf: function) (map: mapping) (f: CminorSel.function)
       rret = ret_reg f.(CminorSel.fn_sig) r ->
       tr_stmt tf.(fn_code) map f.(fn_body) nentry nret nil ngoto nret rret ->
       tf.(fn_stacksize) = f.(fn_stackspace) ->
-      fn_stack_requirements tf = CminorSel.fn_stack_requirements f ->
+      fn_id tf = CminorSel.fn_id f ->
       tr_fun tf map f ngoto nret rret.
 
 Inductive tr_cont: RTL.code -> mapping ->
@@ -1287,10 +1289,10 @@ Proof.
 Qed.
 
 Theorem transl_step_correct:
-  forall S1 t S2, CminorSel.step ge S1 t S2 ->
+  forall S1 t S2, CminorSel.step fsr ge S1 t S2 ->
   forall R1, match_states S1 R1 ->
   exists R2,
-  (plus RTL.step tge R1 t R2 \/ (star RTL.step tge R1 t R2 /\ lt_state S2 S1))
+  (plus (RTL.step fsr) tge R1 t R2 \/ (star (RTL.step fsr) tge R1 t R2 /\ lt_state S2 S1))
   /\ match_states S2 R2.
 Proof.
   induction 1; intros R1 MSTATE; inv MSTATE.
@@ -1313,14 +1315,11 @@ Proof.
   destruct RET.
   assert (fn_stacksize tf = fn_stackspace f) as SZEQ.
   inv TF. auto.
-  assert (fn_stack_requirements tf = CminorSel.fn_stack_requirements f) as STREQ.
-  inv TF. auto.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
   exploit Mem.release_stackspace_extends; eauto. intros (tm2' & A & B).
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
-  rewrite SZEQ. eauto.
-  rewrite STREQ. eauto.
+  rewrite SZEQ. eauto. eauto.
   constructor; auto.
 
   (* assign *)
@@ -1386,7 +1385,6 @@ Proof.
   exploit functions_translated; eauto. intros [tf' [P Q]].
   exploit match_stacks_call_cont; eauto. intros [U V].
   assert (fn_stacksize tf = fn_stackspace f) as SZEQ. inv TF; auto.
-  assert (fn_stack_requirements tf = CminorSel.fn_stack_requirements f) as STREQ. inv TF; auto.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
   exploit Mem.release_stackspace_extends; eauto. intros (tm2' & K & L ).
   econstructor; split.
@@ -1394,7 +1392,7 @@ Proof.
   eapply exec_Itailcall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
   rewrite SZEQ; eauto.
-  rewrite STREQ; eauto.
+  eauto.
   traceEq.
   constructor; auto.
   (* direct *)
@@ -1403,7 +1401,6 @@ Proof.
   exploit functions_translated; eauto. intros [tf' [P Q]].
   exploit match_stacks_call_cont; eauto. intros [U V].
   assert (fn_stacksize tf = fn_stackspace f) as SZEQ. inv TF; auto.
-  assert (fn_stack_requirements tf = CminorSel.fn_stack_requirements f) as STREQ. inv TF; auto.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
   exploit Mem.release_stackspace_extends; eauto. intros (tm2' & K & L ).
   econstructor; split.
@@ -1412,7 +1409,7 @@ Proof.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite SZEQ; eauto.
-  rewrite STREQ; eauto.
+  eauto.
   traceEq.
   constructor; auto.
 
@@ -1498,7 +1495,6 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
   rewrite H3; eauto.
-  rewrite H4; eauto.
   constructor; auto.
 
   (* return some *)
@@ -1512,7 +1508,6 @@ Proof.
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
   rewrite H5; eauto.
-  rewrite H6; eauto.
   traceEq.
   simpl. constructor; auto.
 
@@ -1589,7 +1584,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (CminorSel.semantics prog) (RTL.semantics tprog).
+  forward_simulation (CminorSel.semantics fsr prog) (RTL.semantics fsr tprog).
 Proof.
   eapply forward_simulation_star_wf with (order := lt_state).
   apply senv_preserved.

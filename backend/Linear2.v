@@ -142,13 +142,13 @@ Record state: Type := State
     state_invariant: invar state_higher state_lower
   }.
 
-Record step (ge: genv) (before: state) (t: trace) (after: state): Prop :=
+Record step fsr (ge: genv) (before: state) (t: trace) (after: state): Prop :=
   {
     step_ge_eq_before: ge = state_ge before;
     step_ge_eq_after: ge = state_ge after;
     step_init_ls_eq: state_init_ls after = state_init_ls before;
-    step_high: Linear.step (state_init_ls before) ge (state_higher before) t (state_higher after);
-    step_low: Linear.step (state_init_ls before) ge (state_lower before) t (state_lower after)
+    step_high: Linear.step (state_init_ls before) fsr ge (state_higher before) t (state_higher after);
+    step_low: Linear.step (state_init_ls before) fsr ge (state_lower before) t (state_lower after)
   }.
 
 (* Whole-program case *)
@@ -166,8 +166,8 @@ Inductive final_state (s: state) (i: int): Prop :=
     (fin_lower: Linear.final_state (state_lower s) i)
 .
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics fsr (p: program) :=
+  Semantics (step fsr) (initial_state p) final_state (Genv.globalenv p).
 
 (* Whole-program Linear trivially forward-simulates into Linear2:
    the two executions are actually the same as the Linear one.
@@ -185,10 +185,10 @@ Record whole_program_invariant (ge: genv) (u: unit) (s: Linear.state) (s2: state
     state_init_ls s2 = Locmap.init Vundef
 }.
 
-Theorem whole_program_linear_to_linear2 p:
+Theorem whole_program_linear_to_linear2 fsr p:
   forward_simulation
-    (Linear.semantics p)
-    (semantics p)
+    (Linear.semantics fsr p)
+    (semantics fsr p)
 .
 Proof.
   apply Forward_simulation with

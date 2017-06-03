@@ -91,7 +91,7 @@ Context `{external_calls_prf: ExternalCalls}.
 (** * Events, volatile memory accesses, and external functions. *)
 
 Section EXEC.
-
+Variable fsr: ident -> Z.
 Variable ge: genv.
 
 Definition eventval_of_val (v: val) (t: typ) : option eventval :=
@@ -1873,13 +1873,13 @@ Qed.
   whose trace is not accepted by the external world. *)
 
 Definition can_crash_world (w: world) (S: state) : Prop :=
-  exists t, exists S', Csem.step ge S t S' /\ forall w', ~possible_trace w t w'.
+  exists t, exists S', Csem.step fsr ge S t S' /\ forall w', ~possible_trace w t w'.
 
 Theorem not_imm_safe_t:
   forall K C a m f k,
   context K RV C ->
   ~imm_safe_t K a m ->
-  Csem.step ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
+  Csem.step fsr ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
 Proof.
   intros. destruct (classic (imm_safe ge e K a m)).
   exploit imm_safe_imm_safe_t; eauto.
@@ -1998,7 +1998,7 @@ Definition do_step (w: world) (s: state) : list transition :=
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
               do m' <- Mem.free_list m (blocks_of_env ge e);
-              do m' <- Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f));
+              do m' <- Mem.release_stackspace m';
             ret "step_return_2" (Returnstate v' (call_cont k) m')
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
@@ -2051,13 +2051,13 @@ Definition do_step (w: world) (s: state) : list transition :=
 
   | State f (Sreturn None) k e m =>
     do m' <- Mem.free_list m (blocks_of_env ge e);
-      do m' <- Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f));
+      do m' <- Mem.release_stackspace m';
       ret "step_return_0" (Returnstate Vundef (call_cont k) m')
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
   | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
     do m' <- Mem.free_list m (blocks_of_env ge e);
-      do m' <- Mem.release_stackspace m' (Z.to_nat (fn_stack_requirements f));
+      do m' <- Mem.release_stackspace m';
       ret "step_skip_call" (Returnstate Vundef k m')
 
   | State f (Sswitch x sl) k e m =>
@@ -2077,7 +2077,7 @@ Definition do_step (w: world) (s: state) : list transition :=
 
   | Callstate (Internal f) vargs k m =>
     check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
-      do m <- Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f));
+      do m <- Mem.reserve_stackspace m (Z.to_nat (fsr (fn_id f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
@@ -2114,7 +2114,7 @@ Hint Extern 3 => exact I.
 Theorem do_step_sound:
   forall w S rule t S',
   In (TR rule t S') (do_step w S) ->
-  Csem.step ge S t S' \/ (t = E0 /\ S' = Stuckstate /\ can_crash_world w S).
+  Csem.step fsr ge S t S' \/ (t = E0 /\ S' = Stuckstate /\ can_crash_world w S).
 Proof with try (left; right; econstructor; eauto; fail).
   intros until S'. destruct S; simpl.
 (* State *)
@@ -2180,7 +2180,7 @@ Qed.
 
 Theorem do_step_complete:
   forall w S t S' w',
-  possible_trace w t w' -> Csem.step ge S t S' -> exists rule, In (TR rule t S') (do_step w S).
+  possible_trace w t w' -> Csem.step fsr ge S t S' -> exists rule, In (TR rule t S') (do_step w S).
 Proof with (unfold ret; eauto with coqlib).
   intros until w'; intros PT H.
   destruct H.

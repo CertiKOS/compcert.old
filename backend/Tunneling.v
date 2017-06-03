@@ -89,11 +89,12 @@ Definition tunnel_block (uf: U.t) (b: bblock) : bblock :=
 Definition tunnel_function (f: LTL.function) : LTL.function :=
   let uf := record_gotos f in
   mkfunction
+    (fn_id f)
     (fn_sig f)
     (fn_stacksize f)
     (PTree.map1 (tunnel_block uf) (fn_code f))
     (U.repr uf (fn_entrypoint f))
-    (fn_stack_requirements f).
+   . 
 
 Definition tunnel_fundef (f: LTL.fundef) : LTL.fundef :=
   transf_fundef tunnel_function f.

@@ -496,14 +496,15 @@ Definition transl_function (f: Csyntax.function) : res function :=
   | Err msg =>
       Error msg
   | Res tbody g i =>
-      OK (mkfunction
+    OK (mkfunction
+          (Csyntax.fn_id f)
               f.(Csyntax.fn_return)
               f.(Csyntax.fn_callconv)
               f.(Csyntax.fn_params)
               f.(Csyntax.fn_vars)
               g.(gen_trail)
               tbody
-              (Csyntax.fn_stack_requirements f))
+              )
   end.
 
 Local Open Scope error_monad_scope.

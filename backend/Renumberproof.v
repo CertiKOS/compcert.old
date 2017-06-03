@@ -163,9 +163,9 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (Returnstate stk' v m).
 
 Lemma step_simulation:
-  forall S1 t S2, RTL.step ge S1 t S2 ->
+  forall fsr S1 t S2, RTL.step fsr ge S1 t S2 ->
   forall S1', match_states S1 S1' ->
-  exists S2', RTL.step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', RTL.step fsr tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros S1' MS; inv MS; try TR_AT.
 (* nop *)
@@ -256,14 +256,14 @@ Proof.
   intros. inv H0. inv H. inv STACKS. constructor.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (RTL.semantics fsr prog) (RTL.semantics fsr tprog).
 Proof.
   eapply forward_simulation_step.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  exact step_simulation.
+  apply step_simulation.
 Qed.
 
 End PRESERVATION.

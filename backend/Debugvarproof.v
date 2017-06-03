@@ -70,7 +70,7 @@ Qed.
 Inductive match_function: function -> function -> Prop :=
   | match_function_intro: forall f c,
       match_code f.(fn_code) c ->
-      match_function f (mkfunction f.(fn_sig) f.(fn_stacksize) c (fn_stack_requirements f)).
+      match_function f (mkfunction (fn_id f) f.(fn_sig) f.(fn_stacksize) c ).
 
 Lemma transf_function_match:
   forall f tf, transf_function f = OK tf -> match_function f tf.
@@ -365,8 +365,8 @@ Section WITHINITLS.
 Variable init_ls: locset.
 
 Lemma eval_add_delta_ranges:
-  forall s f sp c rs m before after,
-  star (step init_ls) tge (State s f sp (add_delta_ranges before after c) rs m)
+  forall fsr s f sp c rs m before after,
+  star (step init_ls fsr) tge (State s f sp (add_delta_ranges before after c) rs m)
              E0 (State s f sp c rs m).
 Proof.
   intros. unfold add_delta_ranges.
@@ -431,10 +431,10 @@ Qed.
 
 (** The simulation diagram. *)
 
-Theorem transf_step_correct:
-  forall s1 t s2, step init_ls ge s1 t s2 ->
+Theorem transf_step_correct fsr:
+  forall s1 t s2, step init_ls fsr ge s1 t s2 ->
   forall ts1 (MS: match_states s1 ts1),
-  exists ts2, plus (step init_ls) tge ts1 t ts2 /\ match_states s2 ts2.
+  exists ts2, plus (step init_ls fsr) tge ts1 t ts2 /\ match_states s2 ts2.
 Proof.
   induction 1; intros ts1 MS; inv MS; try (inv TRC).
 - (* getstack *)
@@ -560,8 +560,8 @@ Proof.
   intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (semantics prog) (semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (semantics fsr prog) (semantics fsr tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

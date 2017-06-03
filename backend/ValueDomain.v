@@ -3672,14 +3672,14 @@ Proof.
 Qed.
 
 Lemma romatch_release_stackspace:
-  forall m n m' rm,
-  Mem.release_stackspace m n = Some m' ->
+  forall m m' rm,
+  Mem.release_stackspace m = Some m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
   intros. apply romatch_ext with m; auto.
   - intros.
-    destruct (zlt 0 n0 ).
+    destruct (zlt 0 n ).
     + erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
       * eapply Mem.strong_unchanged_on_weak.
         eapply Mem.release_stackspace_unchanged; eauto.
@@ -4122,14 +4122,14 @@ Proof.
 Qed.
 
 Lemma mmatch_release_stackspace:
-  forall m n m' rm,
-  Mem.release_stackspace m n = Some m' ->
+  forall m m' rm,
+  Mem.release_stackspace m = Some m' ->
   mmatch m rm ->
   mmatch m' rm.
 Proof.
   intros. apply mmatch_ext with m; auto.
   - intros.
-    destruct (zlt 0 n0 ).
+    destruct (zlt 0 n ).
     + erewrite <- Mem.loadbytes_unchanged_on_1; eauto.
       * eapply Mem.strong_unchanged_on_weak.
         eapply Mem.release_stackspace_unchanged; eauto.
@@ -4141,7 +4141,7 @@ Proof.
     + rewrite Mem.loadbytes_empty in H3 by omega.
       rewrite Mem.loadbytes_empty by omega. auto. 
   - intros.
-    rewrite (Mem.release_stackspace_same_nextblock _ _ _ H). xomega.
+    rewrite (Mem.release_stackspace_same_nextblock _ _ H). xomega.
 Qed.
 
 Lemma mmatch_top':

@@ -679,20 +679,20 @@ Proof.
 Qed.
 
 Lemma match_callstack_release_stackspace:
-  forall n f cs m m' tm,
+  forall f cs m m' tm,
   Mem.inject f m tm ->
-  Mem.release_stackspace m n = Some m' ->
+  Mem.release_stackspace m = Some m' ->
   match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
   exists tm',
-  Mem.release_stackspace tm n = Some tm'
+  Mem.release_stackspace tm = Some tm'
   /\ match_callstack f m' tm' cs (Mem.nextblock m') (Mem.nextblock tm')
   /\ Mem.inject f m' tm'.
 Proof.
   intros until tm; intros INJ REL MCS.
   exploit Mem.release_stackspace_inject_fewer; eauto. intros (tm2' & S & T).
   exists tm2'. split. auto. split; auto.
-  rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ REL).
-  rewrite <- (Mem.release_stackspace_same_nextblock _ _ _ S).
+  rewrite <- (Mem.release_stackspace_same_nextblock _ _ REL).
+  rewrite <- (Mem.release_stackspace_same_nextblock _ _ S).
   apply match_callstack_invariant with f m tm; auto.
   intros. eapply Mem.release_perm; eauto. 
   intros. erewrite <- Mem.release_perm; eauto.
@@ -1754,11 +1754,11 @@ Proof.
 Qed.
 
 Lemma match_is_call_cont:
-  forall tfn te sp tm k tk cenv xenv cs,
+  forall fsr tfn te sp tm k tk cenv xenv cs,
   match_cont k tk cenv xenv cs ->
   Csharpminor.is_call_cont k ->
   exists tk',
-    star step tge (State tfn Sskip tk sp te tm)
+    star (step fsr) tge (State tfn Sskip tk sp te tm)
                E0 (State tfn Sskip tk' sp te tm)
     /\ is_call_cont tk'
     /\ match_cont k tk' cenv nil cs.
@@ -1846,13 +1846,13 @@ Inductive transl_lblstmt_cont(cenv: compilenv) (xenv: exit_env): lbl_stmt -> con
       transl_lblstmt_cont cenv xenv ls k k' ->
       transl_lblstmt_cont cenv xenv (LScons i s ls) k (Kblock (Kseq ts k')).
 
-Lemma switch_descent:
+Lemma switch_descent fsr:
   forall cenv xenv k ls body s,
   transl_lblstmt cenv (switch_env ls xenv) ls body = OK s ->
   exists k',
   transl_lblstmt_cont cenv xenv ls k k'
   /\ (forall f sp e m,
-      plus step tge (State f s k sp e m) E0 (State f body k' sp e m)).
+      plus (step fsr) tge (State f s k sp e m) E0 (State f body k' sp e m)).
 Proof.
   induction ls; intros.
 - monadInv H. econstructor; split.
@@ -1866,13 +1866,13 @@ Proof.
   reflexivity. traceEq.
 Qed.
 
-Lemma switch_ascent:
+Lemma switch_ascent fsr:
   forall f sp e m cenv xenv ls n ls',
   lbl_stmt_tail ls n ls' ->
   forall k k1,
   transl_lblstmt_cont cenv xenv ls k k1 ->
   exists k2,
-  star step tge (State f (Sexit n) k1 sp e m)
+  star (step fsr) tge (State f (Sexit n) k1 sp e m)
              E0 (State f (Sexit O) k2 sp e m)
   /\ transl_lblstmt_cont cenv xenv ls' k k2.
 Proof.
@@ -1896,7 +1896,7 @@ Proof.
 Qed.
 
 Lemma switch_match_states:
-  forall fn k e le m tfn ts tk sp te tm cenv xenv f lo hi cs sz ls body tk'
+  forall fsr fn k e le m tfn ts tk sp te tm cenv xenv f lo hi cs sz ls body tk'
     (TRF: transl_funbody cenv sz fn = OK tfn)
     (TR: transl_lblstmt cenv (switch_env ls xenv) ls body = OK ts)
     (MINJ: Mem.inject f m tm)
@@ -1906,7 +1906,7 @@ Lemma switch_match_states:
     (MK: match_cont k tk cenv xenv cs)
     (TK: transl_lblstmt_cont cenv xenv ls tk tk'),
   exists S,
-  plus step tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
+  plus (step fsr) tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
   /\ match_states (Csharpminor.State fn (seq_of_lbl_stmt ls) k e le m) S.
 Proof.
   intros. inv TK.
@@ -2017,6 +2017,8 @@ Proof.
   simpl. replace x with ts0 by congruence. rewrite H2. auto.
   intro. eapply transl_lblstmt_find_label. eauto. auto. eauto.
   simpl. replace x with ts0 by congruence. rewrite H2. auto.
+  Unshelve.
+  intro; exact Z0.
 Qed.
 
 End FIND_LABEL.
@@ -2036,10 +2038,10 @@ Proof.
   instantiate (1 := lbl). rewrite H1. auto.
 Qed.
 
-Lemma stack_requirements_preserved:
+Lemma fn_id_preserved:
   forall cenv sz f tf,
     transl_funbody cenv sz f = OK tf ->
-    Csharpminor.fn_stack_requirements f = fn_stack_requirements tf.
+    Csharpminor.fn_id f = fn_id tf.
 Proof.
   intros. 
   monadInv H. reflexivity.
@@ -2059,10 +2061,10 @@ Definition measure (S: Csharpminor.state) : nat :=
   | _ => O
   end.
 
-Lemma transl_step_correct:
-  forall S1 t S2, Csharpminor.step ge S1 t S2 ->
+Lemma transl_step_correct fsr:
+  forall S1 t S2, Csharpminor.step fsr ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists T2, plus step tge T1 t T2 /\ match_states S2 T2)
+  (exists T2, plus (step fsr) tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
   induction 1; intros T1 MSTATE; inv MSTATE.
@@ -2099,7 +2101,7 @@ Proof.
   exploit match_callstack_release_stackspace; eauto. intros (tm2' & S & T & U).
   econstructor; split.
   eapply plus_right. eexact A. eapply step_skip_call. eauto. eauto.
-  erewrite <- stack_requirements_preserved; eauto.
+  eauto. 
   traceEq.
   econstructor; eauto.
 
@@ -2266,7 +2268,7 @@ Opaque PTree.set.
   exploit match_callstack_release_stackspace; eauto. intros (tm2' & S & T & U).
   econstructor; split.
   apply plus_one. eapply step_return_0. eauto.
-  erewrite <- stack_requirements_preserved; eauto.
+  eauto. 
   econstructor; eauto. eapply match_call_cont; eauto.
   simpl; auto.
 
@@ -2277,7 +2279,7 @@ Opaque PTree.set.
   exploit match_callstack_release_stackspace; eauto. intros (tm2' & S & T & U).
   econstructor; split.
   apply plus_one. eapply step_return_1. eauto. eauto.
-  erewrite <- stack_requirements_preserved; eauto.  
+  eauto.  
   econstructor; eauto. eapply match_call_cont; eauto.
 
 (* label *)
@@ -2300,12 +2302,14 @@ Opaque PTree.set.
   destruct (zle sz Ptrofs.max_unsigned); try congruence.
   intro TRBODY.
   generalize TRBODY; intro TMP. monadInv TMP.
-  set (tf := mkfunction (Csharpminor.fn_sig f)
+  set (tf := mkfunction
+               (Csharpminor.fn_id f)
+               (Csharpminor.fn_sig f)
                         (Csharpminor.fn_params f)
                         (Csharpminor.fn_temps f)
                         sz
                         x0
-                        (Csharpminor.fn_stack_requirements f)) in *.
+                        ) in *.
   exploit match_callstack_reserve_stackspace; eauto. intros (tmm & RES & MCS' & INJ').
   caseEq (Mem.alloc tmm 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
@@ -2403,15 +2407,15 @@ Proof.
   intros. inv H0. inv H. inv MATCH. inv MK. inv RESINJ. constructor.
 Qed.
 
-Theorem transl_program_correct:
-  forward_simulation (Csharpminor.semantics prog) (Cminor.semantics tprog).
+Theorem transl_program_correct fsr:
+  forward_simulation (Csharpminor.semantics fsr prog) (Cminor.semantics fsr tprog).
 Proof.
   eapply forward_simulation_star; eauto.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
   instantiate (1 := measure).
-  intros. inv H0. exploit transl_step_correct; eauto.
+  intros. inv H0. exploit transl_step_correct; eauto. apply H.
   destruct 1. destruct H0. destruct H0. left. esplit. split. eassumption. econstructor; eauto.
   destruct H0. destruct H1. right. split; auto. split; auto. econstructor; eauto.
 Qed.

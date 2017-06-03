@@ -967,13 +967,13 @@ Qed.
 
 Lemma make_memcpy_correct:
   forall (SGE_NEXTBLOCK: Genv.genv_next ge = Genv.genv_next (Clight.globalenv prog)),
-  forall f dst src ty k e le m b ofs v m' s,
+  forall fsr f dst src ty k e le m b ofs v m' s,
   eval_expr ge e le m dst (Vptr b ofs) ->
   eval_expr ge e le m src v ->
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  step ge (State f s k e le m) E0 (State f Sskip k e le m').
+  step fsr ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
   monadInv H3.
@@ -990,12 +990,12 @@ Qed.
 
 Lemma make_store_correct:
   forall (SGE_NEXTBLOCK: Genv.genv_next ge = Genv.genv_next (Clight.globalenv prog)),
-  forall addr ty rhs code e le m b ofs v m' f k,
+  forall fsr addr ty rhs code e le m b ofs v m' f k,
   make_store cunit.(prog_comp_env) addr ty rhs = OK code ->
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
-  step ge (State f code k e le m) E0 (State f Sskip k e le m').
+  step fsr ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
   inversion ASSIGN; subst.
@@ -1331,9 +1331,9 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
       match_transl (Sblock ts) tk ts (Kblock tk).
 
 Lemma match_transl_step:
-  forall ts tk ts' tk' f te le m,
+  forall fsr ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
-  star step tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
+  star (step fsr) tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
 Proof.
   intros. inv H.
   apply star_one. constructor.
@@ -1535,10 +1535,10 @@ Proof.
   split; auto; econstructor; eauto.
 Qed.
 
-Lemma stack_requirements_preserved:
+Lemma fn_id_preserved:
   forall cenv f tf,
     transl_function cenv f = OK tf ->
-    Clight.fn_stack_requirements f = fn_stack_requirements tf.
+    Clight.fn_id f = fn_id tf.
 Proof.
   unfold transl_function. simpl; intros.
   monadInv H. reflexivity.
@@ -1546,10 +1546,10 @@ Qed.
 
 (** The simulation proof *)
 
-Lemma transl_step:
-  forall S1 t S2, Clight.step2 ge S1 t S2 ->
+Lemma transl_step fsr:
+  forall S1 t S2, Clight.step2 fsr ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
+  exists T2, plus (step fsr) tge T1 t T2 /\ match_states S2 T2.
 Proof.
   induction 1; intros T1 MST; inv MST.
 
@@ -1681,8 +1681,7 @@ Proof.
   monadInv TR. inv MTR.
   econstructor; split.
   apply plus_one. econstructor.
-  eapply match_env_free_blocks; eauto.
-  erewrite stack_requirements_preserved in H0; eauto.
+  eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
 
@@ -1692,7 +1691,7 @@ Proof.
   apply plus_one. econstructor.
   eapply make_cast_correct; eauto. eapply transl_expr_correct; eauto.
   eapply match_env_free_blocks; eauto.
-  erewrite stack_requirements_preserved in H2; eauto.
+  eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
 
@@ -1702,7 +1701,7 @@ Proof.
   econstructor; split.
   apply plus_one. eapply step_skip_call. auto.
   eapply match_env_free_blocks; eauto.
-  erewrite stack_requirements_preserved in H1; eauto.
+  eauto. 
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
 
 - (* switch *)
@@ -1806,14 +1805,14 @@ Proof.
   intros. inv H0. inv H. inv MK. constructor.
 Qed.
 
-Theorem transl_program_correct:
-  forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).
+Theorem transl_program_correct fsr:
+  forward_simulation (Clight.semantics2 fsr prog) (Csharpminor.semantics fsr tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
-  eexact transl_step.
+  apply  transl_step.
 Qed.
 
 End CORRECTNESS.

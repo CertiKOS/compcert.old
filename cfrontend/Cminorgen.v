@@ -261,12 +261,13 @@ Definition transl_funbody
       (cenv: compilenv) (stacksize: Z) (f: Csharpminor.function): res function :=
    do tbody <- transl_stmt cenv nil f.(Csharpminor.fn_body);
        OK (mkfunction
-              (Csharpminor.fn_sig f)
+             (Csharpminor.fn_id f)
+             (Csharpminor.fn_sig f)
               (Csharpminor.fn_params f)
               (Csharpminor.fn_temps f)
               stacksize
               tbody
-              (Csharpminor.fn_stack_requirements f)).
+              ).
 
 Definition transl_function (f: Csharpminor.function): res function :=
   let (cenv, stacksize) := build_compilenv f in

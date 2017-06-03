@@ -54,7 +54,7 @@ Section WITHEXTERNALCALLS.
 Context `{external_calls_prf: ExternalCalls}.
 
 Section SEMANTICS.
-
+Variable fn_stack_requirements: ident -> Z.
 Variable ge: genv.
 
 (** [deref_loc ty m b ofs t v] computes the value of a datum
@@ -704,7 +704,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
 
   | step_return_0: forall f k e m mm m',
       Mem.free_list m (blocks_of_env e) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       sstep (State f (Sreturn None) k e m)
          E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f x k e m,
@@ -713,13 +713,13 @@ Inductive sstep: state -> trace -> state -> Prop :=
   | step_return_2:  forall f v1 ty k e m v2 m' mm,
       sem_cast v1 ty f.(fn_return) m = Some v2 ->
       Mem.free_list m (blocks_of_env e) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       sstep (ExprState f (Eval v1 ty) (Kreturn k) e m)
          E0 (Returnstate v2 (call_cont k) m')
   | step_skip_call: forall f k e m mm m',
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       sstep (State f Sskip k e m)
          E0 (Returnstate Vundef k m')
 
@@ -749,7 +749,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
 
   | step_internal_function: forall f vargs k m e m1 m2 mm ,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
-      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+      Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements (fn_id f))) = Some (mm) ->
       alloc_variables empty_env mm (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters e m1 f.(fn_params) vargs m2 ->
       sstep (Callstate (Internal f) vargs k m)
@@ -793,13 +793,13 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (p: program) :=
-  Semantics_gen step (initial_state p) final_state (globalenv p) (globalenv p).
+Definition semantics fsr (p: program) :=
+  Semantics_gen (step fsr) (initial_state p) final_state (globalenv p) (globalenv p).
 
 (** This semantics has the single-event property. *)
 
 Lemma semantics_single_events:
-  forall p, single_events (semantics p).
+  forall fsr p, single_events (semantics fsr p).
 Proof.
   unfold semantics; intros; red; simpl; intros.
   set (ge := globalenv p) in *.

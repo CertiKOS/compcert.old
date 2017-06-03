@@ -769,10 +769,10 @@ Proof.
 Qed.
 
 Lemma step_makeif:
-  forall f a s1 s2 k e le m v1 b,
+  forall fsr f a s1 s2 k e le m v1 b,
   eval_expr tge e le m a v1 ->
   bool_val v1 (typeof a) m = Some b ->
-  star step1 tge (State f (makeif a s1 s2) k e le m)
+  star (step1 fsr) tge (State f (makeif a s1 s2) k e le m)
              E0 (State f (if b then s1 else s2) k e le m).
 Proof.
   intros. functional induction (makeif a s1 s2).
@@ -787,11 +787,11 @@ Proof.
 Qed.
 
 Lemma step_make_set:
-  forall id a ty m b ofs t v e le f k,
+  forall fsr id a ty m b ofs t v e le f k,
   Csem.deref_loc ge ty m b ofs t v ->
   eval_lvalue tge e le m a b ofs ->
   typeof a = ty ->
-  step1 tge (State f (make_set id a) k e le m)
+  step1 fsr tge (State f (make_set id a) k e le m)
           t (State f Sskip k e (PTree.set id v le) m).
 Proof.
   intros. exploit deref_loc_translated; eauto. rewrite <- H1.
@@ -806,13 +806,13 @@ Proof.
 Qed.
 
 Lemma step_make_assign:
-  forall a1 a2 ty m b ofs t v m' v2 e le f k,
+  forall fsr a1 a2 ty m b ofs t v m' v2 e le f k,
   Csem.assign_loc ge ty m b ofs v t m' ->
   eval_lvalue tge e le m a1 b ofs ->
   eval_expr tge e le m a2 v2 ->
   sem_cast v2 (typeof a2) ty m = Some v ->
   typeof a1 = ty ->
-  step1 tge (State f (make_assign a1 a2) k e le m)
+  step1 fsr tge (State f (make_assign a1 a2) k e le m)
           t (State f Sskip k e le m').
 Proof.
   intros. exploit assign_loc_translated; eauto. rewrite <- H3.
@@ -840,9 +840,9 @@ Proof.
   induction sl1; simpl; congruence.
 Qed.
 
-Lemma push_seq:
+Lemma push_seq fsr:
   forall f sl k e le m,
-  star step1 tge (State f (makeseq sl) k e le m)
+  star (step1 fsr) tge (State f (makeseq sl) k e le m)
               E0 (State f Sskip (Kseqlist sl k) e le m).
 Proof.
   intros. unfold makeseq. generalize Sskip. revert sl k.
@@ -851,14 +851,14 @@ Proof.
   eapply star_right. apply IHsl. constructor. traceEq.
 Qed.
 
-Lemma step_tr_rvalof:
+Lemma step_tr_rvalof fsr:
   forall ty m b ofs t v e le a sl a' tmp f k,
   Csem.deref_loc ge ty m b ofs t v ->
   eval_lvalue tge e le m a b ofs ->
   tr_rvalof ty a sl a' tmp ->
   typeof a = ty ->
   exists le',
-    star step1 tge (State f Sskip (Kseqlist sl k) e le m)
+    star (step1 fsr) tge (State f Sskip (Kseqlist sl k) e le m)
                  t (State f Sskip k e le' m)
   /\ eval_expr tge e le' m a' v
   /\ typeof a' = typeof a
@@ -1380,11 +1380,11 @@ Proof.
 Qed.
 
 Lemma estep_simulation:
-  forall S1 t S2, Cstrategy.estep ge S1 t S2 ->
+  forall fsr S1 t S2, Cstrategy.estep ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
-     (plus step1 tge S1' t S2' \/
-       (star step1 tge S1' t S2' /\ measure S2 < measure S1)%nat)
+     (plus (step1 fsr) tge S1' t S2' \/
+       (star (step1 fsr) tge S1' t S2' /\ measure S2 < measure S1)%nat)
   /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS.
@@ -1687,7 +1687,7 @@ Proof.
   constructor. auto. auto. auto.
   (* for value *)
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
-  exploit step_tr_rvalof; eauto. intros [le' [EXEC [EV3 [TY3 INV]]]].
+  exploit step_tr_rvalof; eauto. instantiate(5:=fsr). intros [le' [EXEC [EV3 [TY3 INV]]]].
   exploit tr_simple_lvalue. eauto. eapply tr_expr_invariant with (le := le) (le' := le'). eauto.
   intros. apply INV. NOTIN. intros [? [? EV1']].
   exploit tr_simple_rvalue. eauto. eapply tr_expr_invariant with (le := le) (le' := le'). eauto.
@@ -1948,20 +1948,20 @@ Proof.
   rewrite comp_env_preserved. auto.
 Qed.
 
-Lemma stack_requirements_preserved:
+Lemma fn_id_preserved:
   forall f tf,
     tr_function f tf ->
-    Csyntax.fn_stack_requirements f = fn_stack_requirements tf.
+    Csyntax.fn_id f = fn_id tf.
 Proof.
   intros. inv H. auto.
 Qed.
 
 Lemma sstep_simulation:
-  forall S1 t S2, Csem.sstep ge S1 t S2 ->
+  forall fsr S1 t S2, Csem.sstep fsr ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
-     (plus step1 tge S1' t S2' \/
-       (star step1 tge S1' t S2' /\ measure S2 < measure S1)%nat)
+     (plus (step1 fsr) tge S1' t S2' \/
+       (star (step1 fsr) tge S1' t S2' /\ measure S2 < measure S1)%nat)
   /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS.
@@ -2132,7 +2132,6 @@ Proof.
 (* return none *)
   inv H8. econstructor; split.
   left. apply plus_one. econstructor; eauto. rewrite blocks_of_env_preserved; eauto.
-  erewrite <- stack_requirements_preserved; eauto.
   
   econstructor. apply match_cont_call; auto.
 (* return some 1 *)
@@ -2144,7 +2143,7 @@ Proof.
   econstructor; split.
   left. eapply plus_two. constructor. econstructor. eauto.
   erewrite function_return_preserved; eauto. rewrite blocks_of_env_preserved; eauto.
-  erewrite <- stack_requirements_preserved; eauto.
+  eauto.
   traceEq.
   constructor. apply match_cont_call; auto.
 (* skip return *)
@@ -2152,7 +2151,7 @@ Proof.
   assert (is_call_cont tk). inv H10; simpl in *; auto.
   econstructor; split.
   left. apply plus_one. eapply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
-  erewrite <- stack_requirements_preserved; eauto.
+  eauto.
   constructor. auto.
 
 (* switch *)
@@ -2223,12 +2222,12 @@ Qed.
 
 (** Semantic preservation *)
 
-Theorem simulation:
-  forall S1 t S2, Cstrategy.step ge S1 t S2 ->
+Theorem simulation fsr:
+  forall S1 t S2, Cstrategy.step fsr ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
-     (plus step1 tge S1' t S2' \/
-       (star step1 tge S1' t S2' /\ measure S2 < measure S1)%nat)
+     (plus (step1 fsr) tge S1' t S2' \/
+       (star (step1 fsr) tge S1' t S2' /\ measure S2 < measure S1)%nat)
   /\ match_states S2 S2'.
 Proof.
   intros S1 t S2 STEP. destruct STEP.
@@ -2261,15 +2260,15 @@ Proof.
   intros. inv H0. inv H. inv H4. constructor.
 Qed.
 
-Theorem transl_program_correct:
-  forward_simulation (Cstrategy.semantics prog) (Clight.semantics1 tprog).
+Theorem transl_program_correct fsr:
+  forward_simulation (Cstrategy.semantics fsr prog) (Clight.semantics1 fsr tprog).
 Proof.
   eapply forward_simulation_star_wf with (order := ltof _ measure).
   eapply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
   apply well_founded_ltof.
-  exact simulation.
+  apply simulation.
 Qed.
 
 End PRESERVATION.

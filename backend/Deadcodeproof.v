@@ -235,7 +235,7 @@ Qed.
 
 Lemma stack_requirements_translated:
   forall rm f tf,
-  transf_function rm f = OK tf -> tf.(fn_stack_requirements) = f.(fn_stack_requirements).
+  transf_function rm f = OK tf -> tf.(fn_id) = f.(fn_id).
 Proof.
   unfold transf_function; intros. destruct (analyze (ValueAnalysis.analyze rm f) f); inv H; auto.
 Qed.
@@ -521,10 +521,10 @@ Qed.
 
 (** * The simulation diagram *)
 
-Theorem step_simulation:
-  forall S1 t S2, step ge S1 t S2 ->
+Theorem step_simulation fsr:
+  forall S1 t S2, step fsr ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step fsr tge S1' t S2' /\ match_states S2 S2'.
 Proof.
 
 Ltac TransfInstr :=
@@ -690,7 +690,6 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   erewrite stacksize_translated by eauto. eexact C.
-  erewrite stack_requirements_translated by eauto. eexact E.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
 
 - (* builtin *)
@@ -882,7 +881,6 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ireturn; eauto.
   erewrite stacksize_translated by eauto. eexact A.
-  erewrite stack_requirements_translated by eauto. eexact E.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.
   
@@ -946,8 +944,8 @@ Qed.
 
 (** * Semantic preservation *)
 
-Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (RTL.semantics fsr prog) (RTL.semantics fsr tprog).
 Proof.
   intros.
   apply forward_simulation_step with

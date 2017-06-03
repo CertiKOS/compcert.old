@@ -927,7 +927,7 @@ Let ge := Genv.globalenv p.
 Variable restyp: option typ.
 
 Lemma subject_reduction:
-  forall st1 t st2, step ge st1 t st2 ->
+  forall fsr st1 t st2, step fsr ge st1 t st2 ->
   forall (WT: wt_state restyp st1), wt_state restyp st2.
 Proof.
   induction 1; intros; inv WT;

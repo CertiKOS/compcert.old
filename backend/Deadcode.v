@@ -202,7 +202,7 @@ Definition transf_function (rm: romem) (f: function) : res function :=
             fn_stacksize := f.(fn_stacksize);
             fn_code := PTree.map (transf_instr approx an) f.(fn_code);
             fn_entrypoint := f.(fn_entrypoint);
-            fn_stack_requirements:= fn_stack_requirements f|}
+            fn_id:= fn_id f|}
   | None =>
       Error (msg "Neededness analysis failed")
   end.

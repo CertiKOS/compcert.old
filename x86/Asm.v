@@ -1012,7 +1012,7 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
                   match Mem.free m stk (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + sz) with
                   | None => Stuck
                   | Some m' =>
-                    match Mem.release_stackspace m' (Z.to_nat sz) with
+                    match Mem.release_stackspace m' with
                       Some m' => Next (nextinstr (rs#RSP <- sp #RA <- ra)) m'
                     | None => Stuck
                     end

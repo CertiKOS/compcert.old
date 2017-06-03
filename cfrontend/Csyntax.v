@@ -173,13 +173,13 @@ with labeled_statements : Type :=            (**r cases of a [switch] *)
   function (a statement, [fn_body]). *)
 
 Record function : Type := mkfunction {
-  fn_return: type;
-  fn_callconv: calling_convention;
-  fn_params: list (ident * type);
-  fn_vars: list (ident * type);
-  fn_body: statement;
-  fn_stack_requirements: Z;
-}.
+                              fn_id: ident;
+                              fn_return: type;
+                              fn_callconv: calling_convention;
+                              fn_params: list (ident * type);
+                              fn_vars: list (ident * type);
+                              fn_body: statement;
+                            }.
 
 Definition var_names (vars: list(ident * type)) : list ident :=
   List.map (@fst ident type) vars.

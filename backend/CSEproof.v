@@ -865,12 +865,13 @@ Qed.
 
 Definition transf_function' (f: function) (approxs: PMap.t numbering) : function :=
   mkfunction
+    (fn_id f)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)
     (transf_code approxs f.(fn_code))
     f.(fn_entrypoint)
-        (fn_stack_requirements f).
+        .
 
 Definition regs_lessdef (rs1 rs2: regset) : Prop :=
   forall r, Val.lessdef (rs1#r) (rs2#r).
@@ -991,10 +992,10 @@ Ltac TransfInstr :=
 (** The proof of simulation is a case analysis over the transition
   in the source code. *)
 
-Lemma transf_step_correct:
-  forall s1 t s2, step ge s1 t s2 ->
+Lemma transf_step_correct fsr:
+  forall s1 t s2, step fsr ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1') (SOUND: sound_state prog s1),
-  exists s2', step tge s1' t s2' /\ match_states s2 s2'.
+  exists s2', step fsr tge s1' t s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros; inv MS; try (TransfInstr; intro C).
 
@@ -1266,8 +1267,8 @@ Proof.
   intros. inv H0. inv H. inv RES. inv STACK. constructor.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (RTL.semantics fsr prog) (RTL.semantics fsr tprog).
 Proof.
   eapply forward_simulation_step with
     (match_states := fun s1 s2 => sound_state prog s1 /\ match_states s1 s2).
@@ -1276,8 +1277,8 @@ Proof.
 - intros. exploit transf_initial_states; eauto. intros [s2 [A B]].
   exists s2. split. auto. split. apply sound_initial; auto. auto.
 - intros. destruct H. eapply transf_final_states; eauto.
-- intros. destruct H0. exploit transf_step_correct; eauto.
-  intros [s2' [A B]]. exists s2'; split. auto. split. eapply sound_step; eauto. auto.
+- intros. destruct H0. exploit transf_step_correct; eauto. apply H.
+  intros [s2' [A B]]. exists s2'; split. auto. split. eapply sound_step; eauto. apply H. auto.
 Qed.
 
 End PRESERVATION.

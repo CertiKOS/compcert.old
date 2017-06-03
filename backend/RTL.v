@@ -83,13 +83,13 @@ Inductive instruction: Type :=
 Definition code: Type := PTree.t instruction.
 
 Record function: Type := mkfunction {
-  fn_sig: signature;
-  fn_params: list reg;
-  fn_stacksize: Z;
-  fn_code: code;
-  fn_entrypoint: node;
-  fn_stack_requirements: Z;
-}.
+                             fn_id: ident;
+                             fn_sig: signature;
+                             fn_params: list reg;
+                             fn_stacksize: Z;
+                             fn_code: code;
+                             fn_entrypoint: node;
+                           }.
 
 (** A function description comprises a control-flow graph (CFG) [fn_code]
     (a partial finite mapping from nodes to instructions).  As in Cminor,
@@ -184,7 +184,7 @@ Section WITHEXTCALLS.
 Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
-
+Variable fn_stack_requirements: ident -> Z.
 Variable ge: genv.
 
 Definition find_function
@@ -242,7 +242,7 @@ Inductive step : state -> trace -> state -> Prop :=
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       Mem.free m stk 0 f.(fn_stacksize) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
@@ -271,12 +271,12 @@ Inductive step : state -> trace -> state -> Prop :=
       forall s f stk pc rs m or m' mm,
       (fn_code f)!pc = Some(Ireturn or) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some mm ->
-      Mem.release_stackspace mm (Z.to_nat (fn_stack_requirements f)) = Some m' ->
+      Mem.release_stackspace mm = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
       forall s f args m mm m' stk,
-        Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements f)) = Some (mm) ->
+        Mem.reserve_stackspace m (Z.to_nat (fn_stack_requirements (fn_id f))) = Some (mm) ->
       Mem.alloc mm 0 f.(fn_stacksize) = (m', stk) ->
       step (Callstate s (Internal f) args m)
         E0 (State s
@@ -342,17 +342,17 @@ Inductive final_state: state -> int -> Prop :=
 
 (** The small-step semantics for a program. *)
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics fsr (p: program) :=
+  Semantics (step fsr) (initial_state p) final_state (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
 Lemma semantics_receptive:
-  forall (p: program), receptive (semantics p).
+  forall fsr (p: program), receptive (semantics fsr p).
 Proof.
   intros. constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step (Genv.globalenv p) s t2 s2).
+  assert (t1 = E0 -> exists s2, step fsr (Genv.globalenv p) s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
@@ -379,12 +379,12 @@ Variable transf: node -> instruction -> instruction.
 
 Definition transf_function (f: function) : function :=
   mkfunction
+    (fn_id f)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)
     (PTree.map transf f.(fn_code))
-    f.(fn_entrypoint)
-    f.(fn_stack_requirements).
+    f.(fn_entrypoint).
 
 End TRANSF.
 

@@ -324,13 +324,14 @@ End SELECTION.
 
 Definition sel_function (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.function) : res function :=
   do body' <- sel_stmt dm f.(Cminor.fn_body);
-  OK (mkfunction
+    OK (mkfunction
+          (Cminor.fn_id f)
         f.(Cminor.fn_sig)
         f.(Cminor.fn_params)
         f.(Cminor.fn_vars)
         f.(Cminor.fn_stackspace)
             body'
-            (Cminor.fn_stack_requirements f)).
+            ).
 
 Definition sel_fundef (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.fundef) : res fundef :=
   transf_partial_fundef (sel_function dm hf) f.

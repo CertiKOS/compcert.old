@@ -279,9 +279,9 @@ Proof.
 Qed.
 
 Lemma tunnel_step_correct:
-  forall st1 t st2, step init_ls ge st1 t st2 ->
+  forall fsr st1 t st2, step init_ls fsr ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  (exists st2', step init_ls tge st1' t st2' /\ match_states st2 st2')
+  (exists st2', step init_ls fsr tge st1' t st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
   induction 1; intros; try inv MS.
@@ -289,7 +289,7 @@ Proof.
   (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
     (exists st2' : state,
-     step init_ls tge (State ts (tunnel_function f) sp (branch_target f pc) rs m) E0 st2'
+     step init_ls fsr tge (State ts (tunnel_function f) sp (branch_target f pc) rs m) E0 st2'
      /\ match_states (Block s f sp bb rs m) st2')).
   intros. rewrite H0. econstructor; split.
   econstructor. simpl. rewrite PTree.gmap1. rewrite H. simpl. eauto.
@@ -411,8 +411,8 @@ Proof.
   intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
 
-Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
+Theorem transf_program_correct fsr:
+  forward_simulation (LTL.semantics fsr prog) (LTL.semantics fsr tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.
