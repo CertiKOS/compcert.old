@@ -84,6 +84,24 @@ Inductive perm_kind: Type :=
   | Max: perm_kind
   | Cur: perm_kind.
 
+
+Record segment :=
+  {
+    seg_ofs: Z;
+    seg_size: Z;
+  }.
+
+Record frame_info :=
+  {
+    frame_size: Z;
+    frame_ofs_link: Z;
+    frame_ofs_retaddr: Z;
+    frame_locals: segment;
+    frame_outgoings: segment;
+    frame_callee_saves: segment;
+    frame_data: segment;
+  }.
+
 Module Mem.
 
 Definition locset := block -> Z -> Prop.
@@ -226,7 +244,12 @@ that we now axiomatize. *)
  [strong_unchanged_on] will be used for ordinary memory operations. *)
 
  strong_unchanged_on: forall (P: block -> Z -> Prop) (m_before m_after: mem), Prop
+ ;
 
+ (* Stack ADT and methods *)
+ stack_adt: list (block * frame_info);
+ push_frame: mem -> frame_info -> option (mem * block);
+ pop_frame: mem -> option mem;
 
 }.
 
