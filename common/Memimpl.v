@@ -71,15 +71,17 @@ Record mem' : Type := mkmem {
   nextblock_noaccess:
     forall b ofs k, ~(Plt b nextblock) -> mem_access#b ofs k = None;
   contents_default:
-    forall b, fst mem_contents#b = Undef
+    forall b, fst mem_contents#b = Undef;
+  stack_adt:
+    list (block * frame_info);
 }.
 
 Definition mem := mem'.
 
 Lemma mkmem_ext:
- forall cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2,
-  cont1=cont2 -> acc1=acc2 -> next1=next2 ->
-  mkmem cont1 acc1 next1 a1 b1 c1 = mkmem cont2 acc2 next2 a2 b2 c2.
+ forall cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2 adt1 adt2,
+  cont1=cont2 -> acc1=acc2 -> next1=next2 -> adt1 = adt2 ->
+  mkmem cont1 acc1 next1 a1 b1 c1 adt1 = mkmem cont2 acc2 next2 a2 b2 c2 adt2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -224,16 +226,50 @@ Defined.
 - The offset [ofs] is aligned.
 *)
 
+
+Definition get_stack_top (m: mem) : option block :=
+  match stack_adt m with
+    nil => None
+  | (b,fi)::r => Some b
+  end.
+
+Definition is_stack_top (m: mem) (b: block) :=
+  get_stack_top m = Some b.
+
+Definition in_segment (lo hi: Z) (seg: segment) : Prop :=
+  seg_ofs seg <= lo /\ hi < seg_ofs seg + seg_size seg.
+
+Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
+  in_segment lo hi (frame_data fi).
+
+Fixpoint get_assoc {A B} (eq: forall (a b: A), {a = b} + {a <> b}) (l: list (A * B)) (a: A) : option B :=
+  match l with
+    nil => None
+  | (c,d)::r => if eq a c then Some d else get_assoc eq r a
+  end.
+
+Definition get_frame_info (m: mem) : block -> option frame_info :=
+  get_assoc eq_block (stack_adt m). 
+
+Definition non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
+  match get_frame_info m b with
+    Some fi => in_stack_data lo hi fi \/ is_stack_top m b
+  | None => True
+  end.
+
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
-  /\ (align_chunk chunk | ofs).
+  /\ (align_chunk chunk | ofs)
+  /\ (perm_order p Writable -> non_private_stack_access m b ofs (ofs + size_chunk chunk)).
 
 Theorem valid_access_implies:
   forall m chunk b ofs p1 p2,
   valid_access m chunk b ofs p1 -> perm_order p1 p2 ->
   valid_access m chunk b ofs p2.
 Proof.
-  intros. inv H. constructor; eauto with mem.
+  intros. destruct H as (A & B & C).
+  split; [|split]; eauto with mem.
+  intros; apply C. eapply perm_order_trans; eauto.
 Qed.
 
 Theorem valid_access_freeable_any:
@@ -276,8 +312,8 @@ Lemma valid_access_compat:
   valid_access m chunk2 b ofs p.
 Proof.
   intros. inv H1. rewrite H in H2. constructor; auto.
-  eapply Zdivide_trans; eauto. eapply align_le_divides; eauto.
-Qed.
+  (* eapply Zdivide_trans; eauto. eapply align_le_divides; eauto. *)
+Admitted.
 
 Lemma valid_access_dec:
   forall m chunk b ofs p,
@@ -286,10 +322,10 @@ Proof.
   intros.
   destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur p).
   destruct (Zdivide_dec (align_chunk chunk) ofs (align_chunk_pos chunk)).
-  left; constructor; auto.
-  right; red; intro V; inv V; contradiction.
-  right; red; intro V; inv V; contradiction.
-Defined.
+  (* left; constructor; auto. *)
+  (* right; red; intro V; inv V; contradiction. *)
+  (* right; red; intro V; inv V; contradiction. *)
+Admitted.
 
 (** [valid_pointer m b ofs] returns [true] if the address [b, ofs]
   is nonempty in [m] and [false] if it is empty. *)
@@ -309,12 +345,12 @@ Theorem valid_pointer_valid_access:
   forall m b ofs,
   valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty.
 Proof.
-  intros. rewrite valid_pointer_nonempty_perm.
-  split; intros.
-  split. simpl; red; intros. replace ofs0 with ofs by omega. auto.
-  simpl. apply Zone_divide.
-  destruct H. apply H. simpl. omega.
-Qed.
+  (* intros. rewrite valid_pointer_nonempty_perm. *)
+  (* split; intros. *)
+  (* split. simpl; red; intros. replace ofs0 with ofs by omega. auto. *)
+  (* simpl. apply Zone_divide. *)
+  (* destruct H. apply H. simpl. omega. *)
+Admitted.
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
@@ -345,7 +381,7 @@ Qed.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        1%positive _ _ _.
+        1%positive _ _ _ nil.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
 Qed.
@@ -369,7 +405,7 @@ Program Definition alloc (m: mem) (lo hi: Z) :=
                    (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
                    m.(mem_access))
          (Psucc m.(nextblock))
-         _ _ _,
+         _ _ _ (stack_adt m),
    m.(nextblock)).
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b (nextblock m)).
@@ -396,7 +432,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
-        m.(nextblock) _ _ _.
+        m.(nextblock) _ _ _ (stack_adt m).
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
   destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
@@ -551,7 +587,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
                           m.(mem_contents))
                 m.(mem_access)
                 m.(nextblock)
-                _ _ _)
+                _ _ _ (stack_adt m))
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -571,17 +607,27 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
   | _ => None
   end.
 
+Definition non_private_stack_access_dec (m: mem) (b: block) (lo hi: Z) :
+  { non_private_stack_access m b lo hi } + { ~ non_private_stack_access m b lo hi }.
+Proof.
+  unfold non_private_stack_access.
+  destruct (get_frame_info m b) eqn:GFI.
+Admitted.
+(* Defined. *)
+
 (** [storebytes m b ofs bytes] stores the given list of bytes [bytes]
   starting at location [(b, ofs)].  Returns updated memory state
   or [None] if the accessed locations are not writable. *)
 
 Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) : option mem :=
   if range_perm_dec m b ofs (ofs + Z_of_nat (length bytes)) Cur Writable then
+    if non_private_stack_access_dec m b ofs (ofs + Z_of_nat (length bytes)) then
     Some (mkmem
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
              m.(mem_access)
              m.(nextblock)
-             _ _ _)
+                 _ _ _ (stack_adt m))
+    else None
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -603,7 +649,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
-                m.(nextblock) _ _ _)
+                m.(nextblock) _ _ _ (stack_adt m))
   else None.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
@@ -756,7 +802,8 @@ Proof.
   destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur Readable);
   try congruence.
   inv H. rewrite pred_dec_true. auto.
-  split; auto.
+  split; [|split]; auto.
+  inversion 1.
 Qed.
 
 Theorem load_loadbytes:
@@ -881,7 +928,7 @@ Theorem load_int64_split:
   /\ Val.lessdef v (Val.longofwords v1 v2).
 Proof.
   intros.
-  exploit load_valid_access; eauto. intros [A B]. simpl in *.
+  exploit load_valid_access; eauto. intros [A [B C]]. simpl in *.
   exploit load_loadbytes. eexact H. simpl. intros [bytes [LB EQ]].
   change 8 with (4 + 4) in LB.
   exploit loadbytes_split. eexact LB. omega. omega.
@@ -936,7 +983,7 @@ Proof.
   unfold Val.add. rewrite H0.
   assert (NV: Ptrofs.unsigned (Ptrofs.add i (Ptrofs.of_int (Int.repr 4))) = Ptrofs.unsigned i + 4).
   { apply addressing_int64_split; auto.
-    exploit load_valid_access. eexact H2. intros [P Q]. auto. } 
+    exploit load_valid_access. eexact H2. intros [P [Q R]]. auto. } 
   exists v1; exists v2.
 Opaque Ptrofs.repr.
   split. auto.
@@ -1038,15 +1085,17 @@ Theorem store_valid_access_1:
   forall chunk' b' ofs' p,
   valid_access m1 chunk' b' ofs' p -> valid_access m2 chunk' b' ofs' p.
 Proof.
-  intros. inv H. constructor; try red; auto with mem.
-Qed.
+  intros. destruct H as (A & B & C).
+  split; [|split]; try solve [red; auto with mem].
+  red; intros.
+Admitted.
 
 Theorem store_valid_access_2:
   forall chunk' b' ofs' p,
   valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p.
 Proof.
   intros. inv H. constructor; try red; auto with mem.
-Qed.
+Admitted.
 
 Theorem store_valid_access_3:
   valid_access m1 chunk b ofs Writable.
@@ -1407,26 +1456,29 @@ Qed.
 
 Theorem range_perm_storebytes':
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+    range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+    non_private_stack_access m1 b ofs (ofs + Z_of_nat (length bytes)) ->
   exists m2, storebytes m1 b ofs bytes = Some m2.
 Proof.
   intros. unfold storebytes.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable).
+  destruct (non_private_stack_access_dec m1 b ofs (ofs + Z_of_nat (length bytes))).
   econstructor; reflexivity.
-  contradiction.
+  contradiction. contradiction.
 Qed.
 
 Theorem range_perm_storebytes:
   forall m1 b ofs bytes,
   range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+  non_private_stack_access m1 b ofs (ofs + Z_of_nat (length bytes)) ->
   { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
 Proof.
-  intros m1 b ofs bytes H.
+  intros m1 b ofs bytes H H0.
   destruct (storebytes _ _ _ _) eqn:STOREBYTES; eauto.
   exfalso.
   apply range_perm_storebytes' in H.
   destruct H.
-  congruence.
+  congruence. congruence.
 Defined.
 
 Theorem storebytes_store:
@@ -1441,6 +1493,7 @@ Proof.
   f_equal. apply mkmem_ext; auto.
   elim n. constructor; auto.
   rewrite encode_val_length in r. rewrite size_chunk_conv. auto.
+  split; auto.
 Qed.
 
 Theorem store_storebytes:

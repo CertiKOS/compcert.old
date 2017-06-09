@@ -247,7 +247,7 @@ that we now axiomatize. *)
  ;
 
  (* Stack ADT and methods *)
- stack_adt: list (block * frame_info);
+ stack_adt: mem -> list (block * frame_info);
  push_frame: mem -> frame_info -> option (mem * block);
  pop_frame: mem -> option mem;
 
@@ -255,6 +255,36 @@ that we now axiomatize. *)
 
 Section WITHMEMORYMODELOPS.
 Context `{memory_model_ops: MemoryModelOps}.
+
+Definition get_stack_top (m: mem) : option block :=
+  match stack_adt m with
+    nil => None
+  | (b,fi)::r => Some b
+  end.
+
+Definition is_stack_top (m: mem) (b: block) :=
+  get_stack_top m = Some b.
+
+Definition in_segment (lo hi: Z) (seg: segment) : Prop :=
+  seg_ofs seg <= lo /\ hi < seg_ofs seg + seg_size seg.
+
+Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
+  in_segment lo hi (frame_data fi).
+
+Fixpoint get_assoc {A B} (eq: forall (a b: A), {a = b} + {a <> b}) (l: list (A * B)) (a: A) : option B :=
+  match l with
+    nil => None
+  | (c,d)::r => if eq a c then Some d else get_assoc eq r a
+  end.
+
+Definition get_frame_info (m: mem) : block -> option frame_info :=
+  get_assoc eq_block (stack_adt m). 
+
+Definition non_private_stack_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) : Prop :=
+  match get_frame_info m b with
+    Some fi => in_stack_data ofs (ofs + size_chunk chunk) fi \/ is_stack_top m b
+  | None => True
+  end.
 
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)
@@ -289,7 +319,8 @@ Definition valid_block (m: mem) (b: block) := Plt b (nextblock m).
   current permission [p] and moreover the offset is properly aligned. *)
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
-  /\ (align_chunk chunk | ofs).
+  /\ (align_chunk chunk | ofs)
+  /\ (perm_order p Writable -> non_private_stack_access m chunk b ofs).
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
