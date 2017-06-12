@@ -312,20 +312,75 @@ Lemma valid_access_compat:
   valid_access m chunk2 b ofs p.
 Proof.
   intros. inv H1. rewrite H in H2. constructor; auto.
-  (* eapply Zdivide_trans; eauto. eapply align_le_divides; eauto. *)
-Admitted.
+  destruct H3. split. 
+  - eapply Zdivide_trans; eauto. eapply align_le_divides; eauto.
+  - rewrite <- H. auto.
+Qed.
+
+Lemma in_segment_dec : forall lo hi seg,
+  {in_segment lo hi seg} + {~in_segment lo hi seg}.
+Proof.
+  unfold in_segment. intros.
+  destruct (zle (seg_ofs seg) lo).
+  - destruct (zlt hi (seg_ofs seg + seg_size seg)).
+    + left. constructor;  assumption.
+    + right. red. intro V. omega.
+  - right. red. omega.
+Qed.    
+
+Lemma in_stack_data_dec : forall lo hi f,
+  {in_stack_data lo hi f} + {~in_stack_data lo hi f}.
+Proof.
+  unfold in_stack_data. intros.
+  destruct (in_segment_dec lo hi (frame_data f)).
+  - left. assumption.
+  - right. assumption.
+Qed.
+
+Lemma is_stack_top_dec : forall m b,
+  {is_stack_top m b} + {~is_stack_top m b}.
+Proof.
+  intros. unfold is_stack_top. decide equality.
+  apply eq_block.
+Qed.
+
+Lemma non_private_stack_access_dec : forall m b lo hi,
+  {non_private_stack_access m b lo hi} + 
+  {~non_private_stack_access m b lo hi}.
+Proof.
+  intros. unfold non_private_stack_access.
+  destruct (get_frame_info m b).
+  - destruct (in_stack_data_dec lo hi f);
+    destruct (is_stack_top_dec m b);
+    try now (left; auto).
+    right. red. intros. inv H; auto.
+  - auto.
+Qed.
+
+Lemma non_writable_private_stack_access_dec : forall p m b ofs chunk,
+  {(perm_order p Writable -> non_private_stack_access m b ofs (ofs + size_chunk chunk))}
+  + {~ (perm_order p Writable -> non_private_stack_access m b ofs (ofs + size_chunk chunk))}.
+Proof.
+  intros.
+  destruct (perm_order_dec p Writable);
+  destruct (non_private_stack_access_dec m b ofs (ofs + size_chunk chunk)).
+  - left. auto.
+  - right. auto.
+  - left. auto.
+  - left. intros. congruence.
+Qed.
 
 Lemma valid_access_dec:
   forall m chunk b ofs p,
   {valid_access m chunk b ofs p} + {~ valid_access m chunk b ofs p}.
 Proof.
   intros.
-  destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur p).
-  destruct (Zdivide_dec (align_chunk chunk) ofs (align_chunk_pos chunk)).
-  (* left; constructor; auto. *)
-  (* right; red; intro V; inv V; contradiction. *)
-  (* right; red; intro V; inv V; contradiction. *)
-Admitted.
+  destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur p);
+  destruct (Zdivide_dec (align_chunk chunk) ofs (align_chunk_pos chunk));
+  destruct (non_writable_private_stack_access_dec p m b ofs chunk);
+  try now (right; red; intro V; inv V; destruct H0; contradiction).
+  - left; constructor; auto.
+Qed.
 
 (** [valid_pointer m b ofs] returns [true] if the address [b, ofs]
   is nonempty in [m] and [false] if it is empty. *)
@@ -345,12 +400,13 @@ Theorem valid_pointer_valid_access:
   forall m b ofs,
   valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty.
 Proof.
-  (* intros. rewrite valid_pointer_nonempty_perm. *)
-  (* split; intros. *)
-  (* split. simpl; red; intros. replace ofs0 with ofs by omega. auto. *)
-  (* simpl. apply Zone_divide. *)
-  (* destruct H. apply H. simpl. omega. *)
-Admitted.
+  intros. rewrite valid_pointer_nonempty_perm.
+  split; intros.
+  split. simpl; red; intros. replace ofs0 with ofs by omega. auto.
+  split. simpl. apply Zone_divide.
+  intros. inversion H0.
+  destruct H. apply H. simpl. omega.
+Qed.
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
@@ -606,14 +662,6 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
   | Vptr b ofs => store chunk m b (Ptrofs.unsigned ofs) v
   | _ => None
   end.
-
-Definition non_private_stack_access_dec (m: mem) (b: block) (lo hi: Z) :
-  { non_private_stack_access m b lo hi } + { ~ non_private_stack_access m b lo hi }.
-Proof.
-  unfold non_private_stack_access.
-  destruct (get_frame_info m b) eqn:GFI.
-Admitted.
-(* Defined. *)
 
 (** [storebytes m b ofs bytes] stores the given list of bytes [bytes]
   starting at location [(b, ofs)].  Returns updated memory state
@@ -1081,21 +1129,42 @@ Qed.
 
 Local Hint Resolve store_valid_block_1 store_valid_block_2: mem.
 
+Theorem store_non_private_stack_access_1: forall b lo hi,
+  non_private_stack_access m1 b lo hi -> non_private_stack_access m2 b lo hi.
+Proof.
+  intros.
+  unfold store in STORE. destruct ( valid_access_dec m1 chunk b ofs Writable); inv STORE.
+  auto.
+Qed.
+
+Theorem store_non_private_stack_access_2: forall b lo hi,
+  non_private_stack_access m2 b lo hi -> non_private_stack_access m1 b lo hi.
+Proof.
+  intros.
+  unfold store in STORE. destruct ( valid_access_dec m1 chunk b ofs Writable); inv STORE.
+  auto.
+Qed.
+
+
+Local Hint Resolve store_non_private_stack_access_1 store_non_private_stack_access_2 : mem.
+
 Theorem store_valid_access_1:
   forall chunk' b' ofs' p,
   valid_access m1 chunk' b' ofs' p -> valid_access m2 chunk' b' ofs' p.
 Proof.
   intros. destruct H as (A & B & C).
   split; [|split]; try solve [red; auto with mem].
-  red; intros.
-Admitted.
+  auto with mem.
+Qed.
 
 Theorem store_valid_access_2:
   forall chunk' b' ofs' p,
   valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p.
 Proof.
-  intros. inv H. constructor; try red; auto with mem.
-Admitted.
+  intros. destruct H as (A & B & C).
+  split; [|split]; try solve [red; auto with mem].
+  auto with mem.
+Qed.
 
 Theorem store_valid_access_3:
   valid_access m1 chunk b ofs Writable.
@@ -1489,11 +1558,13 @@ Theorem storebytes_store:
 Proof.
   unfold storebytes, store. intros.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable); inv H.
-  destruct (valid_access_dec m1 chunk b ofs Writable).
-  f_equal. apply mkmem_ext; auto.
-  elim n. constructor; auto.
-  rewrite encode_val_length in r. rewrite size_chunk_conv. auto.
-  split; auto.
+  destruct (valid_access_dec m1 chunk b ofs Writable);
+  destruct (non_private_stack_access_dec m1 b ofs 
+              (ofs + Z.of_nat (length (encode_val chunk v)))).
+  - f_equal. apply mkmem_ext; auto.
+  - inversion H2.
+  - elim n. rewrite encode_val_length in r, n0. constructor; try rewrite size_chunk_conv; auto.
+  - auto.
 Qed.
 
 Theorem store_storebytes:
