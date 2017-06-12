@@ -280,9 +280,9 @@ Fixpoint get_assoc {A B} (eq: forall (a b: A), {a = b} + {a <> b}) (l: list (A *
 Definition get_frame_info (m: mem) : block -> option frame_info :=
   get_assoc eq_block (stack_adt m). 
 
-Definition non_private_stack_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) : Prop :=
+Definition non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
   match get_frame_info m b with
-    Some fi => in_stack_data ofs (ofs + size_chunk chunk) fi \/ is_stack_top m b
+    Some fi => in_stack_data lo hi fi \/ is_stack_top m b
   | None => True
   end.
 
@@ -320,7 +320,7 @@ Definition valid_block (m: mem) (b: block) := Plt b (nextblock m).
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
   /\ (align_chunk chunk | ofs)
-  /\ (perm_order p Writable -> non_private_stack_access m chunk b ofs).
+  /\ (perm_order p Writable -> non_private_stack_access m b ofs (ofs + size_chunk chunk)).
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
@@ -678,11 +678,15 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  range_perm_storebytes' :
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+    range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+    non_private_stack_access m1 b ofs (ofs + Z_of_nat (length bytes)) ->
   exists m2 : mem, storebytes m1 b ofs bytes = Some m2;
  storebytes_range_perm:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable;
+                       range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable;
+ storebytes_non_private_stack_access:
+  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+     non_private_stack_access m1 b ofs (ofs + Z_of_nat (length bytes)) ;
  perm_storebytes_1:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
   forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p;
@@ -1649,7 +1653,36 @@ for [unchanged_on]. *)
         exists (b0 : block) (delta : Z),
           j b0 = Some (b, delta) /\
           perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
-   inject j m0 m'
+   inject j m0 m';
+
+ store_get_frame_info:
+   forall chunk m1 b o v m2 (STORE: store chunk m1 b o v = Some m2),
+   forall b', get_frame_info m2 b' = get_frame_info m1 b';
+ store_is_stack_top:
+   forall chunk m1 b o v m2 (STORE: store chunk m1 b o v = Some m2),
+   forall b', is_stack_top m2 b' <-> is_stack_top m1 b';
+
+
+ storebytes_get_frame_info:
+   forall m1 b o v m2 (STOREBYTES: storebytes m1 b o v = Some m2),
+   forall b', get_frame_info m2 b' = get_frame_info m1 b';
+ storebytes_is_stack_top:
+   forall m1 b o v m2 (STOREBYTES: storebytes m1 b o v = Some m2),
+   forall b', is_stack_top m2 b' <-> is_stack_top m1 b';
+
+
+ alloc_get_frame_info:
+   forall m1 lo hi m2 b (ALLOC: alloc m1 lo hi = (m2, b)),
+   forall b', get_frame_info m2 b' = get_frame_info m1 b';
+ alloc_is_stack_top:
+   forall m1 lo hi m2 b (ALLOC: alloc m1 lo hi = (m2, b)),
+   forall b', is_stack_top m2 b' <-> is_stack_top m1 b';
+
+ alloc_get_frame_info_fresh:
+   forall m1 lo hi m2 b (ALLOC: alloc m1 lo hi = (m2, b)),
+     get_frame_info m2 b = None;
+
+
 }.
 
 Section WITHMEMORYMODEL.
@@ -1671,15 +1704,17 @@ Defined.
 
 Lemma range_perm_storebytes:
   forall m1 b ofs bytes,
-  range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+    range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
+    non_private_stack_access m1 b ofs (ofs + Z_of_nat (length bytes)) ->
   { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
 Proof.
-  intros m1 b ofs bytes H.
+  intros m1 b ofs bytes H NPSA.
   destruct (storebytes _ _ _ _) eqn:STOREBYTES; eauto.
   exfalso.
   apply range_perm_storebytes' in H.
   destruct H.
   congruence.
+  apply NPSA.
 Defined.
 
 Lemma range_perm_free:
@@ -1795,6 +1830,20 @@ Proof.
   generalize (perm_free_3 _ _ _ _ _ H b' o' k p).
   tauto.
 Qed.
+
+Lemma store_non_private_stack_access:
+  forall chunk m b o v m1 ,
+    Mem.store chunk m b o v = Some m1 ->
+    forall b' lo hi,
+      Mem.non_private_stack_access m1 b' lo hi <-> Mem.non_private_stack_access m b' lo hi.
+Proof.
+  unfold Mem.non_private_stack_access.
+  intros.
+  rewrite (Mem.store_get_frame_info _ _ _ _ _ _ H).
+  destruct (Mem.get_frame_info m b'); try tauto.
+  rewrite (Mem.store_is_stack_top _ _ _ _ _ _ H); tauto.
+Qed.
+
 
 End WITHMEMORYMODEL.
 
