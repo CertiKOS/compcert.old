@@ -617,7 +617,7 @@ Proof.
   { rewrite <- LB'. eapply Mem.loadbytes_storebytes_other; eauto.
     unfold n2; omega.
     right; left; omega. }
-  exploit Mem.load_valid_access; eauto. intros [P Q].
+  exploit Mem.load_valid_access; eauto. intros [P [Q R]].
   rewrite B. apply Mem.loadbytes_load.
   replace (i + (ofs2 - ofs1)) with (ofs2 + n1) by (unfold n1; omega).
   exact LB''.

@@ -75,7 +75,9 @@ Record function: Type := mkfunction
     fn_code: code;
     fn_stacksize: Z;
     fn_link_ofs: ptrofs;
-    fn_retaddr_ofs: ptrofs }.
+    fn_retaddr_ofs: ptrofs;
+    fn_frame: frame_info;
+  }.
 
 Definition fundef := AST.fundef function.
 
@@ -246,7 +248,7 @@ End WITHMEMORYMODELOPS2.
 Inductive stackframe: Type :=
   | Stackframe:
       forall (f: block)       (**r pointer to calling function *)
-             (sp: val)        (**r stack pointer in calling function *)
+             (sp: block)        (**r stack pointer in calling function *)
              (retaddr: val)   (**r Asm return address in calling function *)
              (c: code),       (**r program point in calling function *)
       stackframe.
@@ -281,7 +283,7 @@ Variables init_sp init_ra: val.
 Definition parent_sp (s: list stackframe) : val :=
   match s with
   | nil => init_sp
-  | Stackframe f sp ra c :: s' => sp
+  | Stackframe f sp ra c :: s' => Vptr sp Ptrofs.zero
   end.
 
 Definition parent_ra (s: list stackframe) : val :=
@@ -293,6 +295,24 @@ Definition parent_ra (s: list stackframe) : val :=
 Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
 Variable ge: genv.
+
+Definition empty_segment : segment :=
+  {|
+    seg_ofs := 0;
+    seg_size:= 0;
+  |}.
+
+Definition empty_frame : frame_info :=
+  {|
+    frame_size := 0;
+    frame_ofs_link:= 0;
+    frame_ofs_retaddr:= 0;
+    frame_locals := empty_segment;
+    frame_outgoings := empty_segment;
+    frame_callee_saves := empty_segment;
+    frame_data := empty_segment;
+  |}.
+    
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -343,7 +363,7 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
-      step (State s fb sp (Mcall sig ros :: c) rs m)
+      step (State s fb (Vptr sp Ptrofs.zero) (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp (Vptr fb ra) c :: s)
                        f' rs m)
   | exec_Mtailcall:
@@ -352,7 +372,8 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
-      Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' ->
+      (* Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' -> *)
+      Mem.pop_frame m = Some m' ->
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
@@ -397,13 +418,16 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
-      Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' ->
+      (* Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' -> *)
+      Mem.pop_frame m = Some m' ->
+      Mem.pop_frame m = Some m' ->
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s rs m')
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk rs',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) ->
+      (* Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) -> *)
+      Mem.push_frame m (fn_frame f) = Some (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
@@ -411,25 +435,30 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
-      forall s fb rs m t rs' ef args res m',
+      forall s fb rs m t rs' ef args res m1 m1' stk m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
-      forall (* CompCertX: BEGIN additional conditions for calling convention *)
-        (STACK:
-           exists m_,
-             free_extcall_args (parent_sp s) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
-             exists t_ res'_ m'_,
-               external_call ef ge args m_ t_ res'_ m'_
-        )
-      ,      (* CompCertX: END additional conditions for calling convention *)
-      external_call ef ge args m t res m' ->
+      (* forall (* CompCertX: BEGIN additional conditions for calling convention *) *)
+      (*   (STACK: *)
+      (*      exists m_, *)
+      (*        free_extcall_args (parent_sp s) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\ *)
+      (*        exists t_ res'_ m'_, *)
+      (*          external_call ef ge args m_ t_ res'_ m'_ *)
+      (*   ) *)
+      (* ,      (* CompCertX: END additional conditions for calling convention *) *)
+      (* PW: We push a dummy empty frame so that the stack top for the purpose
+      of the external call is not the caller's stack frame but rather the stack
+      frame of the hypothetical caller.*)
+      Mem.push_frame m empty_frame = Some (m1,stk) ->
+      external_call ef ge args m1 t res m1' ->
+      Mem.pop_frame m1' = Some m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')
   | exec_return:
       forall s f sp ra c rs m,
       step (Returnstate (Stackframe f sp ra c :: s) rs m)
-        E0 (State s f sp c rs m).
+        E0 (State s f (Vptr sp Ptrofs.zero) c rs m).
 
 End RELSEM.
 

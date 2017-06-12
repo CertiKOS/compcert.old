@@ -1258,6 +1258,10 @@ Proof.
   destruct (Mem.range_perm_storebytes m1' b0 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta0))) nil)
   as [m2' SB].
   simpl. red; intros; omegaContradiction.
+  unfold Mem.non_private_stack_access.
+  simpl.
+  destruct (Mem.get_frame_info m1' b0); auto.
+  left; red; intros. omegaContradiction.
   exists f, Vundef, m2'.
   split. econstructor; eauto.
   intros; omegaContradiction.

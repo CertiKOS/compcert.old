@@ -265,11 +265,11 @@ Definition get_stack_top (m: mem) : option block :=
 Definition is_stack_top (m: mem) (b: block) :=
   get_stack_top m = Some b.
 
-Definition in_segment (lo hi: Z) (seg: segment) : Prop :=
-  seg_ofs seg <= lo /\ hi < seg_ofs seg + seg_size seg.
+Definition in_segment (ofs: Z) (seg: segment) : Prop :=
+  seg_ofs seg <= ofs < seg_ofs seg + seg_size seg.
 
 Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
-  in_segment lo hi (frame_data fi).
+  forall ofs, lo <= ofs < hi -> in_segment ofs (frame_data fi).
 
 Fixpoint get_assoc {A B} (eq: forall (a b: A), {a = b} + {a <> b}) (l: list (A * B)) (a: A) : option B :=
   match l with
@@ -1682,6 +1682,44 @@ for [unchanged_on]. *)
    forall m1 lo hi m2 b (ALLOC: alloc m1 lo hi = (m2, b)),
      get_frame_info m2 b = None;
 
+ unchanged_on_get_frame_info:
+   forall m1 m2 P (UNCH: unchanged_on P m1 m2),
+   forall b' o, P b' o -> get_frame_info m2 b' = get_frame_info m1 b';
+ unchanged_on_is_stack_top:
+   forall m1 m2 P (UNCH: unchanged_on P m1 m2),
+   forall b' o, P b' o -> is_stack_top m2 b' = is_stack_top m1 b';
+
+
+ push_frame_perm_1:
+   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
+     forall b' o k p, perm m1 b' o k p -> perm m2 b' o k p;
+
+ push_frame_valid_block_1:
+   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
+     forall b', valid_block m1 b' -> valid_block m2 b';
+
+ push_frame_valid_new_block:
+   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
+     valid_block m2 b;
+
+ push_frame_fresh_block:
+   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
+     ~ valid_block m1 b;
+
+ push_frame_is_stack_top:
+   forall m f m' sp,
+     Mem.push_frame m f = Some (m', sp) ->
+     Mem.is_stack_top m' sp;
+
+ push_frame_succeeds:
+   forall m1 f,
+   exists m2 b,
+     Mem.push_frame m1 f = Some (m2, b);
+
+ push_frame_strong_unchanged_on:
+   forall P m f m' b,
+     push_frame m f = Some (m', b) ->
+     strong_unchanged_on P m m';
 
 }.
 
@@ -1792,6 +1830,15 @@ Proof.
   intros. apply strong_unchanged_on_weak. eapply alloc_strong_unchanged_on; eauto.
 Qed.
 
+Lemma push_frame_unchanged_on:
+   forall P m f m' b,
+     push_frame m f = Some (m', b) ->
+     unchanged_on P m m'.
+Proof.
+  intros. apply strong_unchanged_on_weak. eapply push_frame_strong_unchanged_on; eauto.
+Qed.
+
+
 Lemma free_unchanged_on:
   forall P m b lo hi m',
   free m b lo hi = Some m' ->
@@ -1831,6 +1878,33 @@ Proof.
   tauto.
 Qed.
 
+Lemma lo_ge_hi_non_private_stack_access:
+  forall m b lo hi,
+    lo >= hi ->
+    Mem.non_private_stack_access m b lo hi.
+Proof.
+  unfold Mem.non_private_stack_access.
+  intros.
+  destruct (get_frame_info m b); try tauto.
+  left; red; intros. omega.
+Qed.
+
+Lemma unchanged_on_non_private_stack_access:
+  forall P m m1 ,
+    Mem.unchanged_on P m m1 ->
+    forall b' lo hi,
+      (forall o, lo <= o < hi -> P b' o) ->
+      Mem.non_private_stack_access m1 b' lo hi <-> Mem.non_private_stack_access m b' lo hi.
+Proof.
+  intros.
+  destruct (zlt lo hi).
+  - unfold Mem.non_private_stack_access.
+    rewrite (unchanged_on_get_frame_info _ _ _ H b' lo). 2: apply H0; omega.
+    destruct (get_frame_info m b'); try tauto.
+    rewrite (unchanged_on_is_stack_top _ _ _ H b' lo). 2: apply H0; omega. tauto.
+  - split; intros; apply lo_ge_hi_non_private_stack_access; auto.
+Qed.
+
 Lemma store_non_private_stack_access:
   forall chunk m b o v m1 ,
     Mem.store chunk m b o v = Some m1 ->
@@ -1842,6 +1916,34 @@ Proof.
   rewrite (Mem.store_get_frame_info _ _ _ _ _ _ H).
   destruct (Mem.get_frame_info m b'); try tauto.
   rewrite (Mem.store_is_stack_top _ _ _ _ _ _ H); tauto.
+Qed.
+
+Lemma in_stack_data_inside:
+  forall fi lo hi lo' hi',
+    Mem.in_stack_data lo hi fi ->
+    lo <= lo' ->
+    hi' <= hi ->
+    Mem.in_stack_data lo' hi' fi.
+Proof.
+  intros fi lo hi lo' hi' NPSA LO HI.
+  do 2 red in NPSA |- *.
+  intros; apply NPSA. omega.
+Qed.
+
+
+
+Lemma non_private_stack_access_inside:
+  forall m b lo hi lo' hi',
+    Mem.non_private_stack_access m b lo hi ->
+    lo <= lo' ->
+    hi' <= hi ->
+    Mem.non_private_stack_access m b lo' hi'.
+Proof.
+  intros m b lo hi lo' hi' NPSA LO HI.
+  unfold Mem.non_private_stack_access in *.
+  destruct (Mem.get_frame_info m b); auto.
+  destruct NPSA as [NPSA|NPSA]; auto.
+  eapply in_stack_data_inside in NPSA; eauto.
 Qed.
 
 

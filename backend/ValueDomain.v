@@ -3051,7 +3051,7 @@ Remark loadbytes_load_ext:
   forall chunk ofs v, Mem.load chunk m' b ofs = Some v -> Mem.load chunk m b ofs = Some v.
 Proof.
   intros. exploit Mem.load_loadbytes; eauto. intros [bytes [A B]].
-  exploit Mem.load_valid_access; eauto. intros [C D].
+  exploit Mem.load_valid_access; eauto. intros [C [D E]].
   subst v. apply Mem.loadbytes_load; auto. apply H; auto. generalize (size_chunk_pos chunk); omega.
 Qed.
 

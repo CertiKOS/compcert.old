@@ -61,7 +61,7 @@ Lemma magree_store_parallel:
   exists m2', Mem.store chunk m2 b ofs v2 = Some m2' /\ magree m1' m2' Q.
 Proof.
   intros.
-  exploit Mem.store_valid_access_3; eauto. intros [A B].
+  exploit Mem.store_valid_access_3; eauto. intros [A [B C]].
   exploit Mem.store_storebytes; eauto. intros SB1.
   exploit magree_storebytes_parallel. eauto. eauto.
   instantiate (1 := Q). intros. rewrite encode_val_length in H4.

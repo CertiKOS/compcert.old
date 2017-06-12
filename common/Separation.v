@@ -345,13 +345,16 @@ Qed.
 Program Definition range (b: block) (lo hi: Z) : massert := {|
   m_pred := fun m =>
        0 <= lo /\ hi <= Ptrofs.modulus
-    /\ (forall i k p, lo <= i < hi -> Mem.perm m b i k p);
+       /\ (forall i k p, lo <= i < hi -> Mem.perm m b i k p)
+       /\ Mem.non_private_stack_access m b lo hi;
   m_footprint := fun b' ofs' => b' = b /\ lo <= ofs' < hi
   ;
   m_invar_weak := false
 |}.
 Next Obligation.
-  split; auto. split; auto. intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+  split; auto. split; auto. split; auto. intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+  eapply Mem.unchanged_on_non_private_stack_access; eauto.
+  intros. simpl. split; auto.
 Qed.
 Next Obligation.
   apply Mem.perm_valid_block with ofs Cur Freeable; auto.
@@ -365,9 +368,10 @@ Lemma alloc_rule:
   m' |= range b lo hi ** P.
 Proof.
   intros; simpl. split; [|split]. 
-- split; auto. split; auto. intros.
+- split; auto. split; auto. split; auto. intros.
   apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.perm_alloc_2; eauto.
+  red. erewrite Mem.alloc_get_frame_info_fresh; eauto.
 - apply (m_invar P) with m; auto.
   destruct (m_invar_weak P).
   + eapply Mem.alloc_strong_unchanged_on; eauto.
@@ -384,14 +388,16 @@ Lemma range_split:
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto. 
   split; [ | split]; simpl; intros.
-- assumption.
-- intuition auto.
-+ omega.
-+ apply H5; omega.
-+ omega.
-+ apply H5; omega.
-+ red; simpl; intros; omega.
-- intuition omega.
+  - assumption.
+  - intuition auto.
+    + omega.
+    + apply H4; omega.
+    + eapply Mem.non_private_stack_access_inside; eauto. omega.
+    + omega.
+    + apply H4; omega.
+    + eapply Mem.non_private_stack_access_inside; eauto. omega.
+    + red; simpl; intros; omega.
+  - intuition omega.
 Qed.
 
 Lemma range_drop_left:
@@ -414,28 +420,31 @@ Qed.
 
 Lemma range_split_2:
   forall b lo hi P mid al m,
-  lo <= align mid al <= hi ->
-  al > 0 ->
-  m |= range b lo hi ** P ->
-  m |= range b lo mid ** range b (align mid al) hi ** P.
+    lo <= align mid al <= hi ->
+    al > 0 ->
+    m |= range b lo hi ** P ->
+    m |= range b lo mid ** range b (align mid al) hi ** P.
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto.
   assert (mid <= align mid al) by (apply align_le; auto).
   split; [ | split ] ; simpl; intros.
-- assumption.
-- intuition auto.
-+ omega.
-+ apply H7; omega.
-+ omega.
-+ apply H7; omega.
-+ red; simpl; intros; omega.
-- intuition omega.
+  - assumption.
+  - intuition auto.
+    + omega.
+    + apply H6; omega.
+    + eapply Mem.non_private_stack_access_inside; eauto; omega.
+    + omega.
+    + apply H6; omega.
+    + eapply Mem.non_private_stack_access_inside; eauto; omega.
+    + red; simpl; intros; omega.
+  - intuition omega.
 Qed.
 
 Lemma range_preserved:
   forall m m' b lo hi,
   m |= range b lo hi ->
   (forall i k p, lo <= i < hi -> Mem.perm m b i k p -> Mem.perm m' b i k p) ->
+  (Mem.non_private_stack_access m b lo hi -> Mem.non_private_stack_access m' b lo hi) ->
   m' |= range b lo hi.
 Proof.
   intros. destruct H as (A & B & C). simpl; intuition auto.
@@ -455,7 +464,8 @@ Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (spec: val
 Next Obligation.
   rename H2 into v. split;[|split].
 - auto.
-- destruct H1; split; auto. red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+- destruct H1. destruct H2. split;[|split]; auto. red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+  intros. erewrite (Mem.unchanged_on_non_private_stack_access _ _ _ H0); auto.
 - exists v. split; auto. eapply Mem.load_unchanged_on; eauto. simpl; auto.
 Qed.
 Next Obligation.
@@ -526,15 +536,15 @@ Lemma range_contains:
   (align_chunk chunk | ofs) ->
   m |= contains chunk b ofs (fun v => True) ** P.
 Proof.
-  intros. destruct H as (A & B & C). destruct A as (D & E & F).
+  intros. destruct H as (A & B & C). destruct A as (D & E & F & G).
   split; [|split].
 - assert (Mem.valid_access m chunk b ofs Freeable).
   { split; auto. red; auto. }
   split. generalize (size_chunk_pos chunk). unfold Ptrofs.max_unsigned. omega.
   split. auto.
-+ destruct (Mem.valid_access_load m chunk b ofs) as [v LOAD].
-  eauto with mem.
-  exists v; auto.
+  + destruct (Mem.valid_access_load m chunk b ofs) as [v LOAD].
+    eauto with mem.
+    exists v; auto.
 - auto.
 - auto.
 Qed.
@@ -717,19 +727,19 @@ Qed.
 
 Lemma alloc_parallel_rule:
   forall m1 sz1 m1' b1 m2 sz2 m2' b2 P j lo hi delta,
-  m2 |= minjection j m1 ** P ->
-  Mem.alloc m1 0 sz1 = (m1', b1) ->
-  Mem.alloc m2 0 sz2 = (m2', b2) ->
-  (8 | delta) ->
-  lo = delta ->
-  hi = delta + Zmax 0 sz1 ->
-  0 <= sz2 <= Ptrofs.max_unsigned ->
-  0 <= delta -> hi <= sz2 ->
-  exists j',
-     m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' m1' ** P
-  /\ inject_incr j j'
-  /\ j' b1 = Some(b2, delta)
-  /\ (forall b, b <> b1 -> j' b = j b).
+    m2 |= minjection j m1 ** P ->
+    Mem.alloc m1 0 sz1 = (m1', b1) ->
+    Mem.alloc m2 0 sz2 = (m2', b2) ->
+    (8 | delta) ->
+    lo = delta ->
+    hi = delta + Zmax 0 sz1 ->
+    0 <= sz2 <= Ptrofs.max_unsigned ->
+    0 <= delta -> hi <= sz2 ->
+    exists j',
+      m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' m1' ** P
+      /\ inject_incr j j'
+      /\ j' b1 = Some(b2, delta)
+      /\ (forall b, b <> b1 -> j' b = j b).
 Proof.
   intros until delta; intros SEP ALLOC1 ALLOC2 ALIGN LO HI RANGE1 RANGE2 RANGE3.
   assert (RANGE4: lo <= hi) by xomega.
@@ -737,49 +747,51 @@ Proof.
   assert (FRESH2: ~Mem.valid_block m2 b2) by (eapply Mem.fresh_block_alloc; eauto).
   destruct SEP as (INJ & SP & DISJ). simpl in INJ.
   exploit Mem.alloc_left_mapped_inject.
-- eapply Mem.alloc_right_inject; eauto. 
-- eexact ALLOC1.
-- instantiate (1 := b2). eauto with mem.
-- instantiate (1 := delta). xomega.
-- intros. assert (0 <= ofs < sz2) by (eapply Mem.perm_alloc_3; eauto). omega.
-- intros. apply Mem.perm_implies with Freeable; auto with mem. 
-  eapply Mem.perm_alloc_2; eauto. xomega.
-- red; intros. apply Zdivides_trans with 8; auto. 
-  exists (8 / align_chunk chunk). destruct chunk; reflexivity.
-- intros. elim FRESH2. eapply Mem.valid_block_inject_2; eauto. 
-- intros (j' & INJ' & J1 & J2 & J3).
-  exists j'; split; auto.
-  rewrite <- ! sep_assoc.
-  split; [|split].
-+ simpl. intuition auto; try (unfold Ptrofs.max_unsigned in *; omega).
-* apply Mem.perm_implies with Freeable; auto with mem.
-  eapply Mem.perm_alloc_2; eauto. omega. 
-* apply Mem.perm_implies with Freeable; auto with mem.
-  eapply Mem.perm_alloc_2; eauto. omega. 
-* red; simpl; intros. destruct H1, H2. omega.
-* red; simpl; intros.
-  assert (b = b2) by tauto. subst b.
-  assert (0 <= ofs < lo \/ hi <= ofs < sz2) by tauto. clear H1.
-  destruct H2 as (b0 & delta0 & D & E).
-  eapply Mem.perm_alloc_inv in E; eauto. 
-  destruct (eq_block b0 b1).
-  subst b0. rewrite J2 in D. inversion D; clear D; subst delta0. xomega.
-  rewrite J3 in D by auto. elim FRESH2. eapply Mem.valid_block_inject_2; eauto. 
-+ apply (m_invar P) with m2; auto.
-  cut (Mem.strong_unchanged_on (m_footprint P) m2 m2').
-  {
-    destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
-  }
-  eapply Mem.alloc_strong_unchanged_on; eauto.
-+ red; simpl; intros.
-  assert (VALID: Mem.valid_block m2 b) by (eapply (m_valid P); eauto).
-  destruct H as [A | (b0 & delta0 & A & B)].
-* assert (b = b2) by tauto. subst b. contradiction.
-* eelim DISJ; eauto. simpl. 
-  eapply Mem.perm_alloc_inv in B; eauto. 
-  destruct (eq_block b0 b1).
-  subst b0. rewrite J2 in A. inversion A; clear A; subst b delta0. contradiction.
-  rewrite J3 in A by auto. exists b0, delta0; auto.
+  - eapply Mem.alloc_right_inject; eauto. 
+  - eexact ALLOC1.
+  - instantiate (1 := b2). eauto with mem.
+  - instantiate (1 := delta). xomega.
+  - intros. assert (0 <= ofs < sz2) by (eapply Mem.perm_alloc_3; eauto). omega.
+  - intros. apply Mem.perm_implies with Freeable; auto with mem. 
+    eapply Mem.perm_alloc_2; eauto. xomega.
+  - red; intros. apply Zdivides_trans with 8; auto. 
+    exists (8 / align_chunk chunk). destruct chunk; reflexivity.
+  - intros. elim FRESH2. eapply Mem.valid_block_inject_2; eauto. 
+  - intros (j' & INJ' & J1 & J2 & J3).
+    exists j'; split; auto.
+    rewrite <- ! sep_assoc.
+    split; [|split].
+    + simpl. intuition auto; try (unfold Ptrofs.max_unsigned in *; omega).
+      * apply Mem.perm_implies with Freeable; auto with mem.
+        eapply Mem.perm_alloc_2; eauto. omega. 
+      * red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
+      * apply Mem.perm_implies with Freeable; auto with mem.
+        eapply Mem.perm_alloc_2; eauto. omega. 
+      * red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
+      * red; simpl; intros. destruct H1, H2. omega.
+      * red; simpl; intros.
+        assert (b = b2) by tauto. subst b.
+        assert (0 <= ofs < lo \/ hi <= ofs < sz2) by tauto. clear H1.
+        destruct H2 as (b0 & delta0 & D & E).
+        eapply Mem.perm_alloc_inv in E; eauto. 
+        destruct (eq_block b0 b1).
+        subst b0. rewrite J2 in D. inversion D; clear D; subst delta0. xomega.
+        rewrite J3 in D by auto. elim FRESH2. eapply Mem.valid_block_inject_2; eauto. 
+    + apply (m_invar P) with m2; auto.
+      cut (Mem.strong_unchanged_on (m_footprint P) m2 m2').
+      {
+        destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
+      }
+      eapply Mem.alloc_strong_unchanged_on; eauto.
+    + red; simpl; intros.
+      assert (VALID: Mem.valid_block m2 b) by (eapply (m_valid P); eauto).
+      destruct H as [A | (b0 & delta0 & A & B)].
+      * assert (b = b2) by tauto. subst b. contradiction.
+      * eelim DISJ; eauto. simpl. 
+        eapply Mem.perm_alloc_inv in B; eauto. 
+        destruct (eq_block b0 b1).
+        subst b0. rewrite J2 in A. inversion A; clear A; subst b delta0. contradiction.
+        rewrite J3 in A by auto. exists b0, delta0; auto.
 Qed.
 
 Lemma free_parallel_rule:

@@ -1804,31 +1804,6 @@ Section INITMEM_EXISTS.
 
 Variable ge: t F V.
 
-Lemma in_stack_data_inside:
-  forall fi lo hi lo' hi',
-    Mem.in_stack_data lo hi fi ->
-    lo <= lo' ->
-    hi' <= hi ->
-    Mem.in_stack_data lo' hi' fi.
-Proof.
-  intros fi lo hi lo' hi' NPSA LO HI.
-  do 2 red in NPSA |- *. omega.
-Qed.
-
-Lemma non_private_stack_access_inside:
-  forall m b lo hi lo' hi',
-    Mem.non_private_stack_access m b lo hi ->
-    lo <= lo' ->
-    hi' <= hi ->
-    Mem.non_private_stack_access m b lo' hi'.
-Proof.
-  intros m b lo hi lo' hi' NPSA LO HI.
-  unfold Mem.non_private_stack_access in *.
-  destruct (Mem.get_frame_info m b); auto.
-  destruct NPSA as [NPSA|NPSA]; auto.
-  eapply in_stack_data_inside in NPSA; eauto.
-Qed.
-
 Lemma store_zeros_exists:
   forall m b p n,
     Mem.range_perm m b p (p + n) Cur Writable ->
@@ -1842,12 +1817,12 @@ Proof.
   erewrite Mem.store_get_frame_info by eauto.
   destruct (Mem.get_frame_info); auto.
   destruct NPSA.
-  left; eapply in_stack_data_inside ; eauto; try omega.
+  left; eapply Mem.in_stack_data_inside ; eauto; try omega.
   erewrite Mem.store_is_stack_top; eauto.
 - destruct (Mem.valid_access_store m Mint8unsigned b p Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. omega. 
   split. simpl. apply Z.divide_1_l.
-  simpl. intros. eapply non_private_stack_access_inside; eauto; try omega.
+  simpl. intros. eapply Mem.non_private_stack_access_inside; eauto; try omega.
   congruence.
 Qed.
 
@@ -1913,12 +1888,12 @@ Proof.
 - destruct H1. 
   destruct (@store_init_data_exists m b p i1) as (m1 & S1); eauto.
   red; intros. apply H. generalize (init_data_list_size_pos il); omega.
-  eapply non_private_stack_access_inside; eauto; try omega.
+  eapply Mem.non_private_stack_access_inside; eauto; try omega.
   generalize (init_data_list_size_pos il); omega.
   rewrite S1.
   apply IHil; eauto. 
   red; intros. erewrite <- store_init_data_perm by eauto. apply H. generalize (init_data_size_pos i1); omega.
-  eapply non_private_stack_access_inside; eauto.
+  eapply Mem.non_private_stack_access_inside; eauto.
   eapply store_init_data_non_private_stack_access; eauto.
   generalize (init_data_size_pos i1); omega. omega.  
 Qed.

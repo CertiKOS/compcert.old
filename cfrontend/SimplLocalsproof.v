@@ -1040,6 +1040,7 @@ Proof.
   destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil)
   as [tm' SB].
   simpl. red; intros; omegaContradiction.
+  apply Mem.lo_ge_hi_non_private_stack_access. simpl; omega.
   exists tm'.
   split. eapply assign_loc_copy; eauto.
   intros; omegaContradiction.
