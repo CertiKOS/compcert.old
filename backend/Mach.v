@@ -296,22 +296,6 @@ Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
 Variable ge: genv.
 
-Definition empty_segment : segment :=
-  {|
-    seg_ofs := 0;
-    seg_size:= 0;
-  |}.
-
-Definition empty_frame : frame_info :=
-  {|
-    frame_size := 0;
-    frame_ofs_link:= 0;
-    frame_ofs_retaddr:= 0;
-    frame_locals := empty_segment;
-    frame_outgoings := empty_segment;
-    frame_callee_saves := empty_segment;
-    frame_data := empty_segment;
-  |}.
     
 
 Inductive step: state -> trace -> state -> Prop :=

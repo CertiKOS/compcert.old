@@ -1000,6 +1000,48 @@ Proof.
   + rewrite D in H9; congruence.
 Qed.
 
+
+Axiom external_call_protect_rule:
+  forall (F V : Type) (ef : external_function) (ge : Genv.t F V) (vargs1 : list val) (m1 : mem) (t : trace)
+    (vres1 : val) (m1' m2 : mem) (j : meminj) (P : massert) (vargs2 : list val),
+    m_invar_weak P = false ->
+    external_call ef ge vargs1 m1 t vres1 m1' ->
+    m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
+    Val.inject_list j vargs1 vargs2 ->
+    exists (j' : meminj) (vres2 : val) m2_1 m2_2 stk (m2' : mem),
+      Mem.push_frame m2 empty_frame = Some (m2_1, stk) 
+      /\ external_call ef ge vargs2 m2_1 t vres2 m2_2
+      /\ Mem.pop_frame m2_2 = Some m2'
+      /\ Val.inject j' vres1 vres2
+      /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
+      /\ inject_incr j j'
+      /\ inject_separated j j' m1 m2.
+
+Axiom push_frame_parallel_rule
+     : forall (F V : Type) (ge : Genv.t F V) (m1 : mem) (sz1 : Z) (m1' : mem) (b1 : block) (m2 : mem) fi
+         (m2' : mem) (b2 : block) (P : massert) (j : meminj) (lo hi delta : Z),
+       m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
+       Mem.alloc m1 0 sz1 = (m1', b1) ->
+       Mem.push_frame m2 fi = Some (m2', b2) ->
+       (8 | delta) ->
+       lo = delta ->
+       hi = delta + Z.max 0 sz1 ->
+       0 <= frame_size fi <= Ptrofs.max_unsigned ->
+       0 <= delta ->
+       hi <= frame_size fi ->
+       exists j' : meminj,
+         m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1' ** globalenv_inject ge j' ** P /\
+         inject_incr j j' /\ j' b1 = Some (b2, delta) /\ inject_separated j j' m1 m2.
+
+Axiom pop_frame_parallel_rule:
+  forall (j : meminj) (m1 : mem) (b1 : block) (sz1 : Z) (m1' m2 : mem) (b2 : block) (sz2 lo hi delta : Z) (P : massert),
+    m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j m1 ** P ->
+    Mem.free m1 b1 0 sz1 = Some m1' ->
+    j b1 = Some (b2, delta) ->
+    lo = delta -> hi = delta + Z.max 0 sz1 -> exists m2' : mem, Mem.pop_frame m2 = Some m2' /\ m2' |= minjection j m1' ** P.
+
+
+
 End WITHMEM.
 
 Notation "m |= p" := (m_pred p m) (at level 74, no associativity) : sep_scope.

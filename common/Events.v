@@ -758,8 +758,26 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
   ec_determ:
     forall ge vargs m t1 vres1 m1 t2 vres2 m2,
     sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
-    match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
+    match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2);
+
+  ec_unchanged_on_private_stack:
+    forall ge vargs m1 t vres m2,
+      sem ge vargs m1 t vres m2 ->
+      Mem.unchanged_on
+        (fun b o => ~ Mem.non_private_stack_access m1 b o (o+1))
+        m1 m2;
+  ec_stack_blocks:
+    forall ge vargs m1 t vres m2,
+      sem ge vargs m1 t vres m2 ->
+      Mem.stack_blocks m1 = Mem.stack_blocks m2;
+  ec_get_frame_info:
+    forall ge vargs m1 t vres m2 b,
+      sem ge vargs m1 t vres m2 ->
+      Mem.get_frame_info m2 b = Mem.get_frame_info m1 b;
+  
 }.
+
+
 
 (** ** Semantics of volatile loads *)
 
@@ -871,6 +889,9 @@ Proof.
   assert (v = v0) by (eapply eventval_match_determ_1; eauto). subst v0.
   auto.
   split. constructor. intuition congruence.
+- inv H. inv H0; apply Mem.unchanged_on_refl.
+- inv H; inv H0; auto.
+- inv H; inv H0; auto.
 Qed.
 
 (** ** Semantics of volatile stores *)
@@ -1016,6 +1037,15 @@ Proof.
   assert (ev = ev0) by (eapply eventval_match_determ_2; eauto). subst ev0.
   split. constructor. auto.
   split. constructor. intuition congruence.
+- inv H. inv H0. apply Mem.unchanged_on_refl.
+  eapply Mem.store_unchanged_on. eauto.
+  intros. intro A; apply A.
+  eapply Mem.non_private_stack_access_inside.
+  eapply Mem.store_valid_access_3; eauto. constructor. omega. destruct chunk; omega.
+- inv H. inv H0. auto.
+  symmetry; eapply Mem.store_stack_blocks; eauto.
+- inv H. inv H0. auto.
+  eapply Mem.store_get_frame_info; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
@@ -1101,6 +1131,17 @@ Proof.
   }
   subst. 
   split. constructor. intuition congruence.
+- inv H.
+  eapply Mem.unchanged_on_trans. eapply Mem.alloc_unchanged_on. eauto.
+  eapply Mem.store_unchanged_on. eauto. intros.
+  intro A; apply A.
+  eapply Mem.invalid_block_non_private_stack_access. eapply Mem.fresh_block_alloc; eauto.
+- inv H.
+  rewrite  (Mem.store_stack_blocks _ _ _ _ _ _ H1).
+  symmetry; eapply Mem.alloc_stack_blocks; eauto.
+- inv H.
+  rewrite (Mem.store_get_frame_info _ _ _ _ _ _ H1).
+  eapply Mem.alloc_get_frame_info; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
@@ -1195,7 +1236,13 @@ Proof.
   }
   subst sz0.
   split. constructor. intuition congruence.
-Qed.
+-  inv H. eapply Mem.free_unchanged_on. eauto.
+   intros. intro A; apply A.
+   admit.                       (* free neeeds to have non_private_stack_access also *)
+- inv H.
+  symmetry; eapply Mem.free_stack_blocks; eauto.
+- inv H; eapply Mem.free_get_frame_info; eauto.
+Admitted.
 
 (** ** Semantics of [memcpy] operations. *)
 
@@ -1319,6 +1366,15 @@ Proof.
   exists vres1; exists m1; auto.
 - (* determ *)
   intros; inv H; inv H0. split. constructor. intros; split; congruence.
+- intros. inv H.
+  eapply Mem.storebytes_unchanged_on; eauto.
+  simpl; intros. intro A; apply A.
+  eapply Mem.non_private_stack_access_inside; eauto.
+  eapply Mem.storebytes_non_private_stack_access; eauto. omega. omega.
+- intros; inv H.
+  symmetry; eapply Mem.storebytes_stack_blocks; eauto.
+- intros; inv H.
+  eapply Mem.storebytes_get_frame_info; eauto.
 Qed.
 
 (** ** Semantics of annotations. *)
@@ -1367,6 +1423,9 @@ Proof.
 - inv H; inv H0.
   assert (args = args0). eapply eventval_list_match_determ_2; eauto. subst args0.
   split. constructor. auto.
+- inv H; apply Mem.unchanged_on_refl.
+- inv H; auto.
+- inv H; auto.
 Qed.
 
 Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t):
@@ -1413,6 +1472,9 @@ Proof.
 - inv H; inv H0.
   assert (arg = arg0). eapply eventval_match_determ_2; eauto. subst arg0.
   split. constructor. auto.
+- inv H; apply Mem.unchanged_on_refl.
+- inv H; auto.
+- inv H; auto.
 Qed.
 
 Inductive extcall_debug_sem (ge: Senv.t):
@@ -1453,6 +1515,9 @@ Proof.
 (* determ *)
 - inv H; inv H0.
   split. constructor. auto.
+- inv H; apply Mem.unchanged_on_refl.
+- inv H; auto.
+- inv H; auto.
 Qed.
 
 End WITHMEMORYMODEL.
@@ -1582,6 +1647,10 @@ Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec 
 Definition external_call_trace_length ef := ec_trace_length (external_call_spec ef).
 Definition external_call_receptive ef := ec_receptive (external_call_spec ef).
 Definition external_call_determ ef := ec_determ (external_call_spec ef).
+Definition external_call_unchanged_on ef := ec_unchanged_on_private_stack (external_call_spec ef).
+Definition external_call_stack_blocks ef := ec_stack_blocks (external_call_spec ef).
+Definition external_call_get_frame_info ef := ec_get_frame_info (external_call_spec ef).
+
 
 (** Corollary of [external_call_valid_block]. *)
 
