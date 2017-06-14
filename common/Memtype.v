@@ -1838,15 +1838,22 @@ for [unchanged_on]. *)
       storebytes m1 b o bytes = Some m2 ->
       stack_blocks m2 = stack_blocks m1;
 
-
-
-
-   
-
-
+ pop_frame_parallel_extends:
+   forall m1 m2 m1',
+      extends m1 m2 ->
+      pop_frame m1 = Some m1' ->
+      exists m2',
+        pop_frame m2 = Some m2'
+        /\ extends m1' m2';
  
+ push_frame_extends:
+    forall m1 m2 fi b m1',
+      extends m1 m2 ->
+      push_frame m1 fi = Some (m1', b) ->
+      exists m2',
+        push_frame m2 fi = Some (m2', b)
+        /\ extends m1' m2';
 
- 
 }.
 
 Section WITHMEMORYMODEL.

@@ -879,8 +879,6 @@ Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_cons: forall fb sp ra c s f tf tc,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge ra fb f c false tf tc ->
-      sp <> Vundef ->
-      forall SP_TYPE: Val.has_type sp Tptr,
       match_stack s ->
       match_stack (Stackframe fb sp ra c :: s).
 
@@ -891,7 +889,7 @@ Lemma parent_ra_def: forall s, match_stack s -> parent_ra init_ra s <> Vundef.
 Proof. induction 1; simpl; try congruence. inv H0. congruence. Qed.
 
 Lemma parent_sp_type: forall s, match_stack s -> Val.has_type (parent_sp init_sp s) Tptr.
-Proof. induction 1; simpl; auto. Qed.
+Proof. induction 1; auto. unfold parent_sp. apply Val.Vptr_has_type. Qed.
 
 Lemma parent_ra_type: forall s, match_stack s -> Val.has_type (parent_ra init_ra s) Tptr.
 Proof. induction 1; simpl; try congruence. inv H0. constructor. Qed.

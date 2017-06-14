@@ -610,8 +610,6 @@ Opaque loadind.
   simpl. eauto.
   econstructor; eauto.
   econstructor; eauto.
-  eapply agree_sp_def; eauto.
-  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
 + (* Direct call *)
@@ -625,8 +623,6 @@ Opaque loadind.
   simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
   econstructor; eauto.
   econstructor; eauto.
-  eapply agree_sp_def; eauto.
-  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
 
@@ -640,7 +636,7 @@ Opaque loadind.
   exploit Mem.loadv_extends. eauto. eexact H2. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
+  exploit Mem.pop_frame_parallel_extends; eauto. intros [m2' [E F]].
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
   assert (rs rf = Vptr f' Ptrofs.zero).
@@ -826,15 +822,15 @@ Transparent destroyed_by_jumptable.
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
-  monadInv H6.
+  exploit Mem.pop_frame_parallel_extends; eauto. intros [m2' [E F]].
+  monadInv H7.
   exploit code_tail_next_int; eauto. intro CT1.
   left; econstructor; split.
   eapply plus_left. eapply exec_step_internal. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG). rewrite E. eauto.
   apply star_one. eapply exec_step_internal.
-  transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H3. simpl. eauto.
+  transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. eauto. traceEq.
   constructor; auto.
@@ -849,7 +845,7 @@ Transparent destroyed_by_jumptable.
   destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x0))); inv EQ1.
   monadInv EQ0. rewrite transl_code'_transl_code in EQ1.
   unfold store_stack in *.
-  exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.
+  exploit Mem.push_frame_extends. eauto. eauto. 
   intros [m1' [C D]].
   exploit Mem.storev_extends. eexact D. eexact H1. eauto. eauto.
   intros [m2' [F G]].
@@ -880,24 +876,13 @@ Transparent destroyed_at_function_entry.
   intros [tf [A B]]. simpl in B. inv B.
   exploit extcall_arguments_match; eauto.
   intros [args' [C D]].
+  exploit Mem.push_frame_extends; eauto. intros (m2_1 & PF & EXT_1).
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [P [Q [R S]]]]].
+  exploit Mem.pop_frame_parallel_extends; eauto. intros (m2_2 & pF & EXT_2).
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
-  {
-    destruct STACK as (m_ & FEA & t_ & res'_ & m'_ & EC).
-    inv AG.
-    exploit EraseArgs.free_extcall_args_parallel_extends.
-    eapply Val.lessdef_refl.
-    eassumption. eauto.
-    intros (m'_0 & FEA' & EXT).
-    esplit. rewrite agree_sp. split; eauto.
-    exploit external_call_mem_extends. eexact EC. eauto. eauto.
-    intros (vres' & m2'0 & EC' & LDres & EXT' & UNCH).
-    repeat eexists.
-    eapply external_call_symbols_preserved; eauto.
-    exact senv_preserved.
-  }
+  
   { (* rs SP Tint *)
     erewrite agree_sp by eauto.
     eapply parent_sp_type; eauto.
