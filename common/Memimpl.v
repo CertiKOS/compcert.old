@@ -1724,19 +1724,17 @@ Theorem loadbytes_storebytes_disjoint:
   b' <> b \/ Intv.disjoint (ofs', ofs' + len) (ofs, ofs + Z_of_nat (length bytes)) ->
   loadbytes m2 b' ofs' len = loadbytes m1 b' ofs' len.
 Proof.
-Admitted.
-(*   intros. unfold loadbytes. *)
-(*   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable); *)
-(*   destruct (non_private_stack_access_dec m1 b ofs (ofs + Z.of_nat (length bytes))); *)
-(*   rewrite pred_dec_true. *)
-(*   rewrite storebytes_mem_contents. decEq. *)
-(*   rewrite PMap.gsspec. destruct (peq b' b). subst b'. *)
-(*   apply getN_setN_disjoint. rewrite nat_of_Z_eq; auto. intuition congruence. *)
-(*   auto. *)
-(*   red; auto with mem. *)
-(*   apply pred_dec_false. *)
-(*   red; intros; elim n. red; auto with mem. *)
-(* Qed. *)
+  intros. unfold loadbytes.
+  destruct (range_perm_dec m1 b' ofs' (ofs' + len) Cur Readable).
+  rewrite pred_dec_true.
+  rewrite storebytes_mem_contents. decEq.
+  rewrite PMap.gsspec. destruct (peq b' b). subst b'.
+  apply getN_setN_disjoint. rewrite nat_of_Z_eq; auto. intuition congruence.
+  auto.
+  red; auto with mem.
+  apply pred_dec_false.
+  red; intros; elim n. red; auto with mem.
+Qed.
 
 Theorem loadbytes_storebytes_other:
   forall b' ofs' len,
@@ -1757,18 +1755,17 @@ Theorem load_storebytes_other:
   \/ ofs + Z_of_nat (length bytes) <= ofs' ->
   load chunk m2 b' ofs' = load chunk m1 b' ofs'.
 Proof.
-(*   intros. unfold load. *)
-(*   destruct (valid_access_dec m1 chunk b' ofs' Readable). *)
-(*   rewrite pred_dec_true. *)
-(*   rewrite storebytes_mem_contents. decEq. *)
-(*   rewrite PMap.gsspec. destruct (peq b' b). subst b'. *)
-(*   rewrite getN_setN_outside. auto. rewrite <- size_chunk_conv. intuition congruence. *)
-(*   auto. *)
-(*   destruct v; split; auto. red; auto with mem. *)
-(*   apply pred_dec_false. *)
-(*   red; intros; elim n. destruct H0. split; auto. red; auto with mem. *)
-(* Qed. *)
-Admitted.
+  intros. unfold load.
+  destruct (valid_access_dec m1 chunk b' ofs' Readable).
+  rewrite pred_dec_true.
+  rewrite storebytes_mem_contents. decEq.
+  rewrite PMap.gsspec. destruct (peq b' b). subst b'.
+  rewrite getN_setN_outside. auto. rewrite <- size_chunk_conv. intuition congruence.
+  auto.
+  destruct v; destruct H1; split; [|split]; auto with mem. red; auto with mem.
+  apply pred_dec_false.
+  red; intros; elim n. destruct H0; destruct H1. split; [|split]; auto with mem. red; auto with mem.
+Qed.
 
 End STOREBYTES.
 
@@ -1781,26 +1778,70 @@ Proof.
   simpl length. rewrite inj_S. simpl. rewrite IHbytes1. decEq. omega.
 Qed.
 
+
+Lemma in_segment_concat : forall ofs l1 l2 fd,
+  in_segment ofs (ofs+l1) fd ->
+  in_segment (ofs+l1) (ofs+l1+l2) fd ->
+  in_segment (ofs) (ofs+l1+l2) fd.
+Proof.
+  intros. unfold in_segment.
+  unfold in_segment in H,H0.
+  omega.
+Qed.
+
+Lemma in_stack_data_concat : forall ofs l1 l2 f,
+  in_stack_data ofs (ofs+l1) f ->
+  in_stack_data (ofs+l1) (ofs+l1+l2) f ->
+  in_stack_data (ofs) (ofs+l1+l2) f.
+Proof.
+  intros. unfold in_stack_data.
+  unfold in_stack_data in H,H0.
+  apply in_segment_concat; assumption.
+Qed.
+
+Lemma non_private_stack_access_concat : forall m b ofs l1 l2,
+  non_private_stack_access m b ofs (ofs+l1) ->
+  non_private_stack_access m b (ofs+l1) (ofs+l1+l2) ->
+  non_private_stack_access m b (ofs) (ofs+l1+l2).
+Proof.
+  intros. unfold non_private_stack_access.
+  unfold non_private_stack_access in H,H0.
+  destruct (get_frame_info m b); try assumption.
+  inv H; auto. inv H0; auto. 
+  left. apply in_stack_data_concat; assumption.
+Qed.
+
 Theorem storebytes_concat:
   forall m b ofs bytes1 m1 bytes2 m2,
   storebytes m b ofs bytes1 = Some m1 ->
   storebytes m1 b (ofs + Z_of_nat(length bytes1)) bytes2 = Some m2 ->
   storebytes m b ofs (bytes1 ++ bytes2) = Some m2.
-Admitted.
-(* Proof. *)
-(*   intros. generalize H; intro ST1. generalize H0; intro ST2. *)
-(*   unfold storebytes; unfold storebytes in ST1; unfold storebytes in ST2. *)
-(*   destruct (range_perm_dec m b ofs (ofs + Z_of_nat(length bytes1)) Cur Writable); try congruence. *)
-(*   destruct (range_perm_dec m1 b (ofs + Z_of_nat(length bytes1)) (ofs + Z_of_nat(length bytes1) + Z_of_nat(length bytes2)) Cur Writable); try congruence. *)
-(*   destruct (range_perm_dec m b ofs (ofs + Z_of_nat (length (bytes1 ++ bytes2))) Cur Writable). *)
-(*   inv ST1; inv ST2; simpl. decEq. apply mkmem_ext; auto. *)
-(*   rewrite PMap.gss.  rewrite setN_concat. symmetry. apply PMap.set2. *)
-(*   elim n. *)
-(*   rewrite app_length. rewrite inj_plus. red; intros. *)
-(*   destruct (zlt ofs0 (ofs + Z_of_nat(length bytes1))). *)
-(*   apply r. omega. *)
-(*   eapply perm_storebytes_2; eauto. apply r0. omega. *)
-(* Qed. *)
+Proof.
+  intros. generalize H; intro ST1. generalize H0; intro ST2.
+  unfold storebytes; unfold storebytes in ST1; unfold storebytes in ST2.
+  destruct (range_perm_dec m b ofs (ofs + Z_of_nat(length bytes1)) Cur Writable); try congruence.
+  destruct (range_perm_dec m1 b (ofs + Z_of_nat(length bytes1)) (ofs + Z_of_nat(length bytes1) + Z_of_nat(length bytes2)) Cur Writable); try congruence.
+  destruct (non_private_stack_access_dec m b ofs (ofs + Z.of_nat (length bytes1))); try congruence.
+  destruct (non_private_stack_access_dec m1 b (ofs + Z.of_nat (length bytes1))
+            (ofs + Z.of_nat (length bytes1) + Z.of_nat (length bytes2))); try congruence.
+  destruct (range_perm_dec m b ofs (ofs + Z_of_nat (length (bytes1 ++ bytes2))) Cur Writable).
+  destruct (non_private_stack_access_dec m b ofs (ofs + Z.of_nat (length (bytes1 ++ bytes2)))).
+  inv ST1; inv ST2; simpl. decEq. apply mkmem_ext; auto.
+  rewrite PMap.gss.  rewrite setN_concat. symmetry. apply PMap.set2.
+  (* Impossible case: non_private_stack_access *)
+  elim n1.
+  rewrite app_length. rewrite inj_plus. rewrite Zplus_assoc.
+  apply non_private_stack_access_concat; try assumption.
+  apply storebytes_non_private_stack_access_2 with b ofs bytes1 m1; assumption.
+  (* Impossible case: range_perm *)
+  elim n1.
+  rewrite app_length. rewrite inj_plus. red; intros.
+  destruct (zlt ofs0 (ofs + Z_of_nat(length bytes1))).
+  apply r. omega.
+  eapply perm_storebytes_2; eauto. apply r0. omega.
+Qed.
+  
+Search storebytes.
 
 Theorem storebytes_split:
   forall m b ofs bytes1 bytes2 m2,
@@ -1808,11 +1849,13 @@ Theorem storebytes_split:
   exists m1,
      storebytes m b ofs bytes1 = Some m1
   /\ storebytes m1 b (ofs + Z_of_nat(length bytes1)) bytes2 = Some m2.
-Proof.
+(* Proof. *)
 (*   intros. *)
+(*   (* Prove (storebytes m b ofs bytes1 = Some m1) *) *)
 (*   destruct (range_perm_storebytes' m b ofs bytes1) as [m1 ST1]. *)
 (*   red; intros. exploit storebytes_range_perm; eauto. rewrite app_length. *)
 (*   rewrite inj_plus. omega. *)
+(*   (* Prove storebytes m1 b (ofs + Z.of_nat (length bytes1)) bytes2 = Some m2 *) *)
 (*   destruct (range_perm_storebytes' m1 b (ofs + Z_of_nat (length bytes1)) bytes2) as [m2' ST2]. *)
 (*   red; intros. eapply perm_storebytes_1; eauto. exploit storebytes_range_perm. *)
 (*   eexact H. instantiate (1 := ofs0). rewrite app_length. rewrite inj_plus. omega. *)
