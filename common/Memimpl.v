@@ -61,6 +61,11 @@ Definition perm_order'' (po1 po2: option permission) :=
   | None, Some _ => False
  end.
 
+Inductive frame_adt: Type :=
+| frame_with_info: block -> option frame_info -> frame_adt
+| frame_without_info: list block -> frame_adt.
+
+
 Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   mem_access: PMap.t (Z -> perm_kind -> option permission);
@@ -73,7 +78,7 @@ Record mem' : Type := mkmem {
   contents_default:
     forall b, fst mem_contents#b = Undef;
   stack_adt:
-    list (block * frame_info);
+    list frame_adt;
 }.
 
 Definition mem := mem'.
@@ -226,30 +231,31 @@ Defined.
 - The offset [ofs] is aligned.
 *)
 
-
-Definition get_stack_top (m: mem) : option block :=
+Definition get_stack_top_blocks (m: mem) : list block :=
   match stack_adt m with
-    nil => None
-  | (b,fi)::r => Some b
+    nil => nil
+  | (frame_with_info b fi)::r => b :: nil
+  | (frame_without_info bl)::r => bl
   end.
 
 Definition is_stack_top (m: mem) (b: block) :=
-  get_stack_top m = Some b.
+  In b (get_stack_top_blocks m).
 
-Definition in_segment (lo hi: Z) (seg: segment) : Prop :=
-  seg_ofs seg <= lo /\ hi < seg_ofs seg + seg_size seg.
+Definition in_segment (ofs: Z) (seg: segment) : Prop :=
+  seg_ofs seg <= ofs < seg_ofs seg + seg_size seg.
 
 Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
-  in_segment lo hi (frame_data fi).
+  forall ofs, lo <= ofs < hi -> in_segment ofs (frame_data fi).
 
-Fixpoint get_assoc {A B} (eq: forall (a b: A), {a = b} + {a <> b}) (l: list (A * B)) (a: A) : option B :=
+Fixpoint get_assoc (l: list frame_adt) (a: block) : option frame_info :=
   match l with
     nil => None
-  | (c,d)::r => if eq a c then Some d else get_assoc eq r a
+  | (frame_with_info b fi)::r => if eq_block a b then fi else get_assoc r a
+  | (frame_without_info bl)::r => if in_dec eq_block a bl then None else get_assoc r a
   end.
 
 Definition get_frame_info (m: mem) : block -> option frame_info :=
-  get_assoc eq_block (stack_adt m). 
+  get_assoc (stack_adt m). 
 
 Definition non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
   match get_frame_info m b with
@@ -317,30 +323,34 @@ Proof.
   - rewrite <- H. auto.
 Qed.
 
-Lemma in_segment_dec : forall lo hi seg,
-  {in_segment lo hi seg} + {~in_segment lo hi seg}.
+Lemma in_segment_dec : forall ofs seg,
+  {in_segment ofs seg} + {~in_segment ofs seg}.
 Proof.
   unfold in_segment. intros.
-  destruct (zle (seg_ofs seg) lo).
-  - destruct (zlt hi (seg_ofs seg + seg_size seg)).
-    + left. constructor;  assumption.
-    + right. red. intro V. omega.
-  - right. red. omega.
+  destruct (zle (seg_ofs seg) ofs).
+  - destruct (zlt ofs (seg_ofs seg + seg_size seg)).
+    + left. auto. 
+    + right. omega. 
+  - right. omega.
 Qed.    
 
 Lemma in_stack_data_dec : forall lo hi f,
   {in_stack_data lo hi f} + {~in_stack_data lo hi f}.
 Proof.
   unfold in_stack_data. intros.
-  destruct (in_segment_dec lo hi (frame_data f)).
-  - left. assumption.
-  - right. assumption.
+  edestruct (Intv.forall_rec (fun ofs => in_segment ofs (frame_data f))
+                             (fun ofs => ~ in_segment ofs (frame_data f))) with (lo:=lo) (hi:=hi).
+  - simpl. intros. apply in_segment_dec.
+  - auto.
+  - right. intro A.
+    destruct e as (x & IN & NIN).
+    apply NIN. apply A. auto.
 Qed.
 
 Lemma is_stack_top_dec : forall m b,
   {is_stack_top m b} + {~is_stack_top m b}.
 Proof.
-  intros. unfold is_stack_top. decide equality.
+  intros. unfold is_stack_top. apply in_dec. 
   apply eq_block.
 Qed.
 
@@ -1779,36 +1789,39 @@ Proof.
 Qed.
 
 
-Lemma in_segment_concat : forall ofs l1 l2 fd,
-  in_segment ofs (ofs+l1) fd ->
-  in_segment (ofs+l1) (ofs+l1+l2) fd ->
-  in_segment (ofs) (ofs+l1+l2) fd.
-Proof.
-  intros. unfold in_segment.
-  unfold in_segment in H,H0.
-  omega.
-Qed.
+(* Lemma in_segment_concat : forall ofs l1 l2 fd, *)
+(*   in_segment ofs (ofs+l1) fd -> *)
+(*   in_segment (ofs+l1) (ofs+l1+l2) fd -> *)
+(*   in_segment (ofs) (ofs+l1+l2) fd. *)
+(* Proof. *)
+(*   intros. unfold in_segment. *)
+(*   unfold in_segment in H,H0. *)
+(*   omega. *)
+(* Qed. *)
 
-Lemma in_stack_data_concat : forall ofs l1 l2 f,
-  in_stack_data ofs (ofs+l1) f ->
-  in_stack_data (ofs+l1) (ofs+l1+l2) f ->
-  in_stack_data (ofs) (ofs+l1+l2) f.
+Lemma in_stack_data_concat : forall lo mid hi f,
+  in_stack_data lo mid f ->
+  in_stack_data mid hi f ->
+  in_stack_data lo hi f.
 Proof.
   intros. unfold in_stack_data.
   unfold in_stack_data in H,H0.
-  apply in_segment_concat; assumption.
+  intros.
+  destruct (zlt ofs mid).
+  apply H. omega.
+  apply H0. omega.
 Qed.
 
-Lemma non_private_stack_access_concat : forall m b ofs l1 l2,
-  non_private_stack_access m b ofs (ofs+l1) ->
-  non_private_stack_access m b (ofs+l1) (ofs+l1+l2) ->
-  non_private_stack_access m b (ofs) (ofs+l1+l2).
+Lemma non_private_stack_access_concat : forall m b lo hi mid,
+  non_private_stack_access m b lo mid ->
+  non_private_stack_access m b mid hi ->
+  non_private_stack_access m b lo hi.
 Proof.
   intros. unfold non_private_stack_access.
   unfold non_private_stack_access in H,H0.
   destruct (get_frame_info m b); try assumption.
   inv H; auto. inv H0; auto. 
-  left. apply in_stack_data_concat; assumption.
+  left. eapply in_stack_data_concat; eauto.
 Qed.
 
 Theorem storebytes_concat:
@@ -1831,7 +1844,7 @@ Proof.
   (* Impossible case: non_private_stack_access *)
   elim n1.
   rewrite app_length. rewrite inj_plus. rewrite Zplus_assoc.
-  apply non_private_stack_access_concat; try assumption.
+  eapply non_private_stack_access_concat; eauto.
   apply storebytes_non_private_stack_access_2 with b ofs bytes1 m1; assumption.
   (* Impossible case: range_perm *)
   elim n1.
@@ -1841,8 +1854,6 @@ Proof.
   eapply perm_storebytes_2; eauto. apply r0. omega.
 Qed.
   
-Search storebytes.
-
 Theorem storebytes_split:
   forall m b ofs bytes1 bytes2 m2,
   storebytes m b ofs (bytes1 ++ bytes2) = Some m2 ->
@@ -2511,6 +2522,28 @@ End DROP.
   must inject into [m2]'s memory value at the corersponding address.
 *)
 
+Inductive option_le {A: Type} (P: A -> Prop) : Z -> option A -> option A -> Prop :=
+| option_le_none_none delta: option_le P delta None None
+| option_le_some_some a: option_le P 0 (Some a) (Some a)
+| option_le_none_some delta a: P a -> option_le P delta None (Some a).
+
+Inductive frame_inject (f: meminj) (m: mem): frame_adt -> frame_adt -> Prop :=
+| frame_inject_with_info b1 b2 fi:
+    f b1 = Some (b2, 0) ->
+    frame_inject f m (frame_with_info b1 fi) (frame_with_info b2 fi)
+| frame_inject_without_info bl1 bl2:
+    (forall b b' delta, In b bl1 -> f b = Some (b', delta) -> In b' bl2) ->
+    frame_inject f m (frame_without_info bl1) (frame_without_info bl2)
+| frame_inject_without_info_with_info bl b2 fi:
+    (forall b b' delta, In b bl -> f b = Some (b', delta) -> b' = b2) ->
+    frame_inject f m (frame_without_info bl) (frame_with_info b2 fi)
+| frane_with_info_add_info b1 b2 delta fi:
+    f b1 = Some(b2, delta) ->
+    (forall ofs k p,
+        perm m b1 ofs k p ->
+        in_segment (ofs + delta) (frame_data fi)) ->
+    frame_inject f m (frame_with_info b1 None) (frame_with_info b2 (Some fi)).
+
 Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
   mk_mem_inj {
     mi_perm:
@@ -2527,7 +2560,9 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       forall b1 ofs b2 delta,
       f b1 = Some(b2, delta) ->
       perm m1 b1 ofs Cur Readable ->
-      memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2)
+      memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2);
+    mi_stack_blocks:
+      list_forall2 (frame_inject f m1) (stack_adt m1) (stack_adt m2);
   }.
 
 (** Preservation of permissions *)
@@ -2554,6 +2589,81 @@ Proof.
   eapply perm_inj; eauto. apply H0. omega.
 Qed.
 
+(* Lemma is_stack_top_stack_blocks: *)
+(*   forall m b, *)
+(*     is_stack_top m b -> *)
+(*     exists r, *)
+(*       stack_blocks m = b :: r. *)
+(* Proof. *)
+(*   unfold is_stack_top, get_stack_top, stack_blocks. *)
+(*   intros. *)
+(*   destruct (stack_adt m). discriminate. destruct p. inv H. simpl; eauto. *)
+(* Qed. *)
+
+(* Lemma stack_blocks_is_stack_top: *)
+(*   forall m b r, *)
+(*     stack_blocks m = b :: r -> *)
+(*     is_stack_top m b. *)
+(* Proof. *)
+(*   unfold is_stack_top, get_stack_top, stack_blocks. *)
+(*   intros. *)
+(*   destruct (stack_adt m). discriminate. destruct p. inv H. simpl; eauto. *)
+(* Qed. *)
+
+Lemma get_frame_info_inj:
+  forall f m1 m2 b1 b2 delta
+    (MINJ: mem_inj f m1 m2)
+    (FB : f b1 = Some (b2, delta)),
+    option_le (fun fi => 
+                 forall ofs k p,
+                   perm m1 b1 ofs k p ->
+                   in_segment (ofs + delta) (frame_data fi))
+              delta
+              (get_frame_info m1 b1)
+              (get_frame_info m2 b2).
+Proof.
+  intros; destruct MINJ.
+  unfold get_frame_info.
+  revert mi_stack_blocks0.
+  generalize (stack_adt m1), (stack_adt m2).
+  induction 1; simpl; intros; eauto.
+  - constructor.
+  - 
+Admitted.
+    
+ 
+
+Lemma non_private_stack_access_inj:
+  forall f m1 m2 b1 b2 delta lo hi
+    (MINJ : mem_inj f m1 m2)
+    (FB : f b1 = Some (b2, delta))
+    (RP: range_perm m1 b1 lo hi Cur Nonempty)
+    (NPSA: non_private_stack_access m1 b1 lo hi),
+    non_private_stack_access m2 b2 (lo + delta) (hi + delta).
+Proof.
+  unfold non_private_stack_access. intros f m1 m2 b1 b2 delta lo hi MINJ FB RP.
+  generalize (mi_stack_blocks _ _ _ MINJ); intro CASES.
+  inversion CASES.
+  - (* None -> None *)
+    auto.
+  - (* Some a -> Some a*)
+    intros [C|C].
+    + rewrite ! Z.add_0_r. auto.
+    + right.
+      generalize (mi_stack_blocks _ _ _ MINJ).
+      destruct (is_stack_top_stack_blocks _ _ C) as [r EQ].
+      rewrite EQ. inversion 1; subst.
+      eapply stack_blocks_is_stack_top; eauto.
+      rewrite <- H5; f_equal; eauto.
+      symmetry. eapply H6. eauto.
+  - intros _.
+    left.
+    red. intros.
+    replace ofs with ((ofs - delta) + delta) by omega.
+    eapply H2.
+    apply RP. omega.
+Qed.
+
 Lemma valid_access_inj:
   forall f m1 m2 b1 b2 delta chunk ofs p,
   mem_inj f m1 m2 ->
@@ -2561,13 +2671,17 @@ Lemma valid_access_inj:
   valid_access m1 chunk b1 ofs p ->
   valid_access m2 chunk b2 (ofs + delta) p.
 Proof.
-(*   intros. destruct H1 as [A B]. constructor. *)
-(*   replace (ofs + delta + size_chunk chunk) *)
-(*      with ((ofs + size_chunk chunk) + delta) by omega. *)
-(*   eapply range_perm_inj; eauto. *)
-(*   apply Z.divide_add_r; auto. eapply mi_align; eauto with mem. *)
-(* Qed. *)
-Admitted.
+  intros. destruct H1 as (A & B & C). split; [| split].
+  replace (ofs + delta + size_chunk chunk)
+     with ((ofs + size_chunk chunk) + delta) by omega.
+  eapply range_perm_inj; eauto.
+  apply Z.divide_add_r; auto. eapply mi_align; eauto with mem.
+  intro O; specialize (C O).
+  rewrite <- Z.add_assoc.
+  rewrite (Z.add_comm delta).
+  rewrite Z.add_assoc.
+  eapply non_private_stack_access_inj; eauto.
+Qed.
 
 (** Preservation of loads. *)
 
@@ -3923,22 +4037,23 @@ Theorem aligned_area_inject:
   f b = Some(b', delta) ->
   (al | ofs + delta).
 Proof.
-(*   intros. *)
-(*   assert (P: al > 0) by omega. *)
-(*   assert (Q: Zabs al <= Zabs sz). apply Zdivide_bounds; auto. omega. *)
-(*   rewrite Zabs_eq in Q; try omega. rewrite Zabs_eq in Q; try omega. *)
-(*   assert (R: exists chunk, al = align_chunk chunk /\ al = size_chunk chunk). *)
-(*     destruct H0. subst; exists Mint8unsigned; auto. *)
-(*     destruct H0. subst; exists Mint16unsigned; auto. *)
-(*     destruct H0. subst; exists Mint32; auto. *)
-(*     subst; exists Mint64; auto. *)
-(*   destruct R as [chunk [A B]]. *)
-(*   assert (valid_access m chunk b ofs Nonempty). *)
-(*     split. red; intros; apply H3. omega. congruence. *)
-(*   exploit valid_access_inject; eauto. intros [C D]. *)
-(*   congruence. *)
-(* Qed. *)
-Admitted.
+  intros.
+  assert (P: al > 0) by omega.
+  assert (Q: Zabs al <= Zabs sz). apply Zdivide_bounds; auto. omega.
+  rewrite Zabs_eq in Q; try omega. rewrite Zabs_eq in Q; try omega.
+  assert (R: exists chunk, al = align_chunk chunk /\ al = size_chunk chunk).
+    destruct H0. subst; exists Mint8unsigned; auto.
+    destruct H0. subst; exists Mint16unsigned; auto.
+    destruct H0. subst; exists Mint32; auto.
+    subst; exists Mint64; auto.
+  destruct R as [chunk [A B]].
+  assert (valid_access m chunk b ofs Nonempty).
+    split. red; intros; apply H3. omega. split. congruence.
+    inversion 1.
+  exploit valid_access_inject; eauto.
+  unfold valid_access. intros (C & D & E).
+  congruence.
+Qed.
 
 (** Preservation of loads *)
 

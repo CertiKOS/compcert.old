@@ -2717,14 +2717,10 @@ Definition stack_blocks_of_callstack (l : list Mach.stackframe) : list block :=
 Definition list_prefix {A: Type} (l1 l2 : list A) : Prop :=
   exists l3, l2 = l1 ++ l3.
 
-Definition match_states_init_sp_has_stackinfo (m': mem) : Prop :=
-  (* match s with *)
-  (*   Mach.State _ _ _ _ _ m' *)
-  (* | Mach.Callstate _ _ _ m' *)
-  (* | Mach.Returnstate _ _ m' =>  *)
+Definition init_sp_has_stackinfo (m: mem) : Prop :=
   match init_sp with
     Vptr b i1 =>
-    exists fi, Mem.get_frame_info m' b = Some fi
+    exists fi, Mem.get_frame_info m b = Some fi
           /\ (forall o,
                 Ptrofs.unsigned i1 + fe_ofs_arg <= o < Ptrofs.unsigned i1 + 4 * size_arguments init_sg ->
                 Mem.in_segment o (frame_outgoings fi)
@@ -2754,7 +2750,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (ISP'VALID: block_prop (Mem.valid_block m') init_sp)
         (ISP'NST: block_prop (fun b => ~ Mem.is_stack_top m' b) init_sp)
         (CallStackConsistency: list_prefix (sp'::stack_blocks_of_callstack cs') (Mem.stack_blocks m'))
-        (MSISHS: match_states_init_sp_has_stackinfo m')
+        (MSISHS: init_sp_has_stackinfo m')
         (INCR_init: inject_incr (Mem.flat_inj (Mem.nextblock init_m)) j)
         (INCR_sep: inject_separated (Mem.flat_inj (Mem.nextblock init_m)) j init_m init_m)
         (INIT_VB: Ple (Mem.nextblock init_m) (Mem.nextblock m))
@@ -2797,7 +2793,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (ISP'VALID: block_prop (Mem.valid_block m') init_sp)
         (* (ISP'NST: block_prop (fun b => ~ Mem.is_stack_top m' b) init_sp) *)
         (CallStackConsistency: list_prefix (stack_blocks_of_callstack cs') (Mem.stack_blocks m'))
-        (MSISHS: match_states_init_sp_has_stackinfo m')
+        (MSISHS: init_sp_has_stackinfo m')
         (SEP: m' |= stack_contents j cs cs'
                  ** (mconj (minjection j m) (minit_args_mach j sg_))
                  ** globalenv_inject ge j)
@@ -2822,7 +2818,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (ISP'VALID: block_prop (Mem.valid_block m') init_sp)
         (* (ISP'NST: block_prop (fun b => ~ Mem.is_stack_top m' b) init_sp) *)
         (CallStackConsistency: list_prefix (stack_blocks_of_callstack cs') (Mem.stack_blocks m'))
-        (MSISHS: match_states_init_sp_has_stackinfo m')
+        (MSISHS: init_sp_has_stackinfo m')
         (SEP: m' |= stack_contents j cs cs'
                  ** (mconj (minjection j m) (minit_args_mach j sg_))
                  ** globalenv_inject ge j)
@@ -3415,7 +3411,7 @@ Proof.
         rewrite (store_stack_stack_blocks _ _ _ _ _ _ STORE). auto.
       * red.
         unfold store_stack, Mem.storev in STORE. destruct (Val.offset_ptr (Vptr sp' Ptrofs.zero) (Ptrofs.repr ofs')); try discriminate.
-        revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+        revert MSISHS. unfold init_sp_has_stackinfo.
         clear SEP. clear init_sp_int.
         destruct init_sp; auto. 
         intros. erewrite (Mem.store_get_frame_info); eauto.
@@ -3504,7 +3500,7 @@ Proof.
     * eapply block_prop_impl. 2: apply ISP'NST. simpl.
       intro; erewrite (Mem.store_is_stack_top _ _ _ _ _ _ C). tauto.
     * rewrite (Mem.store_stack_blocks _ _ _ _ _ _ C). auto.
-    * revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+    * revert MSISHS. unfold init_sp_has_stackinfo.
       clear SEP_init. clear init_sp_int. clearbody step. destruct init_sp; auto.
       simpl.
       intros. erewrite (Mem.store_get_frame_info); eauto. 
@@ -3660,7 +3656,7 @@ Proof.
       rewrite EQ' in CallStackConsistency.
       destruct CallStackConsistency as (l2 & EQ).
       exists l2. inversion EQ. auto.
-    * revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+    * revert MSISHS. unfold init_sp_has_stackinfo.
       clearbody step. clear SEP_init. clear init_sp_int.
       destruct init_sp; auto.
 
@@ -3763,7 +3759,7 @@ Proof.
       intro; erewrite external_call_is_stack_top; eauto.
     * rewrite <- (external_call_stack_blocks _ _ _ _ _ _ _ EC).
       auto.
-    * revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+    * revert MSISHS. unfold init_sp_has_stackinfo.
       clearbody step. clear SEP_init. clear init_sp_int.
       destruct init_sp; auto.
 
@@ -3820,7 +3816,7 @@ Proof.
          eapply Mem.load_unchanged_on; eauto. eapply external_call_unchanged_on. apply EC.
          simpl; intros. intro NPSA.
          red in NPSA.
-         unfold match_states_init_sp_has_stackinfo in MSISHS.
+         unfold init_sp_has_stackinfo in MSISHS.
          rewrite Heqv0 in *.
          destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4). rewrite MSI1 in NPSA.
          destruct NPSA as [NPSA|NPSA]; try congruence.
@@ -3937,7 +3933,7 @@ Proof.
     rewrite EQ' in CallStackConsistency.
     destruct CallStackConsistency as (l2 & EQ).
     exists l2. inversion EQ. auto.
-  + revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+  + revert MSISHS. unfold init_sp_has_stackinfo.
     clearbody step. clear SEP. clear init_sp_int.
     destruct init_sp; auto.
     simpl in ISP'NST.
@@ -4016,7 +4012,7 @@ Proof.
     * rewrite IST.
       destruct CallStackConsistency as (l2 & EQ). rewrite EQ.
       exists l2. reflexivity.
-    * revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+    * revert MSISHS. unfold init_sp_has_stackinfo.
       clearbody step. clear SEP_init. clear init_sp_int.
       destruct init_sp; auto.
       rewrite GFI.
@@ -4141,7 +4137,7 @@ Proof.
     eapply Mem.pop_frame_stack_blocks_1 in pF.
     2: rewrite <- (external_call_stack_blocks _ _ _ _ _ _ _ A); eauto.
     rewrite pF; auto.
-  * revert MSISHS. unfold match_states_init_sp_has_stackinfo.
+  * revert MSISHS. unfold init_sp_has_stackinfo.
     clearbody step. clear SEP_init. clear init_sp_int.
     destruct init_sp; auto.
     intros MSI.
@@ -4186,7 +4182,7 @@ Proof.
        right. eapply external_call_is_stack_top; eauto.
        simpl; intros. intro NPSA.
        red in NPSA.
-       unfold match_states_init_sp_has_stackinfo in MSISHS.
+       unfold init_sp_has_stackinfo in MSISHS.
        rewrite Heqv0 in *.
        destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
        rewrite (Mem.push_frame_get_frame_info _ _ _ _ _ PF) in NPSA.
