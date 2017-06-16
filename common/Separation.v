@@ -53,7 +53,10 @@ Record massert : Type := {
   m_pred : mem -> Prop;
   m_footprint: block -> Z -> Prop;
   m_invar_weak: bool;
-  m_invar: forall m m', m_pred m -> (if m_invar_weak then Mem.strong_unchanged_on else Mem.unchanged_on) m_footprint m m' -> m_pred m';
+  m_invar_stack: bool;
+  m_invar: forall m m', m_pred m -> (if m_invar_weak then Mem.strong_unchanged_on else Mem.unchanged_on) m_footprint m m' ->
+                   (m_invar_stack = true -> Mem.stack_adt m' = Mem.stack_adt m) ->
+                   m_pred m';
   m_valid: forall m b ofs, m_pred m -> m_footprint b ofs -> Mem.valid_block m b
 }.
 
@@ -63,6 +66,7 @@ Notation "m |= p" := (m_pred p m) (at level 74, no associativity) : sep_scope.
 
 Definition massert_imp (P Q: massert) : Prop :=
   (m_invar_weak Q = true -> m_invar_weak P = true) /\
+  (m_invar_stack Q = true -> m_invar_stack P = true) /\
   (forall m, m_pred P m -> m_pred Q m) /\ (forall b ofs, m_footprint Q b ofs -> m_footprint P b ofs).
 Definition massert_eqv (P Q: massert) : Prop :=
   massert_imp P Q /\ massert_imp Q P.
@@ -108,14 +112,14 @@ Global Add Morphism m_pred
   with signature massert_imp ==> eq ==> impl
   as m_pred_morph_1.
 Proof.
-  intros P Q [? [A B]]. auto.
+  intros P Q [? [A [B C]]]. auto.
 Qed.
 
 Global Add Morphism m_pred
   with signature massert_eqv ==> eq ==> iff
   as m_pred_morph_2.
 Proof.
-  intros P Q [[? [A B]] [? [C D]]]. split; auto.
+  intros P Q [[? [A [B B']]] [? [C [D D']]]]. split; auto.
 Qed.
 
 Hint Resolve massert_imp_refl massert_eqv_refl.
@@ -127,9 +131,9 @@ Definition disjoint_footprint (P Q: massert) : Prop :=
 
 Program Definition sepconj (P Q: massert) : massert := {|
   m_pred := fun m => m_pred P m /\ m_pred Q m /\ disjoint_footprint P Q;
-  m_footprint := fun b ofs => m_footprint P b ofs \/ m_footprint Q b ofs
-  ;
-  m_invar_weak := m_invar_weak P || m_invar_weak Q
+  m_footprint := fun b ofs => m_footprint P b ofs \/ m_footprint Q b ofs;
+  m_invar_weak := m_invar_weak P || m_invar_weak Q;
+  m_invar_stack := m_invar_stack P || m_invar_stack Q
 |}.
 Next Obligation.
   repeat split; auto.
@@ -140,6 +144,7 @@ Next Obligation.
       * apply Mem.strong_unchanged_on_weak.
         eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
       * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+    - intro A; rewrite A in H1; apply H1. reflexivity.
   + apply (m_invar Q) with m; auto.
     destruct (m_invar_weak Q); try rewrite orb_true_r in *.
     - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
@@ -147,6 +152,7 @@ Next Obligation.
       * apply Mem.strong_unchanged_on_weak.
         eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
       * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+    - intro A; rewrite A in H1; apply H1. rewrite orb_true_r. reflexivity.
 Qed.
 Next Obligation.
   destruct H0; [eapply (m_valid P) | eapply (m_valid Q)]; eauto.
@@ -158,9 +164,9 @@ Global Add Morphism sepconj
 Proof.
   intros P1 P2 [I [A B]] Q1 Q2 [J [C D]].
   red; simpl; split; [ | split ] ; intros.
-- rewrite Bool.orb_true_iff in * |- * . tauto.
-- intuition auto. red; intros. apply (H2 b ofs); auto. 
-- intuition auto.
+  - rewrite Bool.orb_true_iff in * |- * . tauto.
+  - rewrite Bool.orb_true_iff in * |- * . tauto.
+  - intuition auto. red; intros. apply (H6 b ofs); auto. 
 Qed.
 
 Global Add Morphism sepconj
@@ -185,9 +191,9 @@ Lemma sep_comm_1:
   forall P Q,  massert_imp (P ** Q) (Q ** P).
 Proof.
   unfold massert_imp; simpl; split; [ | split] ; intros.
-- rewrite Bool.orb_true_iff in * |- * . tauto.
-- intuition auto. red; intros; eapply H2; eauto.
-- intuition auto.
+  - rewrite Bool.orb_true_iff in * |- * . tauto.
+  - rewrite Bool.orb_true_iff in * |- * . tauto.
+  - intuition auto. red; intros; eapply H2; eauto.
 Qed.
 
 Lemma sep_comm:
@@ -201,12 +207,14 @@ Lemma sep_assoc_1:
 Proof.
   intros. unfold massert_imp, sepconj, disjoint_footprint; simpl. clear. firstorder auto.
   repeat rewrite Bool.orb_true_iff in * |- * ; tauto.
+  repeat rewrite Bool.orb_true_iff in * |- * ; tauto.
 Qed.
 
 Lemma sep_assoc_2:
   forall P Q R, massert_imp (P ** (Q ** R)) ((P ** Q) ** R).
 Proof.
   intros. unfold massert_imp, sepconj, disjoint_footprint; simpl; clear; firstorder auto.
+  repeat rewrite Bool.orb_true_iff in * |- * ; tauto.
   repeat rewrite Bool.orb_true_iff in * |- * ; tauto.
 Qed.
 
@@ -326,9 +334,9 @@ Qed.
 
 Program Definition pure (P: Prop) : massert := {|
   m_pred := fun m => P;
-  m_footprint := fun b ofs => False
-  ;
-  m_invar_weak := false
+  m_footprint := fun b ofs => False;
+  m_invar_weak := false;
+  m_invar_stack := false;
 |}.
 Next Obligation.
   tauto.
@@ -349,7 +357,8 @@ Program Definition range (b: block) (lo hi: Z) : massert := {|
        /\ Mem.non_private_stack_access m b lo hi;
   m_footprint := fun b' ofs' => b' = b /\ lo <= ofs' < hi
   ;
-  m_invar_weak := false
+  m_invar_weak := false  ;
+  m_invar_stack := false
 |}.
 Next Obligation.
   split; auto. split; auto. split; auto. intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
@@ -365,6 +374,7 @@ Lemma alloc_rule:
   Mem.alloc m lo hi = (m', b) ->
   0 <= lo -> hi <= Ptrofs.modulus ->
   m |= P ->
+  m_invar_stack P = false ->
   m' |= range b lo hi ** P.
 Proof.
   intros; simpl. split; [|split]. 
@@ -376,7 +386,8 @@ Proof.
   destruct (m_invar_weak P).
   + eapply Mem.alloc_strong_unchanged_on; eauto.
   + eapply Mem.alloc_unchanged_on; eauto.
-- red; simpl. intros. destruct H3; subst b0.
+  + congruence.
+- red; simpl. intros. destruct H4; subst b0.
   eelim Mem.fresh_block_alloc; eauto. eapply (m_valid P); eauto.
 Qed.
 
@@ -387,8 +398,9 @@ Lemma range_split:
   m |= range b lo mid ** range b mid hi ** P.
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto. 
-  split; [ | split]; simpl; intros.
+  split; [ | split; [|split]]; simpl; intros.
   - assumption.
+  - auto.
   - intuition auto.
     + omega.
     + apply H4; omega.
@@ -427,7 +439,8 @@ Lemma range_split_2:
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto.
   assert (mid <= align mid al) by (apply align_le; auto).
-  split; [ | split ] ; simpl; intros.
+  split; [ | split; [ | split ] ] ; simpl; intros.
+  - assumption.
   - assumption.
   - intuition auto.
     + omega.
@@ -460,11 +473,14 @@ Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (spec: val
   m_footprint := fun b' ofs' => b' = b /\ ofs <= ofs' < ofs + size_chunk chunk
   ;
   m_invar_weak := false
+  ;
+  m_invar_stack := false
 |}.
 Next Obligation.
-  rename H2 into v. split;[|split].
+  rename H3 into v. split;[|split].
 - auto.
-- destruct H1. destruct H2. split;[|split]; auto. red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+- destruct H2. destruct H3. split;[|split]; auto.
+  red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
   intros. erewrite (Mem.unchanged_on_non_private_stack_access _ _ _ H0); auto.
 - exists v. split; auto. eapply Mem.load_unchanged_on; eauto. simpl; auto.
 Qed.
@@ -517,6 +533,8 @@ Proof.
     intros; red; intros. apply (C b i); simpl; auto.
   + eapply Mem.store_unchanged_on; eauto.
     intros; red; intros. apply (C b i); simpl; auto.
+  + intros.
+    eapply Mem.store_stack_blocks; eauto.
 Qed.
 
 Lemma storev_rule:
@@ -554,10 +572,11 @@ Lemma contains_imp:
   (forall v, spec1 v -> spec2 v) ->
   massert_imp (contains chunk b ofs spec1) (contains chunk b ofs spec2).
 Proof.
-  intros; split; [| split] ; simpl; intros.
-- assumption.
-- intuition auto. destruct H4 as (v & A & B). exists v; auto.
-- auto.
+  intros; split; [| split; [ | split ]] ; simpl; intros.
+  - assumption.
+  - assumption.
+  - intuition auto. destruct H4 as (v & A & B). exists v; auto.
+  - auto.
 Qed.
 
 (** A memory area that contains a given value *)
@@ -589,7 +608,8 @@ Program Definition mconj (P Q: massert) : massert := {|
   m_pred := fun m => m_pred P m /\ m_pred Q m;
   m_footprint := fun b ofs => m_footprint P b ofs \/ m_footprint Q b ofs
   ;
-  m_invar_weak := m_invar_weak P || m_invar_weak Q
+  m_invar_weak := m_invar_weak P || m_invar_weak Q;
+  m_invar_stack := m_invar_stack P || m_invar_stack Q;
 |}.
 Next Obligation.
   repeat split; auto.
@@ -600,6 +620,7 @@ Next Obligation.
       * apply Mem.strong_unchanged_on_weak.
         eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
       * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+    - intros; apply H1. rewrite H3; reflexivity.        
   + apply (m_invar Q) with m; auto.
     destruct (m_invar_weak Q); try rewrite orb_true_r in *.
     - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
@@ -607,6 +628,7 @@ Next Obligation.
       * apply Mem.strong_unchanged_on_weak.
         eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
       * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
+    - intros; apply H1. rewrite H3, orb_true_r; reflexivity.
 Qed.
 Next Obligation.
   destruct H0; [eapply (m_valid P) | eapply (m_valid Q)]; eauto.
@@ -659,6 +681,7 @@ Proof.
   intros P1 P2 [I [A B]] Q1 Q2 [J [C D]].
   red; simpl; intuition auto.
   repeat rewrite Bool.orb_true_iff in * |- * . tauto.
+  repeat rewrite Bool.orb_true_iff in * |- * . tauto.
 Qed.
 
 Global Add Morphism mconj
@@ -672,9 +695,9 @@ Qed.
 
 Program Definition minjection (j: meminj) (m0: mem) : massert := {|
   m_pred := fun m => Mem.inject j m0 m;
-  m_footprint := fun b ofs => exists b0 delta, j b0 = Some(b, delta) /\ Mem.perm m0 b0 (ofs - delta) Max Nonempty
-  ;
-  m_invar_weak := true
+  m_footprint := fun b ofs => exists b0 delta, j b0 = Some(b, delta) /\ Mem.perm m0 b0 (ofs - delta) Max Nonempty;
+  m_invar_weak := true;
+  m_invar_stack := true;
 |}.
 Next Obligation.
   eapply Mem.inject_strong_unchanged_on; eauto.
@@ -721,6 +744,7 @@ Proof.
   exists b1, delta; split; auto. destruct VALID as [V1 V2]. 
   apply Mem.perm_cur_max. apply Mem.perm_implies with Writable; auto with mem. 
   apply V1. omega.
+  intros; eapply Mem.store_stack_blocks; eauto.
 - red; simpl; intros. destruct H1 as (b0 & delta0 & U & V).
   eelim C; eauto. simpl. exists b0, delta0; eauto with mem.
 Qed.
@@ -756,7 +780,8 @@ Proof.
     eapply Mem.perm_alloc_2; eauto. xomega.
   - red; intros. apply Zdivides_trans with 8; auto. 
     exists (8 / align_chunk chunk). destruct chunk; reflexivity.
-  - intros. elim FRESH2. eapply Mem.valid_block_inject_2; eauto. 
+  - intros. elim FRESH2. eapply Mem.valid_block_inject_2; eauto.
+  - intro IFS. erewrite Mem.alloc_stack_blocks in IFS. 2: eauto. apply Mem.in_frames_valid in IFS. congruence.
   - intros (j' & INJ' & J1 & J2 & J3).
     exists j'; split; auto.
     rewrite <- ! sep_assoc.
@@ -783,6 +808,7 @@ Proof.
         destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
       }
       eapply Mem.alloc_strong_unchanged_on; eauto.
+      intros; eapply Mem.alloc_stack_blocks; eauto.
     + red; simpl; intros.
       assert (VALID: Mem.valid_block m2 b) by (eapply (m_valid P); eauto).
       destruct H as [A | (b0 & delta0 & A & B)].
@@ -850,7 +876,8 @@ Proof.
   destruct (zle hi i). intuition auto.
   right; exists b1, delta; split; auto. 
   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
-  eapply Mem.free_range_perm; eauto. xomega. 
+  eapply Mem.free_range_perm; eauto. xomega.
+  intros; eapply Mem.free_stack_blocks; eauto.
 - red; simpl; intros. eelim C; eauto. 
   simpl. right. destruct H as (b0 & delta0 & U & V). 
   exists b0, delta0; split; auto. 
@@ -869,9 +896,9 @@ Inductive globalenv_preserved {F V: Type} (ge: Genv.t F V) (j: meminj) (bound: b
 
 Program Definition globalenv_inject {F V: Type} (ge: Genv.t F V) (j: meminj) : massert := {|
   m_pred := fun m => exists bound, Ple bound (Mem.nextblock m) /\ globalenv_preserved ge j bound;
-  m_footprint := fun b ofs => False
-  ;
-  m_invar_weak := false
+  m_footprint := fun b ofs => False;
+  m_invar_weak := false;
+  m_invar_stack := false;
 |}.
 Next Obligation.
   rename H into bound. exists bound; split; auto. eapply Ple_trans; eauto. eapply Mem.unchanged_on_nextblock; eauto.
@@ -948,6 +975,7 @@ Proof.
   eapply Mem.unchanged_on_implies; eauto.
   intros; red; intros; red; intros.
   eelim C; simpl; eauto.
++ symmetry; eapply external_call_stack_blocks; eauto.
 - red; intros. destruct H as (b0 & delta & J' & E).
   destruct (j b0) as [[b' delta'] | ] eqn:J.
 + erewrite INCR in J' by eauto. inv J'. 
@@ -1000,8 +1028,25 @@ Proof.
   + rewrite D in H9; congruence.
 Qed.
 
+Lemma external_call_protect:
+  forall (F V : Type) (ef : external_function) (ge : Genv.t F V) (vargs : list val) (m1 : mem) (t : trace)
+    (vres : val) ( m2 : mem) f m1' stk,
+    external_call ef ge vargs m1 t vres m2 ->
+    Mem.push_frame m1 f = Some (m1',stk) ->
+    exists m2',
+      external_call ef ge vargs m1' t vres m2' /\
+      forall m2'', Mem.pop_frame m2' = Some m2'' -> Mem.strong_unchanged_on (fun _ _ => True) m2 m2''.
+Proof.
+  
+Admitted.
 
-Axiom external_call_protect_rule:
+Axiom pop_frame_succeeds:
+  forall m b r,
+    Mem.stack_adt m = b :: r ->
+    exists m', Mem.pop_frame m = Some m'.
+
+
+Lemma external_call_protect_rule:
   forall (F V : Type) (ef : external_function) (ge : Genv.t F V) (vargs1 : list val) (m1 : mem) (t : trace)
     (vres1 : val) (m1' m2 : mem) (j : meminj) (P : massert) (vargs2 : list val),
     m_invar_weak P = false ->
@@ -1016,30 +1061,176 @@ Axiom external_call_protect_rule:
       /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
       /\ inject_incr j j'
       /\ inject_separated j j' m1 m2.
+Proof.
+  intros.
+  exploit external_call_parallel_rule; eauto.
+  intros (j' & vres2 & m2' & EC & RES & SEP & INCR & SEP').
+  destruct (Mem.push_frame_succeeds m2 empty_frame) as (m2_1 & stk & PF). rewrite PF.
+  exploit external_call_protect. eexact EC. eexact PF.
+  intros (m2'0 & EC' & pop).
+  exploit Mem.push_frame_stack_blocks. eauto.
+  erewrite external_call_stack_blocks; eauto. intro ADT.
+  destruct (pop_frame_succeeds m2'0 _ _ ADT) as (m2'1 & POP).
+  specialize (pop _ POP).
+  exists j', vres2, m2_1, m2'0, stk, m2'1.
+  split; auto.
+  split; auto.
+  split; auto.
+  split; auto.
+  split.
+  eapply m_invar. eauto. simpl.
+  eapply Mem.strong_unchanged_on_implies. eauto. simpl; auto.
+  rewrite (Mem.pop_frame_stack_blocks_1 _ _ _ _ POP ADT).
+  intros; eapply external_call_stack_blocks; eauto.
+  split; auto.
+Qed.
 
-Axiom push_frame_parallel_rule
-     : forall (F V : Type) (ge : Genv.t F V) (m1 : mem) (sz1 : Z) (m1' : mem) (b1 : block) (m2 : mem) fi
-         (m2' : mem) (b2 : block) (P : massert) (j : meminj) (lo hi delta : Z),
-       m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
-       Mem.alloc m1 0 sz1 = (m1', b1) ->
-       Mem.push_frame m2 fi = Some (m2', b2) ->
-       (8 | delta) ->
-       lo = delta ->
-       hi = delta + Z.max 0 sz1 ->
-       0 <= frame_size fi <= Ptrofs.max_unsigned ->
-       0 <= delta ->
-       hi <= frame_size fi ->
-       exists j' : meminj,
-         m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1' ** globalenv_inject ge j' ** P /\
-         inject_incr j j' /\ j' b1 = Some (b2, delta) /\ inject_separated j j' m1 m2.
+Axiom push_frame_alloc:
+  forall m f m' b,
+    Mem.push_frame m f = Some (m', b) <->
+    (exists m1, 
+        Mem.alloc m 0 (frame_size f) = (m1, b) /\
+        Mem.record_stack_block m1 b (Some f) = Some m').
 
-Axiom pop_frame_parallel_rule:
-  forall (j : meminj) (m1 : mem) (b1 : block) (sz1 : Z) (m1' m2 : mem) (b2 : block) (sz2 lo hi delta : Z) (P : massert),
-    m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j m1 ** P ->
+Axiom perm_push_frame_2:
+  forall m1 fi m2 b,
+    Mem.push_frame m1 fi = Some (m2, b) ->
+    forall (ofs : Z) (k : perm_kind),
+      0 <= ofs < frame_size fi -> Mem.perm m2 b ofs k Freeable.
+
+Lemma record_stack_block_parallel_rule:
+  forall m1 m1' m2 m2' j P fi b b' delta,
+    j b = Some (b', delta) ->
+    m_invar_stack P = false ->
+    m2 |= minjection j m1 ** P ->
+    Mem.record_stack_block m1 b None = Some m1' ->
+    Mem.record_stack_block m2 b' (Some fi) = Some m2' ->
+    m2' |= minjection j m1' ** P.
+Proof.
+  intros m1 m1' m2 m2' j P fi b b' delta FB INVAR MINJ RSB1 RSB2.
+  destruct MINJ as (MINJ & PM & DISJ).
+  split; [|split].
+  - simpl in *.
+    admit.
+  - eapply m_invar. eauto.
+    admit.
+    congruence.
+  - admit.
+Admitted.
+
+Lemma push_frame_parallel_rule
+  : forall (F V : Type) (ge : Genv.t F V) (m1 : mem) (sz1 : Z) (m1' m1'' : mem) (b1 : block) (m2 : mem) fi
+      (m2' : mem) (b2 : block) (P : massert) (j : meminj) (lo hi delta : Z),
+    m_invar_stack P = false ->
+    m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
+    Mem.alloc m1 0 sz1 = (m1', b1) ->
+    Mem.record_stack_block m1' b1 None = Some m1'' ->
+    Mem.push_frame m2 fi = Some (m2', b2) ->
+    (8 | delta) ->
+    lo = delta ->
+    hi = delta + Z.max 0 sz1 ->
+    0 <= frame_size fi <= Ptrofs.max_unsigned ->
+    0 <= delta ->
+    hi <= frame_size fi ->
+    exists j' : meminj,
+      m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1'' ** globalenv_inject ge j' ** P /\
+      inject_incr j j' /\ j' b1 = Some (b2, delta) /\ inject_separated j j' m1 m2.
+Proof.
+  intros until delta; intros INVAR SEP ALLOC1 REC1 ALLOC2 ALIGN LO HI RANGE1 RANGE2 RANGE3.
+  destruct (proj1 (push_frame_alloc _ _ _ _) ALLOC2) as (m2_1 & ALLOC2' & SETADT).
+  exploit alloc_parallel_rule_2; eauto.
+  intros (j' & INJ' & J1 & J2 & J3).
+  rewrite sep_swap3 in INJ'.
+  exploit record_stack_block_parallel_rule.  3: eauto. all: eauto.
+  intro INJ''.
+  rewrite sep_swap3 in INJ''.
+  exists j'; split; auto.
+Qed.
+
+
+Axiom pop_frame_free:
+  forall m m' b f r,
+    Mem.stack_adt m = frame_with_info b (Some f) :: r ->
+    Mem.pop_frame m = Some m' <->
+    (exists m1, 
+        Mem.free m b 0 (frame_size f) = Some m1
+        /\ unrecord_stack_block m1 = Some m').
+
+Lemma unrecord_stack_adt:
+  forall m m',
+    unrecord_stack_block m = Some m' ->
+    exists b,
+      Mem.stack_adt m = b :: Mem.stack_adt m'.
+Proof.
+  unfold unrecord_stack_block.
+  intros.
+Admitted.
+
+Axiom unrecord_stack_block_succeeds:
+  forall m b r,
+    Mem.stack_adt m = b :: r ->
+    exists m',
+      unrecord_stack_block m = Some m'
+      /\ Mem.stack_adt m' = r.
+
+Axiom inject_stack_adt:
+  forall f m1 m2,
+    Mem.inject f m1 m2 ->
+    length (Mem.stack_adt m1) = length (Mem.stack_adt m2).
+
+
+Lemma unrecord_stack_block_parallel_rule:
+  forall m1 m1' m2 j P,
+    (* j b = Some (b', delta) -> *)
+    m_invar_stack P = false ->
+    m2 |= minjection j m1 ** P ->
+    unrecord_stack_block m1 = Some m1' ->
+    exists m2', unrecord_stack_block m2 = Some m2' /\
+           m2' |= minjection j m1' ** P.
+Proof.
+  intros m1 m1' m2 j P (* fi b b' delta FB *) INVAR MINJ RSB.
+  destruct (unrecord_stack_adt _ _ RSB) as (b & ADT).
+  exploit inject_stack_adt. apply MINJ. intro EQLEN.
+  rewrite ADT in EQLEN.
+  destruct (Mem.stack_adt m2) eqn:STK.
+  simpl in EQLEN. congruence.
+  destruct (unrecord_stack_block_succeeds _ _ _ STK) as (m2' & UNRECORD & ADT').
+  eexists; split; eauto.
+  destruct MINJ as (MINJ & PM & DISJ).
+  split; [|split].
+  - simpl in *.
+    admit.
+  - eapply m_invar. eauto.
+    admit.
+    congruence.
+  - red; intros. eapply DISJ. 2: eauto. simpl in H |- *.
+    decompose [ex and] H.
+    repeat eexists;  eauto.
+    admit.
+Admitted.
+
+Lemma pop_frame_parallel_rule:
+  forall (j : meminj) (m1 : mem) (b1 : block) (sz1 : Z) (m1' m1'' m2 : mem) (b2 : block) (lo hi delta : Z) (P : massert) f r,
+    m_invar_stack P = false ->
+    m2 |= range b2 0 lo ** range b2 hi (frame_size f) ** minjection j m1 ** P ->
     Mem.free m1 b1 0 sz1 = Some m1' ->
+    unrecord_stack_block m1' = Some m1'' ->
     j b1 = Some (b2, delta) ->
-    lo = delta -> hi = delta + Z.max 0 sz1 -> exists m2' : mem, Mem.pop_frame m2 = Some m2' /\ m2' |= minjection j m1' ** P.
-
+    lo = delta -> hi = delta + Z.max 0 sz1 ->
+    Mem.stack_adt m2 = frame_with_info b2 (Some f) :: r ->
+    exists m2' ,
+      Mem.pop_frame m2 = Some m2'
+      /\ m2' |= minjection j m1'' ** P.
+Proof.
+  intros j m1 b1 sz1 m1' m1'' m2 b2 lo hi delta P f r INVAR SEP FREE UNRECORD JB LOEQ HIEQ STACK.
+  exploit free_parallel_rule; eauto.
+  intros (m2' & FREE' & SEP').
+  exploit unrecord_stack_block_parallel_rule; eauto.
+  intros (m2'0 & UNRECORD' & SEP'').
+  eexists; split.
+  rewrite pop_frame_free; eauto.
+  auto.
+Qed.
 
 
 End WITHMEM.

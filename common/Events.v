@@ -764,19 +764,14 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     forall ge vargs m1 t vres m2,
       sem ge vargs m1 t vres m2 ->
       Mem.unchanged_on
-        (fun b o => ~ Mem.non_private_stack_access m1 b o (o+1))
+        (fun b o => ~ Mem.strong_non_private_stack_access m1 b o (o+1))
         m1 m2;
+  
   ec_stack_blocks:
     forall ge vargs m1 t vres m2,
       sem ge vargs m1 t vres m2 ->
-      Mem.stack_blocks m1 = Mem.stack_blocks m2;
-  ec_get_frame_info:
-    forall ge vargs m1 t vres m2 b,
-      sem ge vargs m1 t vres m2 ->
-      Mem.get_frame_info m2 b = Mem.get_frame_info m1 b;
-  
+      Mem.stack_adt m1 = Mem.stack_adt m2;
 }.
-
 
 
 (** ** Semantics of volatile loads *)
@@ -890,7 +885,6 @@ Proof.
   auto.
   split. constructor. intuition congruence.
 - inv H. inv H0; apply Mem.unchanged_on_refl.
-- inv H; inv H0; auto.
 - inv H; inv H0; auto.
 Qed.
 
@@ -1044,8 +1038,6 @@ Proof.
   eapply Mem.store_valid_access_3; eauto. constructor. omega. destruct chunk; omega.
 - inv H. inv H0. auto.
   symmetry; eapply Mem.store_stack_blocks; eauto.
-- inv H. inv H0. auto.
-  eapply Mem.store_get_frame_info; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
@@ -1139,9 +1131,6 @@ Proof.
 - inv H.
   rewrite  (Mem.store_stack_blocks _ _ _ _ _ _ H1).
   symmetry; eapply Mem.alloc_stack_blocks; eauto.
-- inv H.
-  rewrite (Mem.store_get_frame_info _ _ _ _ _ _ H1).
-  eapply Mem.alloc_get_frame_info; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
@@ -1241,7 +1230,6 @@ Proof.
    admit.                       (* free neeeds to have non_private_stack_access also *)
 - inv H.
   symmetry; eapply Mem.free_stack_blocks; eauto.
-- inv H; eapply Mem.free_get_frame_info; eauto.
 Admitted.
 
 (** ** Semantics of [memcpy] operations. *)
@@ -1373,8 +1361,6 @@ Proof.
   eapply Mem.storebytes_non_private_stack_access; eauto. omega. omega.
 - intros; inv H.
   symmetry; eapply Mem.storebytes_stack_blocks; eauto.
-- intros; inv H.
-  eapply Mem.storebytes_get_frame_info; eauto.
 Qed.
 
 (** ** Semantics of annotations. *)
@@ -1425,7 +1411,6 @@ Proof.
   split. constructor. auto.
 - inv H; apply Mem.unchanged_on_refl.
 - inv H; auto.
-- inv H; auto.
 Qed.
 
 Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t):
@@ -1474,7 +1459,6 @@ Proof.
   split. constructor. auto.
 - inv H; apply Mem.unchanged_on_refl.
 - inv H; auto.
-- inv H; auto.
 Qed.
 
 Inductive extcall_debug_sem (ge: Senv.t):
@@ -1516,7 +1500,6 @@ Proof.
 - inv H; inv H0.
   split. constructor. auto.
 - inv H; apply Mem.unchanged_on_refl.
-- inv H; auto.
 - inv H; auto.
 Qed.
 
@@ -1649,8 +1632,17 @@ Definition external_call_receptive ef := ec_receptive (external_call_spec ef).
 Definition external_call_determ ef := ec_determ (external_call_spec ef).
 Definition external_call_unchanged_on ef := ec_unchanged_on_private_stack (external_call_spec ef).
 Definition external_call_stack_blocks ef := ec_stack_blocks (external_call_spec ef).
-Definition external_call_get_frame_info ef := ec_get_frame_info (external_call_spec ef).
 
+Definition ec_get_frame_info (sem: extcall_sem) :=
+  forall ge vargs m1 t vres m2,
+    sem ge vargs m1 t vres m2 ->
+    forall b, Mem.get_frame_info m1 b = Mem.get_frame_info m2 b.
+Lemma external_call_get_frame_info ef : ec_get_frame_info (external_call ef).
+Proof.
+  red; intros.
+  unfold Mem.get_frame_info.
+  erewrite external_call_stack_blocks. reflexivity. eauto.
+Qed.
 
 (** Corollary of [external_call_valid_block]. *)
 

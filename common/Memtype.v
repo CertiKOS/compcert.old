@@ -119,6 +119,57 @@ Definition empty_frame : frame_info :=
     frame_data := empty_segment;
   |}.
 
+Inductive frame_adt: Type :=
+| frame_with_info: block -> option frame_info -> frame_adt
+| frame_without_info: list block -> frame_adt.
+
+Fixpoint get_assoc (l: list frame_adt) (a: block) : option frame_info :=
+  match l with
+    nil => None
+  | (frame_with_info b fi)::r => if eq_block a b then fi else get_assoc r a
+  | (frame_without_info bl)::r => if in_dec eq_block a bl then None else get_assoc r a
+  end.
+
+Fixpoint in_frame (f: frame_adt) (a: block) : Prop :=
+  match f with
+  | (frame_with_info b fi) => a = b
+  | (frame_without_info bl) => In a bl
+  end.
+
+Fixpoint in_frames (l: list frame_adt) (a: block) : Prop :=
+  match l with
+    nil => False
+  | f::r => in_frame f a \/ in_frames r a
+  end.
+
+Lemma in_frame_dec:
+  forall f b, {in_frame f b} + {~ in_frame f b}.
+Proof.
+  destruct f; simpl; intros.
+  apply eq_block.
+  apply in_dec. apply eq_block.
+Defined.
+
+Lemma in_frames_dec:
+  forall l b, {in_frames l b} + {~ in_frames l b}.
+Proof.
+  induction l; simpl; intros; eauto.
+  destruct (in_frame_dec a b); auto.
+  destruct (IHl b); eauto. right; intros [A|A]; auto.
+Defined.
+
+Lemma not_in_frames_get_assoc:
+  forall l b,
+    ~ in_frames l b ->
+    get_assoc l b = None.
+Proof.
+  induction l; simpl; intros; eauto.
+  destruct a.
+  - destruct (eq_block b b0); auto. intuition.
+  - destruct (in_dec eq_block b l0); intuition.
+Qed.
+
+
 Module Mem.
 
 Definition locset := block -> Z -> Prop.
@@ -264,23 +315,27 @@ that we now axiomatize. *)
  ;
 
  (* Stack ADT and methods *)
- stack_adt: mem -> list (block * frame_info);
+ stack_adt: mem -> list frame_adt;
  push_frame: mem -> frame_info -> option (mem * block);
  pop_frame: mem -> option mem;
- stack_blocks: mem -> list block;
+ record_stack_block: mem -> block -> option frame_info -> option mem;
+ record_stack_blocks: mem -> list block -> option mem;
+ unrecord_stack_block: mem -> option mem;
+ set_adt: forall (m: mem) (adt: list frame_adt) (pf: forall b, in_frames adt  b -> Plt b (nextblock m)), mem;
 }.
 
 Section WITHMEMORYMODELOPS.
 Context `{memory_model_ops: MemoryModelOps}.
 
-Definition get_stack_top (m: mem) : option block :=
+Definition get_stack_top_blocks (m: mem) : list block :=
   match stack_adt m with
-    nil => None
-  | (b,fi)::r => Some b
+    nil => nil
+  | (frame_with_info b fi)::r => b :: nil
+  | (frame_without_info bl)::r => bl
   end.
 
 Definition is_stack_top (m: mem) (b: block) :=
-  get_stack_top m = Some b.
+  In b (get_stack_top_blocks m).
 
 Definition in_segment (ofs: Z) (seg: segment) : Prop :=
   seg_ofs seg <= ofs < seg_ofs seg + seg_size seg.
@@ -288,20 +343,17 @@ Definition in_segment (ofs: Z) (seg: segment) : Prop :=
 Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
   forall ofs, lo <= ofs < hi -> in_segment ofs (frame_data fi).
 
-Fixpoint get_assoc {A B} (eq: forall (a b: A), {a = b} + {a <> b}) (l: list (A * B)) (a: A) : option B :=
-  match l with
-    nil => None
-  | (c,d)::r => if eq a c then Some d else get_assoc eq r a
-  end.
-
 Definition get_frame_info (m: mem) : block -> option frame_info :=
-  get_assoc eq_block (stack_adt m). 
+  get_assoc (stack_adt m).
 
-Definition non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
+Definition strong_non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
   match get_frame_info m b with
-    Some fi => in_stack_data lo hi fi \/ is_stack_top m b
+    Some fi => in_stack_data lo hi fi
   | None => True
   end.
+
+Definition non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
+  is_stack_top m b \/ strong_non_private_stack_access m b lo hi.
 
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)
@@ -1455,6 +1507,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
    f b = Some (b2, delta') ->
    perm m1 b ofs k p ->
    lo + delta <= ofs + delta' < hi + delta -> False) ->
+  ~ in_frames (stack_adt m2) b2 ->
   exists f',
      inject f' m1' m2
   /\ inject_incr f f'
@@ -1670,6 +1723,7 @@ for [unchanged_on]. *)
         exists (b0 : block) (delta : Z),
           j b0 = Some (b, delta) /\
           perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
+   stack_adt m' = stack_adt m ->
    inject j m0 m';
 
  store_get_frame_info:
@@ -1704,7 +1758,7 @@ for [unchanged_on]. *)
    forall b' o, P b' o -> get_frame_info m2 b' = get_frame_info m1 b';
  unchanged_on_is_stack_top:
    forall m1 m2 P (UNCH: unchanged_on P m1 m2),
-   forall b' o, P b' o -> is_stack_top m2 b' = is_stack_top m1 b';
+   forall b' o, P b' o -> valid_block m2 b' -> is_stack_top m2 b' <-> is_stack_top m1 b';
 
 
  push_frame_perm_1:
@@ -1741,16 +1795,16 @@ for [unchanged_on]. *)
  store_stack_blocks:
   forall m1 sp chunk o v m2,
     store chunk m1 sp o v = Some m2 ->
-    stack_blocks m2 = stack_blocks m1;
+    stack_adt m2 = stack_adt m1;
 
  is_stack_top_stack_blocks:
   forall m b,
-    is_stack_top m b <-> (exists r, stack_blocks m = b::r);
+    is_stack_top m b <-> (exists f r, in_frame f b /\ stack_adt m = f::r);
 
  push_frame_stack_blocks:
    forall m1 f m2 b,
      push_frame m1 f = Some (m2, b) ->
-     stack_blocks m2 = b :: stack_blocks m1;
+     stack_adt m2 = (frame_with_info b (Some f)) :: stack_adt m1;
 
  perm_pop_frame:
    forall m m',
@@ -1760,11 +1814,11 @@ for [unchanged_on]. *)
        ~ is_stack_top m b ->
        perm m' b o k p;
 
-
  nextblock_pop_frame:
    forall m1 m2,
      pop_frame m1 = Some m2 ->
      nextblock m2 = nextblock m1;
+
  pop_frame_valid_block:
    forall m1 m2,
      pop_frame m1 = Some m2 ->
@@ -1773,13 +1827,15 @@ for [unchanged_on]. *)
  pop_frame_stack_blocks_1:
    forall m1 m2 b r,
      pop_frame m1 = Some m2 ->
-     stack_blocks m1 = b :: r ->
-     stack_blocks m2 = r;
+     stack_adt m1 = b :: r ->
+     stack_adt m2 = r;
+
  pop_frame_stack_blocks_2:
    forall m1 m2 r,
      pop_frame m1 = Some m2 ->
-     stack_blocks m2 = r ->
-     exists b, stack_blocks m1 = b:: r;
+     stack_adt m2 = r ->
+     exists b, stack_adt m1 = b :: r;
+
  pop_frame_get_frame_info:
    forall m1 m2 b,
    pop_frame m1 = Some m2 ->
@@ -1797,6 +1853,7 @@ for [unchanged_on]. *)
    forall m1 f m2 b,
      push_frame m1 f = Some (m2, b) ->
      nextblock m2 = Pos.succ (nextblock m1);
+
  push_frame_result:
    forall m1 f m2 b,
      push_frame m1 f = Some (m2, b) ->
@@ -1821,12 +1878,12 @@ for [unchanged_on]. *)
  alloc_stack_blocks:
     forall m1 lo hi m2 b,
       alloc m1 lo hi = (m2, b) ->
-      stack_blocks m2 = stack_blocks m1;
+      stack_adt m2 = stack_adt m1;
 
  free_stack_blocks:
     forall m1 b lo hi m2,
       free m1 b lo hi = Some m2 ->
-      stack_blocks m2 = stack_blocks m1;
+      stack_adt m2 = stack_adt m1;
 
  free_get_frame_info:
     forall m1 b lo hi m2 b',
@@ -1836,7 +1893,7 @@ for [unchanged_on]. *)
  storebytes_stack_blocks:
     forall m1 b o bytes m2,
       storebytes m1 b o bytes = Some m2 ->
-      stack_blocks m2 = stack_blocks m1;
+      stack_adt m2 = stack_adt m1;
 
  pop_frame_parallel_extends:
    forall m1 m2 m1',
@@ -1866,6 +1923,12 @@ for [unchanged_on]. *)
  stack_top_valid:
    forall m b, is_stack_top m b -> valid_block m b;
 
+ get_frame_info_valid:
+   forall m b f, get_frame_info m b = Some f -> valid_block m b;
+
+ in_frames_valid:
+   forall m b,
+     in_frames (stack_adt m) b -> valid_block m b;
 
 }.
 
@@ -2031,8 +2094,9 @@ Lemma lo_ge_hi_non_private_stack_access:
 Proof.
   unfold Mem.non_private_stack_access.
   intros.
+  right. red.
   destruct (get_frame_info m b); try tauto.
-  left; red; intros. omega.
+  red; intros. omega.
 Qed.
 
 Lemma unchanged_on_non_private_stack_access:
@@ -2044,10 +2108,13 @@ Lemma unchanged_on_non_private_stack_access:
 Proof.
   intros.
   destruct (zlt lo hi).
-  - unfold Mem.non_private_stack_access.
+  - unfold non_private_stack_access, strong_non_private_stack_access.
     rewrite (unchanged_on_get_frame_info _ _ _ H b' lo). 2: apply H0; omega.
-    destruct (get_frame_info m b'); try tauto.
+    destruct (get_frame_info m b') eqn:?; try tauto.
     rewrite (unchanged_on_is_stack_top _ _ _ H b' lo). 2: apply H0; omega. tauto.
+    eapply get_frame_info_valid in Heqo.
+    red. eapply Plt_Ple_trans. apply Heqo.
+    eapply unchanged_on_nextblock. eauto.
   - split; intros; apply lo_ge_hi_non_private_stack_access; auto.
 Qed.
 
@@ -2057,7 +2124,7 @@ Lemma store_non_private_stack_access:
     forall b' lo hi,
       Mem.non_private_stack_access m1 b' lo hi <-> Mem.non_private_stack_access m b' lo hi.
 Proof.
-  unfold Mem.non_private_stack_access.
+  unfold non_private_stack_access, strong_non_private_stack_access.
   intros.
   rewrite (Mem.store_get_frame_info _ _ _ _ _ _ H).
   destruct (Mem.get_frame_info m b'); try tauto.
@@ -2076,8 +2143,6 @@ Proof.
   intros; apply NPSA. omega.
 Qed.
 
-
-
 Lemma non_private_stack_access_inside:
   forall m b lo hi lo' hi',
     Mem.non_private_stack_access m b lo hi ->
@@ -2086,7 +2151,7 @@ Lemma non_private_stack_access_inside:
     Mem.non_private_stack_access m b lo' hi'.
 Proof.
   intros m b lo hi lo' hi' NPSA LO HI.
-  unfold Mem.non_private_stack_access in *.
+  unfold Mem.non_private_stack_access, strong_non_private_stack_access in *.
   destruct (Mem.get_frame_info m b); auto.
   destruct NPSA as [NPSA|NPSA]; auto.
   eapply in_stack_data_inside in NPSA; eauto.
