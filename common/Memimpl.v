@@ -2334,17 +2334,100 @@ Proof.
   destruct (zlt ofs hi); simpl; auto.
 Qed.
 
+
+Lemma free_stack_adt: stack_adt m2 = stack_adt m1.
+Proof.
+  unfold free in FREE.
+  unfold unchecked_free in FREE.
+  destruct (range_perm_dec m1 bf lo hi Cur Freeable);
+    inversion FREE.
+  simpl. reflexivity.
+Qed.
+  
+Lemma get_frame_info_free: forall b,
+  get_frame_info m1 b = get_frame_info m2 b.
+Proof.
+  unfold get_frame_info. intros.
+  rewrite free_stack_adt. reflexivity.
+Qed.
+
+Lemma get_stack_top_blocks_free: 
+  (get_stack_top_blocks m1) = (get_stack_top_blocks m2).
+Proof.
+  unfold get_stack_top_blocks.
+  rewrite free_stack_adt. reflexivity.
+Qed.
+  
+Lemma is_stack_top_free1: forall b,
+  is_stack_top m1 b -> is_stack_top m2 b.
+Proof.
+  unfold is_stack_top.
+  rewrite get_stack_top_blocks_free. 
+  intros. assumption.
+Qed.
+
+Lemma is_stack_top_free2: forall b,
+  is_stack_top m2 b -> is_stack_top m1 b.
+Proof.
+  unfold is_stack_top.
+  rewrite <- get_stack_top_blocks_free. 
+  intros. assumption.
+Qed.
+
+Lemma strong_non_private_stack_access_free1: forall b lo hi,
+  strong_non_private_stack_access m1 b lo hi ->
+  strong_non_private_stack_access m2 b lo hi.
+Proof.
+  unfold strong_non_private_stack_access.
+  intros. rewrite <- get_frame_info_free.
+  assumption.
+Qed.
+
+Lemma strong_non_private_stack_access_free2: forall b lo hi,
+  strong_non_private_stack_access m2 b lo hi ->
+  strong_non_private_stack_access m1 b lo hi.
+Proof.
+  unfold strong_non_private_stack_access.
+  intros. rewrite get_frame_info_free.
+  assumption.
+Qed.
+
+
+Lemma non_private_stack_access_free1: forall b lo hi,
+  non_private_stack_access m1 b lo hi ->
+  non_private_stack_access m2 b lo hi.
+Proof.
+  unfold non_private_stack_access.
+  intros b lo0 hi0 [ST|SNP].
+  - left. apply is_stack_top_free1. assumption.
+  - right. apply strong_non_private_stack_access_free1. assumption.
+Qed.
+
+Lemma non_private_stack_access_free2: forall b lo hi,
+  non_private_stack_access m2 b lo hi ->
+  non_private_stack_access m1 b lo hi.
+Proof.
+  unfold non_private_stack_access.
+  intros b lo0 hi0 [ST|SNP].
+  - left. apply is_stack_top_free2. assumption.
+  - right. apply strong_non_private_stack_access_free2. assumption.
+Qed.
+
+
 Theorem valid_access_free_1:
   forall chunk b ofs p,
   valid_access m1 chunk b ofs p ->
   b <> bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
   valid_access m2 chunk b ofs p.
 Proof.
-(*   intros. inv H. constructor; auto with mem. *)
-(*   red; intros. eapply perm_free_1; eauto. *)
-(*   destruct (zlt lo hi). intuition. right. omega. *)
-(* Qed. *)
-Admitted.
+  intros. inv H. destruct H2. constructor; auto with mem.
+  red; intros. eapply perm_free_1; eauto. 
+  destruct (zlt lo hi). intuition. right. omega.
+  split; auto.
+  intros. 
+  apply non_private_stack_access_free1. auto.
+Qed.
+
 
 Theorem valid_access_free_2:
   forall chunk ofs p,
@@ -2365,15 +2448,16 @@ Theorem valid_access_free_inv_1:
   valid_access m2 chunk b ofs p ->
   valid_access m1 chunk b ofs p.
 Proof.
-(*   intros. destruct H. split; auto. *)
-(*   red; intros. generalize (H ofs0 H1). *)
-(*   rewrite free_result. unfold perm, unchecked_free; simpl. *)
-(*   rewrite PMap.gsspec. destruct (peq b bf). subst b. *)
-(*   destruct (zle lo ofs0); simpl. *)
-(*   destruct (zlt ofs0 hi); simpl. *)
-(*   tauto. auto. auto. auto. *)
-(* Qed. *)
-Admitted.
+  intros. destruct H. split; auto.
+  red; intros. generalize (H ofs0 H1).
+  rewrite free_result. unfold perm, unchecked_free; simpl.
+  rewrite PMap.gsspec. destruct (peq b bf). subst b.
+  destruct (zle lo ofs0); simpl.
+  destruct (zlt ofs0 hi); simpl.
+  tauto. auto. auto. auto.
+  destruct H0. split; try assumption.
+  intros. apply non_private_stack_access_free2. auto.
+Qed.
 
 Theorem valid_access_free_inv_2:
   forall chunk ofs p,
@@ -2541,30 +2625,109 @@ Proof.
   auto. auto. auto.
 Qed.
 
+Lemma drop_stack_adt: stack_adt m' = stack_adt m.
+Proof.
+  unfold drop_perm in DROP.
+  destruct (range_perm_dec m b lo hi Cur Freeable);
+    inversion DROP.
+  simpl. reflexivity.
+Qed.
+  
+Lemma get_frame_info_drop: forall b,
+  get_frame_info m b = get_frame_info m' b.
+Proof.
+  unfold get_frame_info. intros.
+  rewrite drop_stack_adt. reflexivity.
+Qed.
+
+Lemma get_stack_top_blocks_drop: 
+  (get_stack_top_blocks m) = (get_stack_top_blocks m').
+Proof.
+  unfold get_stack_top_blocks.
+  rewrite drop_stack_adt. reflexivity.
+Qed.
+  
+Lemma is_stack_top_drop1: forall b,
+  is_stack_top m b -> is_stack_top m' b.
+Proof.
+  unfold is_stack_top.
+  rewrite get_stack_top_blocks_drop. 
+  intros. assumption.
+Qed.
+
+Lemma is_stack_top_drop2: forall b,
+  is_stack_top m' b -> is_stack_top m b.
+Proof.
+  unfold is_stack_top.
+  rewrite <- get_stack_top_blocks_drop. 
+  intros. assumption.
+Qed.
+
+Lemma strong_non_private_stack_access_drop1: forall b lo hi,
+  strong_non_private_stack_access m b lo hi ->
+  strong_non_private_stack_access m' b lo hi.
+Proof.
+  unfold strong_non_private_stack_access.
+  intros. rewrite <- get_frame_info_drop.
+  assumption.
+Qed.
+
+Lemma strong_non_private_stack_access_drop2: forall b lo hi,
+  strong_non_private_stack_access m' b lo hi ->
+  strong_non_private_stack_access m b lo hi.
+Proof.
+  unfold strong_non_private_stack_access.
+  intros. rewrite get_frame_info_drop.
+  assumption.
+Qed.
+
+
+Lemma non_private_stack_access_drop1: forall b lo hi,
+  non_private_stack_access m b lo hi ->
+  non_private_stack_access m' b lo hi.
+Proof.
+  unfold non_private_stack_access.
+  intros b0 lo0 hi0 [ST|SNP].
+  - left. apply is_stack_top_drop1. assumption.
+  - right. apply strong_non_private_stack_access_drop1. assumption.
+Qed.
+
+Lemma non_private_stack_access_drop2: forall b lo hi,
+  non_private_stack_access m' b lo hi ->
+  non_private_stack_access m b lo hi.
+Proof.
+  unfold non_private_stack_access.
+  intros b0 lo0 hi0 [ST|SNP].
+  - left. apply is_stack_top_drop2. assumption.
+  - right. apply strong_non_private_stack_access_drop2. assumption.
+Qed.
+
 Lemma valid_access_drop_1:
   forall chunk b' ofs p',
   b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p p' ->
   valid_access m chunk b' ofs p' -> valid_access m' chunk b' ofs p'.
 Proof.
-(*   intros. destruct H0. split; auto. *)
-(*   red; intros. *)
-(*   destruct (eq_block b' b). subst b'. *)
-(*   destruct (zlt ofs0 lo). eapply perm_drop_3; eauto. *)
-(*   destruct (zle hi ofs0). eapply perm_drop_3; eauto. *)
-(*   apply perm_implies with p. eapply perm_drop_1; eauto. omega. *)
-(*   generalize (size_chunk_pos chunk); intros. intuition. *)
-(*   eapply perm_drop_3; eauto. *)
-(* Qed. *)
-Admitted.
+  intros. destruct H0. split; auto.
+  red; intros.
+  destruct (eq_block b' b). subst b'.
+  destruct (zlt ofs0 lo). eapply perm_drop_3; eauto.
+  destruct (zle hi ofs0). eapply perm_drop_3; eauto.
+  apply perm_implies with p. eapply perm_drop_1; eauto. omega.
+  generalize (size_chunk_pos chunk); intros. intuition.
+  eapply perm_drop_3; eauto.
+  destruct H1. split; try assumption.
+  intros. apply non_private_stack_access_drop1. auto.
+Qed.
 
 Lemma valid_access_drop_2:
   forall chunk b' ofs p',
   valid_access m' chunk b' ofs p' -> valid_access m chunk b' ofs p'.
 Proof.
-(*   intros. destruct H; split; auto. *)
-(*   red; intros. eapply perm_drop_4; eauto. *)
-(* Qed. *)
-Admitted.
+  intros. destruct H; split; auto.
+  red; intros. eapply perm_drop_4; eauto.
+  destruct H0. split; try assumption.
+  intros. apply non_private_stack_access_drop2. auto.
+Qed.
 
 Theorem load_drop:
   forall chunk b' ofs,
@@ -3328,14 +3491,14 @@ Proof.
       eapply in_frame_with_info_in_frames; eauto.
 Qed.
 
-Lemma free_stack_adt:
-  forall m1 b lo hi m2,
-    free m1 b lo hi = Some m2 ->
-    stack_adt m2 = stack_adt m1.
-Proof.
-  intros.
-  apply free_result in H. subst; reflexivity.
-Qed.
+(* Lemma free_stack_adt: *)
+(*   forall m1 b lo hi m2, *)
+(*     free m1 b lo hi = Some m2 -> *)
+(*     stack_adt m2 = stack_adt m1. *)
+(* Proof. *)
+(*   intros. *)
+(*   apply free_result in H. subst; reflexivity. *)
+(* Qed. *)
 
 Lemma free_left_inj:
   forall f m1 m2 b lo hi m1',
