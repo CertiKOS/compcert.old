@@ -321,7 +321,6 @@ that we now axiomatize. *)
  record_stack_block: mem -> block -> option frame_info -> option mem;
  record_stack_blocks: mem -> list block -> option mem;
  unrecord_stack_block: mem -> option mem;
- set_adt: forall (m: mem) (adt: list frame_adt) (pf: forall b, in_frames adt  b -> Plt b (nextblock m)), mem;
 }.
 
 Section WITHMEMORYMODELOPS.

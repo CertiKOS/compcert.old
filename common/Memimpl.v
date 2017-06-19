@@ -6088,55 +6088,78 @@ Proof.
   eapply perm_unchanged_on_2; eauto.
 Qed.
 
-Definition set_adt (m: mem) (f:list frame_adt)
-           (pf: forall b, in_frames f  b -> Plt b (nextblock m)) : mem :=
-  mkmem (mem_contents m)
-        (mem_access m)
-        (nextblock m)
-        (access_max m)
-        (nextblock_noaccess m)
-        (contents_default m)
-        f
-        pf.
+Definition valid_frame f m :=
+  forall b, in_frame f b
+       -> Mem.valid_block m b.
+
+
+Definition valid_block_dec m b: { valid_block m b } + { ~ valid_block m b }.
+Proof.
+  apply plt.
+Qed.
+
+Definition valid_block_dec_eq m b: { forall b0, b0 = b -> valid_block m b0 } + { ~ (forall b0, b0 = b -> valid_block m b0) }.
+Proof.
+  destruct (valid_block_dec m b); [left|right].
+  intros; subst; auto.
+  intro X; apply n. apply X; auto.
+Qed.
+
+Definition valid_block_list_dec m l:  { forall b, In b l -> valid_block m b } + { ~ (forall b, In b l -> valid_block m b) }.
+Proof.
+  induction l; simpl; intros.
+  left; tauto.
+  destruct IHl, (valid_block_dec m a); intuition.
+  left; intros; intuition subst; auto.
+Qed.
+
+Definition valid_frame_dec f m: { valid_frame f m } + { ~ valid_frame f m }.
+Proof.
+  unfold valid_frame; destruct f; simpl.
+  apply valid_block_dec_eq.
+  apply valid_block_list_dec.
+Qed.
+
+Program Definition add_adt (m: mem) (f: frame_adt): option mem :=
+  if valid_frame_dec f m
+  then Some (mkmem (mem_contents m)
+                   (mem_access m)
+                   (nextblock m)
+                   (access_max m)
+                   (nextblock_noaccess m)
+                   (contents_default m)
+                   (f :: stack_adt m)
+                   _)
+  else None.
+Next Obligation.
+  destruct H0. apply H in H0. auto.
+  apply stack_valid. auto.
+Qed.
 
 Program Definition push_frame (m : mem) (f: frame_info) : option (mem * block) :=
   let '(m1, b) := alloc m 0 (frame_size f) in
-  let m2 := set_adt m1 (frame_with_info b (Some f) :: stack_adt m1) _ in
-  Some (m2, b).
-Next Obligation.
-  simpl in *. destruct H. subst; xomega. eapply stack_valid in H. xomega.
-Qed.
+  match add_adt m1 (frame_with_info b (Some f)) with
+    Some m2 => Some (m2, b)
+  | None => None
+  end.
 
-Lemma valid_block_dec: forall m b, {valid_block m b} + {~ valid_block m b}.
-Proof.
-  unfold valid_block; intros.
-  apply plt.
-Defined.
-
-Program Definition record_stack_blocks (m : mem) (b: list block) : option mem :=
-  if Forall_dec _ (valid_block_dec m) b
-  then Some (set_adt m (frame_without_info b :: (stack_adt m)) _)
-  else None.
-Next Obligation.
-  destruct H0.
-  rewrite Forall_forall in H. apply H in H0. apply H0.
-  eapply stack_valid in H0. xomega.
-Qed.
+Definition record_stack_blocks (m : mem) (b: list block) : option mem :=
+  add_adt m (frame_without_info b).
 
 Program Definition record_stack_block (m : mem) (b: block) (ofi: option frame_info) : option mem :=
-  if valid_block_dec m b then
-    Some (set_adt m (frame_with_info b ofi :: stack_adt m) _)
-  else None.
-Next Obligation.
-  destruct H0.
-  subst. apply H.
-  eapply stack_valid in H0. xomega.
-Qed.
+  add_adt m (frame_with_info b ofi).
 
 Program Definition unrecord_stack_block (m: mem) : option mem :=
   match stack_adt m with
     nil => None
-  | a::r => Some (set_adt m r _)
+  | a::r => Some ((mkmem (mem_contents m)
+                   (mem_access m)
+                   (nextblock m)
+                   (access_max m)
+                   (nextblock_noaccess m)
+                   (contents_default m)
+                   r
+                   _))
   end.
 Next Obligation.
   eapply stack_valid; eauto. rewrite <- Heq_anonymous. simpl; auto.
@@ -6188,7 +6211,7 @@ Proof.
   exact loadbytes.
   exact storebytes.
   exact drop_perm.
-  (* exact nextblock. *)
+  exact nextblock.
   exact perm.
   exact valid_pointer.
   exact extends.
@@ -6202,7 +6225,7 @@ Proof.
   exact pop_frame.
   exact record_stack_block.
   exact record_stack_blocks.
-  exact set_adt.
+  exact unrecord_stack_block.
 Defined.
 
 Local Instance memory_model_prf:
@@ -6391,7 +6414,7 @@ Proof.
   exact storebytes_empty_inject.
   exact alloc_right_inject.
   exact alloc_left_unmapped_inject.
-  exact alloc_left_mapped_inject || admit.
+  exact alloc_left_mapped_inject.
   exact alloc_parallel_inject.
   exact free_inject.
   exact free_left_inject.
@@ -6425,7 +6448,7 @@ Proof.
   exact drop_perm_unchanged_on.
   exact unchanged_on_implies.
   exact unchanged_on_implies.
-  exact inject_unchanged_on || admit.
+  exact inject_unchanged_on.
   intros; eapply stack_adt_eq_get_frame_info, store_stack_adt; eauto.
   intros; eapply stack_adt_eq_is_stack_top, store_stack_adt; eauto.
   intros; eapply stack_adt_eq_get_frame_info, storebytes_stack_adt; eauto.
