@@ -910,10 +910,11 @@ Proof.
   inv MC. left; econstructor; split. econstructor. econstructor; eauto.
 - (* skip call *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   left; econstructor; split.
   econstructor. inv MC; simpl in H; simpl; auto.
-  eauto.
   erewrite stackspace_function_translated; eauto.
+  eauto.
   econstructor; eauto. eapply match_is_call_cont; eauto.
 - (* assign *)
   exploit sel_expr_correct; eauto. intros [v' [A B]].
@@ -956,6 +957,7 @@ Proof.
   econstructor; eauto.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & CC & DD).
   erewrite <- stackspace_function_translated in P by eauto.
   exploit sel_expr_correct; eauto. intros [vf' [A B]].
   exploit sel_exprlist_correct; eauto. intros [vargs' [C D]].
@@ -1014,12 +1016,14 @@ Proof.
   econstructor; eauto.
 - (* Sreturn None *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   erewrite <- stackspace_function_translated in P by eauto.
   left; econstructor; split.
-  econstructor. simpl; eauto.
+  econstructor. simpl; eauto. eauto.
   econstructor; eauto. eapply call_cont_commut; eauto.
 - (* Sreturn Some *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   erewrite <- stackspace_function_translated in P by eauto.
   exploit sel_expr_correct; eauto. intros [v' [A B]].
   left; econstructor; split.
@@ -1044,6 +1048,7 @@ Proof.
   monadInv TF. generalize EQ; intros TF; monadInv TF.
   exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.
   intros [m2' [A B]].
+  exploit Mem.record_stack_block_extends; eauto. intros (m2'' & C & D).
   left; econstructor; split.
   econstructor; simpl; eauto.
   econstructor; simpl; eauto. apply set_locals_lessdef. apply set_params_lessdef; auto.

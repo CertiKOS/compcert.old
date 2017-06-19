@@ -1307,15 +1307,16 @@ Proof.
   (* skip return *)
   inv TS.
   assert ((fn_code tf)!ncont = Some(Ireturn rret)
-          /\ match_stacks k cs).
+          /\ match_stacks k cs) as EQ.
     inv TK; simpl in H; try contradiction; auto.
-  destruct H1.
-  assert (fn_stacksize tf = fn_stackspace f).
+  destruct EQ.
+  assert (fn_stacksize tf = fn_stackspace f) as SZEQ.
     inv TF. auto.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
-  rewrite H3. eauto.
+  rewrite SZEQ. eauto. eauto.
   constructor; auto.
 
   (* assign *)
@@ -1382,6 +1383,7 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
   eapply exec_Itailcall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
@@ -1396,9 +1398,10 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; eapply plus_right. eexact E.
-  eapply exec_Itailcall; eauto. simpl. rewrite symbols_preserved. rewrite H5.
+  eapply exec_Itailcall; eauto. simpl. rewrite symbols_preserved. rewrite H6.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite H; eauto.
@@ -1483,9 +1486,10 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   inversion TF.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
-  rewrite H2; eauto.
+  rewrite H3; eauto.
   constructor; auto.
 
   (* return some *)
@@ -1495,9 +1499,10 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   inversion TF.
   edestruct Mem.free_parallel_extends as [tm'' []]; eauto.
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
-  rewrite H4; eauto. traceEq.
+  rewrite H5; eauto. traceEq.
   simpl. constructor; auto.
 
   (* label *)
@@ -1526,6 +1531,7 @@ Proof.
     exploit (add_vars_valid (CminorSel.fn_params f)); eauto. intros [A B].
     eapply add_vars_wf; eauto. eapply add_vars_wf; eauto. apply init_mapping_wf.
   edestruct Mem.alloc_extends as [tm' []]; eauto; try apply Zle_refl.
+  exploit Mem.record_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; apply plus_one. eapply exec_function_internal; simpl; eauto.
   simpl. econstructor; eauto.

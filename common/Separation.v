@@ -381,7 +381,7 @@ Proof.
 - split; auto. split; auto. split; auto. intros.
   apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.perm_alloc_2; eauto.
-  red. erewrite Mem.alloc_get_frame_info_fresh; eauto.
+  red. right; red. erewrite Mem.alloc_get_frame_info_fresh; eauto.
 - apply (m_invar P) with m; auto.
   destruct (m_invar_weak P).
   + eapply Mem.alloc_strong_unchanged_on; eauto.
@@ -789,10 +789,10 @@ Proof.
     + simpl. intuition auto; try (unfold Ptrofs.max_unsigned in *; omega).
       * apply Mem.perm_implies with Freeable; auto with mem.
         eapply Mem.perm_alloc_2; eauto. omega. 
-      * red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
+      * red; right; red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
       * apply Mem.perm_implies with Freeable; auto with mem.
         eapply Mem.perm_alloc_2; eauto. omega. 
-      * red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
+      * red; right; red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
       * red; simpl; intros. destruct H1, H2. omega.
       * red; simpl; intros.
         assert (b = b2) by tauto. subst b.
@@ -1028,95 +1028,32 @@ Proof.
   + rewrite D in H9; congruence.
 Qed.
 
-Lemma external_call_protect:
-  forall (F V : Type) (ef : external_function) (ge : Genv.t F V) (vargs : list val) (m1 : mem) (t : trace)
-    (vres : val) ( m2 : mem) f m1' stk,
-    external_call ef ge vargs m1 t vres m2 ->
-    Mem.push_frame m1 f = Some (m1',stk) ->
-    exists m2',
-      external_call ef ge vargs m1' t vres m2' /\
-      forall m2'', Mem.pop_frame m2' = Some m2'' -> Mem.strong_unchanged_on (fun _ _ => True) m2 m2''.
-Proof.
-  
-Admitted.
-
-Axiom pop_frame_succeeds:
-  forall m b r,
-    Mem.stack_adt m = b :: r ->
-    exists m', Mem.pop_frame m = Some m'.
-
-
-Lemma external_call_protect_rule:
-  forall (F V : Type) (ef : external_function) (ge : Genv.t F V) (vargs1 : list val) (m1 : mem) (t : trace)
-    (vres1 : val) (m1' m2 : mem) (j : meminj) (P : massert) (vargs2 : list val),
-    m_invar_weak P = false ->
-    external_call ef ge vargs1 m1 t vres1 m1' ->
-    m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
-    Val.inject_list j vargs1 vargs2 ->
-    exists (j' : meminj) (vres2 : val) m2_1 m2_2 stk (m2' : mem),
-      Mem.push_frame m2 empty_frame = Some (m2_1, stk) 
-      /\ external_call ef ge vargs2 m2_1 t vres2 m2_2
-      /\ Mem.pop_frame m2_2 = Some m2'
-      /\ Val.inject j' vres1 vres2
-      /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
-      /\ inject_incr j j'
-      /\ inject_separated j j' m1 m2.
-Proof.
-  intros.
-  exploit external_call_parallel_rule; eauto.
-  intros (j' & vres2 & m2' & EC & RES & SEP & INCR & SEP').
-  destruct (Mem.push_frame_succeeds m2 empty_frame) as (m2_1 & stk & PF). rewrite PF.
-  exploit external_call_protect. eexact EC. eexact PF.
-  intros (m2'0 & EC' & pop).
-  exploit Mem.push_frame_stack_blocks. eauto.
-  erewrite external_call_stack_blocks; eauto. intro ADT.
-  destruct (pop_frame_succeeds m2'0 _ _ ADT) as (m2'1 & POP).
-  specialize (pop _ POP).
-  exists j', vres2, m2_1, m2'0, stk, m2'1.
-  split; auto.
-  split; auto.
-  split; auto.
-  split; auto.
-  split.
-  eapply m_invar. eauto. simpl.
-  eapply Mem.strong_unchanged_on_implies. eauto. simpl; auto.
-  rewrite (Mem.pop_frame_stack_blocks_1 _ _ _ _ POP ADT).
-  intros; eapply external_call_stack_blocks; eauto.
-  split; auto.
-Qed.
-
-Axiom push_frame_alloc:
-  forall m f m' b,
-    Mem.push_frame m f = Some (m', b) <->
-    (exists m1, 
-        Mem.alloc m 0 (frame_size f) = (m1, b) /\
-        Mem.record_stack_block m1 b (Some f) = Some m').
-
-Axiom perm_push_frame_2:
-  forall m1 fi m2 b,
-    Mem.push_frame m1 fi = Some (m2, b) ->
-    forall (ofs : Z) (k : perm_kind),
-      0 <= ofs < frame_size fi -> Mem.perm m2 b ofs k Freeable.
 
 Lemma record_stack_block_parallel_rule:
-  forall m1 m1' m2 m2' j P fi b b' delta,
+  forall m1 m1' m2 j P fi b b' delta,
     j b = Some (b', delta) ->
     m_invar_stack P = false ->
     m2 |= minjection j m1 ** P ->
     Mem.record_stack_block m1 b None = Some m1' ->
-    Mem.record_stack_block m2 b' (Some fi) = Some m2' ->
-    m2' |= minjection j m1' ** P.
+    exists m2',
+      Mem.record_stack_block m2 b' (Some fi) = Some m2' /\
+      m2' |= minjection j m1' ** P.
 Proof.
-  intros m1 m1' m2 m2' j P fi b b' delta FB INVAR MINJ RSB1 RSB2.
+  intros m1 m1' m2 j P fi b b' delta FB INVAR MINJ RSB1.
   destruct MINJ as (MINJ & PM & DISJ).
+  exploit Mem.record_stack_block_inject; eauto. apply MINJ. intros (m2' & RSB2 & INJ).
+  eexists; split; eauto.
   split; [|split].
-  - simpl in *.
-    admit.
+  - simpl in *. auto.  
   - eapply m_invar. eauto.
-    admit.
+    exploit Mem.record_stack_block_unchanged_on. eauto.
+    destruct (m_invar_weak P); eauto using Mem.strong_unchanged_on_weak.
     congruence.
-  - admit.
-Admitted.
+  - red; intros. eapply DISJ; eauto.
+    simpl in *. decompose [ex and] H.
+    repeat eexists; eauto.
+    eapply Mem.record_stack_block_perm; eauto.
+Qed.
 
 Lemma push_frame_parallel_rule
   : forall (F V : Type) (ge : Genv.t F V) (m1 : mem) (sz1 : Z) (m1' m1'' : mem) (b1 : block) (m2 : mem) fi
@@ -1137,84 +1074,52 @@ Lemma push_frame_parallel_rule
       inject_incr j j' /\ j' b1 = Some (b2, delta) /\ inject_separated j j' m1 m2.
 Proof.
   intros until delta; intros INVAR SEP ALLOC1 REC1 ALLOC2 ALIGN LO HI RANGE1 RANGE2 RANGE3.
-  destruct (proj1 (push_frame_alloc _ _ _ _) ALLOC2) as (m2_1 & ALLOC2' & SETADT).
+  destruct (proj1 (Mem.push_frame_alloc _ _ _ _) ALLOC2) as (m2_1 & ALLOC2' & SETADT).
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
   rewrite sep_swap3 in INJ'.
   exploit record_stack_block_parallel_rule.  3: eauto. all: eauto.
-  intro INJ''.
+  rewrite SETADT. intros (m0 & EQmem & INJ''). inv EQmem.
   rewrite sep_swap3 in INJ''.
   exists j'; split; auto.
 Qed.
-
-
-Axiom pop_frame_free:
-  forall m m' b f r,
-    Mem.stack_adt m = frame_with_info b (Some f) :: r ->
-    Mem.pop_frame m = Some m' <->
-    (exists m1, 
-        Mem.free m b 0 (frame_size f) = Some m1
-        /\ unrecord_stack_block m1 = Some m').
-
-Lemma unrecord_stack_adt:
-  forall m m',
-    unrecord_stack_block m = Some m' ->
-    exists b,
-      Mem.stack_adt m = b :: Mem.stack_adt m'.
-Proof.
-  unfold unrecord_stack_block.
-  intros.
-Admitted.
-
-Axiom unrecord_stack_block_succeeds:
-  forall m b r,
-    Mem.stack_adt m = b :: r ->
-    exists m',
-      unrecord_stack_block m = Some m'
-      /\ Mem.stack_adt m' = r.
-
-Axiom inject_stack_adt:
-  forall f m1 m2,
-    Mem.inject f m1 m2 ->
-    length (Mem.stack_adt m1) = length (Mem.stack_adt m2).
-
 
 Lemma unrecord_stack_block_parallel_rule:
   forall m1 m1' m2 j P,
     (* j b = Some (b', delta) -> *)
     m_invar_stack P = false ->
     m2 |= minjection j m1 ** P ->
-    unrecord_stack_block m1 = Some m1' ->
-    exists m2', unrecord_stack_block m2 = Some m2' /\
+    Mem.unrecord_stack_block m1 = Some m1' ->
+    exists m2', Mem.unrecord_stack_block m2 = Some m2' /\
            m2' |= minjection j m1' ** P.
 Proof.
   intros m1 m1' m2 j P (* fi b b' delta FB *) INVAR MINJ RSB.
-  destruct (unrecord_stack_adt _ _ RSB) as (b & ADT).
-  exploit inject_stack_adt. apply MINJ. intro EQLEN.
+  destruct (Mem.unrecord_stack_adt _ _ RSB) as (b & ADT).
+  exploit Mem.inject_stack_adt. apply MINJ. intro EQLEN.
   rewrite ADT in EQLEN.
   destruct (Mem.stack_adt m2) eqn:STK.
   simpl in EQLEN. congruence.
-  destruct (unrecord_stack_block_succeeds _ _ _ STK) as (m2' & UNRECORD & ADT').
+  exploit Mem.unrecord_stack_block_inject; eauto. apply MINJ. intros (m2' & UNRECORD & INJ).
   eexists; split; eauto.
   destruct MINJ as (MINJ & PM & DISJ).
   split; [|split].
-  - simpl in *.
-    admit.
+  - simpl in *. auto.
   - eapply m_invar. eauto.
-    admit.
+    exploit Mem.unrecord_stack_block_unchanged_on. eauto.
+    destruct (m_invar_weak P); eauto using Mem.strong_unchanged_on_weak.
     congruence.
   - red; intros. eapply DISJ. 2: eauto. simpl in H |- *.
     decompose [ex and] H.
     repeat eexists;  eauto.
-    admit.
-Admitted.
+    eapply Mem.unrecord_stack_block_perm; eauto.
+Qed.
 
 Lemma pop_frame_parallel_rule:
   forall (j : meminj) (m1 : mem) (b1 : block) (sz1 : Z) (m1' m1'' m2 : mem) (b2 : block) (lo hi delta : Z) (P : massert) f r,
     m_invar_stack P = false ->
     m2 |= range b2 0 lo ** range b2 hi (frame_size f) ** minjection j m1 ** P ->
     Mem.free m1 b1 0 sz1 = Some m1' ->
-    unrecord_stack_block m1' = Some m1'' ->
+    Mem.unrecord_stack_block m1' = Some m1'' ->
     j b1 = Some (b2, delta) ->
     lo = delta -> hi = delta + Z.max 0 sz1 ->
     Mem.stack_adt m2 = frame_with_info b2 (Some f) :: r ->
@@ -1228,7 +1133,7 @@ Proof.
   exploit unrecord_stack_block_parallel_rule; eauto.
   intros (m2'0 & UNRECORD' & SEP'').
   eexists; split.
-  rewrite pop_frame_free; eauto.
+  rewrite Mem.pop_frame_free; eauto.
   auto.
 Qed.
 

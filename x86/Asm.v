@@ -1157,7 +1157,7 @@ Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} (ge:
                          (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
         step ge (State rs m) t (State rs' m')
 | exec_step_external:
-    forall b ef args res rs m t rs' m1 m1' stk m',
+    forall b ef args res rs m t rs' m',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       extcall_arguments rs m (ef_sig ef) args ->
@@ -1173,9 +1173,7 @@ Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} (ge:
         (SP_NOT_VUNDEF: rs RSP <> Vundef)
         (RA_NOT_VUNDEF: rs RA <> Vundef)
       ,      (* CompCertX: END additional conditions for calling convention *)
-        Mem.push_frame m empty_frame = Some (m1, stk) ->
-        external_call ef ge args m1 t res m1' ->
-        Mem.pop_frame m1' = Some m' ->
+        external_call ef ge args m t res m' ->
         rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) #RA <- Vundef ->
         step ge (State rs m) t (State rs' m').
 
@@ -1247,9 +1245,8 @@ Ltac Equalities :=
   exploit external_call_determ. eexact H5. eexact H11. intros [A B].
   split. auto. intros. destruct B; auto. subst. auto.
 + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
-  exploit external_call_determ. eexact H5. eexact H12. intros [A B].
+  exploit external_call_determ. eexact H4. eexact H9. intros [A B].
   split. auto. intros. destruct B; auto. subst. auto.
-  replace m' with m'0 by congruence. auto.
 - (* trace length *)
   red; intros; inv H; simpl.
   omega.

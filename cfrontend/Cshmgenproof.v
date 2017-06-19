@@ -973,6 +973,7 @@ Lemma make_memcpy_correct:
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
+  forall (STACK_TOP_NO_INFO: forall b, Mem.is_stack_top m b -> Mem.get_frame_info m b = None),
   step ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
@@ -985,6 +986,14 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
+  (* PW: We need to prove that strong_non_private_stack_access m b for the memcpy extcall.
+   * Intuitively, this holds because we have non_private_stack_access (from storebytes);
+   * AND the stack top does not have any frame information associated with it.
+   * Sketchy proof below.
+   *)
+  apply Mem.storebytes_non_private_stack_access in H9.
+  destruct H9; auto.
+  red; rewrite STACK_TOP_NO_INFO; auto.
   auto.
 Qed.
 
@@ -995,6 +1004,7 @@ Lemma make_store_correct:
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
+  forall (STACK_TOP_NO_INFO: forall b, Mem.is_stack_top m b -> Mem.get_frame_info m b = None),
   step ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
@@ -1339,7 +1349,7 @@ Proof.
   apply star_one. constructor.
   apply star_refl.
 Qed.
-
+ 
 Inductive match_cont: composite_env -> type -> nat -> nat -> Clight.cont -> Csharpminor.cont -> Prop :=
   | match_Kstop: forall ce tyret nbrk ncnt,
       match_cont tyret ce nbrk ncnt Clight.Kstop Kstop
@@ -1377,6 +1387,22 @@ Inductive match_cont: composite_env -> type -> nat -> nat -> Clight.cont -> Csha
                  (Clight.Kcall id f e le k)
                  (Kcall id tf te le tk).
 
+Fixpoint nostackinfo (adt: list frame_adt) (k: cont) : Prop :=
+  match k with
+    Kstop => True
+  | Kseq _ k
+  | Kblock k => nostackinfo adt k
+  | Kcall oi f e te k =>
+    match adt with
+      nil => False
+    | a::r => nostackinfo r k /\
+             match a with
+               frame_without_info b => True
+             | _ => False
+             end
+    end
+  end.
+
 Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
   | match_state:
       forall f nbrk ncnt s k e le m tf ts tk te ts' tk' cu
@@ -1385,8 +1411,10 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
           (TR: transl_statement cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt s = OK ts)
           (MTR: match_transl ts tk ts' tk')
           (MENV: match_env e te)
-          (MK: match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk),
-      match_states (Clight.State f s k e le m)
+          (MK: match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk)
+          (TOPNOINFO: nostackinfo (Mem.stack_adt m) (Kcall None tf te le tk))
+          (* (TOPNOINFO: forall b : block, Mem.is_stack_top m b -> Mem.get_frame_info m b = None) *),
+        match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
       forall fd args k m tfd tk targs tres cconv cu ce
@@ -1394,12 +1422,14 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
           (TR: match_fundef cu fd tfd)
           (MK: match_cont ce Tvoid 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
+          (TOPNOINFO: nostackinfo (Mem.stack_adt m) tk)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
       match_states (Clight.Callstate fd args k m)
                    (Callstate tfd args tk m)
   | match_returnstate:
       forall res k m tk ce
-          (MK: match_cont ce Tvoid 0%nat 0%nat k tk),
+        (MK: match_cont ce Tvoid 0%nat 0%nat k tk)
+        (TOPNOINFO: nostackinfo (Mem.stack_adt m) tk),
       match_states (Clight.Returnstate res k m)
                    (Returnstate res tk m).
 
@@ -1409,6 +1439,7 @@ Remark match_states_skip:
   transl_function cu.(prog_comp_env) f = OK tf ->
   match_env e te ->
   match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk ->
+  nostackinfo (Mem.stack_adt m) (Kcall None tf te le tk) ->
   match_states (Clight.State f Clight.Sskip k e le m) (State tf Sskip tk te le m).
 Proof.
   intros. econstructor; eauto. simpl; reflexivity. constructor.
@@ -1535,6 +1566,65 @@ Proof.
   split; auto; econstructor; eauto.
 Qed.
 
+Lemma assign_loc_stack_adt:
+  forall ty m b o v m',
+    assign_loc ge ty m b o v m' ->
+    Mem.stack_adt m' = Mem.stack_adt m.
+Proof.
+  inversion 1; subst; auto.
+  simpl in *. eapply Mem.store_stack_blocks; eauto.
+  eapply Mem.storebytes_stack_blocks; eauto.
+Qed.
+Lemma nostackinfo_call_cont:
+  forall l k,
+    nostackinfo l k ->
+    nostackinfo l (call_cont k).
+Proof.
+  induction k; simpl; intros; eauto.
+Qed.
+
+Lemma find_label_nostackinfo:
+  forall lbl x tk' ts' tk'' l,
+    find_label lbl x tk' = Some (ts', tk'') -> nostackinfo l tk' -> nostackinfo l tk''
+with
+ find_label_ls_nostackinfo:
+  forall lbl x tk' ts' tk'' l,
+    find_label_ls lbl x tk' = Some (ts', tk'') -> nostackinfo l tk' -> nostackinfo l tk''
+.
+Proof.
+  - destruct x; simpl; intros; try intuition congruence.
+    + destruct (find_label lbl x1 (Kseq x2 tk')) eqn:?.
+      inv H. eapply find_label_nostackinfo in Heqo. eauto. simpl; auto.
+      eapply find_label_nostackinfo in H; eauto.
+    + destruct (find_label lbl x1 tk') eqn:?.
+      inv H. eapply find_label_nostackinfo in Heqo. eauto. simpl; auto.
+      eapply find_label_nostackinfo in H; eauto.
+    + destruct (find_label lbl x (Kseq (Sloop x) tk')) eqn:?.
+      inv H. eapply find_label_nostackinfo in Heqo. eauto. simpl; auto.
+      inv H.
+    + destruct (find_label lbl x (Kblock tk')) eqn:?.
+      inv H. eapply find_label_nostackinfo in Heqo. eauto. simpl; auto.
+      inv H.
+    + eapply find_label_ls_nostackinfo in H; eauto.
+    + destruct (ident_eq lbl l); auto. inv H. auto.
+      eapply find_label_nostackinfo in H0; eauto.
+  - destruct x; simpl; intros; try intuition congruence.
+    destruct (find_label lbl s (Kseq (seq_of_lbl_stmt x) tk')) eqn:?.
+    inv H. eapply find_label_nostackinfo in Heqo0. eauto. simpl; auto.
+    eapply find_label_ls_nostackinfo in H; eauto.
+Qed.
+
+Lemma alloc_variables_stack_adt:
+  forall e m l e' m',
+    Clight.alloc_variables ge e m l e' m' ->
+    Mem.stack_adt m' = Mem.stack_adt m.
+Proof.
+  induction 1; simpl; intros; eauto.
+  rewrite <- (Mem.alloc_stack_blocks _ _ _ _ _ H).
+  eauto.
+Qed.
+
+
 (** The simulation proof *)
 
 Lemma transl_step:
@@ -1556,7 +1646,12 @@ Proof.
   apply genv_next_preserved.
   eapply transl_lvalue_correct; eauto. eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
+  unfold Mem.is_stack_top, Mem.get_stack_top_blocks, Mem.get_frame_info. simpl in TOPNOINFO.
+  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct TOPNOINFO. destruct f0; try intuition congruence. simpl.
+  intros. destruct (in_dec); try intuition congruence.
   eapply match_states_skip; eauto.
+  erewrite assign_loc_stack_adt; eauto.
 
 - (* set *)
   monadInv TR. inv MTR. econstructor; split.
@@ -1587,12 +1682,14 @@ Proof.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
   auto.
   eapply match_states_skip; eauto.
+  simpl in *; eauto.
+  erewrite <- external_call_stack_blocks; eauto.
 
 - (* seq *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
-  econstructor; eauto. constructor.
+  apply plus_one. constructor. 
+  econstructor.  4: constructor. all: eauto.
   econstructor; eauto.
 
 - (* skip seq *)
@@ -1630,7 +1727,7 @@ Proof.
   eapply star_left. constructor.
   apply star_one. constructor.
   reflexivity. reflexivity. traceEq.
-  econstructor; eauto. constructor. econstructor; eauto.
+  econstructor. 4: constructor. all: eauto. econstructor; eauto.
 
 - (* skip-or-continue loop *)
   assert ((ts' = Sskip \/ ts' = Sexit ncnt) /\ tk' = tk).
@@ -1640,7 +1737,7 @@ Proof.
   eapply plus_left.
   destruct H0; subst ts'. 2:constructor. constructor.
   apply star_one. constructor. traceEq.
-  econstructor; eauto. constructor. econstructor; eauto.
+  econstructor. 4: constructor. all: eauto. econstructor; eauto.
 
 - (* break loop1 *)
   monadInv TR. inv MTR. inv MK.
@@ -1671,27 +1768,48 @@ Proof.
 - (* return none *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
-  eapply match_env_free_blocks; eauto.
+  apply plus_one. econstructor.
+  eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
+  simpl in TOPNOINFO.
+  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct f0 ; try intuition congruence.
+  erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
+  exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H0.
+  intros (m'0 & EQ & ADT). inv EQ. destruct TOPNOINFO.
+  eapply nostackinfo_call_cont; eauto.
 
 - (* return some *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
+  apply plus_one. econstructor.
   eapply make_cast_correct; eauto. eapply transl_expr_correct; eauto.
-  eapply match_env_free_blocks; eauto.
+  eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
+  simpl in TOPNOINFO.
+  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct f0 ; try intuition congruence.
+  erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
+  exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H2.
+  intros (m'0 & EQ' & ADT). inv EQ'. destruct TOPNOINFO.
+  eapply nostackinfo_call_cont; eauto.
 
 - (* skip call *)
   monadInv TR. inv MTR.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   econstructor; split.
-  apply plus_one. apply step_skip_call. auto.
-  eapply match_env_free_blocks; eauto.
+  apply plus_one. eapply step_skip_call. auto.
+  eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
+  simpl in TOPNOINFO.
+  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct f0 ; try intuition congruence.
+  erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
+  exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H1.
+  intros (m'0 & EQ & ADT). inv EQ. destruct TOPNOINFO.
+  auto.
 
 - (* switch *)
   monadInv TR.
@@ -1704,9 +1822,8 @@ Proof.
   econstructor; split.
   eapply star_plus_trans. eapply match_transl_step; eauto.
   apply plus_one. econstructor; eauto. traceEq.
-  econstructor; eauto.
+  econstructor. 4: constructor. all: eauto.
   apply transl_lbl_stmt_2. apply transl_lbl_stmt_1. eauto.
-  constructor.
   econstructor. eauto.
 
 - (* skip or break switch *)
@@ -1738,9 +1855,15 @@ Proof.
   econstructor; split.
   apply plus_one. constructor. simpl. eexact A.
   econstructor; eauto. constructor.
+  simpl in *.
+  destruct (Mem.stack_adt m); auto.
+  destruct TOPNOINFO. destruct f0; try intuition congruence.
+  split; auto.
+  eapply find_label_nostackinfo. eauto.
+  eapply nostackinfo_call_cont; eauto.
 
 - (* internal function *)
-  inv H. inv TR. monadInv H5.
+  inv H. inv TR. monadInv H6.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   exploit match_env_alloc_variables; eauto.
   apply match_env_empty.
@@ -1751,10 +1874,13 @@ Proof.
   simpl. assumption.
   simpl. assumption.
   simpl; eauto.
+  erewrite match_env_same_blocks. eauto. eauto.
   simpl. rewrite create_undef_temps_match. eapply bind_parameter_temps_match; eauto.
   simpl. econstructor; eauto.
   unfold transl_function. rewrite EQ; simpl. rewrite EQ1; simpl. auto.
   constructor.
+  erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl.
+  erewrite alloc_variables_stack_adt. eauto. eauto.
 
 - (* external function *)
   inv TR.
@@ -1763,6 +1889,7 @@ Proof.
   apply plus_one. constructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eapply match_returnstate with (ce := ce); eauto.
+  rewrite <- (external_call_stack_blocks _ _ _ _ _ _ _ H); eauto.
 
 - (* returnstate *)
   inv MK.
@@ -1784,6 +1911,7 @@ Proof.
   econstructor; split.
   econstructor; eauto. apply (Genv.init_mem_match TRANSL). eauto.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
+  simpl; auto.
 Qed.
 
 Lemma transl_final_states:

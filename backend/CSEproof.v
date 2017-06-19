@@ -1119,7 +1119,8 @@ Proof.
 
 - (* Itailcall *)
   exploit find_function_translated; eauto. intros (cu' & tf & FIND' & TRANSF' & LINK').
-  exploit Mem.free_parallel_extends; eauto. intros [m'' [A B]].
+  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & E & F).
   econstructor; split.
   eapply exec_Itailcall; eauto.
   eapply sig_preserved; eauto.
@@ -1197,7 +1198,8 @@ Proof.
   unfold transfer; rewrite H; auto.
 
 - (* Ireturn *)
-  exploit Mem.free_parallel_extends; eauto. intros [m'' [A B]].
+  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & E & D).
   econstructor; split.
   eapply exec_Ireturn; eauto.
   econstructor; eauto.
@@ -1207,7 +1209,8 @@ Proof.
   monadInv TFD. unfold transf_function in EQ. fold (analyze cu f) in EQ.
   destruct (analyze cu f) as [approx|] eqn:?; inv EQ.
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
-  intros (m'' & A & B).
+  intros (m2' & A & B).
+  exploit Mem.record_stack_block_extends; eauto. intros (m2'' & C & D).
   econstructor; split.
   eapply exec_function_internal; simpl; eauto.
   simpl. econstructor; eauto.

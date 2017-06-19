@@ -2122,7 +2122,7 @@ Proof.
 
 
 (* return none *)
-  inv H7. econstructor; split.
+  inv H8. econstructor; split.
   left. apply plus_one. econstructor; eauto. rewrite blocks_of_env_preserved; eauto.
   constructor. apply match_cont_call; auto.
 (* return some 1 *)
@@ -2130,17 +2130,17 @@ Proof.
   left; eapply plus_left. constructor. apply push_seq. traceEq.
   econstructor; eauto. constructor. auto.
 (* return some 2 *)
-  inv H9. exploit tr_top_val_for_val_inv; eauto. intros [A [B C]]. subst.
+  inv H10. exploit tr_top_val_for_val_inv; eauto. intros [A [B C]]. subst.
   econstructor; split.
   left. eapply plus_two. constructor. econstructor. eauto.
   erewrite function_return_preserved; eauto. rewrite blocks_of_env_preserved; eauto.
   eauto. traceEq.
   constructor. apply match_cont_call; auto.
 (* skip return *)
-  inv H8.
-  assert (is_call_cont tk). inv H9; simpl in *; auto.
+  inv H9.
+  assert (is_call_cont tk). inv H10; simpl in *; auto.
   econstructor; split.
-  left. apply plus_one. apply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
+  left. apply plus_one. eapply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
   constructor. auto.
 
 (* switch *)
@@ -2185,12 +2185,13 @@ Proof.
   econstructor; eauto.
 
 (* internal function *)
-  inv H7. inversion H3; subst.
+  inv H8. inversion H4; subst.
   econstructor; split.
   left; apply plus_one. eapply step_internal_function. econstructor.
-  rewrite H6; rewrite H7; auto.
-  rewrite H6; rewrite H7. eapply alloc_variables_preserved; eauto.
-  rewrite H6. eapply bind_parameters_preserved; eauto.
+  rewrite H8; rewrite H7; auto.
+  rewrite H8; rewrite H7. eapply alloc_variables_preserved; eauto.
+  rewrite blocks_of_env_preserved. eauto.
+  rewrite H7. eapply bind_parameters_preserved; eauto.
   eauto.
   constructor; auto.
 

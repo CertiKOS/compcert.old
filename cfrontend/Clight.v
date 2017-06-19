@@ -616,21 +616,24 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f Sbreak (Kloop2 s1 s2 k) e le m)
         E0 (State f Sskip k e le m)
 
-  | step_return_0: forall f k e le m m',
+  | step_return_0: forall f k e le m m' m'',
       Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f (Sreturn None) k e le m)
-        E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k e le m v v' m',
+        E0 (Returnstate Vundef (call_cont k) m'')
+  | step_return_1: forall f a k e le m v v' m' m'',
       eval_expr e le m a v ->
       sem_cast v (typeof a) f.(fn_return) m = Some v' ->
       Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f (Sreturn (Some a)) k e le m)
-        E0 (Returnstate v' (call_cont k) m')
-  | step_skip_call: forall f k e le m m',
+        E0 (Returnstate v' (call_cont k) m'')
+  | step_skip_call: forall f k e le m m' m'',
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f Sskip k e le m)
-        E0 (Returnstate Vundef k m')
+        E0 (Returnstate Vundef k m'')
 
   | step_switch: forall f a sl k e le m v n,
       eval_expr e le m a v ->
@@ -695,10 +698,11 @@ End SEMANTICS.
 (** The two semantics for function parameters.  First, parameters as local variables. *)
 
 Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m': mem) : Prop :=
-  | function_entry1_intro: forall m1,
+  | function_entry1_intro: forall m1 m1',
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      bind_parameters ge e m1 f.(fn_params) vargs m' ->
+      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env ge e))) = Some m1' ->
+      bind_parameters ge e m1' f.(fn_params) vargs m' ->
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
@@ -706,14 +710,15 @@ Definition step1 (ge: genv) := step ge (function_entry1).
 
 (** Second, parameters as temporaries. *)
 
-Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m': mem) : Prop :=
-  | function_entry2_intro:
+Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m1': mem) : Prop :=
+  | function_entry2_intro m':
       list_norepet (var_names f.(fn_vars)) ->
       list_norepet (var_names f.(fn_params)) ->
       list_disjoint (var_names f.(fn_params)) (var_names f.(fn_temps)) ->
       alloc_variables ge empty_env m f.(fn_vars) e m' ->
+      Mem.record_stack_blocks m' (map fst (map fst (blocks_of_env ge e))) = Some m1' ->
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
-      function_entry2 ge f vargs m e le m'.
+      function_entry2 ge f vargs m e le m1'.
 
 Definition step2 (ge: genv) := step ge (function_entry2).
 

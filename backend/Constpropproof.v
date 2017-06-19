@@ -480,6 +480,7 @@ Proof.
 
 - (* Itailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
   left; econstructor; econstructor; split.
@@ -542,7 +543,8 @@ Opaque builtin_strength_reduction.
 
 - (* Ireturn *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
-  left; exists O; exists (Returnstate s' (regmap_optget or Vundef rs') m2'); split.
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
+  left; exists O; exists (Returnstate s' (regmap_optget or Vundef rs') m2''); split.
   eapply exec_Ireturn; eauto. TransfInstr; auto.
   constructor; auto.
   destruct or; simpl; auto.
@@ -550,6 +552,7 @@ Opaque builtin_strength_reduction.
 - (* internal function *)
   exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.
   intros [m2' [A B]].
+  exploit Mem.record_stack_block_extends; eauto. intros (m2'' & C & D).
   simpl. unfold transf_function.
   left; exists O; econstructor; split.
   eapply exec_function_internal; simpl; eauto.

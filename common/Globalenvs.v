@@ -1813,12 +1813,13 @@ Proof.
   intros until n. functional induction (store_zeros m b p n); intros PERM NPSA.
 - exists m; auto.
 - apply IHo. red; intros. eapply Mem.perm_store_1; eauto. apply PERM. omega.
-  red in NPSA; red; intros.
+  unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access in *; intros. 
   erewrite Mem.store_get_frame_info by eauto.
-  destruct (Mem.get_frame_info); auto.
   destruct NPSA.
-  left; eapply Mem.in_stack_data_inside ; eauto; try omega.
   erewrite Mem.store_is_stack_top; eauto.
+  right.
+  destruct (Mem.get_frame_info m b); auto.
+  eapply Mem.in_stack_data_inside ; eauto; try omega.
 - destruct (Mem.valid_access_store m Mint8unsigned b p Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. omega. 
   split. simpl. apply Z.divide_1_l.
@@ -1920,7 +1921,7 @@ Proof.
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  unfold Mem.non_private_stack_access.
+  unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access.
   rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC). auto.
   rewrite ZEROS.
   assert (P2: Mem.range_perm m2 b 0 sz Cur Freeable).
@@ -1928,7 +1929,7 @@ Proof.
   destruct (@store_init_data_list_exists b (gvar_init v) m2 0) as [m3 STORE]; auto.
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
   rewrite (store_zeros_non_private_stack_access _ _ _ _ ZEROS).
-  unfold Mem.non_private_stack_access.
+  unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access.
   rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC). auto.
   rewrite STORE.
   assert (P3: Mem.range_perm m3 b 0 sz Cur Freeable).

@@ -339,11 +339,12 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k sp e m,
       step (State f Sskip (Kblock k) sp e m)
         E0 (State f Sskip k sp e m)
-  | step_skip_call: forall f k sp e m m',
+  | step_skip_call: forall f k sp e m m' m'',
       is_call_cont k ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
-        E0 (Returnstate Vundef k m')
+        E0 (Returnstate Vundef k m'')
 
   | step_assign: forall f id a k sp e m v,
       eval_expr sp e m nil a v ->
@@ -366,14 +367,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' m'',
       eval_expr_or_symbol (Vptr sp Ptrofs.zero) e m nil a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m'')
 
   | step_builtin: forall f res ef al k sp e m vl t v m',
       list_forall2 (eval_builtin_arg sp e m) al vl ->
@@ -414,15 +416,17 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sswitch a) k sp e m)
         E0 (State f (Sexit n) k sp e m)
 
-  | step_return_0: forall f k sp e m m',
+  | step_return_0: forall f k sp e m m'  m'',
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k sp e m v m',
+        E0 (Returnstate Vundef (call_cont k) m'')
+  | step_return_1: forall f a k sp e m v m' m'',
       eval_expr (Vptr sp Ptrofs.zero) e m nil a v ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Returnstate v (call_cont k) m')
+        E0 (Returnstate v (call_cont k) m'')
 
   | step_label: forall f lbl s k sp e m,
       step (State f (Slabel lbl s) k sp e m)
@@ -433,11 +437,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m m' sp e m'',
       Mem.alloc m 0 f.(fn_stackspace) = (m', sp) ->
+      Mem.record_stack_block m' sp None = Some m'' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs k m)
-        E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
+        E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m'')
   | step_external_function: forall ef vargs k m t vres m',
       external_call ef ge vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)

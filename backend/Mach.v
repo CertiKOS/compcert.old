@@ -419,7 +419,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
-      forall s fb rs m t rs' ef args res m1 m1' stk m',
+      forall s fb rs m t rs' ef args res m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       (* forall (* CompCertX: BEGIN additional conditions for calling convention *) *)
@@ -433,9 +433,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (* PW: We push a dummy empty frame so that the stack top for the purpose
       of the external call is not the caller's stack frame but rather the stack
       frame of the hypothetical caller.*)
-      Mem.push_frame m empty_frame = Some (m1,stk) ->
-      external_call ef ge args m1 t res m1' ->
-      Mem.pop_frame m1' = Some m' ->
+      external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')

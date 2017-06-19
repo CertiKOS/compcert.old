@@ -483,6 +483,7 @@ Qed.
 
 (** Properties of volatile memory accesses *)
 
+
 Lemma transf_volatile_store:
   forall v1 v2 v1' v2' m tm chunk sp nm t v m',
   volatile_store_sem chunk ge (v1::v2::nil) m t v m' ->
@@ -502,7 +503,9 @@ Proof.
   exploit magree_store_parallel. eauto. eauto. eauto.
   instantiate (1 := nlive ge sp nm). auto.
   intros (tm' & P & Q).
-  exists tm'; split. econstructor. econstructor; eauto. auto.
+  exists tm'; split. econstructor. econstructor; eauto.
+  eapply Mem.strong_non_private_stack_access_magree; eauto.
+  auto.
 Qed.
 
 Lemma eagree_set_undef:
@@ -676,11 +679,12 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & C & D).
+  exploit Mem.unrecord_stack_block_extends; eauto. eapply magree_extends; eauto.
+  apply nlive_all. intros (m2' & USB & EXT).
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   erewrite stacksize_translated by eauto. eexact C.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
-  eapply magree_extends; eauto. apply nlive_all.
 
 - (* builtin *)
   TransfInstr; UseTransfer. revert ENV MEM TI.
@@ -773,6 +777,7 @@ Ltac UseTransfer :=
   constructor. eauto. constructor. eauto. constructor.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
+  eapply Mem.strong_non_private_stack_access_magree; eauto. erewrite <- list_forall2_length; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy eliminated *)
@@ -866,18 +871,20 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & A & B).
+  exploit Mem.unrecord_stack_block_extends; eauto. eapply magree_extends; eauto.
+  apply nlive_all. intros (m2' & USB & EXT).
   econstructor; split.
   eapply exec_Ireturn; eauto.
   erewrite stacksize_translated by eauto. eexact A.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.
-  eapply magree_extends; eauto. apply nlive_all.
 
 - (* internal function *)
   monadInv FUN. generalize EQ. unfold transf_function. fold (vanalyze cu f). intros EQ'.
   destruct (analyze (vanalyze cu f) f) as [an|] eqn:AN; inv EQ'.
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
   intros (tm' & A & B).
+  exploit Mem.record_stack_block_extends; eauto. intros (tm'' & C & D).
   econstructor; split.
   econstructor; simpl; eauto.
   simpl. econstructor; eauto.

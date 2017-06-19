@@ -876,10 +876,8 @@ Transparent destroyed_at_function_entry.
   intros [tf [A B]]. simpl in B. inv B.
   exploit extcall_arguments_match; eauto.
   intros [args' [C D]].
-  exploit Mem.push_frame_extends; eauto. intros (m2_1 & PF & EXT_1).
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [P [Q [R S]]]]].
-  exploit Mem.pop_frame_parallel_extends; eauto. intros (m2_2 & pF & EXT_2).
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
   

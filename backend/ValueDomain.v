@@ -3648,6 +3648,42 @@ Proof.
   intros. eauto with mem.
 Qed.
 
+Lemma romatch_unrecord:
+  forall m m' rm,
+  Mem.unrecord_stack_block m  = Some m' ->
+  romatch m rm ->
+  romatch m' rm.
+Proof.
+  intros. apply romatch_ext with m; auto.
+  intros.   destruct (zlt 0 n).
+  erewrite <- Mem.loadbytes_unchanged_on_1 with (P:=fun _ _ => True). eauto.
+  eapply Mem.strong_unchanged_on_weak, Mem.unrecord_stack_block_unchanged_on; eauto.
+  red. erewrite <- Mem.unrecord_stack_block_nextblock; eauto.
+  eapply Mem.loadbytes_range_perm in H2.
+  specialize (H2 ofs). eapply Mem.perm_valid_block. apply H2. omega. auto.
+  rewrite Mem.loadbytes_empty in H2 by omega. inv H2.
+  rewrite Mem.loadbytes_empty; auto. omega.
+  intros. eapply Mem.unrecord_stack_block_perm; eauto.
+Qed.
+
+Lemma romatch_record:
+  forall m m' b fi rm,
+  Mem.record_stack_block m b fi  = Some m' ->
+  romatch m rm ->
+  romatch m' rm.
+Proof.
+  intros. apply romatch_ext with m; auto.
+  intros.   destruct (zlt 0 n).
+  erewrite <- Mem.loadbytes_unchanged_on_1 with (P:=fun _ _ => True). eauto.
+  eapply Mem.strong_unchanged_on_weak, Mem.record_stack_block_unchanged_on; eauto.
+  red. erewrite <- Mem.record_stack_block_nextblock; eauto.
+  eapply Mem.loadbytes_range_perm in H2.
+  specialize (H2 ofs). eapply Mem.perm_valid_block. apply H2. omega. auto.
+  rewrite Mem.loadbytes_empty in H2 by omega. inv H2.
+  rewrite Mem.loadbytes_empty; auto. omega.
+  intros. eapply Mem.record_stack_block_perm; eauto.
+Qed.
+
 Lemma romatch_alloc:
   forall m b lo hi m' rm,
   Mem.alloc m lo hi = (m', b) ->
@@ -4047,6 +4083,43 @@ Proof.
   intros. apply mmatch_ext with m; auto.
   intros. eapply Mem.loadbytes_free_2; eauto.
   erewrite <- Mem.nextblock_free by eauto. xomega.
+Qed.
+
+
+Lemma mmatch_unrecord:
+  forall m m' rm,
+  Mem.unrecord_stack_block m  = Some m' ->
+  mmatch m rm ->
+  mmatch m' rm.
+Proof.
+  intros. apply mmatch_ext with m; auto.
+  intros.   destruct (zlt 0 n).
+  erewrite <- Mem.loadbytes_unchanged_on_1 with (P:=fun _ _ => True). eauto.
+  eapply Mem.strong_unchanged_on_weak, Mem.unrecord_stack_block_unchanged_on; eauto.
+  red. erewrite <- Mem.unrecord_stack_block_nextblock; eauto.
+  eapply Mem.loadbytes_range_perm in H3.
+  specialize (H3 ofs). eapply Mem.perm_valid_block. apply H3. omega. auto.
+  rewrite Mem.loadbytes_empty in H3 by omega. inv H3.
+  rewrite Mem.loadbytes_empty; auto. omega.
+  rewrite (Mem.unrecord_stack_block_nextblock _ _ H); xomega.
+Qed.
+
+Lemma mmatch_record:
+  forall m m' b fi rm,
+  Mem.record_stack_block m b fi  = Some m' ->
+  mmatch m rm ->
+  mmatch m' rm.
+Proof.
+  intros. apply mmatch_ext with m; auto.
+  intros.   destruct (zlt 0 n).
+  erewrite <- Mem.loadbytes_unchanged_on_1 with (P:=fun _ _ => True). eauto.
+  eapply Mem.strong_unchanged_on_weak, Mem.record_stack_block_unchanged_on; eauto.
+  red. erewrite <- Mem.record_stack_block_nextblock; eauto.
+  eapply Mem.loadbytes_range_perm in H3.
+  specialize (H3 ofs). eapply Mem.perm_valid_block. apply H3. omega. auto.
+  rewrite Mem.loadbytes_empty in H3 by omega. inv H3.
+  rewrite Mem.loadbytes_empty; auto. omega.
+  rewrite (Mem.record_stack_block_nextblock _ _ _ _ H); xomega.
 Qed.
 
 Lemma mmatch_top':

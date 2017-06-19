@@ -697,7 +697,7 @@ Proof.
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H7.
+  monadInv H8.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
   rewrite (stacksize_preserved _ _ EQ). eauto.

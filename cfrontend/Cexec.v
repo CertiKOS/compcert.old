@@ -222,6 +222,8 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block
       do w' <- nextworld_vstore w chunk id ofs ev;
       Some(w', Event_vstore chunk id ofs ev :: nil, m)
   | Some false =>
+    check (Mem.strong_non_private_stack_access_dec
+             m b (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + size_chunk chunk));
     do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v;
       Some(w, E0, m')
   | None => None
@@ -272,7 +274,9 @@ Proof.
   rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2).
   rewrite (eventval_of_val_complete _ _ _ H3).
   inv H0. inv H8. inv H6. rewrite H9. auto.
-  rewrite H1. rewrite H2. inv H0. auto.
+  rewrite H1. rewrite H2. inv H0.
+  destruct (Mem.strong_non_private_stack_access_dec m b (Ptrofs.unsigned ofs)
+           (Ptrofs.unsigned ofs + size_chunk chunk)); intuition congruence.
 Qed.
 
 (** Accessing locations *)
@@ -488,6 +492,11 @@ Definition do_ef_malloc
   | _ => None
   end.
 
+Definition dec_not {A B}: {A}+{B} -> {B}+{A}.
+Proof.
+  intros [a|a];[right|left]; auto.
+Defined.
+
 Definition do_ef_free
        (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
@@ -495,6 +504,7 @@ Definition do_ef_free
       do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr);
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
+      check (dec_not (in_frames_dec (Mem.stack_adt m) b));
       do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz);
       Some(w, E0, Vundef, m')
   | _ => None
@@ -514,8 +524,9 @@ Definition do_ef_memcpy (sz al: Z)
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
         do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz;
-        do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes;
-        Some(w, E0, Vundef, m')
+          do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes;
+          check Mem.strong_non_private_stack_access_dec m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + Z.of_nat (length bytes));
+          Some(w, E0, Vundef, m')
       else None
   | _ => None
   end.
@@ -592,7 +603,7 @@ Proof with try congruence.
   unfold do_ef_memcpy. destruct vargs... destruct v... destruct vargs...
   destruct v... destruct vargs... mydestr. 
   apply Decidable_sound in Heqb1. red in Heqb1.
-  split. econstructor; eauto; tauto. constructor.
+  split. econstructor; eauto; try tauto. constructor.
 (* EF_annot *)
   unfold do_ef_annot. mydestr.
   split. constructor. apply list_eventval_of_val_sound; auto.
@@ -634,10 +645,16 @@ Proof.
   inv H0. erewrite SIZE by eauto. rewrite H1, H2. auto.
 (* EF_free *)
   inv H; unfold do_ef_free.
-  inv H0. rewrite H1. erewrite SIZE by eauto. rewrite zlt_true. rewrite H3. auto. omega.
+  inv H0. rewrite H1. erewrite SIZE by eauto. rewrite zlt_true. rewrite H3.
+  destruct (in_frames_dec (Mem.stack_adt m) b); intuition congruence.
+  omega.
 (* EF_memcpy *)
   inv H; unfold do_ef_memcpy.
   inv H0. rewrite Decidable_complete. rewrite H7; rewrite H8; auto.
+  destruct (Mem.strong_non_private_stack_access_dec
+              m bdst
+              (Ptrofs.unsigned odst)
+              (Ptrofs.unsigned odst + Z.of_nat (Datatypes.length bytes))); intuition try congruence.
   red. tauto.
 (* EF_annot *)
   inv H; unfold do_ef_annot. inv H0. inv H6. inv H4.
@@ -1997,7 +2014,8 @@ Definition do_step (w: world) (s: state) : list transition :=
             else ret "step_for_false" (State f Sskip k e m)
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
-            do m' <- Mem.free_list m (blocks_of_env ge e);
+              do m' <- Mem.free_list m (blocks_of_env ge e);
+              do m' <- Mem.unrecord_stack_block m';
             ret "step_return_2" (Returnstate v' (call_cont k) m')
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
@@ -2049,12 +2067,14 @@ Definition do_step (w: world) (s: state) : list transition :=
       ret "step_skip_for4" (State f (Sfor Sskip a2 a3 s) k e m)
 
   | State f (Sreturn None) k e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+    do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.unrecord_stack_block m';
       ret "step_return_0" (Returnstate Vundef (call_cont k) m')
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
   | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+    do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.unrecord_stack_block m';
       ret "step_skip_call" (Returnstate Vundef k m')
 
   | State f (Sswitch x sl) k e m =>
@@ -2074,7 +2094,8 @@ Definition do_step (w: world) (s: state) : list transition :=
 
   | Callstate (Internal f) vargs k m =>
       check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
-      let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
+        let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
+        do m1 <- Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env ge e)));
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ _ _) vargs k m =>
@@ -2148,9 +2169,9 @@ Proof with try (left; right; econstructor; eauto; fail).
   destruct fd; myinv.
   (* internal *)
   destruct (do_alloc_variables empty_env m (fn_params f ++ fn_vars f)) as [e m1] eqn:?.
-  myinv. left; right; apply step_internal_function with m1. auto.
+  myinv. left; right; eapply step_internal_function with m1 m0. auto.
   change e with (fst (e,m1)). change m1 with (snd (e,m1)) at 2. rewrite <- Heqp.
-  apply do_alloc_variables_sound. eapply sem_bind_parameters_sound; eauto.
+  apply do_alloc_variables_sound. eauto. eapply sem_bind_parameters_sound; eauto.
   (* external *)
   destruct p as [[[w' tr] v] m']. myinv. left; right; constructor.
   eapply do_ef_external_sound; eauto.
@@ -2231,16 +2252,17 @@ Proof with (unfold ret; eauto with coqlib).
   rewrite H0...
   rewrite H0...
   destruct H0; subst x...
-  rewrite H0...
-  rewrite H0; rewrite H1...
-  rewrite H1. red in H0. destruct k; try contradiction...
+  rewrite H0... rewrite H1...
+  rewrite H0; rewrite H1, H2...
+  rewrite H1, H2. red in H0. destruct k; try contradiction...
   rewrite H0...
   destruct H0; subst x...
   rewrite H0...
 
   (* Call step *)
   rewrite pred_dec_true; auto. rewrite (do_alloc_variables_complete _ _ _ _ _ H1).
-  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H2)...
+  rewrite H2.
+  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H3)...
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
 Qed.
 

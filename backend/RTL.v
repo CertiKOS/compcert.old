@@ -236,13 +236,14 @@ Inductive step : state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd m',
+      forall s f stk pc rs m sig ros args fd m' m'',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Callstate s fd rs##args m')
+        E0 (Callstate s fd rs##args m'')
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
@@ -266,21 +267,23 @@ Inductive step : state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m)
   | exec_Ireturn:
-      forall s f stk pc rs m or m',
+      forall s f stk pc rs m or m' m'',
       (fn_code f)!pc = Some(Ireturn or) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Returnstate s (regmap_optget or Vundef rs) m')
+        E0 (Returnstate s (regmap_optget or Vundef rs) m'')
   | exec_function_internal:
-      forall s f args m m' stk,
-      Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
+      forall s f args m m' stk m'',
+        Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
+        Mem.record_stack_block m' stk None = Some m'' ->
       step (Callstate s (Internal f) args m)
         E0 (State s
                   f
                   (Vptr stk Ptrofs.zero)
                   f.(fn_entrypoint)
                   (init_regs args f.(fn_params))
-                  m')
+                  m'')
   | exec_function_external:
       forall s ef args res t m m',
       external_call ef ge args m t res m' ->

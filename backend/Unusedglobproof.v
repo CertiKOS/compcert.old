@@ -1035,13 +1035,16 @@ Proof.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
+  exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & USB & INJ).
   econstructor; split.
   eapply exec_Itailcall; eauto.
   econstructor; eauto.
   apply match_stacks_bound with stk tsp; auto.
   apply Plt_Ple.
+  erewrite (Mem.unrecord_stack_block_nextblock); eauto.
   change (Mem.valid_block m' stk). eapply Mem.valid_block_inject_1; eauto.
   apply Plt_Ple.
+  erewrite (Mem.unrecord_stack_block_nextblock); eauto.
   change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
 
@@ -1078,13 +1081,16 @@ Proof.
 
 - (* return *)
   exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
+  exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & USB & INJ).
   econstructor; split.
   eapply exec_Ireturn; eauto.
   econstructor; eauto.
   apply match_stacks_bound with stk tsp; auto.
   apply Plt_Ple.
+  erewrite Mem.unrecord_stack_block_nextblock; eauto.
   change (Mem.valid_block m' stk). eapply Mem.valid_block_inject_1; eauto.
   apply Plt_Ple.
+  erewrite Mem.unrecord_stack_block_nextblock; eauto.
   change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
   destruct or; simpl; auto.
 
@@ -1097,8 +1103,9 @@ Proof.
   { rewrite STK, TSTK.
     apply match_stacks_incr with j; auto.
     intros. destruct (eq_block b1 stk).
-    subst b1. rewrite F in H1; inv H1. split; apply Ple_refl.
-    rewrite G in H1 by auto. congruence. }
+    subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
+    rewrite G in H2 by auto. congruence. }
+  exploit Mem.record_stack_block_inject; eauto. intros (m2' & RSB & INJ).
   econstructor; split.
   eapply exec_function_internal; eauto.
   eapply match_states_regular with (j := j'); eauto.

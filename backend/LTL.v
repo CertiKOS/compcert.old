@@ -224,13 +224,14 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
-  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
+  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' m'',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
-        E0 (Callstate s fd rs' m')
+        E0 (Callstate s fd rs' m'')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
@@ -253,15 +254,17 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_jumptable) rs ->
       step (Block s f sp (Ljumptable arg tbl :: bb) rs m)
         E0 (State s f sp pc rs' m)
-  | exec_Lreturn: forall s f sp bb rs m m',
+  | exec_Lreturn: forall s f sp bb rs m m' m'',
       Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
+      Mem.unrecord_stack_block m' = Some m'' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
-  | exec_function_internal: forall s f rs m m' sp rs',
+        E0 (Returnstate s (return_regs (parent_locset s) rs) m'')
+  | exec_function_internal: forall s f rs m m' m'' sp rs',
       Mem.alloc m 0 f.(fn_stacksize) = (m', sp) ->
+      Mem.record_stack_block m' sp None = Some m'' ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
-        E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
+        E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m'')
   | exec_function_external: forall s ef t args res rs m rs' m',
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
       external_call ef ge args m t res m' ->

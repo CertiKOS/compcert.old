@@ -1113,7 +1113,7 @@ Proof.
   exploit match_stacks_inside_globalenvs; eauto. intros [bound G].
   exploit find_function_agree; eauto. intros (cu & fd' & A & B & C).
   assert (PRIV': range_private F m' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
-  { eapply range_private_free_left; eauto. inv FB. rewrite <- H4. auto. }
+  { eapply range_private_free_left; eauto. inv FB. rewrite <- H5. auto. }
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* within the original function *)
   inv MS0; try congruence.
@@ -1124,22 +1124,26 @@ Proof.
     eapply Mem.free_range_perm; eauto. omega.
     inv FB. eapply range_private_perms; eauto. xomega.
   destruct X as [m1' FREE].
+  assert (Mem.inject F m' m1') as INJfree.
+  {
+    eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
+    (* show that no valid location points into the stack block being freed *)
+    intros. rewrite DSTK in PRIV'. exploit (PRIV' (ofs + delta)). omega. intros [P Q].
+    eelim Q; eauto. replace (ofs + delta - delta) with ofs by omega.
+    apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
+  }
+  exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & P & Q).
   left; econstructor; split.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
-    intros. eapply Mem.perm_free_1; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
-  erewrite Mem.nextblock_free; eauto. red in VB; xomega.
+    intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
+    intros. eapply Mem.unrecord_stack_block_perm'. eauto. eapply Mem.perm_free_1; eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H4. eapply Mem.perm_free_3; eauto. eauto.
+  erewrite Mem.unrecord_stack_block_nextblock, Mem.nextblock_free; eauto. red in VB; xomega.
   eapply agree_val_regs; eauto.
-  eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
-  (* show that no valid location points into the stack block being freed *)
-  intros. rewrite DSTK in PRIV'. exploit (PRIV' (ofs + delta)). omega. intros [P Q].
-  eelim Q; eauto. replace (ofs + delta - delta) with ofs by omega.
-  apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
 + (* turned into a call *)
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
@@ -1147,9 +1151,10 @@ Proof.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
+  intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
+  admit.
   eapply agree_val_regs; eauto.
-  eapply Mem.free_left_inject; eauto.
+  admit; eapply Mem.free_left_inject; eauto.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
@@ -1157,13 +1162,14 @@ Proof.
   econstructor; eauto.
   eapply match_stacks_inside_inlined_tailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
+  admit.
   apply agree_val_regs_gen; auto.
-  eapply Mem.free_left_inject; eauto.
-  red; intros; apply PRIV'.
-    assert (dstk ctx <= dstk ctx'). red in H14; rewrite H14. apply align_le. apply min_alignment_pos.
-    omega.
-
+  admit; eapply Mem.free_left_inject; eauto.
+  (* red; intros; apply PRIV'. *)
+  (*   assert (dstk ctx <= dstk ctx'). red in H14; rewrite H14. apply align_le. apply min_alignment_pos. *)
+  (*   omega. *)
+  admit.
 - (* builtin *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
   exploit match_stacks_inside_globalenvs; eauto. intros [bound MG].
@@ -1217,34 +1223,38 @@ Proof.
     inv FB. eapply range_private_perms; eauto.
     generalize (Zmax_spec (fn_stacksize f) 0). destruct (zlt 0 (fn_stacksize f)); omega.
   destruct X as [m1' FREE].
+  assert (Mem.inject F m' m1') as INJfree.
+  {
+    eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
+    (* show that no valid location points into the stack block being freed *)
+    intros. inversion FB; subst.
+    assert (PRIV': range_private F m' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
+    rewrite H9 in PRIV. eapply range_private_free_left; eauto.
+    rewrite DSTK in PRIV'. exploit (PRIV' (ofs + delta)). omega. intros [A B].
+    eelim B; eauto. replace (ofs + delta - delta) with ofs by omega.
+    apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
+  }
+  exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & P & Q).
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
-    intros. eapply Mem.perm_free_1; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
-  erewrite Mem.nextblock_free; eauto. red in VB; xomega.
+    intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
+    intros. eapply Mem.unrecord_stack_block_perm'. eauto. eapply Mem.perm_free_1; eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H4. eapply Mem.perm_free_3; eauto. eauto.
+  erewrite Mem.unrecord_stack_block_nextblock, Mem.nextblock_free; eauto. red in VB; xomega.
   destruct or; simpl. apply agree_val_reg; auto. auto.
-  eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
-  (* show that no valid location points into the stack block being freed *)
-  intros. inversion FB; subst.
-  assert (PRIV': range_private F m' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
-    rewrite H8 in PRIV. eapply range_private_free_left; eauto.
-  rewrite DSTK in PRIV'. exploit (PRIV' (ofs + delta)). omega. intros [A B].
-  eelim B; eauto. replace (ofs + delta - delta) with ofs by omega.
-  apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
 
 + (* inlined *)
   right. split. simpl. omega. split. auto.
   econstructor; eauto.
   eapply match_stacks_inside_invariant; eauto.
-    intros. eapply Mem.perm_free_3; eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
   destruct or; simpl. apply agree_val_reg; auto. auto.
-  eapply Mem.free_left_inject; eauto.
-  inv FB. rewrite H4 in PRIV. eapply range_private_free_left; eauto.
-
+  admit; eapply Mem.free_left_inject; eauto.
+  inv FB. rewrite H5 in PRIV. eapply range_private_free_left; eauto. admit.
+  
 - (* internal function, not inlined *)
   assert (A: exists f', tr_function cunit f f' /\ fd' = Internal f').
   { Errors.monadInv FD. exists x. split; auto. eapply transf_function_spec; eauto. }
@@ -1253,21 +1263,22 @@ Proof.
   { eapply tr_function_linkorder; eauto. }
   inversion TR; subst.
   exploit Mem.alloc_parallel_inject. eauto. eauto. apply Zle_refl.
-    instantiate (1 := fn_stacksize f'). inv H1. xomega.
+    instantiate (1 := fn_stacksize f'). inv H2. xomega.
   intros [F' [m1' [sp' [A [B [C [D E]]]]]]].
+  exploit Mem.record_stack_block_inject; eauto. intros (m2' & P & Q).
   left; econstructor; split.
   eapply plus_one. eapply exec_function_internal; eauto.
-  rewrite H6. econstructor.
+  rewrite H7. econstructor.
   instantiate (1 := F'). apply match_stacks_inside_base.
   assert (SP: sp' = Mem.nextblock m'0) by (eapply Mem.alloc_result; eauto).
   rewrite <- SP in MS0.
   eapply match_stacks_invariant; eauto.
     intros. destruct (eq_block b1 stk).
-    subst b1. rewrite D in H8; inv H8. eelim Plt_strict; eauto.
-    rewrite E in H8; auto.
+    subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
+    rewrite E in H9; auto.
     intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
     destruct (eq_block b1 stk); intros; auto.
-    subst b1. rewrite D in H8; inv H8. eelim Plt_strict; eauto.
+    subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
     intros. eapply Mem.perm_alloc_1; eauto.
     intros. exploit Mem.perm_alloc_inv. eexact A. eauto.
     rewrite dec_eq_false; auto.
