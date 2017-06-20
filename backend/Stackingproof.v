@@ -4424,4 +4424,25 @@ Proof.
   econstructor; eauto. 
 Qed.
 
+Lemma stacking_frame_correct:
+  forall p tp,
+    match_prog p tp ->
+    forall (fb : Values.block) (f : Mach.function),
+      Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) fb = Some (Internal f) ->
+      Memtype.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f.
+Proof.
+  intros p tp MP fb f FFP.
+  red in MP.
+  inv MP.
+  exploit Globalenvs.Genv.find_funct_ptr_inversion. eauto. intros (id & IN).
+  eapply list_forall2_in_right in IN; eauto.
+  destruct IN as (x1 & IN & MIOG).
+  inv MIOG. simpl in *. subst. inv H2. inv H4.
+  destruct f1; simpl in *; try discriminate.
+  monadInv H6.
+  apply unfold_transf_function in EQ. subst.
+  reflexivity.
+Qed.
+
+
 End PRESERVATION.
