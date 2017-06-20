@@ -1912,14 +1912,16 @@ for [unchanged_on]. *)
         push_frame m2 fi = Some (m2', b)
         /\ extends m1' m2';
 
- (* push_frame_inject_neutral: *)
- (*   forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem), *)
- (*     Mem.push_frame m fi = Some (m', b) -> Mem.inject_neutral thr m -> Plt (Mem.nextblock m) thr -> Mem.inject_neutral thr m'; *)
+ push_frame_inject_neutral:
+   forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem),
+     Mem.push_frame m fi = Some (m', b) ->     Plt (Mem.nextblock m) thr ->
+     Mem.inject_neutral thr m ->
+     Mem.inject_neutral thr m';
 
- (* pop_frame_inject_neutral: *)
- (*   forall (m : mem) (m' : mem) (thr : block), *)
- (*     pop_frame m = Some m' -> inject_neutral thr m -> *)
- (*     (forall b, is_stack_top m b -> Plt b thr) -> inject_neutral thr m'; *)
+ pop_frame_inject_neutral:
+   forall (m : mem) (m' : mem) (thr : block),
+     pop_frame m = Some m' -> inject_neutral thr m ->
+     inject_neutral thr m';
 
  stack_top_valid:
    forall m b, is_stack_top m b -> valid_block m b;

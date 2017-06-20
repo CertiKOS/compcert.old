@@ -7199,6 +7199,61 @@ Proof.
     apply H0. auto.
 Qed.
 
+
+Lemma push_frame_inject_neutral:
+  forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem),
+    Mem.push_frame m fi = Some (m', b) ->
+    Mem.inject_neutral thr m ->
+    (* Ple (Mem.nextblock m) thr -> *)
+    Mem.inject_neutral thr m'.
+Proof.
+  unfold push_frame. intros; autospe.
+  red; intros.
+  inv H0.
+  constructor; simpl; intros; eauto.
+  - rewrite add_adt_perm. 2: eauto.
+    rewrite add_adt_perm in H0. 2: eauto.
+    unfold flat_inj in H; destruct (plt); inv H.
+    destruct (plt b2 (nextblock m)).
+    eapply perm_alloc_4 in H0; eauto.
+    eapply perm_alloc_1; eauto.
+    eapply mi_perm0; eauto. unfold flat_inj; destruct plt; auto. congruence.
+    exploit alloc_result; eauto. intro; subst. intro; subst. xomega.
+    eapply perm_alloc_inv in H0; eauto.
+    destruct eq_block. subst. eapply perm_implies. eapply perm_alloc_2; eauto. omega. constructor.
+    eapply perm_alloc_1; eauto. rewrite Z.add_0_r. auto.
+  - unfold flat_inj in H. destruct plt; inv H. exists 0. omega.
+  - unfold flat_inj in H. destruct plt; inv H.
+    unfold add_adt, alloc in *. autospe. simpl. inv Heqp. simpl.
+    rewrite PMap.gsspec.
+    destruct peq. subst.
+    rewrite ! ZMap.gi. constructor.
+    eapply mi_memval0. unfold flat_inj. destruct plt; try congruence.
+    simpl in *. clear - H0 n.
+    unfold perm in *. simpl in *.
+    rewrite PMap.gso in H0; auto.
+  - eapply self_inject_list_frames.
+    unfold flat_inj. intros; destruct plt; intuition.
+Qed.
+
+Lemma pop_frame_inject_neutral:
+  forall (m : mem) (m' : mem) (thr : block),
+    pop_frame m = Some m' ->
+    inject_neutral thr m ->
+    inject_neutral thr m'.
+Proof.
+  unfold pop_frame; intros; autospe.
+  cut (inject_neutral thr m0). intro IM0.
+  exploit unrecord_stack_block_mem_inj. apply IM0. eauto.
+  intros (m2' & A & B). rewrite H in A; inv A. apply B. clear H.
+  unfold free_top_frame in Heqo. autospe.
+  eapply free_right_inj. eapply free_left_inj. eauto. eauto. eauto.
+  unfold flat_inj.
+  intros. destruct plt; inv H.
+  eapply perm_free_2 in H1; eauto. omega.
+Qed.
+
+
 Local Instance memory_model_prf:
   MemoryModel mem.
 Proof.
@@ -7456,6 +7511,8 @@ Proof.
   exact storebytes_stack_adt.
   exact pop_frame_parallel_extends.
   exact push_frame_extends.
+  intros; eapply push_frame_inject_neutral; eauto.
+  exact pop_frame_inject_neutral.
   exact stack_top_valid.
   exact get_frame_info_valid.
   exact in_frames_valid.
