@@ -316,8 +316,8 @@ that we now axiomatize. *)
 
  (* Stack ADT and methods *)
  stack_adt: mem -> list frame_adt;
- push_frame: mem -> frame_info -> option (mem * block);
- pop_frame: mem -> option mem;
+ (* push_frame: mem -> frame_info -> option (mem * block); *)
+ (* pop_frame: mem -> option mem; *)
  record_stack_block: mem -> block -> option frame_info -> option mem;
  record_stack_blocks: mem -> list block -> option mem;
  unrecord_stack_block: mem -> option mem;
@@ -1760,38 +1760,6 @@ for [unchanged_on]. *)
    forall m1 lo hi m2 b (ALLOC: alloc m1 lo hi = (m2, b)),
      get_frame_info m2 b = None;
 
-
- push_frame_perm_1:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     forall b' o k p, perm m1 b' o k p -> perm m2 b' o k p;
-
- push_frame_valid_block_1:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     forall b', valid_block m1 b' -> valid_block m2 b';
-
- push_frame_valid_new_block:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     valid_block m2 b;
-
- push_frame_fresh_block:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     ~ valid_block m1 b;
-
- push_frame_is_stack_top:
-   forall m f m' sp,
-     Mem.push_frame m f = Some (m', sp) ->
-     Mem.is_stack_top m' sp;
-
- push_frame_succeeds:
-   forall m1 f,
-   exists m2 b,
-     Mem.push_frame m1 f = Some (m2, b);
-
- push_frame_strong_unchanged_on:
-   forall P m f m' b,
-     push_frame m f = Some (m', b) ->
-     strong_unchanged_on P m m';
-
  store_stack_blocks:
   forall m1 sp chunk o v m2,
     store chunk m1 sp o v = Some m2 ->
@@ -1800,75 +1768,6 @@ for [unchanged_on]. *)
  is_stack_top_stack_blocks:
   forall m b,
     is_stack_top m b <-> (exists f r, in_frame f b /\ stack_adt m = f::r);
-
- push_frame_stack_blocks:
-   forall m1 f m2 b,
-     push_frame m1 f = Some (m2, b) ->
-     stack_adt m2 = (frame_with_info b (Some f)) :: stack_adt m1;
-
- perm_pop_frame:
-   forall m m',
-     pop_frame m = Some m' ->
-     forall b o k p,
-       perm m b o k p ->
-       ~ is_stack_top m b ->
-       perm m' b o k p;
-
- nextblock_pop_frame:
-   forall m1 m2,
-     pop_frame m1 = Some m2 ->
-     nextblock m2 = nextblock m1;
-
- pop_frame_valid_block:
-   forall m1 m2,
-     pop_frame m1 = Some m2 ->
-     forall b, valid_block m1 b -> valid_block m2 b;
-
- pop_frame_stack_blocks_1:
-   forall m1 m2 b r,
-     pop_frame m1 = Some m2 ->
-     stack_adt m1 = b :: r ->
-     stack_adt m2 = r;
-
- pop_frame_stack_blocks_2:
-   forall m1 m2 r,
-     pop_frame m1 = Some m2 ->
-     stack_adt m2 = r ->
-     exists b, stack_adt m1 = b :: r;
-
- pop_frame_get_frame_info:
-   forall m1 m2 b,
-   pop_frame m1 = Some m2 ->
-   ~ is_stack_top m1 b ->
-   get_frame_info m2 b = get_frame_info m1 b;
-
- load_pop_frame :
-   forall (m1 m2 : mem),
-     pop_frame m1 = Some m2 ->
-     forall (chunk : memory_chunk) (b : block) (ofs : Z),
-       ~ is_stack_top m1 b ->
-       load chunk m2 b ofs = load chunk m1 b ofs;
-
- nextblock_push_frame:
-   forall m1 f m2 b,
-     push_frame m1 f = Some (m2, b) ->
-     nextblock m2 = Pos.succ (nextblock m1);
-
- push_frame_result:
-   forall m1 f m2 b,
-     push_frame m1 f = Some (m2, b) ->
-     b = nextblock m1;
-
- push_frame_get_frame_info:
-   forall m1 m2 b f stk,
-     push_frame m1 f = Some (m2,stk) ->
-     get_frame_info m2 b = if eq_block b stk then Some f else get_frame_info m1 b;
-
- (* pop_frame_unchanged_on: *)
- (*   forall m1 m2 P, *)
- (*     pop_frame m1 = Some m2 -> *)
- (*     (forall b o, is_stack_top m1 b -> ~ P b o) -> *)
- (*     unchanged_on P m1 m2; *)
 
  invalid_block_non_private_stack_access:
     forall m b lo hi,
@@ -1895,34 +1794,6 @@ for [unchanged_on]. *)
       storebytes m1 b o bytes = Some m2 ->
       stack_adt m2 = stack_adt m1;
 
- pop_frame_parallel_extends:
-   forall m1 m2 m1' b fi r,
-     extends m1 m2 ->
-     stack_adt m1 = frame_with_info b (Some fi) :: r ->
-     pop_frame m1 = Some m1' ->
-      exists m2',
-        pop_frame m2 = Some m2'
-        /\ extends m1' m2';
- 
- push_frame_extends:
-    forall m1 m2 fi b m1',
-      extends m1 m2 ->
-      push_frame m1 fi = Some (m1', b) ->
-      exists m2',
-        push_frame m2 fi = Some (m2', b)
-        /\ extends m1' m2';
-
- push_frame_inject_neutral:
-   forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem),
-     Mem.push_frame m fi = Some (m', b) ->     Plt (Mem.nextblock m) thr ->
-     Mem.inject_neutral thr m ->
-     Mem.inject_neutral thr m';
-
- pop_frame_inject_neutral:
-   forall (m : mem) (m' : mem) (thr : block),
-     pop_frame m = Some m' -> inject_neutral thr m ->
-     inject_neutral thr m';
-
  stack_top_valid:
    forall m b, is_stack_top m b -> valid_block m b;
 
@@ -1932,19 +1803,6 @@ for [unchanged_on]. *)
  in_frames_valid:
    forall m b,
      in_frames (stack_adt m) b -> valid_block m b;
-
- push_frame_alloc:
-   forall m f m' b,
-     push_frame m f = Some (m', b) <->
-     (exists m1, 
-         alloc m 0 (frame_size f) = (m1, b) /\
-         record_stack_block m1 b (Some f) = Some m');
-
- perm_push_frame_2:
-   forall m1 fi m2 b,
-     push_frame m1 fi = Some (m2, b) ->
-     forall (ofs : Z) (k : perm_kind),
-       0 <= ofs < frame_size fi -> perm m2 b ofs k Freeable;
 
  record_stack_block_inject:
    forall m1 m1' m2 j fi1 fi2 b b' delta,
@@ -1967,14 +1825,6 @@ for [unchanged_on]. *)
      forall b' o k p,
        perm m' b' o k p ->
        perm m b' o k p;
-
- pop_frame_free:
-   forall m m' b f r,
-     stack_adt m = frame_with_info b (Some f) :: r ->
-     pop_frame m = Some m' <->
-     (exists m1, 
-         free m b 0 (frame_size f) = Some m1
-         /\ unrecord_stack_block m1 = Some m');
 
  unrecord_stack_adt:
    forall m m',
@@ -2167,6 +2017,40 @@ record_stack_blocks_unchanged_on:
       (INJ: forall b' delta, f b' = Some (b2, delta) -> b' = b1),
       frame_inject f m (frame_with_info b1 fi) (frame_with_info b2 fi);
 
+ record_stack_block_is_stack_top:
+   forall m b f m',
+     Mem.record_stack_block m b f = Some m' ->
+     Mem.is_stack_top m' b;
+ record_stack_block_stack_adt:
+   forall m b f m',
+     Mem.record_stack_block m b f = Some m' ->
+     Mem.stack_adt m' = frame_with_info b f :: Mem.stack_adt m;
+ unrecord_stack_block_get_frame_info:
+   forall m m' b,
+     Mem.unrecord_stack_block m = Some m' ->
+     ~ Mem.is_stack_top m b ->
+     Mem.get_frame_info m' b = Mem.get_frame_info m b;
+
+  same_frame_extends:
+    forall m1 m2 b fi r,
+      Mem.extends m1 m2 ->
+      Mem.stack_adt m1 = frame_with_info b (Some fi) :: r ->
+      exists r',
+        Mem.stack_adt m2 = frame_with_info b (Some fi) :: r';
+
+
+  record_stack_block_inject_neutral:
+    forall thr m b f m',
+      inject_neutral thr m ->
+      record_stack_block m b f = Some m' ->
+      inject_neutral thr m';
+
+  unrecord_stack_block_inject_neutral:
+    forall thr m m',
+      inject_neutral thr m ->
+      unrecord_stack_block m = Some m' ->
+      inject_neutral thr m';
+
 }.
 
 Section WITHMEMORYMODEL.
@@ -2275,15 +2159,6 @@ Lemma alloc_unchanged_on:
 Proof.
   intros. apply strong_unchanged_on_weak. eapply alloc_strong_unchanged_on; eauto.
 Qed.
-
-Lemma push_frame_unchanged_on:
-   forall P m f m' b,
-     push_frame m f = Some (m', b) ->
-     unchanged_on P m m'.
-Proof.
-  intros. apply strong_unchanged_on_weak. eapply push_frame_strong_unchanged_on; eauto.
-Qed.
-
 
 Lemma free_unchanged_on:
   forall P m b lo hi m',

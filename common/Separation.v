@@ -1060,12 +1060,11 @@ Qed.
 
 Lemma push_frame_parallel_rule
   : forall (F V : Type) (ge : Genv.t F V) (m1 : mem) (sz1 : Z) (m1' m1'' : mem) (b1 : block) (m2 : mem) fi
-      (m2' : mem) (b2 : block) (P : massert) (j : meminj) (lo hi delta : Z),
+      (P : massert) (j : meminj) (lo hi delta : Z),
     m_invar_stack P = false ->
     m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
     Mem.alloc m1 0 sz1 = (m1', b1) ->
     Mem.record_stack_block m1' b1 None = Some m1'' ->
-    Mem.push_frame m2 fi = Some (m2', b2) ->
     (8 | delta) ->
     lo = delta ->
     hi = delta + Z.max 0 sz1 ->
@@ -1074,12 +1073,16 @@ Lemma push_frame_parallel_rule
     hi <= frame_size fi ->
     seg_ofs (frame_data fi) = delta ->
     seg_size (frame_data fi) = Z.max 0 sz1 ->
-    exists j' : meminj,
-      m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1'' ** globalenv_inject ge j' ** P /\
-      inject_incr j j' /\ j' b1 = Some (b2, delta) /\ inject_separated j j' m1 m2.
+    exists j' m2_1' b2 m2',
+      Mem.alloc m2 0 (frame_size fi) = (m2_1', b2) 
+      /\ Mem.record_stack_block m2_1' b2 (Some fi) = Some m2' 
+      /\ m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1'' ** globalenv_inject ge j' ** P
+      /\ inject_incr j j'
+      /\ j' b1 = Some (b2, delta)
+      /\ inject_separated j j' m1 m2.
 Proof.
-  intros until delta; intros INVAR SEP ALLOC1 REC1 ALLOC2 ALIGN LO HI RANGE1 RANGE2 RANGE3 SEG1 SEG2.
-  destruct (proj1 (Mem.push_frame_alloc _ _ _ _) ALLOC2) as (m2_1 & ALLOC2' & SETADT).
+  intros until delta; intros INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 SEG1 SEG2.
+  destruct (Mem.alloc m2 0 (frame_size fi)) as (m2_ & sp) eqn:ALLOC2.
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
   rewrite sep_swap3 in INJ'.
@@ -1099,9 +1102,9 @@ Proof.
     eapply Mem.valid_block_inject_1 in H. 2: apply INJ'.
     exploit Mem.valid_block_alloc_inv. apply ALLOC1. apply H. intros [A|A]; auto. intuition.
   }
-  rewrite SETADT. intros (m0 & EQmem & INJ''). inv EQmem.
+  intros (m0 & EQmem & INJ''). inv EQmem.
   rewrite sep_swap3 in INJ''.
-  exists j'; split; auto.
+  exists j', m2_, sp, m0; split; eauto.
 Qed.
 
 Lemma unrecord_stack_block_parallel_rule:
@@ -1143,8 +1146,9 @@ Lemma pop_frame_parallel_rule:
     j b1 = Some (b2, delta) ->
     lo = delta -> hi = delta + Z.max 0 sz1 ->
     Mem.stack_adt m2 = frame_with_info b2 (Some f) :: r ->
-    exists m2' ,
-      Mem.pop_frame m2 = Some m2'
+    exists m2_ m2',
+      Mem.free m2 b2 0 (frame_size f) = Some m2_ /\
+      Mem.unrecord_stack_block m2_ = Some m2'
       /\ m2' |= minjection j m1'' ** P.
 Proof.
   intros j m1 b1 sz1 m1' m1'' m2 b2 lo hi delta P f r INVAR SEP FREE UNRECORD JB LOEQ HIEQ STACK.
@@ -1152,9 +1156,7 @@ Proof.
   intros (m2' & FREE' & SEP').
   exploit unrecord_stack_block_parallel_rule; eauto.
   intros (m2'0 & UNRECORD' & SEP'').
-  eexists; split.
-  rewrite Mem.pop_frame_free; eauto.
-  auto.
+  eexists; eexists; eauto.
 Qed.
 
 

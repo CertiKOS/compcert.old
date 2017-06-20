@@ -986,8 +986,9 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Pallocframe fi ofs_ra ofs_link =>
-    match Mem.push_frame m fi with
-      Some (m1, stk) =>
+    let (m1, stk) := Mem.alloc m 0 (frame_size fi) in
+    match Mem.record_stack_block m1 stk (Some fi) with
+      Some m1 =>
       let sp := Vptr stk Ptrofs.zero in
       match Mem.storev Mptr m1 (Val.offset_ptr sp ofs_link) rs#RSP with
       | None => Stuck
@@ -1008,10 +1009,18 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
           | Some sp =>
               match rs#RSP with
               | Vptr stk ofs =>
-                  match Mem.pop_frame m with
+                match Mem.stack_adt m with
+                | frame_with_info b (Some fi)::r =>
+                  match Mem.free m b 0 (frame_size fi) with
                   | None => Stuck
-                  | Some m' => Next (nextinstr (rs#RSP <- sp #RA <- ra)) m'
+                  | Some m' =>
+                    match Mem.unrecord_stack_block m' with
+                      Some m' => Next (nextinstr (rs#RSP <- sp #RA <- ra)) m'
+                    | None => Stuck
+                    end
                   end
+                | _ => Stuck
+                end
               | _ => Stuck
               end
           end

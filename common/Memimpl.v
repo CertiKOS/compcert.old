@@ -6137,12 +6137,12 @@ Next Obligation.
   apply stack_valid. auto.
 Qed.
 
-Program Definition push_frame (m : mem) (f: frame_info) : option (mem * block) :=
-  let '(m1, b) := alloc m 0 (frame_size f) in
-  match add_adt m1 (frame_with_info b (Some f)) with
-    Some m2 => Some (m2, b)
-  | None => None
-  end.
+(* Program Definition push_frame (m : mem) (f: frame_info) : option (mem * block) := *)
+(*   let '(m1, b) := alloc m 0 (frame_size f) in *)
+(*   match add_adt m1 (frame_with_info b (Some f)) with *)
+(*     Some m2 => Some (m2, b) *)
+(*   | None => None *)
+(*   end. *)
 
 Definition record_stack_blocks (m : mem) (b: list block) : option mem :=
   add_adt m (frame_without_info b).
@@ -6193,23 +6193,23 @@ Proof.
   intros. unfold_unrecord. simpl. rewrite H0. eauto.
 Qed.
 
-Definition free_top_frame (m : mem) : option mem :=
-  match stack_adt m with
-    nil => None
-  | a :: r =>
-    match a with
-    | frame_without_info bl => Some m
-    | frame_with_info b None => Some m
-    | frame_with_info b (Some fi) =>
-      free m b 0 (frame_size fi)
-    end
-  end.
+(* Definition free_top_frame (m : mem) : option mem := *)
+(*   match stack_adt m with *)
+(*     nil => None *)
+(*   | a :: r => *)
+(*     match a with *)
+(*     | frame_without_info bl => Some m *)
+(*     | frame_with_info b None => Some m *)
+(*     | frame_with_info b (Some fi) => *)
+(*       free m b 0 (frame_size fi) *)
+(*     end *)
+(*   end. *)
 
-Definition pop_frame (m : mem) : option mem :=
-  match free_top_frame m with
-    Some m' => unrecord_stack_block m'
-  | None => None
-  end.
+(* Definition pop_frame (m : mem) : option mem := *)
+(*   match free_top_frame m with *)
+(*     Some m' => unrecord_stack_block m' *)
+(*   | None => None *)
+(*   end. *)
 
 Lemma stack_adt_eq_get_frame_info:
   forall m m' b,
@@ -6249,8 +6249,6 @@ Proof.
   exact unchanged_on.
   exact unchanged_on.
   exact stack_adt.
-  exact push_frame.
-  exact pop_frame.
   exact record_stack_block.
   exact record_stack_blocks.
   exact unrecord_stack_block.
@@ -6273,67 +6271,6 @@ Proof.
   autospe. reflexivity. 
 Qed.
 
-Lemma push_frame_perm_1:
-  forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-  forall b' o k p, perm m1 b' o k p -> perm m2 b' o k p.
-Proof.
-  unfold push_frame. intros.
-  autospe.
-  rewrite add_adt_perm.
-  eapply perm_alloc_1; eauto. eauto.
-Qed.
-
-Lemma push_frame_valid_block_1:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     forall b', valid_block m1 b' -> valid_block m2 b'.
-Proof.
-  unfold push_frame. intros.
-  autospe.
-  rewrite add_adt_valid_block.
-  eapply valid_block_alloc; eauto. eauto.
-Qed.
-
-Lemma push_frame_valid_new_block:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     valid_block m2 b.
-Proof.
-  unfold push_frame. intros.
-  autospe.
-  rewrite add_adt_valid_block.
-  eapply valid_new_block; eauto. eauto.
-Qed.
-
-Lemma push_frame_fresh_block:
-   forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
-     ~ valid_block m1 b.
-Proof.
-  unfold push_frame. intros.
-  autospe.
-  eapply fresh_block_alloc; eauto.
-Qed.
-
-Lemma push_frame_is_stack_top:
-   forall m f m' sp,
-     Mem.push_frame m f = Some (m', sp) ->
-     Mem.is_stack_top m' sp.
-Proof.
-  unfold push_frame, add_adt. intros.
-  autospe. unfold is_stack_top, get_stack_top_blocks. simpl. auto.
-Qed.
-
-Lemma push_frame_succeeds:
-   forall m1 f,
-   exists m2 b,
-     Mem.push_frame m1 f = Some (m2, b).
-Proof.
-  unfold push_frame. intros.
-  destruct (alloc m1 0 (frame_size f)) eqn:heqo.
-  destruct (add_adt m (frame_with_info b (Some f))) eqn:ADT. eauto.
-  unfold add_adt in ADT; autospe. exfalso; apply n.
-  red. simpl. intros; subst.
-  eapply valid_new_block; eauto.
-Qed.
-
 Lemma add_adt_strong_unchanged_on:
    forall P m f m',
      add_adt m f = Some m' ->
@@ -6342,19 +6279,6 @@ Proof.
   unfold add_adt; intros; autospe. simpl.
   constructor; simpl; auto. apply Ple_refl.
   intros. reflexivity.
-Qed.
-
-Lemma push_frame_strong_unchanged_on:
-   forall P m f m' b,
-     push_frame m f = Some (m', b) ->
-     strong_unchanged_on P m m'.
-Proof.
-  simpl.
-  unfold push_frame. intros.
-  autospe.
-  eapply unchanged_on_trans.
-  eapply alloc_unchanged_on; eauto.
-  eapply add_adt_strong_unchanged_on; eauto.
 Qed.
 
 Lemma store_stack_blocks:
@@ -6378,15 +6302,6 @@ Proof.
   - destruct H as (f & r & INF & EQ). rewrite EQ.
     revert INF; clear.
     destruct f; simpl; auto.
-Qed.
-
-Lemma push_frame_stack_blocks:
-   forall m1 f m2 b,
-     push_frame m1 f = Some (m2, b) ->
-     stack_adt m2 = (frame_with_info b (Some f)) :: stack_adt m1.
-Proof.
-  unfold push_frame, add_adt; intros; autospe. simpl.
-  erewrite alloc_stack_adt; eauto.
 Qed.
 
 Lemma unrecord_stack_block_succeeds:
@@ -6648,168 +6563,6 @@ Proof.
   eapply add_adt_perm; eauto.
 Qed.
 
-Lemma perm_pop_frame:
-   forall m m',
-     pop_frame m = Some m' ->
-     forall b o k p,
-       perm m b o k p ->
-       ~ is_stack_top m b ->
-       perm m' b o k p.
-Proof.
-  unfold pop_frame; intros; autospe.
-  eapply unrecord_stack_block_perm'. eauto.
-  unfold free_top_frame in Heqo0.
-  autospe. unfold is_stack_top, get_stack_top_blocks in H1.
-  rewrite Heql in H1. simpl in H1. eapply perm_free_1; eauto.
-Qed.
-
-Lemma nextblock_free_top_frame:
-   forall m1 m2,
-     free_top_frame m1 = Some m2 ->
-     nextblock m2 = nextblock m1.
-Proof.
-  unfold free_top_frame; intros; autospe.
-  eapply nextblock_free; eauto.
-Qed.
-
-Lemma nextblock_pop_frame:
-   forall m1 m2,
-     pop_frame m1 = Some m2 ->
-     nextblock m2 = nextblock m1.
-Proof.
-  unfold pop_frame; intros; autospe.
-  rewrite (unrecord_stack_block_nextblock _ _ H).
-  eapply nextblock_free_top_frame; eauto.
-Qed.
-
-Lemma free_top_frame_valid_block:
-   forall m1 m2,
-     free_top_frame m1 = Some m2 ->
-     forall b, valid_block m1 b -> valid_block m2 b.
-Proof.
-  unfold free_top_frame; intros; autospe.
-  eapply valid_block_free_1; eauto.
-Qed.
-
-Lemma pop_frame_valid_block:
-   forall m1 m2,
-     pop_frame m1 = Some m2 ->
-     forall b, valid_block m1 b -> valid_block m2 b.
-Proof.
-  unfold pop_frame; intros; autospe.
-  eapply unrecord_stack_block_valid_block. eauto.
-  eapply free_top_frame_valid_block; eauto.
-Qed.
-
-Lemma free_top_frame_stack_adt:
-   forall m1 m2,
-     free_top_frame m1 = Some m2 ->
-     stack_adt m2 = stack_adt m1.
-Proof.
-  unfold free_top_frame; intros; autospe.
-  erewrite free_stack_adt; eauto. 
-Qed.
-
-
-Lemma pop_frame_stack_blocks_1:
-   forall m1 m2 b r,
-     pop_frame m1 = Some m2 ->
-     stack_adt m1 = b :: r ->
-     stack_adt m2 = r.
-Proof.
-  unfold pop_frame; intros; autospe.
-  edestruct unrecord_stack_adt; eauto.
-  rewrite (free_top_frame_stack_adt _ _ Heqo) in H1.
-  rewrite H0 in H1; inv H1. auto.
-Qed.
-
-Lemma pop_frame_stack_blocks_2:
-   forall m1 m2 r,
-     pop_frame m1 = Some m2 ->
-     stack_adt m2 = r ->
-     exists b, stack_adt m1 = b :: r.
-Proof.
-  unfold pop_frame; intros; autospe.
-  rewrite <- (free_top_frame_stack_adt _ _ Heqo).
-  unfold_unrecord. simpl.
-  rewrite H0; simpl; eauto.
-Qed.
-
-Lemma pop_frame_get_frame_info:
-   forall m1 m2 b,
-   pop_frame m1 = Some m2 ->
-   ~ is_stack_top m1 b ->
-   get_frame_info m2 b = get_frame_info m1 b.
-Proof.
-  unfold get_frame_info, is_stack_top, get_stack_top_blocks.
-  intros.
-  exploit pop_frame_stack_blocks_2; eauto. intros (b0 & EQ). rewrite EQ in *.
-  simpl.
-  destruct b0; simpl in *; 
-  rewrite pred_dec_false; eauto.
-Qed.
-
-Lemma load_pop_frame :
-   forall (m1 m2 : mem),
-     pop_frame m1 = Some m2 ->
-     forall (chunk : memory_chunk) (b : block) (ofs : Z),
-       ~ is_stack_top m1 b ->
-       load chunk m2 b ofs = load chunk m1 b ofs.
-Proof.
-  unfold pop_frame. intros. autospe.
-  transitivity (load chunk m b ofs).
-  unfold_unrecord.
-  unfold load. simpl.
-  destruct (valid_access_dec m chunk b ofs Readable),
-  (valid_access_dec
-      {|
-      mem_contents := mem_contents m;
-      mem_access := mem_access m;
-      nextblock := nextblock m;
-      access_max := access_max m;
-      nextblock_noaccess := nextblock_noaccess m;
-      contents_default := contents_default m;
-      stack_adt := tl (stack_adt m);
-      stack_valid := fun (b0 : block) (pf : in_frames (tl (stack_adt m)) b0) => stack_valid m b0 (in_frames_tl (stack_adt m) b0 pf) |}
-      chunk b ofs Readable); auto.
-  exfalso; apply n. destruct v. destruct H2.
-  repeat split; eauto.  inversion 1.
-  exfalso; apply n. destruct v. destruct H2.
-  repeat split; eauto.  inversion 1.
-  unfold free_top_frame in Heqo. autospe.
-  eapply load_free. eauto. left.
-  unfold is_stack_top, get_stack_top_blocks in H0; rewrite Heql in H0. simpl in *; intuition.
-Qed.
-
-Lemma nextblock_push_frame:
-   forall m1 f m2 b,
-     push_frame m1 f = Some (m2, b) ->
-     nextblock m2 = Pos.succ (nextblock m1).
-Proof.
-  unfold push_frame; intros; autospe.
-  erewrite add_adt_nextblock; eauto.
-  eapply nextblock_alloc; eauto.
-Qed.
-
-Lemma push_frame_result:
-   forall m1 f m2 b,
-     push_frame m1 f = Some (m2, b) ->
-     b = nextblock m1.
-Proof.
-  unfold push_frame; intros; autospe.
-  eapply alloc_result; eauto.  
-Qed.
-
-Lemma push_frame_get_frame_info:
-   forall m1 m2 b f stk,
-     push_frame m1 f = Some (m2,stk) ->
-     get_frame_info m2 b = if eq_block b stk then Some f else get_frame_info m1 b.
-Proof.
-  unfold get_frame_info. intros.
-  erewrite push_frame_stack_blocks; eauto.
-  simpl. auto.
-Qed.
-
 Lemma invalid_block_strong_non_private_stack_access:
     forall m b lo hi,
       ~ valid_block m b ->
@@ -6829,24 +6582,6 @@ Lemma invalid_block_non_private_stack_access:
 Proof.
   red; intros.
   eapply invalid_block_strong_non_private_stack_access in H; eauto.
-Qed.
-
-Lemma free_top_frame_parallel_extends:
-   forall m1 m2 m1' b fi r,
-     extends m1 m2 ->
-     Mem.stack_adt m1 = frame_with_info b (Some fi) :: r ->
-      free_top_frame m1 = Some m1' ->
-      exists m2',
-        free_top_frame m2 = Some m2'
-        /\ extends m1' m2'.
-Proof.
-  intros.
-  inversion H. inversion mext_inj0.
-  unfold free_top_frame in *; inv mi_stack_blocks0; intros; autospe.
-  inv H2. inv H4.
-  exploit free_parallel_extends; eauto.
-  replace b0 with b3; auto.
-  eapply INJ. reflexivity.
 Qed.
 
 Lemma unrecord_stack_block_extends:
@@ -6926,21 +6661,6 @@ Proof.
   unfold record_stack_blocks, add_adt; intros; autospe.
   simpl. reflexivity.
 Qed.
-
-Lemma pop_frame_parallel_extends:
-   forall m1 m2 m1' b fi r,
-     extends m1 m2 ->
-     Mem.stack_adt m1 = frame_with_info b (Some fi) :: r ->
-      pop_frame m1 = Some m1' ->
-      exists m2',
-        pop_frame m2 = Some m2'
-        /\ extends m1' m2'.
-Proof.
-  unfold pop_frame; intros; autospe.
-  exploit free_top_frame_parallel_extends; eauto.
-  intros (m2' & A & B); rewrite A.
-  exploit unrecord_stack_block_extends; eauto.
-Qed.
  
 Lemma add_adt_extends:
     forall m1 m2 fi m1',
@@ -6961,21 +6681,6 @@ Proof.
     + apply self_inject_frame. right; reflexivity.
     + eapply list_forall2_frame_inject_invariant. 2: eauto.
       unfold inject_id; inversion 1; subst. tauto.
-Qed.
-
-Lemma push_frame_extends:
-    forall m1 m2 fi b m1',
-      extends m1 m2 ->
-      push_frame m1 fi = Some (m1', b) ->
-      exists m2',
-        push_frame m2 fi = Some (m2', b)
-        /\ extends m1' m2'.
-Proof.
-  unfold push_frame; intros; autospe.
-  exploit alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
-  intros (m2' & A & B). rewrite A.
-  exploit add_adt_extends; eauto. intros (m2'' & C & D); rewrite C.
-  eauto.
 Qed.
 
 Lemma stack_top_valid:
@@ -7000,31 +6705,6 @@ Proof.
   intros.
   destruct (in_frames_dec (stack_adt m) b). apply in_frames_valid; auto.
   rewrite not_in_frames_no_frame_info in H. congruence. auto.
-Qed.
-
-Lemma push_frame_alloc:
-   forall m f m' b,
-     push_frame m f = Some (m', b) <->
-     (exists m1, 
-         alloc m 0 (frame_size f) = (m1, b) /\
-         record_stack_block m1 b (Some f) = Some m').
-Proof.
-  split; unfold push_frame; intros; autospe. eauto.
-  destruct H as (m1 & ALLOC & RSB).
-  rewrite ALLOC.
-  unfold record_stack_block in RSB.
-  rewrite RSB. auto.
-Qed.
-
-Lemma perm_push_frame_2:
-   forall m1 fi m2 b,
-     push_frame m1 fi = Some (m2, b) ->
-     forall (ofs : Z) (k : perm_kind),
-       0 <= ofs < frame_size fi -> perm m2 b ofs k Freeable.
-Proof.
-  unfold push_frame; intros; autospe.
-  eapply add_adt_perm; eauto.
-  eapply perm_alloc_2; eauto.
 Qed.
 
 Lemma record_stack_block_inject:
@@ -7074,20 +6754,6 @@ Lemma record_stack_block_perm:
 Proof.
   unfold record_stack_block, add_adt; intros; autospe.
   tauto.
-Qed.
-
-Lemma pop_frame_free:
-   forall m m' b f r,
-     stack_adt m = frame_with_info b (Some f) :: r ->
-     pop_frame m = Some m' <->
-     (exists m1, 
-         free m b 0 (frame_size f) = Some m1
-         /\ unrecord_stack_block m1 = Some m').
-Proof.
-  unfold pop_frame, free_top_frame; intros.
-  rewrite H.
-  split; intros; autospe; eauto.
-  destruct H0 as (m1 & A & B); rewrite A. auto.
 Qed.
 
 Lemma record_stack_blocks_perm'
@@ -7199,60 +6865,34 @@ Proof.
     apply H0. auto.
 Qed.
 
-
-Lemma push_frame_inject_neutral:
-  forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem),
-    Mem.push_frame m fi = Some (m', b) ->
-    Mem.inject_neutral thr m ->
-    (* Ple (Mem.nextblock m) thr -> *)
-    Mem.inject_neutral thr m'.
-Proof.
-  unfold push_frame. intros; autospe.
-  red; intros.
-  inv H0.
-  constructor; simpl; intros; eauto.
-  - rewrite add_adt_perm. 2: eauto.
-    rewrite add_adt_perm in H0. 2: eauto.
-    unfold flat_inj in H; destruct (plt); inv H.
-    destruct (plt b2 (nextblock m)).
-    eapply perm_alloc_4 in H0; eauto.
-    eapply perm_alloc_1; eauto.
-    eapply mi_perm0; eauto. unfold flat_inj; destruct plt; auto. congruence.
-    exploit alloc_result; eauto. intro; subst. intro; subst. xomega.
-    eapply perm_alloc_inv in H0; eauto.
-    destruct eq_block. subst. eapply perm_implies. eapply perm_alloc_2; eauto. omega. constructor.
-    eapply perm_alloc_1; eauto. rewrite Z.add_0_r. auto.
-  - unfold flat_inj in H. destruct plt; inv H. exists 0. omega.
-  - unfold flat_inj in H. destruct plt; inv H.
-    unfold add_adt, alloc in *. autospe. simpl. inv Heqp. simpl.
-    rewrite PMap.gsspec.
-    destruct peq. subst.
-    rewrite ! ZMap.gi. constructor.
-    eapply mi_memval0. unfold flat_inj. destruct plt; try congruence.
-    simpl in *. clear - H0 n.
-    unfold perm in *. simpl in *.
-    rewrite PMap.gso in H0; auto.
-  - eapply self_inject_list_frames.
-    unfold flat_inj. intros; destruct plt; intuition.
-Qed.
-
-Lemma pop_frame_inject_neutral:
-  forall (m : mem) (m' : mem) (thr : block),
-    pop_frame m = Some m' ->
+Lemma record_stack_block_inject_neutral:
+  forall thr m b f m',
     inject_neutral thr m ->
+    record_stack_block m b f = Some m' ->
     inject_neutral thr m'.
 Proof.
-  unfold pop_frame; intros; autospe.
-  cut (inject_neutral thr m0). intro IM0.
-  exploit unrecord_stack_block_mem_inj. apply IM0. eauto.
-  intros (m2' & A & B). rewrite H in A; inv A. apply B. clear H.
-  unfold free_top_frame in Heqo. autospe.
-  eapply free_right_inj. eapply free_left_inj. eauto. eauto. eauto.
-  unfold flat_inj.
-  intros. destruct plt; inv H.
-  eapply perm_free_2 in H1; eauto. omega.
+  unfold inject_neutral, record_stack_block, add_adt; intros; autospe.
+  inv H; constructor; simpl; intros; eauto.
+  * eapply mi_perm0; eauto.
+  * constructor. 
+    eapply frame_inject_invariant. 2: eapply self_inject_frame. 2: unfold flat_inj; intros; destruct plt; tauto.
+    instantiate (1 := m). tauto.
+    eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
 Qed.
 
+Lemma unrecord_stack_block_inject_neutral:
+  forall thr m m',
+    inject_neutral thr m ->
+    unrecord_stack_block m = Some m' ->
+    inject_neutral thr m'.
+Proof.
+  intros. unfold_unrecord.
+  red in H; red.
+  inv H; constructor; simpl ; intros; eauto.
+  eapply mi_perm0; eauto.
+  eapply list_forall2_frame_inject_invariant with m. tauto.
+  revert mi_stack_blocks0. setoid_rewrite H1. simpl. inversion 1; auto.
+Qed.
 
 Local Instance memory_model_prf:
   MemoryModel mem.
@@ -7484,44 +7124,19 @@ Proof.
   intros; eapply stack_adt_eq_get_frame_info, alloc_stack_adt; eauto.
   intros; eapply stack_adt_eq_is_stack_top, alloc_stack_adt; eauto.
   exact alloc_get_frame_info_new.
-  exact push_frame_perm_1.
-  exact push_frame_valid_block_1.
-  exact push_frame_valid_new_block.
-  exact push_frame_fresh_block.
-  exact push_frame_is_stack_top.
-  exact push_frame_succeeds.
-  exact push_frame_strong_unchanged_on.
   exact store_stack_blocks.
   exact is_stack_top_stack_blocks.
-  exact push_frame_stack_blocks.
-  exact perm_pop_frame.
-  exact nextblock_pop_frame.
-  exact pop_frame_valid_block.
-  exact pop_frame_stack_blocks_1.
-  exact pop_frame_stack_blocks_2.
-  exact pop_frame_get_frame_info.
-  exact load_pop_frame.
-  exact nextblock_push_frame.
-  exact push_frame_result.
-  exact push_frame_get_frame_info.
   exact invalid_block_non_private_stack_access.
   exact alloc_stack_adt.
   exact free_stack_adt.
   intros; eapply stack_adt_eq_get_frame_info, free_stack_adt; eauto.
   exact storebytes_stack_adt.
-  exact pop_frame_parallel_extends.
-  exact push_frame_extends.
-  intros; eapply push_frame_inject_neutral; eauto.
-  exact pop_frame_inject_neutral.
   exact stack_top_valid.
   exact get_frame_info_valid.
   exact in_frames_valid.
-  exact push_frame_alloc.
-  exact perm_push_frame_2.
   exact record_stack_block_inject.
   exact record_stack_block_unchanged_on.
   exact record_stack_block_perm.
-  exact pop_frame_free.
   exact unrecord_stack_adt.
   exact unrecord_stack_block_succeeds.
   exact inject_stack_adt.
@@ -7552,6 +7167,30 @@ Proof.
   exact strong_non_private_stack_access_magree.
   exact frane_with_info_add_info.
   exact frame_inject_with_info.
+  {
+    simpl; intros.
+    unfold record_stack_block, add_adt in H. autospe.
+    unfold Memtype.Mem.is_stack_top, Memtype.Mem.get_stack_top_blocks. simpl. auto.
+  }
+  {
+    simpl; intros.
+    unfold record_stack_block, add_adt in H. autospe. reflexivity.
+  }
+  {
+    simpl; intros.
+    unfold_unrecord. unfold Memtype.Mem.get_frame_info.
+    simpl. rewrite H1. simpl.
+    revert H0. unfold Memtype.Mem.is_stack_top, Memtype.Mem.get_stack_top_blocks. simpl. rewrite H1.
+    destruct f; simpl; intuition. destruct eq_block; intuition.
+    destruct in_dec; intuition.
+  }
+  {
+    simpl; intros. inv H. inv mext_inj0.
+    rewrite H0 in mi_stack_blocks0. inv mi_stack_blocks0. inv H3.
+    unfold inject_id in INJ. autospe. eauto.
+  }
+  exact record_stack_block_inject_neutral.
+  exact unrecord_stack_block_inject_neutral.
 Qed.
 
 End Mem.

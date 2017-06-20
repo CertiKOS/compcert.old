@@ -101,7 +101,5 @@ Hint Resolve
   Mem.valid_access_free_inv_1
   Mem.valid_access_free_inv_2
   Mem.unchanged_on_refl
-  Mem.push_frame_valid_block_1
-  Mem.push_frame_perm_1
-: mem.
+ : mem.
 

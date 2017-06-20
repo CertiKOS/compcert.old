@@ -671,24 +671,31 @@ Opaque loadind.
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   destruct CallStackConsistency as (l1 & l2 & EQ & ADT). inv ADT.
-  destruct H11 as (fi & FREQ & _).
-  exploit Mem.pop_frame_parallel_extends; eauto. rewrite EQ.
-  simpl. f_equal. eauto. intros [m2' [E F]].
-  destruct ros as [rf|fid]; simpl in H; monadInv H7.
+  destruct H12 as (fi & FREQ & SZEQ).
+  exploit Mem.free_parallel_extends; eauto. intros (m2_ & E & F).
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & G & I).
+  (* exploit Mem.pop_frame_parallel_extends; eauto. rewrite EQ. *)
+  (* simpl. f_equal. eauto. intros [m2' [E F]]. *)
+  exploit Mem.same_frame_extends. apply MEXT. simpl in EQ. eauto.
+  subst. eauto. intros (r' & EQ1).
+  destruct ros as [rf|fid]; simpl in H; monadInv H8.
 + (* Indirect call *)
   assert (rs rf = Vptr f' Ptrofs.zero).
     destruct (rs rf); try discriminate.
     revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
   assert (rs0 x0 = Vptr f' Ptrofs.zero).
-    exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
-  generalize (code_tail_next_int _ _ _ _ NOOV H8). intro CT1.
+    exploit ireg_val; eauto. rewrite H8; intros LD; inv LD; auto.
+  generalize (code_tail_next_int _ _ _ _ NOOV H9). intro CT1.
   left; econstructor; split.
   eapply plus_left. eapply exec_step_internal. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. replace (chunk_of_type Tptr) with Mptr in * by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
-  rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG). rewrite E. eauto.
+  rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
+  rewrite EQ1. rewrite Ptrofs.unsigned_zero in E. simpl in E.
+  rewrite SZEQ. rewrite E. rewrite G.
+  eauto.
   apply star_one. eapply exec_step_internal.
-  transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
+  transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H5. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. eauto. traceEq.
   econstructor; eauto.
@@ -696,19 +703,23 @@ Opaque loadind.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
   eapply parent_sp_type; eauto.
   Simplifs. rewrite Pregmap.gso; auto.
-  generalize (preg_of_not_SP rf). rewrite (ireg_of_eq _ _ EQ2). congruence.
-  eapply Mem.pop_frame_stack_blocks_1 in H3. 2: simpl in EQ.  2: eauto.
-  rewrite H3.
+  generalize (preg_of_not_SP rf). rewrite (ireg_of_eq _ _ EQ3). congruence.
+  erewrite <- Mem.free_stack_blocks in EQ; eauto. simpl in EQ.
+  exploit Mem.unrecord_stack_block_succeeds. simpl in EQ. apply EQ. rewrite H4.
+  intros (m'1 & INV & EQADT); inv INV. rewrite EQADT.
   repeat eexists; eauto.
+
 + (* Direct call *)
-  generalize (code_tail_next_int _ _ _ _ NOOV H8). intro CT1.
+  generalize (code_tail_next_int _ _ _ _ NOOV H9). intro CT1.
   left; econstructor; split.
   eapply plus_left. eapply exec_step_internal. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. replace (chunk_of_type Tptr) with Mptr in * by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
-  rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG). rewrite E. eauto.
+  rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
+  rewrite EQ1. rewrite Ptrofs.unsigned_zero in E. simpl in E.
+  rewrite SZEQ. rewrite E. rewrite G. eauto.
   apply star_one. eapply exec_step_internal.
-  transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
+  transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H5. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. eauto. traceEq.
   econstructor; eauto.
@@ -716,8 +727,9 @@ Opaque loadind.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
   eapply parent_sp_type; eauto.
   rewrite Pregmap.gss. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
-  eapply Mem.pop_frame_stack_blocks_1 in H3. 2: simpl in EQ.  2: eauto.
-  rewrite H3.
+  erewrite <- Mem.free_stack_blocks in EQ; eauto. simpl in EQ.
+  exploit Mem.unrecord_stack_block_succeeds. simpl in EQ. apply EQ. rewrite H4.
+  intros (m'1 & INV & EQADT); inv INV. rewrite EQADT.
   repeat eexists; eauto.
 
 - (* Mbuiltin *)
@@ -866,15 +878,19 @@ Transparent destroyed_by_jumptable.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   destruct CallStackConsistency as (l1 & l2 & EQ & ADT). inv ADT.
-  destruct H11 as (fi & FREQ & _).
-  exploit Mem.pop_frame_parallel_extends; eauto. rewrite EQ.
-  simpl. f_equal. eauto.  intros [m2' [E F]].
+  destruct H11 as (fi & FREQ & SZEQ).
+  exploit Mem.free_parallel_extends; eauto. intros (m2' & E & F).
+  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & G & I).
+  exploit Mem.same_frame_extends. apply MEXT. simpl in EQ. eauto.
+  subst. eauto. intros (r' & EQ1).
   monadInv H7.
   exploit code_tail_next_int; eauto. intro CT1.
   left; econstructor; split.
   eapply plus_left. eapply exec_step_internal. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
-  simpl. rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG). rewrite E. eauto.
+  simpl. rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
+  rewrite Ptrofs.unsigned_zero in E; simpl in E.
+  rewrite EQ1, SZEQ, E, G; eauto.
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -884,8 +900,9 @@ Transparent destroyed_by_jumptable.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
   eapply parent_sp_type; eauto.
-  eapply Mem.pop_frame_stack_blocks_1 in H3. 2: simpl in EQ.  2: eauto.
-  rewrite H3.
+  erewrite <- Mem.free_stack_blocks in EQ; eauto. simpl in EQ.
+  exploit Mem.unrecord_stack_block_succeeds. simpl in EQ. apply EQ. rewrite H3.
+  intros (m'1 & INV & EQADT); inv INV. rewrite EQADT.
   repeat eexists; eauto.
 
 - (* internal function *)
@@ -894,16 +911,17 @@ Transparent destroyed_by_jumptable.
   destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x0))); inv EQ1.
   monadInv EQ0. rewrite transl_code'_transl_code in EQ1.
   unfold store_stack in *.
-  exploit Mem.push_frame_extends. eauto. eauto. 
+  exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.
   intros [m1' [C D]].
-  exploit Mem.storev_extends. eexact D. eexact H1. eauto. eauto.
+  exploit Mem.record_stack_block_extends. apply D. eauto. intros (m1'' & CC & DD).
+  exploit Mem.storev_extends. eexact DD. eexact H2. eauto. eauto.
   intros [m2' [F G]].
-  exploit Mem.storev_extends. eexact G. eexact H2. eauto. eauto.
+  exploit Mem.storev_extends. eexact G. eexact H3. eauto. eauto.
   intros [m3' [P Q]].
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
   simpl. rewrite Ptrofs.unsigned_zero. simpl. eauto.
-  simpl. rewrite C. simpl in F, P. 
+  simpl. erewrite frame_size_correct; eauto. rewrite C, CC. simpl in F, P. 
   replace (chunk_of_type Tptr) with Mptr in F, P by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
   rewrite (sp_val _ _ _ AG) in F. rewrite F.
   rewrite ATLR. rewrite P. eauto.
@@ -923,7 +941,8 @@ Transparent destroyed_at_function_entry.
   simpl in *.
   erewrite Mem.store_stack_blocks; eauto.
   erewrite Mem.store_stack_blocks; eauto.
-  erewrite Mem.push_frame_stack_blocks. 2: eauto.
+  erewrite Mem.record_stack_block_stack_adt; eauto.
+  erewrite Mem.alloc_stack_blocks; eauto.
   destruct CallStackConsistency as (l1 & l2 & EQQ & ADT).
   repeat eexists. 2: constructor. simpl. f_equal.
   3: apply ADT. eauto.
