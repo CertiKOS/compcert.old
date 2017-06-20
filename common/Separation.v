@@ -353,17 +353,14 @@ Qed.
 Program Definition range (b: block) (lo hi: Z) : massert := {|
   m_pred := fun m =>
        0 <= lo /\ hi <= Ptrofs.modulus
-       /\ (forall i k p, lo <= i < hi -> Mem.perm m b i k p)
-       /\ Mem.non_private_stack_access m b lo hi;
+       /\ (forall i k p, lo <= i < hi -> Mem.perm m b i k p);
   m_footprint := fun b' ofs' => b' = b /\ lo <= ofs' < hi
   ;
   m_invar_weak := false  ;
   m_invar_stack := false
 |}.
 Next Obligation.
-  split; auto. split; auto. split; auto. intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
-  eapply Mem.unchanged_on_non_private_stack_access; eauto.
-  intros. simpl. split; auto.
+  split; auto. split; auto. intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
 Qed.
 Next Obligation.
   apply Mem.perm_valid_block with ofs Cur Freeable; auto.
@@ -378,10 +375,9 @@ Lemma alloc_rule:
   m' |= range b lo hi ** P.
 Proof.
   intros; simpl. split; [|split]. 
-- split; auto. split; auto. split; auto. intros.
+- split; auto. split; auto. intros.
   apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.perm_alloc_2; eauto.
-  red. right; red. erewrite Mem.alloc_get_frame_info_fresh; eauto.
 - apply (m_invar P) with m; auto.
   destruct (m_invar_weak P).
   + eapply Mem.alloc_strong_unchanged_on; eauto.
@@ -398,16 +394,10 @@ Lemma range_split:
   m |= range b lo mid ** range b mid hi ** P.
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto. 
-  split; [ | split; [|split]]; simpl; intros.
-  - assumption.
-  - auto.
-  - intuition auto.
-    + omega.
-    + apply H4; omega.
-    + eapply Mem.non_private_stack_access_inside; eauto. omega.
-    + omega.
-    + apply H4; omega.
-    + eapply Mem.non_private_stack_access_inside; eauto. omega.
+  split; [ | split; [|split]]; simpl; intros; try assumption.
+  - intuition auto; try omega.
+    + apply H5; omega.
+    + apply H5; omega.
     + red; simpl; intros; omega.
   - intuition omega.
 Qed.
@@ -439,17 +429,9 @@ Lemma range_split_2:
 Proof.
   intros. rewrite <- sep_assoc. eapply sep_imp; eauto.
   assert (mid <= align mid al) by (apply align_le; auto).
-  split; [ | split; [ | split ] ] ; simpl; intros.
-  - assumption.
-  - assumption.
-  - intuition auto.
-    + omega.
-    + apply H6; omega.
-    + eapply Mem.non_private_stack_access_inside; eauto; omega.
-    + omega.
-    + apply H6; omega.
-    + eapply Mem.non_private_stack_access_inside; eauto; omega.
-    + red; simpl; intros; omega.
+  split; [ | split; [ | split ] ] ; simpl; intros; try assumption.
+  - intuition auto; try (apply H7; omega); try omega.
+    red; simpl; intros; omega.
   - intuition omega.
 Qed.
 
@@ -457,7 +439,6 @@ Lemma range_preserved:
   forall m m' b lo hi,
   m |= range b lo hi ->
   (forall i k p, lo <= i < hi -> Mem.perm m b i k p -> Mem.perm m' b i k p) ->
-  (Mem.non_private_stack_access m b lo hi -> Mem.non_private_stack_access m' b lo hi) ->
   m' |= range b lo hi.
 Proof.
   intros. destruct H as (A & B & C). simpl; intuition auto.
@@ -468,8 +449,10 @@ Qed.
 Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (spec: val -> Prop) : massert := {|
   m_pred := fun m =>
        0 <= ofs <= Ptrofs.max_unsigned
-    /\ Mem.valid_access m chunk b ofs Freeable
-    /\ exists v, Mem.load chunk m b ofs = Some v /\ spec v;
+       (* /\ (Mem.valid_access m chunk b ofs Freeable) *)
+       /\  Mem.range_perm m b ofs (ofs + size_chunk chunk) Cur Freeable
+       /\ (align_chunk chunk | ofs)
+       /\ exists v, Mem.load chunk m b ofs = Some v /\ spec v;
   m_footprint := fun b' ofs' => b' = b /\ ofs <= ofs' < ofs + size_chunk chunk
   ;
   m_invar_weak := false
@@ -477,11 +460,8 @@ Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (spec: val
   m_invar_stack := false
 |}.
 Next Obligation.
-  rename H3 into v. split;[|split].
-- auto.
-- destruct H2. destruct H3. split;[|split]; auto.
-  red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
-  intros. erewrite (Mem.unchanged_on_non_private_stack_access _ _ _ H0); auto.
+  rename H4 into v. split;[|split;[|split]]; auto.
+- red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
 - exists v. split; auto. eapply Mem.load_unchanged_on; eauto. simpl; auto.
 Qed.
 Next Obligation.
@@ -501,7 +481,7 @@ Lemma load_rule:
   m |= contains chunk b ofs spec ->
   exists v, Mem.load chunk m b ofs = Some v /\ spec v.
 Proof.
-  intros. destruct H as (D & E & v & F & G).
+  intros. destruct H as (D & E & AL & v & F & G).
   exists v; auto.
 Qed.
 
@@ -516,14 +496,22 @@ Qed.
 
 Lemma store_rule:
   forall chunk m b ofs v (spec1 spec: val -> Prop) P,
-  m |= contains chunk b ofs spec1 ** P ->
+    m |= contains chunk b ofs spec1 ** P ->
+    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
   spec (Val.load_result chunk v) ->
   exists m',
   Mem.store chunk m b ofs v = Some m' /\ m' |= contains chunk b ofs spec ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & v0 & F & G).
-  assert (H: Mem.valid_access m chunk b ofs Writable) by eauto with mem.
-  destruct (Mem.valid_access_store _ _ _ _ v H) as [m' STORE].
+  assert (H: Mem.valid_access m chunk b ofs Freeable).
+  {
+    split;[|split]; eauto.
+  }
+  assert (H2: Mem.valid_access m chunk b ofs Writable).
+  {
+    eauto with mem.
+  }
+  destruct (Mem.valid_access_store _ _ _ _ v H2) as [m' STORE].
   exists m'; split; auto. simpl. intuition auto.
 - eapply Mem.store_valid_access_1; eauto.
 - exists (Val.load_result chunk v); split; auto. eapply Mem.load_store_same; eauto. 
@@ -539,7 +527,8 @@ Qed.
 
 Lemma storev_rule:
   forall chunk m b ofs v (spec1 spec: val -> Prop) P,
-  m |= contains chunk b ofs spec1 ** P ->
+    m |= contains chunk b ofs spec1 ** P ->
+    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
   spec (Val.load_result chunk v) ->
   exists m',
   Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= contains chunk b ofs spec ** P.
@@ -552,17 +541,19 @@ Lemma range_contains:
   forall chunk b ofs P m,
   m |= range b ofs (ofs + size_chunk chunk) ** P ->
   (align_chunk chunk | ofs) ->
+  Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
   m |= contains chunk b ofs (fun v => True) ** P.
 Proof.
-  intros. destruct H as (A & B & C). destruct A as (D & E & F & G).
+  intros. destruct H as (A & B & C). destruct A as (D & E & F).
   split; [|split].
 - assert (Mem.valid_access m chunk b ofs Freeable).
   { split; auto. red; auto. }
   split. generalize (size_chunk_pos chunk). unfold Ptrofs.max_unsigned. omega.
-  split. auto.
-  + destruct (Mem.valid_access_load m chunk b ofs) as [v LOAD].
-    eauto with mem.
-    exists v; auto.
+  split; [|split]; auto.
+  apply H.
+  destruct (Mem.valid_access_load m chunk b ofs) as [v LOAD].
+  eauto with mem.
+  exists v; auto.
 - auto.
 - auto.
 Qed.
@@ -575,7 +566,7 @@ Proof.
   intros; split; [| split; [ | split ]] ; simpl; intros.
   - assumption.
   - assumption.
-  - intuition auto. destruct H4 as (v & A & B). exists v; auto.
+  - intuition auto. destruct H5 as (v & A & B). exists v; auto.
   - auto.
 Qed.
 
@@ -586,8 +577,9 @@ Definition hasvalue (chunk: memory_chunk) (b: block) (ofs: Z) (v: val) : massert
 
 Lemma store_rule':
   forall chunk m b ofs v (spec1: val -> Prop) P,
-  m |= contains chunk b ofs spec1 ** P ->
-  exists m',
+    m |= contains chunk b ofs spec1 ** P ->
+    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+    exists m',
   Mem.store chunk m b ofs v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
 Proof.
   intros. eapply store_rule; eauto. 
@@ -595,9 +587,10 @@ Qed.
 
 Lemma storev_rule':
   forall chunk m b ofs v (spec1: val -> Prop) P,
-  m |= contains chunk b ofs spec1 ** P ->
-  exists m',
-  Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
+    m |= contains chunk b ofs spec1 ** P ->
+    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+    exists m',
+      Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
 Proof.
   intros. eapply storev_rule; eauto.
 Qed.
@@ -789,10 +782,10 @@ Proof.
     + simpl. intuition auto; try (unfold Ptrofs.max_unsigned in *; omega).
       * apply Mem.perm_implies with Freeable; auto with mem.
         eapply Mem.perm_alloc_2; eauto. omega. 
-      * red; right; red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
+      (* * red; right; red; erewrite Mem.alloc_get_frame_info_fresh; eauto. *)
       * apply Mem.perm_implies with Freeable; auto with mem.
         eapply Mem.perm_alloc_2; eauto. omega. 
-      * red; right; red; erewrite Mem.alloc_get_frame_info_fresh; eauto.
+      (* * red; right; red; erewrite Mem.alloc_get_frame_info_fresh; eauto. *)
       * red; simpl; intros. destruct H1, H2. omega.
       * red; simpl; intros.
         assert (b = b2) by tauto. subst b.
@@ -1035,13 +1028,23 @@ Lemma record_stack_block_parallel_rule:
     m_invar_stack P = false ->
     m2 |= minjection j m1 ** P ->
     Mem.record_stack_block m1 b None = Some m1' ->
+    (forall (ofs : Z) (k : perm_kind) (p : permission),
+        Mem.perm m1 b ofs k p -> Mem.in_segment (ofs + delta) (frame_data fi)) ->
+    (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
     exists m2',
       Mem.record_stack_block m2 b' (Some fi) = Some m2' /\
       m2' |= minjection j m1' ** P.
 Proof.
-  intros m1 m1' m2 j P fi b b' delta FB INVAR MINJ RSB1.
+  intros m1 m1' m2 j P fi b b' delta FB INVAR MINJ RSB1 INS UNIQ.
   destruct MINJ as (MINJ & PM & DISJ).
-  exploit Mem.record_stack_block_inject; eauto. apply MINJ. intros (m2' & RSB2 & INJ).
+  exploit Mem.record_stack_block_inject; eauto. apply MINJ.
+  {
+    eapply Mem.frame_inject_none_some.
+    - rewrite FB. inversion 1; subst. eauto.
+    - intros.
+      split; intros; subst. congruence. eapply UNIQ; eauto.      
+  }
+  intros (m2' & RSB2 & INJ).
   eexists; split; eauto.
   split; [|split].
   - simpl in *. auto.  
@@ -1069,16 +1072,33 @@ Lemma push_frame_parallel_rule
     0 <= frame_size fi <= Ptrofs.max_unsigned ->
     0 <= delta ->
     hi <= frame_size fi ->
+    seg_ofs (frame_data fi) = delta ->
+    seg_size (frame_data fi) = Z.max 0 sz1 ->
     exists j' : meminj,
       m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1'' ** globalenv_inject ge j' ** P /\
       inject_incr j j' /\ j' b1 = Some (b2, delta) /\ inject_separated j j' m1 m2.
 Proof.
-  intros until delta; intros INVAR SEP ALLOC1 REC1 ALLOC2 ALIGN LO HI RANGE1 RANGE2 RANGE3.
+  intros until delta; intros INVAR SEP ALLOC1 REC1 ALLOC2 ALIGN LO HI RANGE1 RANGE2 RANGE3 SEG1 SEG2.
   destruct (proj1 (Mem.push_frame_alloc _ _ _ _) ALLOC2) as (m2_1 & ALLOC2' & SETADT).
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
   rewrite sep_swap3 in INJ'.
   exploit record_stack_block_parallel_rule.  3: eauto. all: eauto.
+  {
+    intros.
+    exploit Mem.perm_alloc_3. 2: eauto. eauto. intro RNG.
+    red. rewrite SEG1, SEG2. rewrite Zmax_spec. destruct (zlt sz1 0); omega.
+  }
+  {
+    intros.
+    destruct (j bb) eqn:?; try destruct p.
+    exploit J1. eauto. rewrite H. inversion 1; subst. eapply Mem.valid_block_inject_2 in Heqo.
+    eapply Mem.fresh_block_alloc in Heqo; eauto. easy. apply SEP.
+    edestruct J3.  eauto.  eauto. 
+    exploit Mem.alloc_result. apply ALLOC1. intro; subst.
+    eapply Mem.valid_block_inject_1 in H. 2: apply INJ'.
+    exploit Mem.valid_block_alloc_inv. apply ALLOC1. apply H. intros [A|A]; auto. intuition.
+  }
   rewrite SETADT. intros (m0 & EQmem & INJ''). inv EQmem.
   rewrite sep_swap3 in INJ''.
   exists j'; split; auto.

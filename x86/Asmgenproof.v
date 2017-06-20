@@ -369,7 +369,26 @@ Qed.
 
 Section WITHINITSPRA.
 
-Variables init_sp init_ra: val.
+  Variables init_sp init_ra: val.
+
+
+Definition stack_blocks_of_callstack (l : list Mach.stackframe) : list (block*Z) :=
+  map (fun x =>
+         match x with
+           Mach.Stackframe fb sp _ _ =>
+           match Genv.find_funct_ptr ge fb with
+             Some (Internal f) =>
+             (sp, Mach.fn_stacksize f)
+           | _ => (sp, 0)
+           end
+         end) l.
+
+Definition list_prefix (l1: list (block*Z)) (l2 : list frame_adt) : Prop :=
+  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun b f => let '(b,sz) := b in
+                                                   exists fi, f = frame_with_info b (Some fi) /\
+                                                         frame_size fi = sz
+                                          ) l1 l1'.
+
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
@@ -378,9 +397,10 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
-        (AG: agree ms sp rs)
-        (AXP: ep = true -> rs#RAX = parent_sp init_sp s),
-      match_states (Mach.State s fb sp c ms m)
+        (AG: agree ms (Vptr sp Ptrofs.zero) rs)
+        (AXP: ep = true -> rs#RAX = parent_sp init_sp s)
+        (CallStackConsistency: list_prefix ((sp,fn_stacksize f)::stack_blocks_of_callstack s) (Mem.stack_adt m)),
+      match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms m)
                    (Asm.State rs m')
   | match_states_call:
       forall s fb ms m m' rs
@@ -388,7 +408,8 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp init_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
-        (ATLR: rs RA = parent_ra init_ra s),
+        (ATLR: rs RA = parent_ra init_ra s)
+        (CallStackConsistency: list_prefix (stack_blocks_of_callstack s) (Mem.stack_adt m)),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
@@ -397,7 +418,8 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp init_sp s) rs)
         (RA_VUNDEF: rs RA = Vundef)
-        (ATPC: rs PC = parent_ra init_ra s),
+        (ATPC: rs PC = parent_ra init_ra s)
+        (CallStackConsistency: list_prefix (stack_blocks_of_callstack s) (Mem.stack_adt m)),
       match_states (Mach.Returnstate s ms m)
                    (Asm.State rs m').
 
@@ -410,13 +432,14 @@ Lemma exec_straight_steps:
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
-    /\ agree ms2 sp rs2
+    /\ agree ms2 (Vptr sp Ptrofs.zero) rs2
     /\ (it1_is_parent ep i = true -> rs2#RAX = parent_sp init_sp s)) ->
+  list_prefix ((sp, fn_stacksize f) :: stack_blocks_of_callstack s) (Mem.stack_adt m2) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
-  match_states (Mach.State s fb sp c ms2 m2) st'.
+  match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms2 m2) st'.
 Proof.
-  intros. inversion H2. subst. monadInv H7.
+  intros. inversion H2. subst. monadInv H8.
   exploit H3; eauto. intros [rs2 [A [B C]]].
   exists (State rs2 m2'); split.
   eapply exec_straight_exec; eauto.
@@ -434,13 +457,15 @@ Lemma exec_straight_steps_goto:
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
-    /\ agree ms2 sp rs2
+    /\ agree ms2 (Vptr sp Ptrofs.zero) rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tge tf lbl rs2 m2') ->
+  list_prefix ((sp, fn_stacksize f) :: stack_blocks_of_callstack s) (Mem.stack_adt m2) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
-  match_states (Mach.State s fb sp c' ms2 m2) st'.
+  match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c' ms2 m2) st'.
 Proof.
-  intros. inversion H3. subst. monadInv H9.
+  intros s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c' H H0 H1 H2 H3 H4 H5 PREF.
+  inversion H3. subst. monadInv H9.
   exploit H5; eauto. intros [jmp [k' [rs2 [A [B C]]]]].
   generalize (functions_transl _ _ _ H7 H8); intro FN.
   generalize (transf_function_no_overflow _ _ H8); intro NOOV.
@@ -483,6 +508,11 @@ Hypothesis init_ra_not_vundef: init_ra <> Vundef.
 Hypothesis init_sp_type: Val.has_type init_sp Tptr.
 Hypothesis init_ra_type: Val.has_type init_ra Tptr.
 
+Hypothesis frame_size_correct:
+  forall fb f,
+    Genv.find_funct_ptr ge fb = Some (Internal f) ->
+    frame_size (Mach.fn_frame f) = fn_stacksize f.
+
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -518,6 +548,7 @@ Proof.
   simpl; intros. rewrite Q; auto with asmgen.
 Local Transparent destroyed_by_setstack.
   destruct ty; simpl; intuition congruence.
+  simpl in H. erewrite Mem.store_stack_blocks; eauto.
 
 - (* Mgetparam *)
   assert (f0 = f) by congruence; subst f0.
@@ -551,7 +582,7 @@ Opaque loadind.
   simpl; intros. rewrite U; auto.
 
 - (* Mop *)
-  assert (eval_operation tge sp op rs##args m = Some v).
+  assert (eval_operation tge (Vptr sp0 Ptrofs.zero) op rs##args m = Some v).
     rewrite <- H. apply eval_operation_preserved. exact symbols_preserved.
   exploit eval_operation_lessdef. eapply preg_vals; eauto. eauto. eexact H0.
   intros [v' [A B]]. rewrite (sp_val _ _ _ AG) in A.
@@ -563,7 +594,7 @@ Opaque loadind.
   simpl; congruence.
 
 - (* Mload *)
-  assert (eval_addressing tge sp addr rs##args = Some a).
+  assert (eval_addressing tge (Vptr sp0 Ptrofs.zero) addr rs##args = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
@@ -575,7 +606,7 @@ Opaque loadind.
   simpl; congruence.
 
 - (* Mstore *)
-  assert (eval_addressing tge sp addr rs##args = Some a).
+  assert (eval_addressing tge (Vptr sp0 Ptrofs.zero) addr rs##args = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
@@ -587,6 +618,7 @@ Opaque loadind.
   exists rs2; split. eauto.
   split. eapply agree_undef_regs; eauto.
   simpl; congruence.
+  destruct a; try discriminate. simpl in H0. erewrite Mem.store_stack_blocks; eauto.
 
 - (* Mcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -612,6 +644,7 @@ Opaque loadind.
   econstructor; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
+  simpl. rewrite FIND. auto.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
@@ -625,6 +658,7 @@ Opaque loadind.
   econstructor; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
+  simpl. rewrite FIND. auto.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -636,7 +670,10 @@ Opaque loadind.
   exploit Mem.loadv_extends. eauto. eexact H2. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
-  exploit Mem.pop_frame_parallel_extends; eauto. intros [m2' [E F]].
+  destruct CallStackConsistency as (l1 & l2 & EQ & ADT). inv ADT.
+  destruct H11 as (fi & FREQ & _).
+  exploit Mem.pop_frame_parallel_extends; eauto. rewrite EQ.
+  simpl. f_equal. eauto. intros [m2' [E F]].
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
   assert (rs rf = Vptr f' Ptrofs.zero).
@@ -659,7 +696,10 @@ Opaque loadind.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
   eapply parent_sp_type; eauto.
   Simplifs. rewrite Pregmap.gso; auto.
-  generalize (preg_of_not_SP rf). rewrite (ireg_of_eq _ _ EQ1). congruence.
+  generalize (preg_of_not_SP rf). rewrite (ireg_of_eq _ _ EQ2). congruence.
+  eapply Mem.pop_frame_stack_blocks_1 in H3. 2: simpl in EQ.  2: eauto.
+  rewrite H3.
+  repeat eexists; eauto.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H8). intro CT1.
   left; econstructor; split.
@@ -676,6 +716,9 @@ Opaque loadind.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
   eapply parent_sp_type; eauto.
   rewrite Pregmap.gss. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
+  eapply Mem.pop_frame_stack_blocks_1 in H3. 2: simpl in EQ.  2: eauto.
+  rewrite H3.
+  repeat eexists; eauto.
 
 - (* Mbuiltin *)
   inv AT. monadInv H4.
@@ -703,7 +746,7 @@ Opaque loadind.
   apply agree_nextinstr_nf. eapply agree_set_res; auto.
   eapply agree_undef_regs; eauto. intros; apply undef_regs_other_2; auto.
   congruence.
-
+  erewrite <- external_call_stack_blocks; eauto.
 - (* Mgoto *)
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
@@ -822,7 +865,10 @@ Transparent destroyed_by_jumptable.
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
-  exploit Mem.pop_frame_parallel_extends; eauto. intros [m2' [E F]].
+  destruct CallStackConsistency as (l1 & l2 & EQ & ADT). inv ADT.
+  destruct H11 as (fi & FREQ & _).
+  exploit Mem.pop_frame_parallel_extends; eauto. rewrite EQ.
+  simpl. f_equal. eauto.  intros [m2' [E F]].
   monadInv H7.
   exploit code_tail_next_int; eauto. intro CT1.
   left; econstructor; split.
@@ -838,6 +884,9 @@ Transparent destroyed_by_jumptable.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
   eapply parent_sp_type; eauto.
+  eapply Mem.pop_frame_stack_blocks_1 in H3. 2: simpl in EQ.  2: eauto.
+  rewrite H3.
+  repeat eexists; eauto.
 
 - (* internal function *)
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
@@ -870,7 +919,15 @@ Transparent destroyed_at_function_entry.
   congruence.
   constructor.
   intros. Simplifs. eapply agree_sp; eauto.
-
+  simpl.
+  simpl in *.
+  erewrite Mem.store_stack_blocks; eauto.
+  erewrite Mem.store_stack_blocks; eauto.
+  erewrite Mem.push_frame_stack_blocks. 2: eauto.
+  destruct CallStackConsistency as (l1 & l2 & EQQ & ADT).
+  repeat eexists. 2: constructor. simpl. f_equal.
+  3: apply ADT. eauto.
+  eexists; split; eauto. 
 - (* external function *)
   exploit functions_translated; eauto.
   intros [tf [A B]]. simpl in B. inv B.
@@ -902,11 +959,12 @@ Transparent destroyed_at_function_entry.
   unfold loc_external_result.
   apply agree_set_other; auto.
   apply agree_set_other; auto. apply agree_set_pair; auto.
-
+  erewrite <- external_call_stack_blocks; eauto.
 - (* return *)
   inv STACKS. simpl in *.
   right. split. omega. split. auto.
   econstructor; eauto. rewrite ATPC; eauto. congruence.
+  rewrite H2 in CallStackConsistency. auto.
 Qed.
 
 End WITHINITSPRA.
@@ -928,6 +986,7 @@ Proof.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
   eapply parent_sp_type. apply Val.Vnullptr_has_type. constructor.
   intros. rewrite Regmap.gi. auto.
+  simpl. repeat eexists. 2: constructor. rewrite app_nil_l. eauto.
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
@@ -945,6 +1004,9 @@ Proof.
   subst r0.
   generalize (preg_val _ _ _ AX AG). rewrite H2. intros LD; inv LD. auto.
 Qed.
+
+Hypothesis frame_correct:
+  forall (fb : block) (f : Mach.function), Genv.find_funct_ptr ge fb = Some (Internal f) -> frame_size (Mach.fn_frame f) = fn_stacksize f.
 
 Theorem transf_program_correct:
   forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics tprog).

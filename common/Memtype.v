@@ -321,6 +321,7 @@ that we now axiomatize. *)
  record_stack_block: mem -> block -> option frame_info -> option mem;
  record_stack_blocks: mem -> list block -> option mem;
  unrecord_stack_block: mem -> option mem;
+ frame_inject: meminj -> mem -> frame_adt -> frame_adt -> Prop;
 }.
 
 Section WITHMEMORYMODELOPS.
@@ -1606,6 +1607,9 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  empty_inject_neutral:
   forall thr, inject_neutral thr empty;
 
+ empty_stack_adt:
+   stack_adt empty = nil;
+
  alloc_inject_neutral:
   forall thr m lo hi b m',
   alloc m lo hi = (m', b) ->
@@ -1627,6 +1631,10 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject_neutral thr m ->
   Plt b thr ->
   inject_neutral thr m';
+drop_perm_stack_adt:
+  forall m1 b lo hi p m1',
+    drop_perm m1 b lo hi p = Some m1' ->
+    stack_adt m1' = stack_adt m1;
 
 (** ** Properties of [unchanged_on] and [strong_unchanged_on] *)
 
@@ -1752,13 +1760,6 @@ for [unchanged_on]. *)
    forall m1 lo hi m2 b (ALLOC: alloc m1 lo hi = (m2, b)),
      get_frame_info m2 b = None;
 
- unchanged_on_get_frame_info:
-   forall m1 m2 P (UNCH: unchanged_on P m1 m2),
-   forall b' o, P b' o -> get_frame_info m2 b' = get_frame_info m1 b';
- unchanged_on_is_stack_top:
-   forall m1 m2 P (UNCH: unchanged_on P m1 m2),
-   forall b' o, P b' o -> valid_block m2 b' -> is_stack_top m2 b' <-> is_stack_top m1 b';
-
 
  push_frame_perm_1:
    forall m1 f m2 b (PF: push_frame m1 f = Some (m2, b)),
@@ -1863,11 +1864,11 @@ for [unchanged_on]. *)
      push_frame m1 f = Some (m2,stk) ->
      get_frame_info m2 b = if eq_block b stk then Some f else get_frame_info m1 b;
 
- pop_frame_unchanged_on:
-   forall m1 m2 P,
-     pop_frame m1 = Some m2 ->
-     (forall b o, is_stack_top m1 b -> ~ P b o) ->
-     unchanged_on P m1 m2;
+ (* pop_frame_unchanged_on: *)
+ (*   forall m1 m2 P, *)
+ (*     pop_frame m1 = Some m2 -> *)
+ (*     (forall b o, is_stack_top m1 b -> ~ P b o) -> *)
+ (*     unchanged_on P m1 m2; *)
 
  invalid_block_non_private_stack_access:
     forall m b lo hi,
@@ -1895,9 +1896,10 @@ for [unchanged_on]. *)
       stack_adt m2 = stack_adt m1;
 
  pop_frame_parallel_extends:
-   forall m1 m2 m1',
-      extends m1 m2 ->
-      pop_frame m1 = Some m1' ->
+   forall m1 m2 m1' b fi r,
+     extends m1 m2 ->
+     stack_adt m1 = frame_with_info b (Some fi) :: r ->
+     pop_frame m1 = Some m1' ->
       exists m2',
         pop_frame m2 = Some m2'
         /\ extends m1' m2';
@@ -1910,14 +1912,14 @@ for [unchanged_on]. *)
         push_frame m2 fi = Some (m2', b)
         /\ extends m1' m2';
 
- push_frame_inject_neutral:
-   forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem),
-     Mem.push_frame m fi = Some (m', b) -> Mem.inject_neutral thr m -> Plt (Mem.nextblock m) thr -> Mem.inject_neutral thr m';
+ (* push_frame_inject_neutral: *)
+ (*   forall (thr : block) (m : mem) (fi : frame_info) (b : block) (m' : mem), *)
+ (*     Mem.push_frame m fi = Some (m', b) -> Mem.inject_neutral thr m -> Plt (Mem.nextblock m) thr -> Mem.inject_neutral thr m'; *)
 
- pop_frame_inject_neutral:
-   forall (m : mem) (m' : mem) (thr : block),
-     pop_frame m = Some m' -> inject_neutral thr m ->
-     (forall b, is_stack_top m b -> Plt b thr) -> inject_neutral thr m';
+ (* pop_frame_inject_neutral: *)
+ (*   forall (m : mem) (m' : mem) (thr : block), *)
+ (*     pop_frame m = Some m' -> inject_neutral thr m -> *)
+ (*     (forall b, is_stack_top m b -> Plt b thr) -> inject_neutral thr m'; *)
 
  stack_top_valid:
    forall m b, is_stack_top m b -> valid_block m b;
@@ -1946,6 +1948,7 @@ for [unchanged_on]. *)
    forall m1 m1' m2 j fi1 fi2 b b' delta,
      j b = Some (b', delta) ->
      inject j m1 m2 ->
+     frame_inject j m1 (frame_with_info b fi1) (frame_with_info b' fi2) ->
      record_stack_block m1 b fi1 = Some m1' ->
      exists m2',
        record_stack_block m2 b' fi2 = Some m2' /\
@@ -2003,16 +2006,18 @@ for [unchanged_on]. *)
        perm m b' o k p;
 
  strong_non_private_stack_access_extends:
-   forall m1 m2 b lo hi,
+   forall m1 m2 b lo hi p,
      extends m1 m2 ->
+     range_perm m1 b lo hi Cur p ->
      strong_non_private_stack_access m1 b lo hi ->
      strong_non_private_stack_access m2 b lo hi;
 
 
  strong_non_private_stack_access_inject:
-   forall f m1 m2 b b' delta lo hi,
+   forall f m1 m2 b b' delta lo hi p,
      f b = Some (b', delta) ->
      inject f m1 m2 ->
+     range_perm m1 b lo hi Cur p ->
      strong_non_private_stack_access m1 b lo hi ->
      strong_non_private_stack_access m2 b' (lo + delta) (hi + delta);
 
@@ -2088,8 +2093,9 @@ record_stack_blocks_perm
 record_stack_blocks_inject_into_one:
   forall j m1 m2 bl b m1',
     inject j m1 m2 ->
-    Forall (fun bb => exists delta, j bb = Some (b, delta)) bl ->
+    (forall (b0 b' : block) (delta : Z), j b0 = Some (b', delta) -> In b0 bl <-> b' = b) ->
     record_stack_blocks m1 bl = Some m1' ->
+    valid_block m2 b ->
     exists m2',
       record_stack_block m2 b None = Some m2' /\
       inject j m1' m2';
@@ -2103,6 +2109,7 @@ record_stack_blocks_inject:
     forall j m1 m2 bl bl' m1',
       Mem.inject j m1 m2 ->
       (forall b b' delta, j b = Some (b', delta) -> (In b bl <-> In b' bl')) ->
+      (forall b' : block, In b' bl' -> valid_block m2 b') ->
       Mem.record_stack_blocks m1 bl = Some m1' ->
       exists m2',
         Mem.record_stack_blocks m2 bl' = Some m2'
@@ -2136,11 +2143,27 @@ record_stack_blocks_unchanged_on:
       record_stack_blocks m bl = Some m' ->
       stack_adt m' = frame_without_info bl :: stack_adt m;
 
- strong_non_private_stack_access_magree: forall P (m1 m2 : mem) (b : block) (lo hi : Z),
-    magree m1 m2 P ->
-    strong_non_private_stack_access m1 b lo hi ->
-    strong_non_private_stack_access m2 b lo hi;
+ strong_non_private_stack_access_magree: forall P (m1 m2 : mem) (b : block) (lo hi : Z) p,
+     magree m1 m2 P ->
+     range_perm m1 b lo hi Cur p ->
+     strong_non_private_stack_access m1 b lo hi ->
+     strong_non_private_stack_access m2 b lo hi;
 
+ frame_inject_none_some:
+   forall f m b1 b2 fi
+      (INDATA: forall delta,
+          f b1 = Some (b2, delta) ->
+          forall ofs k p,
+            perm m b1 ofs k p ->
+            in_segment (ofs + delta) (frame_data fi))
+      (INJ: forall b1' b2' delta, f b1' = Some (b2', delta) -> (b1' = b1 <-> b2' = b2)),
+      frame_inject f m (frame_with_info b1 None) (frame_with_info b2 (Some fi));
+
+ frame_inject_with_info:
+    forall f m b1 b2 fi
+      (FB: forall b' delta, f b1 = Some (b', delta) -> b' = b2 /\ delta = 0)
+      (INJ: forall b' delta, f b' = Some (b2, delta) -> b' = b1),
+      frame_inject f m (frame_with_info b1 fi) (frame_with_info b2 fi);
 
 }.
 
@@ -2311,22 +2334,17 @@ Proof.
   red; intros. omega.
 Qed.
 
-Lemma unchanged_on_non_private_stack_access:
-  forall P m m1 ,
-    Mem.unchanged_on P m m1 ->
+Lemma stack_adt_eq_non_private_stack_access:
+  forall m m1 ,
+    Mem.stack_adt m1 = Mem.stack_adt m ->
     forall b' lo hi,
-      (forall o, lo <= o < hi -> P b' o) ->
       Mem.non_private_stack_access m1 b' lo hi <-> Mem.non_private_stack_access m b' lo hi.
 Proof.
   intros.
   destruct (zlt lo hi).
   - unfold non_private_stack_access, strong_non_private_stack_access.
-    rewrite (unchanged_on_get_frame_info _ _ _ H b' lo). 2: apply H0; omega.
-    destruct (get_frame_info m b') eqn:?; try tauto.
-    rewrite (unchanged_on_is_stack_top _ _ _ H b' lo). 2: apply H0; omega. tauto.
-    eapply get_frame_info_valid in Heqo.
-    red. eapply Plt_Ple_trans. apply Heqo.
-    eapply unchanged_on_nextblock. eauto.
+    unfold get_frame_info, is_stack_top, get_stack_top_blocks. rewrite H. 
+    tauto.
   - split; intros; apply lo_ge_hi_non_private_stack_access; auto.
 Qed.
 

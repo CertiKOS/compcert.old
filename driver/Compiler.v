@@ -354,6 +354,25 @@ Context `{external_calls_prf: Events.ExternalCalls (symbols_inject_instance := E
 Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
 Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
 
+Lemma stacking_frame_correct:
+  forall p tp,
+    Stackingproof.match_prog p tp ->
+    forall (fb : Values.block) (f : Mach.function),
+      Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) fb = Some (Internal f) ->
+      Memtype.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f.
+Proof.
+  intros p tp MP fb f FFP.
+  red in MP.
+  inv MP.
+  exploit Globalenvs.Genv.find_funct_ptr_inversion. eauto. intros (id & IN).
+  eapply list_forall2_in_right in IN; eauto.
+  destruct IN as (x1 & IN & MIOG).
+  inv MIOG. simpl in *. subst. inv H2. inv H4.
+  destruct f1; simpl in *; try discriminate.
+  monadInv H6.
+  apply Stackingproof.unfold_transf_function in EQ. subst.
+  Opaque Stacklayout.frame_of_frame_env Bounds.fe_size. simpl.  reflexivity.
+Qed.
 
 Theorem cstrategy_semantic_preservation:
   forall p tp,
@@ -412,7 +431,8 @@ Ltac DestructM :=
     eapply Stackingproof.transf_program_correct with (return_address_offset := Asmgenproof0.return_address_offset); try assumption.
     exact Asmgenproof.return_address_exists.
     eassumption.
-    subst. eapply Asmgenproof.transf_program_correct; eassumption.
+    subst. eapply Asmgenproof.transf_program_correct. eassumption.
+    eapply stacking_frame_correct; eauto.
   }
   split. auto.
   apply forward_to_backward_simulation.

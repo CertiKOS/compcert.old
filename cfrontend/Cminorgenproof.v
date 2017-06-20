@@ -2306,11 +2306,18 @@ Opaque PTree.set.
   exploit Mem.record_stack_blocks_inject_into_one. exact MINJ2.
   2: eauto. 
   {
-    rewrite Forall_forall; intros x IN.
-    rewrite map_map, in_map_iff in IN. destruct IN as [[[b0 lo] hi] [EQ'  IN]]. simpl in *; subst.
+    intros b0 b' delta FB.
+    split; intros IN.
+    rewrite map_map, in_map_iff in IN. destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
     inv MCS2.
     apply in_blocks_of_env_inv in IN. destruct IN as [id [EID LO0]].
-    exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H6. eauto. 
+    exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H6. rewrite FB in H10. inv H10. eauto.
+    subst.
+    inv MCS2. inv MENV. eapply me_inv0 in FB. destruct FB as (id & szz & EID).
+    rewrite map_map, in_map_iff. eexists; split. 2: eapply in_blocks_of_env. reflexivity. eauto.
+  }
+  {
+    eapply Mem.valid_new_block; eauto.
   }
   intros (m2' & RSB & INJ3).
   left; econstructor; split.

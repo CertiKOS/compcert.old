@@ -11,7 +11,8 @@ Local Instance memory_model_x_prf:
   MemoryModelX mem.
 Proof.
   split.
-  exact Memimpl.Mem.zero_delta_inject.
+  intros.
+  eapply Memimpl.Mem.zero_delta_inject; eauto.
 Qed.
 
 End Mem.

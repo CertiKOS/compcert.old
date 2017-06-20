@@ -943,6 +943,7 @@ Proof.
     exists m2'; repeat (split; auto).
     + econstructor; eauto.
       eapply Mem.strong_non_private_stack_access_extends; eauto.
+      eapply Mem.store_valid_access_3; eauto.
     + eapply Mem.store_unchanged_on; eauto.
       unfold loc_out_of_bounds; intros.
       assert (Mem.perm m1 b i Max Nonempty).
@@ -985,6 +986,7 @@ Proof.
     replace (Ptrofs.unsigned ofs + delta + size_chunk chunk)
     with ((Ptrofs.unsigned ofs  + size_chunk chunk) + delta) by omega.
     eapply Mem.strong_non_private_stack_access_inject; eauto.
+    eapply Mem.store_valid_access_3; eauto.
   + eapply Mem.store_unchanged_on; eauto.
     unfold loc_unmapped; intros. inv AI; congruence.
   + eapply Mem.store_unchanged_on; eauto.
@@ -1292,7 +1294,9 @@ Proof.
   exists Vundef; exists m2'.
   split. econstructor; eauto.
   erewrite <- list_forall2_length.
-  eapply Mem.strong_non_private_stack_access_extends; eauto. eauto.
+  eapply Mem.strong_non_private_stack_access_extends; eauto.
+  eapply Mem.storebytes_range_perm; eauto.
+  eauto.
   split. constructor.
   split. auto.
   eapply Mem.storebytes_unchanged_on; eauto. unfold loc_out_of_bounds; intros.
@@ -1353,7 +1357,8 @@ Proof.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto. omega.
   eapply Mem.strong_non_private_stack_access_inside.
-  eapply Mem.strong_non_private_stack_access_inject; eauto. omega.
+  eapply Mem.strong_non_private_stack_access_inject. 4: eauto. all: eauto. rewrite LEN. rewrite nat_of_Z_eq. eauto. omega.
+  omega.
   rewrite (list_forall2_length B); omega.
   split. constructor.
   split. auto.

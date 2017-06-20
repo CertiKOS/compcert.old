@@ -480,7 +480,8 @@ let set_al sg =
 
 let expand_instruction instr =
   match instr with
-  | Pallocframe (sz, ofs_ra, ofs_link) ->
+  | Pallocframe (f, ofs_ra, ofs_link) ->
+let sz = Memtype.frame_size f in
      if Archi.ptr64 then begin
        let (sz, save_regs) = sp_adjustment_64 sz in
        (* Allocate frame *)
@@ -500,7 +501,7 @@ let expand_instruction instr =
        emit (Pleaq (RAX, addr1));
        emit (Pmovq_mr (addr2, RAX));
        current_function_stacksize := Int64.of_int fullsz
-     end else begin     
+     end else begin
        let sz = sp_adjustment_32 sz in
        (* Allocate frame *)
        let sz' = Z.of_uint sz in
@@ -512,7 +513,7 @@ let expand_instruction instr =
        emit (Pleal (RAX,addr1));
        emit (Pmovl_mr (addr2,RAX));
        PrintAsmaux.current_function_stacksize := Int32.of_int sz
-     end  
+     end
   | Pfreeframe(sz, ofs_ra, ofs_link) ->
      if Archi.ptr64 then begin
        let (sz, _) = sp_adjustment_64 sz in

@@ -19,9 +19,9 @@ Require Floats.
 Require SelectLong.
 Require Selection.
 Require RTLgen.
-Require Inlining.
+(* Require Inlining. *)
 Require ValueDomain.
-Require Tailcall.
+(* Require Tailcall. *)
 Require Allocation.
 Require Bounds.
 Require Ctypes.
@@ -76,8 +76,8 @@ Extract Constant RTLgen.more_likely => "RTLgenaux.more_likely".
 Extraction Inline RTLgen.ret RTLgen.error RTLgen.bind RTLgen.bind2.
 
 (* Inlining *)
-Extract Inlined Constant Inlining.should_inline => "Inliningaux.should_inline".
-Extraction Inline Inlining.ret Inlining.bind.
+(* Extract Inlined Constant Inlining.should_inline => "Inliningaux.should_inline". *)
+(* Extraction Inline Inlining.ret Inlining.bind. *)
 
 (* Allocation *)
 Extract Constant Allocation.regalloc => "Regalloc.regalloc".
@@ -186,4 +186,4 @@ Separate Extraction
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed
    Globalenvs.Senv.invert_symbol
-   Parser.translation_unit_file.
+   Parser.translation_unit_file Memtype.empty_frame Coqlib.sum_left_map.

@@ -2216,7 +2216,7 @@ Proof.
   intros [j' [te [tm0 [A [B [C [D [E [F G]]]]]]]]].
   assert (K: list_forall2 val_casted vargs (map snd (fn_params f))).
   { apply val_casted_list_params. unfold type_of_function in FUNTY. congruence. }
-  exploit Mem.record_stack_blocks_inject. eauto. 2: eauto.
+  exploit Mem.record_stack_blocks_inject. eauto. 3: eauto.
   instantiate (1 := map fst (map fst (blocks_of_env tge te))).
   {
     intros b b' delta J'B.
@@ -2241,6 +2241,14 @@ Proof.
       exploit me_flat0. eauto. apply J'B. rewrite ENV. inversion 1. subst. inv H6.
       unfold blocks_of_env; rewrite ! map_map, in_map_iff.
       repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
+  }
+  {
+    intros b' IN. unfold blocks_of_env in IN.
+    rewrite ! map_map, in_map_iff in IN.
+    destruct IN as [[id [bb ty]] [EQ' IN]].
+    apply PTree.elements_complete in IN. simpl in EQ'; subst.
+    inv B. destruct (me_vars0 id); try congruence.
+    eapply me_trange0; eauto. 
   }
   intros (m2' & RSB & INJ).
   exploit store_params_correct.
