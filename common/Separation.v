@@ -1121,7 +1121,7 @@ Proof.
   exploit Mem.inject_stack_adt. apply MINJ. intro EQLEN.
   rewrite ADT in EQLEN.
   destruct (Mem.stack_adt m2) eqn:STK.
-  simpl in EQLEN. congruence.
+  simpl in EQLEN. inv EQLEN. 
   exploit Mem.unrecord_stack_block_inject; eauto. apply MINJ. intros (m2' & UNRECORD & INJ).
   eexists; split; eauto.
   destruct MINJ as (MINJ & PM & DISJ).
