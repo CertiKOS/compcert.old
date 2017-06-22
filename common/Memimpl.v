@@ -3124,6 +3124,29 @@ Proof.
     apply INJ in FB. symmetry; apply FB. auto.
 Qed.
 
+Lemma is_stack_top_extends:
+  forall m1 m2 b
+    (MINJ: extends m1 m2)
+    (IST: is_stack_top m1 b),
+    is_stack_top m2 b.
+Proof.
+  intros.
+  eapply is_stack_top_inj; eauto. inv MINJ; eauto. reflexivity.
+Qed.
+
+Lemma is_stack_top_inject:
+  forall f m1 m2 b1 b2 delta
+    (MINJ: inject f m1 m2)
+    (FB: f b1 = Some (b2, delta))
+    (IST: is_stack_top m1 b1),
+    is_stack_top m2 b2.
+Proof.
+  intros.
+  eapply is_stack_top_inj; eauto. inv MINJ; eauto.
+Qed.
+
+
+
 Lemma get_frame_info_inj:
   forall f m1 m2 b1 b2 delta
     (MINJ: mem_inj f m1 m2)
@@ -6990,6 +7013,8 @@ Proof.
     unfold inject_id in INJ. autospe. eauto.
   }
   exact in_frames_valid.
+  exact is_stack_top_extends.
+  exact is_stack_top_inject.
 Qed.
 
 End Mem.

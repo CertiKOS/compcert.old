@@ -2110,6 +2110,19 @@ for [unchanged_on]. *)
    forall m b,
      in_frames (stack_adt m) b -> valid_block m b;
 
+ is_stack_top_extends:
+   forall m1 m2 b
+     (MINJ: extends m1 m2)
+     (IST: is_stack_top m1 b),
+     is_stack_top m2 b;
+
+ is_stack_top_inject:
+   forall f m1 m2 b1 b2 delta
+     (MINJ: inject f m1 m2)
+     (FB: f b1 = Some (b2, delta))
+     (IST: is_stack_top m1 b1),
+     is_stack_top m2 b2;
+
 }.
 
 Section WITHMEMORYMODEL.

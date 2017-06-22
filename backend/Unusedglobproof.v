@@ -1186,87 +1186,6 @@ Proof.
   eauto.
 Qed.
 
-Lemma store_init_data_stack_adt:
-  forall {F V} l (ge: Genv.t F V) m m' b ofs,
-    Genv.store_init_data ge m b ofs l = Some m' ->
-    Mem.stack_adt m' = Mem.stack_adt m.
-Proof.
-  destruct l; simpl; intros;
-  try now (eapply Mem.store_stack_blocks; eauto).
-  inv H; auto.
-  destruct (Genv.find_symbol ge0 i); try discriminate.  
-  eapply Mem.store_stack_blocks; eauto.
-Qed.
-
-Lemma store_init_data_list_stack_adt:
-  forall {F V} l (ge: Genv.t F V) m m' b ofs,
-    Genv.store_init_data_list ge m b ofs l = Some m' ->
-    Mem.stack_adt m' = Mem.stack_adt m.
-Proof.
-  induction l; simpl; intros; eauto.
-  inv H; auto.
-  destruct Genv.store_init_data eqn:?; try discriminate.
-  erewrite IHl. 2: eauto.
-  eapply store_init_data_stack_adt; eauto.
-Qed.
-
-Lemma store_zeros_stack_adt:
-  forall m b lo hi m',
-    store_zeros m b lo hi = Some m' ->
-    Mem.stack_adt m' = Mem.stack_adt m.
-Proof.
-  intros.
-  revert H.
-  eapply store_zeros_ind; simpl; intros.
-  inv H; auto.
-  erewrite H, Mem.store_stack_blocks; eauto.
-  inv H. 
-Qed.
-
-Lemma alloc_global_stack_adt:
-  forall {F V} l (ge: Genv.t F V) m m',
-    Genv.alloc_global ge m l = Some m' ->
-    Mem.stack_adt m' = Mem.stack_adt m.
-Proof.
-  destruct l; simpl; intros.
-  destruct o. destruct g.
-  destruct (Mem.alloc m 0 1) eqn:?; try discriminate.
-  erewrite Mem.drop_perm_stack_adt. 2: eauto.
-  eapply Mem.alloc_stack_blocks; eauto.
-  destruct (Mem.alloc m 0 (init_data_list_size (gvar_init v))) eqn:?.
-  destruct store_zeros eqn:?; try discriminate.
-  destruct Genv.store_init_data_list eqn:?; try discriminate.
-  erewrite Mem.drop_perm_stack_adt. 2: eauto.
-  erewrite store_init_data_list_stack_adt. 2: eauto.
-  erewrite store_zeros_stack_adt. 2: eauto.
-  eapply Mem.alloc_stack_blocks; eauto.
-  destruct Mem.alloc eqn:?.
-  inv H.
-  eapply Mem.alloc_stack_blocks; eauto.
-Qed.
-
-Lemma alloc_globals_stack_adt:
-  forall {F V} l (ge: Genv.t F V) m m',
-    Genv.alloc_globals ge m l = Some m' ->
-    Mem.stack_adt m' = Mem.stack_adt m.
-Proof.
-  induction l; simpl; intros; eauto. congruence.
-  destruct (Genv.alloc_global ge0 m a) eqn:?; try discriminate.
-  erewrite IHl. 2: eauto. 
-  eapply alloc_global_stack_adt; eauto.
-Qed.
-
-Lemma init_mem_stack_adt:
-  forall {F V} (p: AST.program F V) m,
-    Genv.init_mem p = Some m ->
-    Mem.stack_adt m = nil.
-Proof.
-  unfold Genv.init_mem.
-  intros.
-  erewrite alloc_globals_stack_adt; eauto.
-  eapply Mem.empty_stack_adt.
-Qed.
-
 Section INIT_MEM.
 
 Variables m tm: mem.
@@ -1457,8 +1376,8 @@ Proof.
   eapply H0.
   instantiate (1 := o); omega.
 - 
-  rewrite (init_mem_stack_adt _ _ IM).
-  rewrite (init_mem_stack_adt _ _ TIM).
+  rewrite (Genv.init_mem_stack_adt _ IM).
+  rewrite (Genv.init_mem_stack_adt _ TIM).
   constructor.
 (*
   destruct gd as [f|v].
