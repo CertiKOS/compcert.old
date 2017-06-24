@@ -2274,11 +2274,11 @@ Definition init_sp_has_stackinfo (m: mem) : Prop :=
     exists fi, Mem.get_frame_info m b = Some fi
           /\ (forall o,
                 Ptrofs.unsigned i1 + fe_ofs_arg <= o < Ptrofs.unsigned i1 + 4 * size_arguments init_sg ->
-                Mem.in_segment o (frame_outgoings fi)
+                in_segment o (frame_outgoings fi)
             )
           /\ (forall o,
-                Mem.in_segment o (frame_outgoings fi) ->
-                Mem.in_segment o (frame_data fi) ->
+                in_segment o (frame_outgoings fi) ->
+                in_segment o (frame_data fi) ->
                 False)
           /\ (forall o, fe_ofs_arg <= o < 4 * size_arguments init_sg ->
                   Ptrofs.unsigned (Ptrofs.add i1 (Ptrofs.repr (fe_ofs_arg + o))) =

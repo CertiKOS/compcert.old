@@ -1029,7 +1029,7 @@ Lemma record_stack_block_parallel_rule:
     m2 |= minjection j m1 ** P ->
     Mem.record_stack_block m1 b None = Some m1' ->
     (forall (ofs : Z) (k : perm_kind) (p : permission),
-        Mem.perm m1 b ofs k p -> Mem.in_segment (ofs + delta) (frame_data fi)) ->
+        Mem.perm m1 b ofs k p -> in_segment (ofs + delta) (frame_data fi)) ->
     (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
     exists m2',
       Mem.record_stack_block m2 b' (Some fi) = Some m2' /\
@@ -1039,7 +1039,7 @@ Proof.
   destruct MINJ as (MINJ & PM & DISJ).
   exploit Mem.record_stack_block_inject; eauto. apply MINJ.
   {
-    eapply Mem.frame_inject_none_some.
+    eapply frame_with_info_add_info.
     - rewrite FB. inversion 1; subst. eauto.
     - intros.
       split; intros; subst. congruence. eapply UNIQ; eauto.      

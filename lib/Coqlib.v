@@ -1431,3 +1431,38 @@ Lemma nlist_forall2_imply:
 Proof.
   induction 1; simpl; intros; constructor; auto.
 Qed.
+
+(* PW: Custom tactics *)
+
+Ltac destr_in H :=
+  match type of H with
+    context [match ?a with _ => _ end] => destruct a eqn:?; try intuition congruence
+  | _ => inv H
+  end.
+
+Ltac autospecialize H :=
+  match type of H with
+  | forall _, _ = _ -> _ => first [specialize (H _ eq_refl)
+                           | match goal with
+                               Harg: _ = _ |- _ => specialize (H _ Harg)
+                             end ]
+  | forall _ _, _ = _ -> _ => first [specialize (H _ _ eq_refl)
+                             | match goal with
+                                 Harg: _ = _ |- _ => specialize (H _ _ Harg)
+                               end ]
+  | forall _ _ _, _ = _ -> _ => first [specialize (H _ _ _ eq_refl)
+                               | match goal with
+                                   Harg: _ = _ |- _ => specialize (H _ _ _ Harg)
+                                 end]
+  end.
+
+Ltac autospe :=
+  repeat match goal with
+           H : _ /\ _ |- _ => destruct H; try subst
+         | H: _  |- _ => autospecialize H
+         | H: context [match ?a with _ => _ end] |- _ => destr_in H
+         | H: Some _ = Some _ |- _ => inv H
+         | H: None = Some _ |- _ => inv H
+         | H: Some _ = None |- _ => inv H
+         | |- _ => try subst
+         end.

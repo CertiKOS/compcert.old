@@ -1107,9 +1107,9 @@ Proof.
     subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
     rewrite G in H2 by auto. congruence. }
   exploit Mem.record_stack_block_inject; eauto.
-  eapply Mem.frame_inject_with_info.
+  constructor. eauto.
   {
-   rewrite F. inversion 1; subst; auto. 
+    rewrite F. inversion 1. eauto.
   }
   {
     intros b' delta.

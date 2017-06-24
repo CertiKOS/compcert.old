@@ -4341,7 +4341,7 @@ Proof.
   cut (bc b' <> BCinvalid).
   { intro Hb'. unfold inj_of_bc. destruct (bc b'); congruence. }
   eapply mmatch_top in H2; eauto.
-  inversion H2; congruence.
+  inversion H2; congruence. 
 Qed.
 
 Lemma mmatch_inj:
