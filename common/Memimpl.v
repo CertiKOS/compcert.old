@@ -811,10 +811,14 @@ Record inject' (f: meminj) (m1 m2: mem) : Prop :=
     mi_no_overlap:
       meminj_no_overlap f m1;
     mi_representable:
-      forall b b' delta ofs,
+      forall b b' delta,
       f b = Some(b', delta) ->
-      perm m1 b (Ptrofs.unsigned ofs) Max Nonempty \/ perm m1 b (Ptrofs.unsigned ofs - 1) Max Nonempty ->
-      delta >= 0 /\ 0 <= Ptrofs.unsigned ofs + delta <= Ptrofs.max_unsigned;
+      delta >= 0
+      /\
+      forall ofs,
+        perm m1 b (Ptrofs.unsigned ofs) Max Nonempty
+        \/ perm m1 b (Ptrofs.unsigned ofs - 1) Max Nonempty ->
+        0 <= Ptrofs.unsigned ofs + delta <= Ptrofs.max_unsigned;
     mi_perm_inv:
       forall b1 ofs b2 delta k p,
       f b1 = Some(b2, delta) ->
@@ -4580,6 +4584,16 @@ Qed.
 (** The following lemmas establish the absence of machine integer overflow
   during address computations. *)
 
+Lemma delta_pos:
+  forall f m1 m2 b1 b2 delta,
+  inject f m1 m2 ->
+  f b1 = Some (b2, delta) ->
+  delta >= 0.
+Proof.
+  intros.
+  exploit mi_representable; eauto. intuition. 
+Qed.
+
 Lemma address_inject:
   forall f m1 m2 b1 ofs1 b2 delta p,
   inject f m1 m2 ->
@@ -4590,6 +4604,7 @@ Proof.
   intros.
   assert (perm m1 b1 (Ptrofs.unsigned ofs1) Max Nonempty) by eauto with mem.
   exploit mi_representable; eauto. intros [A B].
+  exploit B; eauto. clear B; intro B.
   assert (0 <= delta <= Ptrofs.max_unsigned).
     generalize (Ptrofs.unsigned_range ofs1). omega.
   unfold Ptrofs.add. repeat rewrite Ptrofs.unsigned_repr; omega.
@@ -4615,10 +4630,12 @@ Theorem weak_valid_pointer_inject_no_overflow:
 Proof.
   intros. rewrite weak_valid_pointer_spec in H0.
   rewrite ! valid_pointer_nonempty_perm in H0.
-  exploit mi_representable; eauto. destruct H0; eauto with mem.
-  intros [A B].
-  pose proof (Ptrofs.unsigned_range ofs).
-  rewrite Ptrofs.unsigned_repr; omega.
+  exploit mi_representable; eauto. 
+  intros [A B]. exploit B; eauto.
+  destruct H0; eauto with mem.
+  pose proof (Ptrofs.unsigned_range ofs). intro.
+  rewrite Ptrofs.unsigned_repr. auto.
+  omega.
 Qed.
 
 Theorem valid_pointer_inject_no_overflow:
@@ -4655,8 +4672,9 @@ Proof.
   exploit weak_valid_pointer_inject; eauto. intros W.
   rewrite weak_valid_pointer_spec in H0.
   rewrite ! valid_pointer_nonempty_perm in H0.
-  exploit mi_representable; eauto. destruct H0; eauto with mem.
-  intros [A B].
+  exploit mi_representable; eauto. 
+  intros [A B]. exploit B; eauto.
+  destruct H0; eauto with mem. intros.
   pose proof (Ptrofs.unsigned_range ofs).
   unfold Ptrofs.add. repeat rewrite Ptrofs.unsigned_repr; auto; omega.
 Qed.
@@ -4816,8 +4834,9 @@ Proof.
 (* no overlap *)
   red; intros. eauto with mem.
 (* representable *)
-  intros. eapply mi_representable; try eassumption.
-  destruct H4; eauto with mem.
+  intros. exploit mi_representable; try eassumption.
+  intros [A B]; split; eauto. intros ofs0 P. eapply B.
+  destruct P; eauto with mem.
 (* perm inv *)
   intros. exploit mi_perm_inv0; eauto using perm_store_2. 
   intuition eauto using perm_store_1, perm_store_2.
@@ -4841,7 +4860,9 @@ Proof.
 (* no overlap *)
   red; intros. eauto with mem.
 (* representable *)
-  intros. eapply mi_representable; try eassumption.
+  intros. exploit mi_representable; try eassumption.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H3; eauto with mem.
 (* perm inv *)
   intros. exploit mi_perm_inv0; eauto using perm_store_2. 
@@ -4912,7 +4933,9 @@ Proof.
 (* no overlap *)
   red; intros. eapply mi_no_overlap0; eauto; eapply perm_storebytes_2; eauto.
 (* representable *)
-  intros. eapply mi_representable0; eauto.
+  intros. exploit mi_representable0; eauto.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H4; eauto using perm_storebytes_2.
 (* perm inv *)
   intros. exploit mi_perm_inv0; eauto using perm_storebytes_2. 
@@ -4937,7 +4960,9 @@ Proof.
 (* no overlap *)
   red; intros. eapply mi_no_overlap0; eauto; eapply perm_storebytes_2; eauto.
 (* representable *)
-  intros. eapply mi_representable0; eauto.
+  intros. exploit mi_representable0; eauto.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H3; eauto using perm_storebytes_2.
 (* perm inv *)
   intros. exploit mi_perm_inv0; eauto.
@@ -4986,7 +5011,9 @@ Proof.
 (* no overlap *)
   red; intros. eapply mi_no_overlap0; eauto; eapply perm_storebytes_2; eauto.
 (* representable *)
-  intros. eapply mi_representable0; eauto.
+  intros. exploit mi_representable0; eauto.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H3; eauto using perm_storebytes_2.
 (* perm inv *)
   intros. exploit mi_perm_inv0; eauto using perm_storebytes_2. 
@@ -5077,7 +5104,9 @@ Proof.
 (* representable *)
   unfold f'; intros.
   destruct (eq_block b b1); try discriminate.
-  eapply mi_representable0; try eassumption.
+  exploit mi_representable0; try eassumption.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H4; eauto using perm_alloc_4.
 (* perm inv *)
   intros. unfold f' in H3; destruct (eq_block b0 b1); try discriminate.
@@ -5166,17 +5195,24 @@ Proof.
     eapply H6; eauto. omega.
   eauto.
 (* representable *)
-  unfold f'; intros.
-  destruct (eq_block b b1).
-   subst. injection H9; intros; subst b' delta0. destruct H10.
-    exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
-    exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
-    generalize (Ptrofs.unsigned_range_2 ofs). omega.
-   exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
-   exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
-   generalize (Ptrofs.unsigned_range_2 ofs). omega.
-  eapply mi_representable0; try eassumption.
-  destruct H10; eauto using perm_alloc_4.
+  {
+    unfold f'; intros.
+    destruct (eq_block b b1).
+    - subst. injection H9; intros; subst b' delta0.
+      split. omega.
+      intros.
+      destruct H10.
+      exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
+      exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
+      generalize (Ptrofs.unsigned_range_2 ofs). omega.
+      exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
+      exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
+      generalize (Ptrofs.unsigned_range_2 ofs). omega.
+    - exploit mi_representable0; try eassumption.
+      intros [A B]; split; auto.
+      intros; eapply B; eauto.
+      destruct H10; eauto using perm_alloc_4.
+  }
 (* perm inv *)
   intros. unfold f' in H9; destruct (eq_block b0 b1).
   inversion H9; clear H9; subst b0 b3 delta0.
@@ -5242,7 +5278,9 @@ Proof.
 (* no overlap *)
   red; intros. eauto with mem.
 (* representable *)
-  intros. eapply mi_representable0; try eassumption.
+  intros.   exploit mi_representable0; try eassumption.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H2; eauto with mem.
 (* perm inv *)
   intros. exploit mi_perm_inv0; eauto. intuition eauto using perm_free_3.
@@ -5445,12 +5483,12 @@ Proof.
     left.
     intro; subst.
     destruct H3; eauto.
-  + intros b b' delta ofs H3 H4.
+  + intros b b' delta H3.
     specialize (H _ _ _ H3).
     subst.
     split.
     * omega.
-    * rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
+    * intros. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
   + intros b1 ofs b2 delta k p H3 H4.
     exploit H; eauto. intro; subst.
     eapply H1INV; eauto.
@@ -5565,15 +5603,18 @@ Proof.
   destruct (f b) as [[b1 delta1] |] eqn:?; try discriminate.
   destruct (f' b1) as [[b2 delta2] |] eqn:?; inv H.
   exploit mi_representable0; eauto. intros [A B].
+  exploit mi_representable1. eauto. intros [C D]. 
+  split; auto. omega.
+  intros.
   set (ofs' := Ptrofs.repr (Ptrofs.unsigned ofs + delta1)).
   assert (Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs + delta1).
     unfold ofs'; apply Ptrofs.unsigned_repr. auto.
-  exploit mi_representable1. eauto. instantiate (1 := ofs').
-  rewrite H.
+    exploit D. instantiate (1 := ofs').
+  rewrite H0.
   replace (Ptrofs.unsigned ofs + delta1 - 1) with
     ((Ptrofs.unsigned ofs - 1) + delta1) by omega.
-  destruct H0; eauto using perm_inj.
-  rewrite H. omega.
+  destruct H; eauto using perm_inj.
+  rewrite H0. omega.
 (* perm inv *)
   intros. 
   destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
@@ -5615,7 +5656,9 @@ Proof.
 (* no overlap *)
   red; intros. eapply mi_no_overlap0; eauto; eapply perm_extends; eauto.
 (* representable *)
-  eapply mi_representable0; eauto.
+  exploit mi_representable0; try eassumption.
+  intros [A B]; split; auto.
+  intros; eapply B; eauto.
   destruct H1; eauto using perm_extends.
 (* perm inv *)
   exploit mi_perm_inv0; eauto. intros [A|A].
@@ -5688,7 +5731,7 @@ Proof.
   apply flat_inj_no_overlap.
 (* range *)
   unfold flat_inj; intros.
-  destruct (plt b (nextblock m)); inv H0. generalize (Ptrofs.unsigned_range_2 ofs); omega.
+  destruct (plt b (nextblock m)); inv H0. split; auto. omega. intros. generalize (Ptrofs.unsigned_range_2 ofs); omega.
 (* perm inv *)
   unfold flat_inj; intros.
   destruct (plt b1 (nextblock m)); inv H0.
@@ -6233,7 +6276,9 @@ Proof.
   - red; intros. eapply mi_no_overlap0; eauto. 
     eapply Perm1; eauto.
     eapply Perm1; eauto.
-  - eapply mi_representable0; eauto.
+  - exploit mi_representable0; try eassumption.
+    intros [C D]; split; auto.
+    intros; eapply D; eauto.
     destruct H1; [left|right]; eapply Perm1; eauto.
   - eapply Perm2 in H1; eauto.
     eapply mi_perm_inv0 in H1; eauto.
@@ -6368,12 +6413,12 @@ Proof.
         exploit frame_inject_invariant. 2: eauto. 2: eauto. tauto.
         changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
     + eapply mi_mappedblocks0; eauto.
+    + exploit mi_representable0; eauto.
     + eapply mi_perm_inv0 in H0; eauto.
   - exfalso; apply n; clear n. clear Heqs.
     red; simpl; intros. subst.
     eapply valid_block_inject_2; eauto.
 Qed.
-
 
 Lemma record_stack_blocks_inject_into_one:
   forall j m1 m2 bl b m1'
@@ -6397,6 +6442,7 @@ Proof.
         constructor. congruence. auto.
         changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
     + eapply mi_mappedblocks0; eauto.
+    + eapply mi_representable0; eauto.
     + eapply mi_perm_inv0 in H0; eauto.
   - exfalso; apply n; clear n. 
     red; simpl; intros. subst. auto.
@@ -6424,6 +6470,7 @@ Proof.
         constructor. auto. 
         changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
     + eapply mi_mappedblocks0; eauto.
+    + eapply mi_representable0; eauto.
     + eapply mi_perm_inv0 in H0; eauto.
   - exfalso; apply n; clear n. 
     red; simpl; intros. subst. auto.
@@ -6714,6 +6761,7 @@ Proof.
   exact magree_free.
   exact magree_valid_access.
   exact mi_no_overlap.
+  exact delta_pos.
   exact valid_block_inject_1.
   exact valid_block_inject_2.
   exact perm_inject.

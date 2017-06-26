@@ -1659,6 +1659,12 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
    inject f m1 m2 ->
    meminj_no_overlap f m1;
 
+ mi_delta_pos:
+   forall f m1 m2 b1 b2 delta,
+     inject f m1 m2 ->
+     f b1 = Some (b2, delta) ->
+     delta >= 0;
+
  valid_block_inject_1:
   forall f m1 m2 b1 b2 delta,
   f b1 = Some(b2, delta) ->
