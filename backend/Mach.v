@@ -433,7 +433,7 @@ Inductive step: state -> trace -> state -> Prop :=
       of the external call is not the caller's stack frame but rather the stack
       frame of the hypothetical caller.*)
       external_call ef ge args m t res m' ->
-      rs' = set_pair (loc_result (ef_sig ef)) res rs ->
+      rs' = set_pair (loc_result (ef_sig ef)) res (undef_regs destroyed_at_call rs) ->
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')
   | exec_return:

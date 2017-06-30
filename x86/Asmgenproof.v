@@ -513,6 +513,24 @@ Hypothesis frame_size_correct:
     Genv.find_funct_ptr ge fb = Some (Internal f) ->
     frame_size (Mach.fn_frame f) = fn_stacksize f.
 
+Lemma agree_undef_regs_parallel:
+  forall l sp rs rs0,
+    agree rs sp rs0 ->
+    agree (Mach.undef_regs l rs) sp
+    (undef_regs preg_of ## l rs0).
+Proof.
+  intros; eapply agree_undef_regs; eauto.
+  intros. 
+  rewrite undef_regs_other; auto.
+  intros. intro; subst.
+  rewrite preg_notin_charact  in H1.
+  rewrite in_map_iff in H2.
+  destruct H2 as (x & EQ & IN).
+  apply H1 in IN.
+  congruence.
+Qed.
+
+
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -978,6 +996,9 @@ Transparent destroyed_at_function_entry.
   unfold loc_external_result.
   apply agree_set_other; auto.
   apply agree_set_other; auto. apply agree_set_pair; auto.
+  apply agree_undef_nondata_regs.
+  apply agree_undef_regs_parallel; auto.
+  simpl; intros; intuition subst; reflexivity.
   erewrite <- external_call_stack_blocks; eauto.
 - (* return *)
   inv STACKS. simpl in *.

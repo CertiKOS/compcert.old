@@ -354,6 +354,7 @@ Local Opaque mreg_type.
 - (* external function *)
   econstructor. auto. apply wt_setpair; auto.
   eapply external_call_well_typed; eauto.
+  apply wt_undef_regs; auto.
 - (* return *)
   inv WTSTK. econstructor; eauto.
 Qed.

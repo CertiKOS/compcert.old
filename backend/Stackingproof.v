@@ -2985,7 +2985,141 @@ Proof.
   reflexivity.
 Qed.
 
+Ltac trim H :=
+  match type of H with
+    ?a -> ?b => let x := fresh in assert a as x; [ clear H | specialize (H x); clear x]
+  end.
 
+Lemma external_call_step_correct:
+  forall s ef res rs1 m t m'
+    (H0 : external_call ef ge (fun p : rpair loc => Locmap.getpair p rs1) ## (loc_arguments (ef_sig ef)) m t res m')
+    (WTS : wt_state init_ls (Linear.Callstate s (External ef) rs1 m))
+    (LIN : nextblock_properties_linear (Linear.Callstate s (External ef) rs1 m))
+    cs' fb rs m'0 
+    (CSC : call_stack_consistency (Callstate cs' fb rs m'0))
+    (MACH : nextblock_properties_mach (Callstate cs' fb rs m'0))
+    sg_ j tf
+    (STACKS : match_stacks j s cs' (Linear.funsig (External ef)) sg_)
+    (TRANSL : transf_fundef (External ef) = OK tf)
+    (FIND : Genv.find_funct_ptr tge fb = Some tf)
+    (AGREGS : agree_regs j rs1 rs)
+    (AGLOCS : agree_callee_save rs1 (parent_locset init_ls s))
+    (INCR_init : inject_incr (Mem.flat_inj (Mem.nextblock init_m)) j)
+    (INCR_sep : inject_separated (Mem.flat_inj (Mem.nextblock init_m)) j init_m init_m)
+    (INJ_INIT_SP : block_prop (fun b : block => j b = Some (b, 0)) init_sp)
+    (HAMOA : has_at_most_one_antecedent j init_sp)
+    (SEP : m'0 |= stack_contents j s cs' ** mconj (minjection j m) (minit_args_mach j sg_) ** globalenv_inject ge j),
+  exists s2' : state,
+    plus step tge (Callstate cs' fb rs m'0) t s2' /\
+    match_states (Linear.Returnstate s (Locmap.setpair (loc_result (ef_sig ef)) res (LTL.undef_regs destroyed_at_call rs1)) m') s2'.
+Proof.
+  intros.
+  simpl in TRANSL. inversion TRANSL; subst tf.
+  exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto.
+  { (* init_args_mach *)
+    eapply sep_drop in SEP.
+    eapply mconj_proj2 in SEP.
+    eapply sep_proj1 in SEP.
+    simpl in SEP; eauto.
+  }
+  intros [vl [ARGS VINJ]].
+  assert (SEP_init := SEP).
+  rewrite <- sep_swap12 in SEP. apply mconj_proj1 in SEP.
+  rewrite (sep_comm _ (globalenv_inject _ _)) in SEP.
+  exploit external_call_parallel_rule; eauto.
+  {
+    rewrite stack_contents_invar_weak. reflexivity.
+  }
+  intros (j' & res' & m1' & A &  B & C & D & E).
+  econstructor; split.
+  - apply plus_one. eapply exec_function_external; eauto.
+    eapply external_call_symbols_preserved; eauto. apply senv_preserved. 
+  - constr_match_states.
+    eapply match_stacks_change_meminj.
+    3: eexact STACKS.
+    all:eauto.
+    exists m, m'0; split; eauto.
+    + intros; eapply Mem.valid_block_inject_2; eauto. apply sep_proj1 in SEP; simpl in SEP; eauto.
+    + clear - AGREGS D B.
+      apply agree_regs_set_pair. apply agree_regs_undef_regs. apply agree_regs_inject_incr with j; auto. auto.
+    + apply agree_callee_save_set_result; auto.
+      red in AGLOCS |- *. intros.
+      destruct l.
+      rewrite LTL_undef_regs_others. auto.
+      Opaque all_mregs.
+      intro IN.
+      unfold destroyed_at_call in IN.
+      rewrite filter_In in IN.
+      rewrite H in IN. simpl in IN. destruct IN. discriminate.
+      rewrite LTL_undef_regs_slot.
+      auto.
+    + eapply inject_incr_trans; eauto.
+    + eapply inject_incr_sep_trans; eauto. inv LIN; auto. inv MACH; auto.
+    + revert INJ_INIT_SP D. clear.
+      destruct init_sp; simpl; auto.
+    + inv MACH. revert HAMOA D E ISP'VALID. clear.
+      red; intros.
+      destruct (j b1) eqn:?. destruct p.
+               destruct (j b2) eqn:?. destruct p.
+                        exploit D. eexact Heqo.
+                        exploit D. eexact Heqo0.
+                        intros. assert (b0 = b' /\ b = b') by (split; congruence). destruct H1; subst.
+                        eapply HAMOA; eauto.
+                        exploit E; eauto. rewrite EQ in ISP'VALID; simpl in ISP'VALID. intuition congruence.
+                        exploit E; eauto. rewrite EQ in ISP'VALID; simpl in ISP'VALID. intuition congruence.
+    + apply stack_contents_change_meminj with j; auto.
+      rewrite sep_swap12.
+      apply mconj_intro.
+      rewrite (sep_comm (stack_contents _ _ _)). eauto.
+      split.
+      rewrite sep_swap12 in SEP_init. apply mconj_proj2 in SEP_init.
+      apply sep_proj1 in SEP_init. revert SEP_init.
+      * simpl.
+        intro IAM.
+        red; intros.
+        exploit IAM. eauto. instantiate (1 := rs0).
+        destruct (match_stacks_is_init_sg _ _ _ _ _ STACKS) as [[TP _] | EQsig].
+        apply TP in H. easy. subst.
+        intros (v & ea & inj); eexists; split; eauto.
+        inv ea; constructor; eauto.
+        clearbody step. destruct init_sp eqn:?; simpl in *; try discriminate.
+        inv MACH. simpl in ISP'VALID.
+        unfold load_stack in *; simpl in *.
+        eapply Mem.load_unchanged_on; eauto.
+        eapply external_call_unchanged_on. apply A.
+        intros. simpl. unfold Mem.strong_non_private_stack_access.
+        intro NPSA.
+        unfold init_sp_has_stackinfo in MSISHS.
+        rewrite Heqv0 in *.
+        destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
+        rewrite MSI1 in NPSA.
+        specialize (NPSA i0).
+        trim (NPSA). omega.
+        eapply MSI3; eauto.
+        eapply MSI2; eauto.
+        simpl in MSI4. rewrite MSI4 in H1.
+        split. etransitivity. 2: apply H1.
+        exploit loc_arguments_acceptable_2. apply H. simpl.
+        unfold fe_ofs_arg. omega.
+        eapply Z.lt_le_trans. apply H1.
+        generalize (loc_arguments_bounded _ _ _ H).
+        generalize (typesize_pos ty).
+        exploit loc_arguments_acceptable_2. apply H. simpl.
+        rewrite size_type_chunk. rewrite typesize_typesize.
+        omega.
+        eapply in_stack_slot_bounds; eauto. 
+      * split. apply sep_proj2 in C. rewrite sep_comm in C. eauto.
+       rewrite sep_swap12 in SEP_init.
+       apply mconj_proj2 in SEP_init.
+       destruct SEP_init as (A1 & A2 & A3).
+       revert A3.
+       clear - D. red; simpl.
+       intros. decompose [ex and] H. clear H.
+       exploit A3. simpl. repeat eexists; eauto.
+       revert H0.
+       eapply footprint_impl.
+       simpl. auto. auto.
+Qed.
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step init_ls ge s1 t s2 ->
@@ -3030,7 +3164,7 @@ Proof.
         exploit frame_get_parent; eauto.
         intro PARST. Opaque Z.mul bound_outgoing.
         subst.
-        exploit INIT_ARGS_MACH. eauto. intros (v & EA & EAinj).
+        generalize (INIT_ARGS_MACH _ _ _ IN_ARGS rs0). intros (v & EA & EAinj).
         esplit.
         -- split.
            ++ eapply plus_one.
@@ -3457,10 +3591,6 @@ Proof.
          unfold init_sp_has_stackinfo in MSISHS.
          rewrite Heqv0 in *.
          destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4). rewrite MSI1 in NPSA.
-         Ltac trim H :=
-           match type of H with
-             ?a -> ?b => let x := fresh in assert a as x; [ clear H | specialize (H x); clear x]
-           end.
          specialize (NPSA i0).
          trim (NPSA). omega.
          eapply MSI3; eauto.
@@ -3667,100 +3797,8 @@ Proof.
         exfalso. subst. eapply Mem.fresh_block_alloc; eauto. tauto.
 
 - (* external function *)
-  simpl in TRANSL. inversion TRANSL; subst tf.
-  exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto.
-  { (* init_args_mach *)
-    eapply sep_drop in SEP.
-    eapply mconj_proj2 in SEP.
-    eapply sep_proj1 in SEP.
-    simpl in SEP; eauto.
-  }
-  intros [vl [ARGS VINJ]].
-  assert (SEP_init := SEP).
-  rewrite <- sep_swap12 in SEP. apply mconj_proj1 in SEP.
-  rewrite (sep_comm _ (globalenv_inject _ _)) in SEP.
-  exploit external_call_parallel_rule; eauto.
-  {
-    rewrite stack_contents_invar_weak. reflexivity.
-  }
-  intros (j' & res' & m1' & A &  B & C & D & E).
-  econstructor; split.
-  apply plus_one. eapply exec_function_external; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved. 
-  constr_match_states.
-  eapply match_stacks_change_meminj. 3: eexact STACKS.
-  all:eauto.
-  exists m, m'0; split; eauto.
-  intros; eapply Mem.valid_block_inject_2; eauto. apply sep_proj1 in SEP; simpl in SEP; eauto.
-  apply agree_regs_set_pair. apply agree_regs_inject_incr with j; auto. auto.
-  apply agree_callee_save_set_result; auto.
-  * eapply inject_incr_trans; eauto.
-  * eapply inject_incr_sep_trans; eauto. inv LIN; auto. inv MACH; auto.
-  * revert INJ_INIT_SP D. clear.
-    destruct init_sp; simpl; auto.
-  * inv MACH. revert HAMOA D E ISP'VALID. clear.
-    red; intros.
-    destruct (j b1) eqn:?. destruct p.
-    destruct (j b2) eqn:?. destruct p.
-    exploit D. eexact Heqo.
-    exploit D. eexact Heqo0.
-    intros. assert (b0 = b' /\ b = b') by (split; congruence). destruct H1; subst.
-    eapply HAMOA; eauto.
-    exploit E; eauto. rewrite EQ in ISP'VALID; simpl in ISP'VALID. intuition congruence.
-    exploit E; eauto. rewrite EQ in ISP'VALID; simpl in ISP'VALID. intuition congruence.
-  * apply stack_contents_change_meminj with j; auto.
-    rewrite sep_swap12.
-    apply mconj_intro.
-    rewrite (sep_comm (stack_contents _ _ _)). eauto.
-    split.
-    rewrite sep_swap12 in SEP_init. apply mconj_proj2 in SEP_init.
-    apply sep_proj1 in SEP_init. revert SEP_init.
-    -- simpl.
-       intro IAM.
-       red; intros.
-       exploit IAM. eauto. instantiate (1 := rs0).
-       destruct (match_stacks_is_init_sg _ _ _ _ _ STACKS) as [[TP _] | EQsig].
-       apply TP in H. easy. subst.
-       intros (v & ea & inj); eexists; split; eauto.
-       inv ea; constructor; eauto.
-       clearbody step. destruct init_sp eqn:?; simpl in *; try discriminate.
-       inv MACH. simpl in ISP'VALID.
-       unfold load_stack in *; simpl in *.
-       eapply Mem.load_unchanged_on; eauto.
-       eapply external_call_unchanged_on. apply A.
-       intros. simpl. unfold Mem.strong_non_private_stack_access.
-       intro NPSA.
-       unfold init_sp_has_stackinfo in MSISHS.
-       rewrite Heqv0 in *.
-       destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
-       rewrite MSI1 in NPSA.
-       specialize (NPSA i0).
-       trim (NPSA). omega.
-       eapply MSI3; eauto.
-       eapply MSI2; eauto.
-       simpl in MSI4. rewrite MSI4 in H1.
-       split. etransitivity. 2: apply H1.
-       exploit loc_arguments_acceptable_2. apply H. simpl.
-       unfold fe_ofs_arg. omega.
-       eapply Z.lt_le_trans. apply H1.
-       generalize (loc_arguments_bounded _ _ _ H).
-       generalize (typesize_pos ty).
-       exploit loc_arguments_acceptable_2. apply H. simpl.
-       rewrite size_type_chunk. rewrite typesize_typesize.
-       omega.
-       eapply in_stack_slot_bounds; eauto. 
-       
-    -- split. apply sep_proj2 in C. rewrite sep_comm in C. eauto.
-       rewrite sep_swap12 in SEP_init.
-       apply mconj_proj2 in SEP_init.
-       destruct SEP_init as (A1 & A2 & A3).
-       revert A3.
-       clear - D. red; simpl.
-       intros. decompose [ex and] H. clear H.
-       exploit A3. simpl. repeat eexists; eauto.
-       revert H0.
-       eapply footprint_impl.
-       simpl. auto. auto.
+
+  eapply external_call_step_correct; eauto.
   
 - (* return *)
   inv STACKS. simpl in AGLOCS. simpl in SEP. rewrite sep_assoc in SEP. 
@@ -3769,7 +3807,6 @@ Proof.
   constr_match_states; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset init_ls s); auto.
-  Unshelve. eauto.
 Qed.
 
 
