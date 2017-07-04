@@ -34,6 +34,8 @@ Qed.
 Section TRANSLATION.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Variable prog: Csharpminor.program.
 Variable tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
@@ -873,7 +875,7 @@ Lemma match_callstack_alloc_variables_rec:
     (Frame (cenv_remove cenv vars) tf e1 le te sp lo (Mem.nextblock m1) :: cs)
     (Mem.nextblock m1) (Mem.nextblock tm) ->
   Mem.inject f1 m1 tm ->
-  ~ in_frames (Mem.stack_adt tm) sp ->
+  ~ in_frames (map fst (Mem.stack_adt tm)) sp ->
   exists f2,
     match_callstack f2 m2 tm
       (Frame cenv tf e2 le te sp lo (Mem.nextblock m2) :: cs)
@@ -1675,15 +1677,15 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       match_states (Csharpminor.State fn (Csharpminor.Sseq s1 s2) k e le m)
                    (State tfn ts1 tk (Vptr sp Ptrofs.zero) te tm)
   | match_callstate:
-      forall fd args k m tfd targs tk tm f cs cenv
+      forall fd args k m tfd targs tk tm f cs cenv sz
       (TR: transl_fundef fd = OK tfd)
       (MINJ: Mem.inject f m tm)
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs),
-      match_states (Csharpminor.Callstate fd args k m)
-                   (Callstate tfd targs tk tm)
+      match_states (Csharpminor.Callstate fd args k m sz)
+                   (Callstate tfd targs tk tm sz)
   | match_returnstate:
       forall v k m tv tk tm f cs cenv
       (MINJ: Mem.inject f m tm)
@@ -1719,7 +1721,7 @@ Lemma match_is_call_cont:
   match_cont k tk cenv xenv cs ->
   Csharpminor.is_call_cont k ->
   exists tk',
-    star step tge (State tfn Sskip tk sp te tm)
+    star (step fn_stack_requirements) tge (State tfn Sskip tk sp te tm)
                E0 (State tfn Sskip tk' sp te tm)
     /\ is_call_cont tk'
     /\ match_cont k tk' cenv nil cs.
@@ -1813,7 +1815,7 @@ Lemma switch_descent:
   exists k',
   transl_lblstmt_cont cenv xenv ls k k'
   /\ (forall f sp e m,
-      plus step tge (State f s k sp e m) E0 (State f body k' sp e m)).
+      plus (step fn_stack_requirements) tge (State f s k sp e m) E0 (State f body k' sp e m)).
 Proof.
   induction ls; intros.
 - monadInv H. econstructor; split.
@@ -1833,7 +1835,7 @@ Lemma switch_ascent:
   forall k k1,
   transl_lblstmt_cont cenv xenv ls k k1 ->
   exists k2,
-  star step tge (State f (Sexit n) k1 sp e m)
+  star (step fn_stack_requirements) tge (State f (Sexit n) k1 sp e m)
              E0 (State f (Sexit O) k2 sp e m)
   /\ transl_lblstmt_cont cenv xenv ls' k k2.
 Proof.
@@ -1867,7 +1869,7 @@ Lemma switch_match_states:
     (MK: match_cont k tk cenv xenv cs)
     (TK: transl_lblstmt_cont cenv xenv ls tk tk'),
   exists S,
-  plus step tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
+  plus (step fn_stack_requirements) tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
   /\ match_states (Csharpminor.State fn (seq_of_lbl_stmt ls) k e le m) S.
 Proof.
   intros. inv TK.
@@ -2033,14 +2035,14 @@ Qed.
 Lemma match_callstack_record:
   forall j m1 m2 cs b1 b2,
     match_callstack j m1 m2 cs b1 b2 ->
-    forall m1' bl b ofi m2',
-      Mem.record_stack_blocks m1 bl = Some m1' ->
-      Mem.record_stack_block m2 b ofi = Some m2' ->                                      
+    forall m1' bl b ofi m2' n,
+      Mem.record_stack_blocks m1 (inr bl) n = Some m1' ->
+      Mem.record_stack_blocks m2 (inl (b ,ofi)) n = Some m2' ->                                      
       match_callstack j m1' m2' cs b1 b2.
 Proof.
   induction 1; simpl; intros; econstructor; eauto.
   - eapply match_bounds_invariant; eauto.
-    intros; eapply Mem.record_stack_blocks_perm; eauto.
+    intros; eapply Mem.record_stack_block_perm; eauto.
   - red; intros.
     edestruct PERM. eauto.
     eapply Mem.record_stack_block_perm' in H3; eauto.
@@ -2048,9 +2050,9 @@ Proof.
 Qed.
 
 Lemma transl_step_correct:
-  forall S1 t S2, Csharpminor.step ge S1 t S2 ->
+  forall S1 t S2, Csharpminor.step fn_stack_requirements ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists T2, plus step tge T1 t T2 /\ match_states S2 T2)
+  (exists T2, plus (step fn_stack_requirements) tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
   induction 1; intros T1 MSTATE; inv MSTATE.
@@ -2129,6 +2131,7 @@ Proof.
   intros [tvargs [EVAL2 VINJ2]].
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
+  destruct IFI as (bb & oo & EQ3 & EQ2). red; rewrite EQ3. rewrite symbols_preserved; eauto.
   apply sig_preserved; eauto.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
@@ -2291,14 +2294,14 @@ Opaque PTree.set.
 
 (* internal call *)
   monadInv TR. generalize EQ; clear EQ; unfold transl_function.
-  caseEq (build_compilenv f). intros ce sz BC.
-  destruct (zle sz Ptrofs.max_unsigned); try congruence.
+  caseEq (build_compilenv f). intros ce sz' BC.
+  destruct (zle sz' Ptrofs.max_unsigned); try congruence.
   intro TRBODY.
   generalize TRBODY; intro TMP. monadInv TMP.
   set (tf := mkfunction (Csharpminor.fn_sig f)
                         (Csharpminor.fn_params f)
                         (Csharpminor.fn_temps f)
-                        sz
+                        sz'
                         x0) in *.
   caseEq (Mem.alloc tm 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
@@ -2310,10 +2313,10 @@ Opaque PTree.set.
     split; intros IN.
     rewrite map_map, in_map_iff in IN. destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
     inv MCS2.
-    apply in_blocks_of_env_inv in IN. destruct IN as [id [EID LO0]].
+    apply in_blocks_of_env_inv in IN. destruct IN as [id0 [EID LO0]].
     exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H6. rewrite FB in H10. inv H10. eauto.
     subst.
-    inv MCS2. inv MENV. eapply me_inv0 in FB. destruct FB as (id & szz & EID).
+    inv MCS2. inv MENV. eapply me_inv0 in FB. destruct FB as (id0 & szz & EID).
     rewrite map_map, in_map_iff. eexists; split. 2: eapply in_blocks_of_env. reflexivity. eauto.
   }
   {
@@ -2324,7 +2327,7 @@ Opaque PTree.set.
   apply plus_one. econstructor; simpl; eauto.
   econstructor. eexact TRBODY. eauto. eexact INJ3.
   rewrite (Mem.record_stack_block_nextblock _ _ _ _ RSB).
-  rewrite (Mem.record_stack_blocks_nextblock _ _ _ H3).
+  rewrite (Mem.record_stack_block_nextblock _ _ _ _ H3).
   eapply match_callstack_record; eauto.
   inv MK; simpl in ISCC; contradiction || econstructor; eauto.
   
@@ -2385,8 +2388,8 @@ Proof.
 Qed.
 
 Lemma transl_initial_states:
-  forall S, Csharpminor.initial_state prog S ->
-  exists R, Cminor.initial_state tprog R /\ match_states' S R.
+  forall S, Csharpminor.initial_state fn_stack_requirements prog S ->
+  exists R, Cminor.initial_state fn_stack_requirements tprog R /\ match_states' S R.
 Proof.
   induction 1.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
@@ -2401,6 +2404,7 @@ Proof.
   rewrite <- H2. apply sig_preserved; auto.
   econstructor; eauto.
   unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
+  inv TRANSL. inv H4. rewrite H5;
   eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m0)) (cs := @nil frame) (cenv := PTree.empty Z).
   auto.
   eapply Genv.initmem_inject; eauto.
@@ -2417,7 +2421,7 @@ Proof.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation (Csharpminor.semantics prog) (Cminor.semantics tprog).
+  forward_simulation (Csharpminor.semantics fn_stack_requirements prog) (Cminor.semantics fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_star; eauto.
   apply senv_preserved.

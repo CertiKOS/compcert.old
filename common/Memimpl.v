@@ -74,9 +74,9 @@ Record mem' : Type := mkmem {
   contents_default:
     forall b, fst mem_contents#b = Undef;
   stack_adt:
-    list frame_adt;
+    list (frame_adt * Z);
   stack_valid:
-    forall b, in_frames stack_adt b -> Plt b nextblock;
+    forall b, in_frames (map fst stack_adt) b -> Plt b nextblock;
 }.
 
 Definition mem := mem'.
@@ -232,8 +232,8 @@ Defined.
 Definition get_stack_top_blocks (m: mem) : list block :=
   match stack_adt m with
     nil => nil
-  | (frame_with_info b fi)::r => b :: nil
-  | (frame_without_info bl)::r => bl
+  | (frame_with_info b fi,_n)::r => b :: nil
+  | (frame_without_info bl, n)::r => bl
   end.
 
 Definition is_stack_top (m: mem) (b: block) :=
@@ -247,7 +247,7 @@ Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
 
 
 Definition get_frame_info (m: mem) : block -> option frame_info :=
-  get_assoc (stack_adt m). 
+  get_assoc (map fst (stack_adt m)). 
 
 Definition strong_non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
   match get_frame_info m b with
@@ -753,7 +753,8 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       perm m1 b1 ofs Cur Readable ->
       memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2);
     mi_stack_blocks:
-      list_forall2 (frame_inject' f (perm m1)) (stack_adt m1) (stack_adt m2);
+      list_forall2 (fun x y => frame_inject' f (perm m1) (fst x) (fst y)
+                   /\ snd x = snd y) (stack_adt m1) (stack_adt m2);
   }.
 
 (** * Memory extensions *)
@@ -853,7 +854,8 @@ Record magree' (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_nextblock:
     nextblock m2 = nextblock m1;
   ma_stack_adt:
-    list_forall2 (frame_inject' inject_id (perm m1)) (stack_adt m1) (stack_adt m2);
+    list_forall2 (fun x y => frame_inject' inject_id (perm m1) (fst x) (fst y)
+                 /\ snd x = snd y) (stack_adt m1) (stack_adt m2);
 }.
 
 Definition magree := magree'.
@@ -918,7 +920,7 @@ Proof.
   apply valid_block_list_dec.
 Qed.
 
-Program Definition add_adt (m: mem) (f: frame_adt): option mem :=
+Program Definition add_adt (m: mem) (f: frame_adt) (n: Z): option mem :=
   if valid_frame_dec f m
   then Some (mkmem (mem_contents m)
                    (mem_access m)
@@ -926,7 +928,7 @@ Program Definition add_adt (m: mem) (f: frame_adt): option mem :=
                    (access_max m)
                    (nextblock_noaccess m)
                    (contents_default m)
-                   (f :: stack_adt m)
+                   ((f,n) :: stack_adt m)
                    _)
   else None.
 Next Obligation.
@@ -934,16 +936,16 @@ Next Obligation.
   apply stack_valid. auto.
 Qed.
 
-Definition record_stack_blocks (m : mem) (b: list block) : option mem :=
-  add_adt m (frame_without_info b).
-
-Program Definition record_stack_block (m : mem) (b: block) (ofi: option frame_info) : option mem :=
-  add_adt m (frame_with_info b ofi).
+Definition record_stack_blocks (m : mem) (b: block * option frame_info + list block) (n: Z) : option mem :=
+  add_adt m (match b with
+               inl (b, ofi) => frame_with_info b ofi
+             | inr b => frame_without_info b
+             end) n.
 
 Lemma in_frames_tl:
-  forall l b,
-    in_frames (tl l) b ->
-    in_frames l b.
+  forall {B} (l: list (frame_adt * B))  b,
+    in_frames (map fst (tl l)) b ->
+    in_frames (map fst l) b.
 Proof.
   destruct l; simpl; auto.
 Qed.
@@ -996,7 +998,6 @@ Proof.
   exact unchanged_on.
   exact unchanged_on.
   exact stack_adt.
-  exact record_stack_block.
   exact record_stack_blocks.
   exact unrecord_stack_block.
   Unshelve.
@@ -2368,7 +2369,7 @@ Lemma alloc_get_frame_info_new:
 Proof.
   unfold get_frame_info.
   rewrite alloc_stack_adt.
-  destruct (in_frames_dec (stack_adt m1) b).
+  destruct (in_frames_dec (map fst (stack_adt m1)) b).
   apply stack_valid in i.
   apply fresh_block_alloc in i. easy.
   apply not_in_frames_get_assoc; auto.
@@ -3087,8 +3088,8 @@ Proof.
   unfold is_stack_top, get_stack_top_blocks in *.
   inv MINJ.
   rewrite <- H0 in IST. simpl in *; easy.
-  rewrite <- H in IST. simpl in *.
-  inv H1; simpl in *.
+  destruct b0. simpl in *. destruct H1. rewrite <- H in IST. simpl in *.
+  destruct a1. simpl in *. inv H1; simpl in *.
   - destruct IST; try easy. subst. left. autospe. congruence.
   - rewrite <- INJlist; eauto.
   - left; symmetry. rewrite <- INJlist; eauto.
@@ -3117,8 +3118,6 @@ Proof.
   eapply is_stack_top_inj; eauto. inv MINJ; eauto.
 Qed.
 
-
-
 Lemma get_frame_info_inj:
   forall f m1 m2 b1 b2 delta
     (MINJ: mem_inj f m1 m2)
@@ -3137,13 +3136,13 @@ Proof.
   generalize (stack_adt m1), (stack_adt m2).
   induction 1; simpl; intros; eauto.
   - constructor.
-  - inv H.
-    + destruct (eq_block b1 b3).
-      * subst. assert (b2 = b4). autospe; congruence. subst.
-        destruct (eq_block b4 b4); try congruence.
+  - destruct H. destruct a1, b0. simpl in *. inv H.
+    + destruct (eq_block b1 b0).
+      * subst. assert (b2 = b3). autospe; congruence. subst.
+        destruct (eq_block b3 b3); try congruence.
         assert (delta = 0) by (autospe; congruence). subst.
         destruct fi; econstructor.
-      * destruct (eq_block b2 b4); auto.
+      * destruct (eq_block b2 b3); auto.
         subst. exfalso; apply n. eapply INJ; eauto.
     + destruct (in_dec eq_block b1 bl1).
       specialize (INJlist _ _ _ FB).
@@ -3153,16 +3152,16 @@ Proof.
       rewrite <- INJlist in i; eauto. intuition congruence.
     + destruct (in_dec eq_block b1 bl0).
       * specialize (INJlist _ _ _ FB).
-        destruct (eq_block b2 b3); try intuition congruence.
+        destruct (eq_block b2 b0); try intuition congruence.
         destruct ofi; constructor. subst.
         intros; eapply INDATA; eauto.
-      * destruct (eq_block b2 b3); try intuition congruence.
+      * destruct (eq_block b2 b0); try intuition congruence.
         rewrite <- INJlist in e; eauto. intuition congruence.
-    + destruct (eq_block b1 b3).
-      * assert (b2 = b4). subst. eapply INJ. eauto. auto. subst.
-        destruct (eq_block b4 b4); try congruence.
+    + destruct (eq_block b1 b0).
+      * assert (b2 = b3). subst. eapply INJ. eauto. auto. subst.
+        destruct (eq_block b3 b3); try congruence.
         econstructor. intros; eapply INDATA; eauto.
-      * destruct (eq_block b2 b4); auto.
+      * destruct (eq_block b2 b3); auto.
         subst. exfalso; apply n. eapply INJ; eauto.
 Qed.
     
@@ -3299,6 +3298,19 @@ Proof.
   inv H; auto.
 Qed.
 
+Lemma list_forall2_frame_inject_invariant:
+  forall m m' f f1 f2,
+    (forall b ofs k p b' delta, f b = Some (b', delta) -> perm m' b ofs k p -> perm m b ofs k p) ->
+    list_forall2 (fun (x y: frame_adt * Z) => frame_inject f m (fst x) (fst y) /\ snd x = snd y) f1 f2 ->
+    list_forall2 (fun x y => frame_inject f m' (fst x) (fst y) /\ snd x = snd y) f1 f2.
+Proof.
+  intros m m' f f1 f2 PERM FI.
+  eapply list_forall2_imply. eauto.
+  intros.
+  destruct H1. split. eapply frame_inject_invariant; eauto.
+  auto.
+Qed.
+
 Lemma store_mapped_inj:
   forall f chunk m1 b1 ofs v1 n1 m2 b2 delta v2,
     mem_inj f m1 m2 ->
@@ -3352,8 +3364,9 @@ Proof.
     rewrite (store_stack_adt _ _ _ _ _ _ H0).
     Ltac changefi :=
       match goal with
-        |- list_forall2 (frame_inject' ?f (perm ?m)) _ _ =>
-        change (frame_inject' f (perm m)) with (frame_inject f m)
+        |- list_forall2 (fun x y => frame_inject' ?f (perm ?m) (fst x) (fst y) /\ snd x = snd y) _ _ =>
+        change (fun (x y: frame_adt * Z) => frame_inject' f (perm m) (fst x) (fst y) /\ snd x = snd y)
+      with (fun (x y: frame_adt * Z) => frame_inject f m (fst x) (fst y) /\ snd x = snd y)
       end.
     changefi.
     eapply list_forall2_frame_inject_invariant.
@@ -3699,17 +3712,20 @@ Proof.
   - rewrite (alloc_stack_adt _ _ _ _ _ H0).
     eapply list_forall2_imply. eauto.
     intros v1 v2 IN1 IN2 FI.
-    inversion FI; try now (econstructor; eauto).
+    destruct v1, v2; simpl in *. subst. destruct FI.  split; auto.
+    inversion H5; try now (econstructor; eauto).
     + econstructor; eauto. intros; eapply INDATA; eauto.
       eapply perm_alloc_4; eauto.
       intro; subst.
       eapply fresh_block_alloc. eauto. apply stack_valid.
       eapply in_frame_without_info_in_frames; eauto.
+      rewrite in_map_iff. eexists; split; eauto. simpl; auto.
     + econstructor; eauto. intros. eapply INDATA; eauto.
       eapply perm_alloc_4; eauto.
       intro; subst.
       eapply fresh_block_alloc. eauto. apply stack_valid.
       eapply in_frame_with_info_in_frames; eauto.
+      rewrite in_map_iff. eexists; split; eauto. simpl; auto.      
 Qed.
 
 (* Lemma free_stack_adt: *)
@@ -3895,6 +3911,14 @@ Proof.
 Qed.
 
 
+Lemma list_forall2_prod:
+  forall {A B} P Q (l1 l2: list (A*B)),
+  list_forall2 P (map fst l1) (map fst l2) ->
+  list_forall2 Q (map snd l1) (map snd l2) ->
+  list_forall2 (fun x y => P (fst x) (fst y) /\ Q (snd x) (snd y)) l1 l2.
+Proof.
+  induction l1; destruct l2; simpl; inversion 1; inversion 1; constructor; auto. 
+Qed.
 
 Theorem extends_refl:
   forall m, extends m m.
@@ -3904,7 +3928,8 @@ Proof.
   intros. unfold inject_id in H; inv H. apply Z.divide_0_r.
   intros. unfold inject_id in H; inv H. replace (ofs + 0) with ofs by omega.
   apply memval_lessdef_refl.
-  changefi. exploit  list_inject_frame_id. simpl. eauto.
+  changefi.  apply list_forall2_prod. exploit  list_inject_frame_id. simpl. eauto.
+  generalize (map snd (stack_adt m)). induction l; constructor; auto.
   tauto.
 Qed.
 
@@ -4266,8 +4291,9 @@ Proof.
   unfold is_stack_top, get_stack_top_blocks in *.
   inv MINJ.
   rewrite <- H0 in IST. simpl in *; easy.
-  rewrite <- H in IST. unfold inject_id in *; simpl in *.
-  inv H1; simpl in *; autospe; intuition subst.
+  rewrite <- H in IST. destruct a1. destruct b1.
+  unfold inject_id in *; simpl in *.
+  destruct H1. subst. inv H1; simpl in *; autospe; intuition subst.
   - rewrite <- INJlist; eauto.
   - left; symmetry. rewrite <- INJlist; eauto.
   - left. 
@@ -4292,7 +4318,9 @@ Proof.
   unfold inject_id in *. 
   induction 1; simpl; intros; eauto.
   - constructor.
-  - inv H; autospe; intuition subst.
+  - destruct a1, b1. simpl in *.
+    destruct H.
+    subst. inv H; autospe; intuition subst.
     + destruct (eq_block b b2); try congruence.
       subst.
       destruct fi; econstructor.
@@ -4312,9 +4340,9 @@ Proof.
       * destruct (eq_block b b2); try intuition congruence.
         rewrite <- INJlist in e; eauto. intuition congruence.
     +
-      specialize (INJ b0 _ _ eq_refl). 
-      destruct (eq_block b b0). subst.
-      destruct (eq_block b0 b2); try intuition congruence. subst.
+      specialize (INJ b1 _ _ eq_refl). 
+      destruct (eq_block b b1). subst.
+      destruct (eq_block b1 b2); try intuition congruence. subst.
       econstructor. intros. eapply INDATA in H. rewrite Z.add_0_r in H. auto.
       auto.
       destruct (eq_block b b2); try intuition congruence.
@@ -5084,10 +5112,11 @@ Proof.
     eapply list_forall2_imply. eauto.
     change (frame_inject' f (perm m1)) with (frame_inject f m1).
     intros.
-    eapply frame_inject_incr. eauto.
+    split. eapply frame_inject_incr. eauto.
     unfold f'. intros. destruct (eq_block b b1); try congruence.
-    auto.
-  exists f'; split. constructor.
+    simpl in H4; destruct H4; auto.
+    simpl in H4; destruct H4; auto.
+    exists f'; split. constructor.
 (* inj *)
   eapply alloc_left_unmapped_inj; eauto. unfold f'; apply dec_eq_true.
 (* freeblocks *)
@@ -5134,7 +5163,7 @@ Theorem alloc_left_mapped_inject:
    f b = Some (b2, delta') ->
    perm m1 b ofs k p ->
    lo + delta <= ofs + delta' < hi + delta -> False) ->
-  ~ in_frames (stack_adt m2) b2 ->
+  ~ in_frames (map fst (stack_adt m2)) b2 ->
   exists f',
      inject f' m1' m2
   /\ inject_incr f f'
@@ -5167,11 +5196,14 @@ Proof.
     intros.
     change (frame_inject' f (perm m1)) with (frame_inject f m1) in H10.
     change (frame_inject' f' (perm m1)) with (frame_inject f' m1).
-      eapply frame_inject_incr; eauto.
-      unfold f'. intros. destruct (eq_block b b1); try congruence. inv H12.
+    simpl in H10. destruct H10.
+    split; auto. eapply frame_inject_incr; eauto.
+    unfold f'. intros. destruct (eq_block b b1); try congruence. inv H13.
       split. intro IFF. eapply fresh_block_alloc; eauto. apply stack_valid. eapply in_frame_is_in_frames; eauto.
+      rewrite in_map_iff. eauto.
       split. intro IFF. eapply NIF. eapply in_frame_is_in_frames; eauto.
-      intros. apply NIF. eapply in_frame_is_in_frames. eauto. eapply frame_inject_in_frame; eauto.
+      rewrite in_map_iff; eauto.
+      intros. apply NIF. eapply in_frame_is_in_frames. rewrite in_map_iff; eauto. eapply frame_inject_in_frame; eauto.
     exists f'. split. constructor.
 (* inj *)
   eapply alloc_left_mapped_inj; eauto. unfold f'; apply dec_eq_true.
@@ -5425,7 +5457,7 @@ Lemma zero_delta_inject f m1 m2:
        exists v2,
          loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
          memval_inject f v1 v2) ->
-  list_forall2 (frame_inject f m1) (stack_adt m1) (stack_adt m2) ->
+  list_forall2 (fun x y => frame_inject f m1 (fst x) (fst y) /\ snd x = snd y) (stack_adt m1) (stack_adt m2) ->
   Mem.inject f m1 m2.
 Proof.
   intros H H0 NODUP H1 H1INV H2 STACK.
@@ -5536,10 +5568,20 @@ Proof.
     econstructor; eauto.
     rewrite Ptrofs.add_zero.
     reflexivity.
-  + apply self_inject_list_frames; auto.
+  + apply list_forall2_prod. apply self_inject_list_frames; auto.
+    generalize (map snd (stack_adt m)); induction l; constructor; auto. 
 Qed.
 
 (** Composing two memory injections. *)
+
+Lemma list_forall2_and:
+  forall {A B} P Q (l1 l2: list (A*B)),
+    list_forall2 (fun x y => P (fst x) (fst y) /\ Q (snd x) (snd y)) l1 l2 ->
+    list_forall2 P (map fst l1) (map fst l2) /\
+    list_forall2 Q (map snd l1) (map snd l2).
+Proof.
+  induction 1; split; constructor; intuition auto. 
+Qed.
 
 Lemma mem_inj_compose:
   forall f f' m1 m2 m3,
@@ -5565,7 +5607,16 @@ Proof.
   replace (ofs + (delta' + delta'')) with ((ofs + delta') + delta'') by omega.
   eapply memval_inject_compose; eauto.
   (* stack adt *)
-  changefi. eapply list_frame_inject_compose; eauto.
+  changefi.
+  apply list_forall2_and in mi_stack_blocks0.
+  apply list_forall2_and in mi_stack_blocks1.
+  destruct mi_stack_blocks1, mi_stack_blocks0.
+  apply list_forall2_prod.
+  eapply list_frame_inject_compose; eauto.
+  revert H0.
+  generalize  (map snd (stack_adt m3)).
+  revert H2. generalize (map snd (stack_adt m1)) (map snd (stack_adt m2)).
+  induction 1; inversion 1; subst; constructor; auto.
 Qed.
 
 Theorem inject_compose:
@@ -6085,7 +6136,7 @@ Proof.
 Qed.
 
 Lemma add_adt_mem_unchanged:
-  forall f, mem_unchanged (fun m1 m2 => add_adt m1 f = Some m2).
+  forall f n, mem_unchanged (fun m1 m2 => add_adt m1 f n = Some m2).
 Proof.
   red; intros. unfold add_adt in H. autospe.
   simpl; repeat split; eauto.
@@ -6095,9 +6146,9 @@ Proof.
   repeat match goal with
            |- context [match ?a with _ => _ end] => destruct a eqn:?; simpl; intros; try intuition congruence
          end.
-  exfalso. apply n.
+  exfalso. apply n0.
   destruct v0 as (v1 & v2 & v3) ; simpl in *; repeat split; eauto. inversion 1.
-  exfalso. apply n.
+  exfalso. apply n0.
   destruct v0 as (v1 & v2 & v3) ; simpl in *; repeat split; eauto. inversion 1.
 Qed.
 
@@ -6116,19 +6167,19 @@ Qed.
 Lemma inject_stack_adt:
    forall f m1 m2,
      inject f m1 m2 ->
-     list_forall2 (frame_inject f m1) (stack_adt m1) (stack_adt m2).
+     list_forall2 (frame_inject f m1) (map fst (stack_adt m1)) (map fst (stack_adt m2)).
 Proof.
   intros f m1 m2 INJ.
-  inv INJ. inv mi_inj0. auto.
+  inv INJ. inv mi_inj0. eapply list_forall2_and; eauto.
 Qed.
 
 Lemma extends_stack_adt:
    forall m1 m2,
      extends m1 m2 ->
-     list_forall2 (frame_inject inject_id m1) (stack_adt m1) (stack_adt m2).
+     list_forall2 (frame_inject inject_id m1) (map fst (stack_adt m1)) (map fst (stack_adt m2)).
 Proof.
   intros m1 m2 INJ.
-  inv INJ. inv mext_inj0. auto.
+  inv INJ. inv mext_inj0. eapply list_forall2_and; eauto.
 Qed.
 
 
@@ -6195,10 +6246,11 @@ Qed.
 Lemma not_in_frames_extends:
    forall m1 m2 b,
      extends m1 m2 ->
-     ~ in_frames (stack_adt m1) b ->
-     ~ in_frames (stack_adt m2) b.
+     ~ in_frames (map fst (stack_adt m1)) b ->
+     ~ in_frames (map fst (stack_adt m2)) b.
 Proof.
   destruct 1. destruct mext_inj0.
+  apply list_forall2_and in mi_stack_blocks0. destruct mi_stack_blocks0.
   eapply not_in_frames_frame_inject; eauto.
   reflexivity.
 Qed.
@@ -6207,23 +6259,16 @@ Lemma not_in_frames_inject:
    forall f m1 m2 b b' delta,
      f b = Some (b', delta) ->
      inject f m1 m2 ->
-     ~ in_frames (stack_adt m1) b ->
-     ~ in_frames (stack_adt m2) b'.
+     ~ in_frames (map fst (stack_adt m1)) b ->
+     ~ in_frames (map fst (stack_adt m2)) b'.
 Proof.
   destruct 2. destruct mi_inj0.
   eapply not_in_frames_frame_inject; eauto.  
+  eapply list_forall2_and; eauto.
 Qed.
 
 Lemma record_stack_block_mem_unchanged:
-  forall b fi, mem_unchanged (fun m1 m2 => record_stack_block m1 b fi = Some m2).
-Proof.
-  red; intros.
-  unfold record_stack_block in H.
-  eapply add_adt_mem_unchanged; eauto.
-Qed.
-
-Lemma record_stack_blocks_mem_unchanged:
-  forall bl, mem_unchanged (fun m1 m2 => record_stack_blocks m1 bl = Some m2).
+  forall b fi, mem_unchanged (fun m1 m2 => record_stack_blocks m1 b fi = Some m2).
 Proof.
   red; intros.
   unfold record_stack_blocks in H.
@@ -6245,8 +6290,8 @@ Proof.
   eexists; split; eauto.
   inv H.
   constructor; simpl; intros; eauto.
-  - change (perm m1 b0 ofs k p) in H0.
-    change (perm m2 b2 (ofs + delta) k p). eauto.
+  - change (perm m1 b0 ofs k p0) in H0.
+    change (perm m2 b2 (ofs + delta) k p0). eauto.
   - changefi. eapply list_forall2_frame_inject_invariant.
     2: rewrite H1, <- H3; simpl; eauto.
     intros.
@@ -6322,27 +6367,40 @@ Proof.
 Qed.
 
 
-Lemma record_stack_block_extends:
+Lemma record_stack_blocks_extends:
   forall m1 m2 m1' b fi,
     extends m1 m2 ->
-    record_stack_block m1 b fi = Some m1' ->
+    record_stack_blocks m1 b fi = Some m1' ->
     exists m2',
-      record_stack_block m2 b fi = Some m2' /\
+      record_stack_blocks m2 b fi = Some m2' /\
       extends m1' m2'.
 Proof.
-  unfold record_stack_block, add_adt.
+  unfold record_stack_blocks, add_adt.
   intros; autospe. simpl in *.
-  destruct (valid_frame_dec (frame_with_info b fi) m2).
+  destruct (valid_frame_dec (frame_with_info b0 o) m2).
   - eexists; split; eauto.
     inv H.
     constructor; simpl; intros; eauto.
     inv mext_inj0; constructor; simpl; intros; eauto.
     + eapply mi_perm0; eauto.
     + constructor; auto.
-      * exploit self_inject_frame. right; reflexivity. unfold frame_inject; apply id.
+      * exploit self_inject_frame. right; reflexivity. simpl. unfold frame_inject; split.
+        revert H; apply id. auto.        
   - exfalso.
     apply n.
     eapply valid_frame_extends; eauto.
+  - destruct (valid_frame_dec (frame_without_info l) m2).
+    + eexists; split; eauto.
+      inv H.
+      constructor; simpl; intros; eauto.
+      inv mext_inj0; constructor; simpl; intros; eauto.
+      * eapply mi_perm0; eauto.
+      * constructor; auto.
+        exploit self_inject_frame. right; reflexivity. simpl. unfold frame_inject; split.
+        revert H; apply id. auto.        
+    + exfalso.
+      apply n.
+      eapply valid_frame_extends; eauto.
 Qed.
 
 Lemma free_list_stack_blocks:
@@ -6355,20 +6413,20 @@ Proof.
 Qed.
 
 Lemma record_stack_blocks_stack_adt:
-    forall m bl m',
-      record_stack_blocks m bl = Some m' ->
-      stack_adt m' = frame_without_info bl :: stack_adt m.
+    forall m bl n m',
+      record_stack_blocks m (inr bl) n = Some m' ->
+      stack_adt m' = (frame_without_info bl, n) :: stack_adt m.
 Proof.
   unfold record_stack_blocks, add_adt; intros; autospe.
   simpl. reflexivity.
 Qed.
  
 Lemma add_adt_extends:
-    forall m1 m2 fi m1',
+    forall m1 m2 fi n m1',
       extends m1 m2 ->
-      add_adt m1 fi = Some m1' ->
+      add_adt m1 fi n = Some m1' ->
       exists m2',
-        add_adt m2 fi = Some m2'
+        add_adt m2 fi n = Some m2'
         /\ extends m1' m2'.
 Proof.
   unfold add_adt; intros; autospe.
@@ -6379,30 +6437,30 @@ Proof.
   inv mext_inj0; constructor; simpl; intros; eauto.
   - eapply mi_perm0; eauto.
   - constructor.
-    + exploit self_inject_frame. right; reflexivity. apply id. 
+    + exploit self_inject_frame. right; reflexivity. simpl; split. revert H; apply id. auto.
     + changefi. eapply list_forall2_frame_inject_invariant. 2: eauto.
       unfold inject_id; inversion 1; subst. tauto.
 Qed.
 
 Lemma in_frames_valid:
   forall m b,
-    in_frames (stack_adt m) b -> valid_block m b.
+    in_frames (map fst (stack_adt m)) b -> valid_block m b.
 Proof.
   apply stack_valid.
 Qed.
 
 Lemma record_stack_block_inject:
-   forall m1 m1' m2 j fi1 fi2 b b' delta,
+   forall m1 m1' m2 j fi1 fi2 b b' delta n,
      j b = Some (b', delta) ->
      inject j m1 m2 ->
      frame_inject j m1 (frame_with_info b fi1) (frame_with_info b' fi2) ->
-     record_stack_block m1 b fi1 = Some m1' ->
+     record_stack_blocks m1 (inl (b, fi1)) n = Some m1' ->
      exists m2',
-       record_stack_block m2 b' fi2 = Some m2' /\
+       record_stack_blocks m2 (inl (b', fi2)) n = Some m2' /\
        inject j m1' m2'.
 Proof.
-  unfold record_stack_block, add_adt.
-  intros m1 m1' m2 j fi1 fi2 b b' delta JB INJ FI RSB.
+  unfold record_stack_blocks, add_adt.
+  intros m1 m1' m2 j fi1 fi2 b b' delta n JB INJ FI RSB.
   autospe.
   destruct (valid_frame_dec (frame_with_info b' fi2)); auto.
   - eexists; split; eauto.
@@ -6415,22 +6473,22 @@ Proof.
     + eapply mi_mappedblocks0; eauto.
     + exploit mi_representable0; eauto.
     + eapply mi_perm_inv0 in H0; eauto.
-  - exfalso; apply n; clear n. clear Heqs.
+  - exfalso; apply n0; clear n0. clear Heqs.
     red; simpl; intros. subst.
     eapply valid_block_inject_2; eauto.
 Qed.
 
 Lemma record_stack_blocks_inject_into_one:
-  forall j m1 m2 bl b m1'
+  forall j m1 m2 bl b m1' n
     (INJ: inject j m1 m2)
     (FOR: forall (b0 b' : block) (delta : Z), j b0 = Some (b', delta) -> In b0 bl <-> b' = b)
-    (RSB:  record_stack_blocks m1 bl = Some m1')
+    (RSB:  record_stack_blocks m1 (inr bl) n = Some m1')
     (VALID: valid_block m2 b),
     exists m2',
-      record_stack_block m2 b None = Some m2' /\
+      record_stack_blocks m2 (inl (b, None)) n = Some m2' /\
       inject j m1' m2'.
 Proof.
-  unfold record_stack_blocks, record_stack_block, add_adt.
+  unfold record_stack_blocks, add_adt.
   intros; autospe.
   clear Heqs.
   destruct (valid_frame_dec (frame_with_info b None) m2).
@@ -6438,28 +6496,28 @@ Proof.
     inv INJ; econstructor; simpl; intros; eauto.
     + inv mi_inj0; constructor; simpl; intros; eauto.
       * eapply mi_perm0; eauto.
-      * constructor.
-        constructor. congruence. auto.
+      * constructor. simpl.
+        constructor. constructor. congruence. auto. auto.
         changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
     + eapply mi_mappedblocks0; eauto.
     + eapply mi_representable0; eauto.
     + eapply mi_perm_inv0 in H0; eauto.
-  - exfalso; apply n; clear n. 
+  - exfalso; apply n0; clear n0. 
     red; simpl; intros. subst. auto.
 Qed.
 
 Lemma record_stack_blocks_inject:
-    forall j m1 m2 bl bl' m1',
+    forall j m1 m2 bl bl' m1' z,
       Mem.inject j m1 m2 ->
       (forall b b' delta, j b = Some (b', delta) -> (In b bl <-> In b' bl')) ->
       (forall b', In b' bl' -> valid_block m2 b') ->
-      Mem.record_stack_blocks m1 bl = Some m1' ->
+      Mem.record_stack_blocks m1 (inr bl) z = Some m1' ->
       exists m2',
-        Mem.record_stack_blocks m2 bl' = Some m2'
+        Mem.record_stack_blocks m2 (inr bl') z = Some m2'
         /\ Mem.inject j m1' m2'.
 Proof.
-  unfold record_stack_blocks, record_stack_block, add_adt.
-  intros j m1 m2 bl bl' m1' INJ FOR RSB VALID; autospe.
+  unfold record_stack_blocks, add_adt.
+  intros j m1 m2 bl bl' m1' z INJ FOR RSB VALID; autospe.
   clear Heqs.
   destruct (valid_frame_dec (frame_without_info bl') m2).
   - eexists; split; eauto.
@@ -6467,7 +6525,7 @@ Proof.
     + inv mi_inj0; constructor; simpl; intros; eauto.
       * eapply mi_perm0; eauto.
       * constructor.
-        constructor. auto. 
+        simpl. split; constructor; auto. 
         changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
     + eapply mi_mappedblocks0; eauto.
     + eapply mi_representable0; eauto.
@@ -6476,28 +6534,44 @@ Proof.
     red; simpl; intros. subst. auto.
 Qed.
 
-Lemma record_stack_blocks_extends:
-    forall m1 m2 bl m1',
+Lemma record_stack_blocks_extends':
+    forall m1 m2 bl z m1',
       Mem.extends m1 m2 ->
-      Mem.record_stack_blocks m1 bl = Some m1' ->
+      Mem.record_stack_blocks m1 bl z = Some m1' ->
       exists m2',
-        Mem.record_stack_blocks m2 bl = Some m2'
+        Mem.record_stack_blocks m2 bl z = Some m2'
         /\ Mem.extends m1' m2'.
 Proof.
-  unfold record_stack_blocks, record_stack_block, add_adt.
-  intros m1 m2 bl m1' INJ RSB; autospe.
+  unfold record_stack_blocks, add_adt.
+  intros m1 m2 bl z m1' INJ RSB; autospe.
   clear Heqs.
-  destruct (valid_frame_dec (frame_without_info bl) m2).
-  - eexists; split; eauto.
-    inv INJ; econstructor; simpl; intros; eauto.
-    inv mext_inj0; constructor; simpl; intros; eauto.
-    * eapply mi_perm0; eauto.
-    * constructor.
-      constructor. inversion 1. subst. tauto. 
-      changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
-  - exfalso; apply n; clear n. 
-    red; simpl; intros. eapply v in H.
-    erewrite <- valid_block_extends; eauto.
+  {
+    destruct (valid_frame_dec (frame_with_info b o) m2).
+    - eexists; split; eauto.
+      inv INJ; econstructor; simpl; intros; eauto.
+      inv mext_inj0; constructor; simpl; intros; eauto.
+      * eapply mi_perm0; eauto.
+      * constructor. split; simpl;
+        constructor; auto. inversion 1. subst. tauto. 
+        inversion 1. auto.
+        changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
+    - exfalso; apply n; clear n. 
+      red; simpl; intros. eapply v in H.
+      erewrite <- valid_block_extends; eauto.
+  }
+  {
+    destruct (valid_frame_dec (frame_without_info l) m2).
+    - eexists; split; eauto.
+      inv INJ; econstructor; simpl; intros; eauto.
+      inv mext_inj0; constructor; simpl; intros; eauto.
+      * eapply mi_perm0; eauto.
+      * constructor.
+        split; simpl; constructor. inversion 1.  tauto. 
+        changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
+    - exfalso; apply n; clear n. 
+      red; simpl; intros. eapply v in H.
+      erewrite <- valid_block_extends; eauto.
+  }
 Qed.
 
 
@@ -6519,33 +6593,33 @@ Proof.
 Qed.
 
 Lemma record_stack_block_inject_neutral:
-  forall thr m b f m',
+  forall thr m b f m' z,
     inject_neutral thr m ->
-    record_stack_block m b f = Some m' ->
+    record_stack_blocks m (inl (b, f)) z = Some m' ->
     Plt b thr ->
     inject_neutral thr m'.
 Proof.
-  unfold inject_neutral, record_stack_block, add_adt; intros; autospe.
+  unfold inject_neutral, record_stack_blocks, add_adt; intros; autospe.
   inv H; constructor; simpl; intros; eauto.
   * eapply mi_perm0; eauto.
   * constructor. 
-    constructor.
+    split; simpl; constructor.
     unfold flat_inj; intros b' delta; destruct plt; inversion 1; subst. auto.
     unfold flat_inj; intros b' delta; destruct plt; inversion 1; subst. auto.
     changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
 Qed.
 
 Lemma record_stack_blocks_inject_neutral:
-  forall thr m b m',
+  forall thr m b m' z,
     inject_neutral thr m ->
-    record_stack_blocks m b = Some m' ->
+    record_stack_blocks m (inr b) z = Some m' ->
     inject_neutral thr m'.
 Proof.
   unfold inject_neutral, record_stack_blocks, add_adt; intros; autospe.
   inv H; constructor; simpl; intros; eauto.
   * eapply mi_perm0; eauto.
   * constructor.
-    constructor.
+    split; simpl; constructor.
     unfold flat_inj; intros b0 b' delta; destruct plt; inversion 1; subst; tauto.
     changefi. eapply list_forall2_frame_inject_invariant. 2: eauto. tauto.
 Qed.
@@ -6801,8 +6875,12 @@ Proof.
   exact free_parallel_inject.
   exact drop_outside_inject.
   exact self_inject.
-  exact inject_stack_adt.
-  exact extends_stack_adt.
+  {
+    intros; eapply mi_stack_blocks. inv H; auto.
+  }
+  {
+    intros; eapply mi_stack_blocks. inv H; auto.
+  }
   exact extends_inject_compose.
   exact extends_extends_compose.
   exact neutral_inject.
@@ -6840,17 +6918,16 @@ Proof.
   exact record_stack_block_inject.
   exact record_stack_blocks_inject.
   exact record_stack_blocks_inject_into_one.
-  exact record_stack_block_extends.
+  { intros; eapply record_stack_blocks_extends; eauto. }
   intros; eapply record_stack_blocks_extends; eauto.
   exact record_stack_block_mem_unchanged.
-  exact record_stack_blocks_mem_unchanged.
   {
     simpl; intros.
     unfold record_stack_blocks, add_adt in H. autospe. reflexivity.
   }
   {
     simpl; intros.
-    unfold record_stack_block, add_adt in H. autospe. reflexivity.
+    unfold record_stack_blocks, add_adt in H. autospe. reflexivity.
   }
   exact record_stack_block_inject_neutral.
   exact record_stack_blocks_inject_neutral.
@@ -6868,6 +6945,7 @@ Proof.
   {
     simpl; intros. inv H. inv mext_inj0.
     rewrite H0 in mi_stack_blocks0. inv mi_stack_blocks0. inv H3.
+    destruct b1. simpl in *. subst. inv H.
     unfold inject_id in INJ. autospe. eauto.
   }
   exact in_frames_valid.

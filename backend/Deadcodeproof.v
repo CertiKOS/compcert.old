@@ -312,14 +312,14 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f (Vptr sp Ptrofs.zero) pc e m)
                    (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
   | match_call_states:
-      forall s f args m ts tf targs tm cu
+      forall s f args m ts tf targs tm cu sz
         (STACKS: list_forall2 match_stackframes s ts)
         (LINK: linkorder cu prog)
         (FUN: transf_fundef (romem_for cu) f = OK tf)
         (ARGS: Val.lessdef_list args targs)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s f args m)
-                   (Callstate ts tf targs tm)
+      match_states (Callstate s f args m sz)
+                   (Callstate ts tf targs tm sz)
   | match_return_states:
       forall s v m ts tv tm
         (STACKS: list_forall2 match_stackframes s ts)
@@ -517,10 +517,12 @@ Qed.
 
 (** * The simulation diagram *)
 
+Variable fn_stack_requirements: ident -> Z.
+
 Theorem step_simulation:
-  forall S1 t S2, step ge S1 t S2 ->
+  forall S1 t S2, step fn_stack_requirements ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step fn_stack_requirements tge S1' t S2' /\ match_states S2 S2'.
 Proof.
 
 Ltac TransfInstr :=
@@ -664,7 +666,18 @@ Ltac UseTransfer :=
   TransfInstr; UseTransfer.
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
   econstructor; split.
-  eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
+  eapply exec_Icall; eauto.
+  {
+    destruct ros; simpl in RIF |- *; auto.
+    destruct RIF as (b & o & EQ & EQ1).      
+    simpl. 
+    apply add_needs_all_eagree in ENV.
+    eapply add_need_all_lessdef in ENV.
+    generalize (ENV). rewrite EQ. inversion 1.
+    rewrite symbols_preserved; eauto.
+    auto.
+  }
+  eapply sig_function_translated; eauto.
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -683,7 +696,18 @@ Ltac UseTransfer :=
   exploit Mem.unrecord_stack_block_extends; eauto. eapply magree_extends; eauto.
   apply nlive_all. intros (m2' & USB & EXT).
   econstructor; split.
-  eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
+  eapply exec_Itailcall; eauto.
+  {
+    destruct ros; simpl in RIF |- *; auto.
+    destruct RIF as (b & o & EQ & EQ1).      
+    simpl. 
+    apply add_needs_all_eagree in ENV.
+    eapply add_need_all_lessdef in ENV.
+    generalize (ENV). rewrite EQ. inversion 1.
+    rewrite symbols_preserved; eauto.
+    auto.
+  }
+  eapply sig_function_translated; eauto.
   erewrite stacksize_translated by eauto. eexact C.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
 
@@ -917,13 +941,15 @@ Local Existing Instance romem_for_wp_instance.
 
 Hypothesis TRANSF: match_prog prog tprog.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 ->
-  exists st2, initial_state tprog st2 /\ match_states st1 st2.
+  forall st1, initial_state fn_stack_requirements prog st1 ->
+  exists st2, initial_state fn_stack_requirements tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil tf nil m0); split.
+  exists (Callstate nil tf nil m0 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog). 
@@ -931,7 +957,7 @@ Proof.
   assumption.
   symmetry; eapply match_program_main; eauto.
   rewrite <- H3. eapply sig_function_translated; eauto.
-  econstructor; eauto. constructor. apply Mem.extends_refl.
+  erewrite <- match_program_main; eauto. econstructor; eauto. constructor. apply Mem.extends_refl.
 Qed.
 
 Lemma transf_final_states:
@@ -944,7 +970,7 @@ Qed.
 (** * Semantic preservation *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation (RTL.semantics fn_stack_requirements prog) (RTL.semantics fn_stack_requirements tprog).
 Proof.
   intros.
   apply forward_simulation_step with

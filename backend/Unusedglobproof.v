@@ -50,7 +50,7 @@ Class MemoryModelX (mem: Type) `{memory_model_prf: MemoryModel mem}: Prop :=
        exists v2,
          loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
          memval_inject f v1 v2) ->
-  list_forall2 (frame_inject f m1) (stack_adt m1) (stack_adt m2) ->
+  list_forall2 (fun x y => frame_inject f m1 (fst x) (fst y) /\ snd x = snd y) (stack_adt m1) (stack_adt m2) ->
   inject f m1 m2
 }.
 
@@ -525,6 +525,8 @@ Local Existing Instance symbols_inject_instance.
 Context `{external_calls_prf: ExternalCalls (symbols_inject_instance := symbols_inject_instance) }.
 Context `{memory_model_x_prf: !Mem.MemoryModelX mem}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Section SOUNDNESS.
 
 Variable p: program.
@@ -844,13 +846,13 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
-  | match_states_call: forall s fd args m ts targs tm j
+  | match_states_call: forall s fd args m ts targs tm j sz
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (KEPT: forall id, ref_fundef fd id -> kept id)
          (ARGINJ: Val.inject_list j args targs)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Callstate s fd args m)
-                   (Callstate ts fd targs tm)
+      match_states (Callstate s fd args m sz)
+                   (Callstate ts fd targs tm sz)
   | match_states_return: forall s res m ts tres tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
@@ -958,10 +960,24 @@ Proof.
   exists (v1' :: vl'); split; constructor; auto.
 Qed.
 
+Lemma ros_is_function_translated:
+  forall j ros rs trs i s cs b1 b2,
+    ros_is_function ge ros rs i ->
+    match_stacks j s cs b1 b2 ->
+    regset_inject j rs trs ->
+    ros_is_function tge ros trs i.
+Proof.
+  destruct ros; simpl; intros; auto.
+  destruct H as (b & o & PTR & FS).
+  exploit H1. rewrite PTR. intro A; inv A. eexists; eexists; split; eauto.
+  exploit symbols_inject_1.
+  eapply match_stacks_preserves_globals; eauto. eauto. eauto. intuition.
+Qed.
+
 Theorem step_simulation:
-  forall S1 t S2, step ge S1 t S2 ->
+  forall S1 t S2, step fn_stack_requirements ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step fn_stack_requirements tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS.
 
@@ -1021,24 +1037,26 @@ Proof.
 - (* call *)
   exploit find_function_inject.
   eapply match_stacks_preserves_globals; eauto. eauto.
-  destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
+  destruct ros as [r|id0]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   econstructor; split. eapply exec_Icall; eauto.
+  eapply ros_is_function_translated; eauto.
   econstructor; eauto.
   econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
   change (Mem.valid_block tm tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
-
+  
 - (* tailcall *)
   exploit find_function_inject.
   eapply match_stacks_preserves_globals; eauto. eauto.
-  destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
+  destruct ros as [r|id0]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
   exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & USB & INJ).
   econstructor; split.
   eapply exec_Itailcall; eauto.
+  eapply ros_is_function_translated; eauto.
   econstructor; eauto.
   apply match_stacks_bound with stk tsp; auto.
   apply Plt_Ple.
@@ -1112,11 +1130,12 @@ Proof.
     rewrite F. inversion 1. eauto.
   }
   {
-    intros b' delta.
-    destruct (eq_block b' stk); auto. rewrite G; inversion 1; auto.
+    intros b'0 delta.
+    destruct (eq_block b'0 stk); auto. rewrite G; inversion 1; auto.
     eapply Mem.valid_block_inject_2 in H1; eauto. eapply Mem.fresh_block_alloc in H1; eauto. easy.
+
   }
-  intros (m2' & RSB & INJ).
+  intros (m2' & RSB & INJ').
   econstructor; split.
   eapply exec_function_internal; eauto.
   eapply match_states_regular with (j := j'); eauto.
@@ -1460,7 +1479,7 @@ Proof.
 Qed.
 
 Lemma transf_initial_states:
-  forall S1, initial_state p S1 -> exists S2, initial_state tp S2 /\ match_states S1 S2.
+  forall S1, initial_state fn_stack_requirements p S1 -> exists S2, initial_state fn_stack_requirements tp S2 /\ match_states S1 S2.
 Proof.
   intros. inv H. exploit init_mem_inject; eauto. intros (j & tm & A & B & C).
   exploit symbols_inject_2. eauto. eapply kept_main. eexact H1. intros (tb & P & Q).
@@ -1468,9 +1487,10 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil f nil tm); split.
+  exists (Callstate nil f nil tm (fn_stack_requirements (prog_main tp))); split.
   econstructor; eauto.
   fold tge. erewrite match_prog_main by eauto. auto.
+  destruct TRANSF. rewrite match_prog_main0.
   econstructor; eauto.
   constructor. auto.
   erewrite <- Genv.init_mem_genv_next by eauto. apply Ple_refl.
@@ -1485,7 +1505,7 @@ Proof.
 Qed.
 
 Lemma transf_program_correct_1:
-  forward_simulation (semantics p) (semantics tp).
+  forward_simulation (semantics fn_stack_requirements p) (semantics fn_stack_requirements tp).
 Proof.
   intros.
   eapply forward_simulation_step.
@@ -1498,7 +1518,7 @@ Qed.
 End SOUNDNESS.
 
 Theorem transf_program_correct:
-  forall p tp, match_prog p tp -> forward_simulation (semantics p) (semantics tp).
+  forall p tp, match_prog p tp -> forward_simulation (semantics fn_stack_requirements p) (semantics fn_stack_requirements  tp).
 Proof.
   intros p tp (used & A & B).  apply transf_program_correct_1 with used; auto.
 Qed.

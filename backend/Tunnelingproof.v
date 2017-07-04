@@ -140,6 +140,8 @@ Qed.
 Section PRESERVATION.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
@@ -242,10 +244,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Block s f sp (Lbranch pc :: bb) ls m)
                    (State ts (tunnel_function f) sp (branch_target f pc) ls m)
   | match_states_call:
-      forall s f ls m ts,
+      forall s f ls m ts sz,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f ls m)
-                   (Callstate ts (tunnel_fundef f) ls m)
+      match_states (Callstate s f ls m sz)
+                   (Callstate ts (tunnel_fundef f) ls m sz)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -262,7 +264,7 @@ Definition measure (st: state) : nat :=
   | State s f sp pc ls m => (count_gotos f pc * 2)%nat
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
-  | Callstate s f ls m => 0%nat
+  | Callstate s f ls m sz => 0%nat
   | Returnstate s ls m => 0%nat
   end.
 
@@ -278,10 +280,20 @@ Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
+Lemma ros_is_function_translated:
+  forall ros rs i,
+    ros_is_function ge ros rs i ->
+    ros_is_function tge ros rs i.
+Proof.
+  destruct ros; simpl; intros.
+  rewrite symbols_preserved; eauto.
+  auto.
+Qed.
+
 Lemma tunnel_step_correct:
-  forall st1 t st2, step init_ls ge st1 t st2 ->
+  forall st1 t st2, (step fn_stack_requirements) init_ls ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  (exists st2', step init_ls tge st1' t st2' /\ match_states st2 st2')
+  (exists st2', (step fn_stack_requirements) init_ls tge st1' t st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
   induction 1; intros; try inv MS.
@@ -289,7 +301,7 @@ Proof.
   (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
     (exists st2' : state,
-     step init_ls tge (State ts (tunnel_function f) sp (branch_target f pc) rs m) E0 st2'
+     (step fn_stack_requirements) init_ls tge (State ts (tunnel_function f) sp (branch_target f pc) rs m) E0 st2'
      /\ match_states (Block s f sp bb rs m) st2')).
   intros. rewrite H0. econstructor; split.
   econstructor. simpl. rewrite PTree.gmap1. rewrite H. simpl. eauto.
@@ -330,6 +342,7 @@ Proof.
   (* Lcall *)
   left; simpl; econstructor; split.
   eapply exec_Lcall with (fd0 := tunnel_fundef fd); eauto.
+  eapply ros_is_function_translated; eauto.
   apply find_function_translated; auto.
   rewrite sig_preserved. auto.
   econstructor; eauto.
@@ -337,10 +350,11 @@ Proof.
   constructor; auto.
   (* Ltailcall *)
   left; simpl; econstructor; split.
-  eapply exec_Ltailcall with (fd0 := tunnel_fundef fd); eauto.
-  erewrite match_parent_locset; eauto.
+  eapply exec_Ltailcall with (fd0 := tunnel_fundef fd). 
+  eapply ros_is_function_translated; eauto.
+  symmetry; erewrite match_parent_locset; eauto.
   apply find_function_translated; auto.
-  apply sig_preserved.
+  apply sig_preserved. eauto. eauto.
   erewrite <- match_parent_locset; eauto.
   econstructor; eauto.
   (* Lbuiltin *)
@@ -390,18 +404,18 @@ Qed.
 End WITHINITLS.
 
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 ->
-  exists st2, initial_state tprog st2 /\ match_states st1 st2.
+  forall st1, initial_state fn_stack_requirements prog st1 ->
+  exists st2, initial_state fn_stack_requirements tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) (Locmap.init Vundef) m0); split.
+  exists (Callstate nil (tunnel_fundef f) (Locmap.init Vundef) m0 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).
   rewrite symbols_preserved. eauto.
   apply function_ptr_translated; auto.
   rewrite <- H3. apply sig_preserved.
-  constructor. constructor.
+  inv TRANSL. inv H6. rewrite H4; constructor. constructor.
 Qed.
 
 Lemma transf_final_states:
@@ -412,7 +426,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
+  forward_simulation (LTL.semantics fn_stack_requirements prog) (LTL.semantics fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

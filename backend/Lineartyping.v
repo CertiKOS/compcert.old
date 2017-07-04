@@ -234,11 +234,11 @@ Inductive wt_state `{memory_model_ops: Mem.MemoryModelOps}: state -> Prop :=
         (WTC: wt_code f c = true)
         (WTRS: wt_locset rs),
       wt_state (State s f sp c rs m)
-  | wt_call_state: forall s fd rs m
+  | wt_call_state: forall s fd rs m sz
         (WTSTK: wt_callstack s)
         (WTFD: wt_fundef fd)
         (WTRS: wt_locset rs),
-      wt_state (Callstate s fd rs m)
+      wt_state (Callstate s fd rs m sz)
   | wt_return_state: forall s rs m
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs),
@@ -275,10 +275,11 @@ Qed.
 
 Section WITHINITLS.
 
+Variable fn_stack_requirements: ident -> Z.
 Variable init_ls: locset.
 
 Theorem step_type_preservation:
-  forall S1 t S2, step init_ls ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
+  forall S1 t S2, step fn_stack_requirements init_ls ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
 Proof.
 Local Opaque mreg_type.
   induction 1; intros WTS; inv WTS.
@@ -361,8 +362,9 @@ Qed.
 
 End WITHINITLS.
 
+Variable fn_stack_requirements: ident -> Z. 
 Theorem wt_initial_state:
-  forall S, initial_state prog S -> wt_state (Locmap.init Vundef) S.
+  forall S, initial_state fn_stack_requirements prog S -> wt_state (Locmap.init Vundef) S.
 Proof.
   induction 1. econstructor. constructor.
   apply wt_init.
@@ -410,8 +412,8 @@ Proof.
 Qed.
 
 Lemma wt_callstate_wt_regs:
-  forall s f rs m,
-  wt_state init_ls (Callstate s f rs m) ->
+  forall s f rs m sz,
+  wt_state init_ls (Callstate s f rs m sz) ->
   forall r, Val.has_type (rs (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTRS.

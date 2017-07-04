@@ -2334,3 +2334,8 @@ End TRANSFORM_TOTAL.
 End Genv.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
+
+Definition is_function_ident {F V} (ge: Genv.t F V) (vf: val) (i: ident) : Prop :=
+  exists b o,
+    vf = Vptr b o /\ Genv.find_symbol ge i = Some b.
+

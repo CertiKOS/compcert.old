@@ -234,7 +234,7 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
       forall (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
              (k: cont)                  (**r what to do next  *)
-             (m: mem),                  (**r memory state *)
+             (m: mem) (sz: Z),                  (**r memory state *)
       state
   | Returnstate:                (**r Return from a function *)
       forall (v: val)                   (**r Return value *)
@@ -244,6 +244,8 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
 
 Section WITHEXTCALLS.
 Context `{external_calls_prf: ExternalCalls}.
+
+Variable fn_stack_requirements : ident -> Z.
 
 Section RELSEM.
 
@@ -433,6 +435,8 @@ Fixpoint find_label (lbl: label) (s: stmt) (k: cont)
 
 (** One step of execution *)
 
+
+
 Inductive step: state -> trace -> state -> Prop :=
 
   | step_skip_seq: forall f s k sp e m,
@@ -460,15 +464,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
-  | step_call: forall f optid sig a bl k sp e m vf vargs fd,
+  | step_call: forall f optid sig a bl k sp e m vf vargs fd id (IFI: is_function_ident ge vf id),
       eval_expr sp e m a vf ->
       eval_exprlist sp e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k sp e m)
-        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
+        E0 (Callstate fd vargs (Kcall optid f sp e k) m (fn_stack_requirements id))
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' m'',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' m'' id (IFI: is_function_ident ge vf id),
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -476,7 +480,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       Mem.unrecord_stack_block m' = Some m'' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m'')
+        E0 (Callstate fd vargs (call_cont k) m'' (fn_stack_requirements id))
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m bl vargs ->
@@ -540,15 +544,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e m'',
+  | step_internal_function: forall f vargs k m m' sp e m'' sz,
       Mem.alloc m 0 f.(fn_stackspace) = (m', sp) ->
-      Mem.record_stack_block m' sp None = Some m'' ->
+      Mem.record_stack_blocks m' (inl (sp, None)) sz = Some m'' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs k m)
+      step (Callstate (Internal f) vargs k m sz)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m'')
-  | step_external_function: forall ef vargs k m t vres m',
+  | step_external_function: forall ef vargs k m t vres m' sz,
       external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs k m)
+      step (Callstate (External ef) vargs k m sz)
          t (Returnstate vres k m')
 
   | step_return: forall v optid f sp e k m,
@@ -569,7 +573,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil Kstop m0 (fn_stack_requirements (prog_main p))).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -647,24 +651,24 @@ Variable ge: genv.
   means that the function [f], applied to the arguments [args] in
   memory state [m], returns the value [res] in modified memory state [m'].
   [t] is the trace of observable events generated during the invocation.
-*)
+ *)
 
 Inductive eval_funcall:
         mem -> fundef -> list val -> trace ->
-        mem -> val -> Prop :=
+        mem -> val -> Z -> Prop :=
   | eval_funcall_internal:
-      forall m f vargs m1 sp e t e2 m1' m2 out vres m3,
+      forall m f vargs m1 sp e t e2 m1' m2 out vres m3 sz,
         Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
-        Mem.record_stack_block m1 sp None = Some m1' ->
+        Mem.record_stack_blocks m1 (inl (sp, None)) sz = Some m1' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1' f.(fn_body) t e2 m2 out ->
       outcome_result_value out f.(fn_sig).(sig_res) vres ->
       outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
-      eval_funcall m (Internal f) vargs t m3 vres
+      eval_funcall m (Internal f) vargs t m3 vres sz
   | eval_funcall_external:
       forall ef m args t res m',
       external_call ef ge args m t res m' ->
-      eval_funcall m (External ef) args t m' res
+      eval_funcall m (External ef) args t m' res 0
 
 (** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
   means that statement [s] executes with outcome [out].
@@ -692,12 +696,12 @@ with exec_stmt:
       Mem.storev chunk m vaddr v = Some m' ->
       exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t m' vres e',
+      forall f sp e m optid sig a bl vf vargs fd t m' vres e' id (IFI: is_function_ident ge vf id),
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      eval_funcall m fd vargs t m' vres ->
+      eval_funcall m fd vargs t m' vres (fn_stack_requirements id) ->
       e' = set_optvar optid vres e ->
       exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
@@ -756,14 +760,14 @@ with exec_stmt:
       eval_expr ge sp e m a v ->
       exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
-      forall f sp e m sig a bl vf vargs fd t m' m'_ m'' vres,
+      forall f sp e m sig a bl vf vargs fd t m' m'_ m'' vres id (IFI: is_function_ident ge vf id),
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       Mem.unrecord_stack_block m' = Some m'_ ->
-      eval_funcall m'_ fd vargs t m'' vres ->
+      eval_funcall m'_ fd vargs t m'' vres (fn_stack_requirements id) ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
 Scheme eval_funcall_ind2 := Minimality for eval_funcall Sort Prop
@@ -779,14 +783,14 @@ Combined Scheme eval_funcall_exec_stmt_ind2
 *)
 
 CoInductive evalinf_funcall:
-        mem -> fundef -> list val -> traceinf -> Prop :=
+        mem -> fundef -> list val -> traceinf -> Z -> Prop :=
   | evalinf_funcall_internal:
-      forall m f vargs m1 m1' sp e t,
+      forall m f vargs m1 m1' sp e t sz,
         Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
-        Mem.record_stack_block m1 sp None = Some m1' ->
+        Mem.record_stack_blocks m1 (inl (sp, None)) sz = Some m1' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m1' f.(fn_body) t ->
-      evalinf_funcall m (Internal f) vargs t
+      evalinf_funcall m (Internal f) vargs t sz
 
 (** [execinf_stmt ge sp e m s t] means that statement [s] diverges.
   [e] is the initial environment, [m] is the initial memory state,
@@ -795,12 +799,12 @@ CoInductive evalinf_funcall:
 with execinf_stmt:
          function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
   | execinf_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t,
+      forall f sp e m optid sig a bl vf vargs fd t id (IFI: is_function_ident ge vf id),
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      evalinf_funcall m fd vargs t ->
+      evalinf_funcall m fd vargs t (fn_stack_requirements id) ->
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t,
@@ -833,14 +837,14 @@ with execinf_stmt:
       execinf_stmt f sp e m s t ->
       execinf_stmt f sp e m (Sblock s) t
   | execinf_Stailcall:
-      forall f sp e m sig a bl vf vargs fd m' m'_ t,
+      forall f sp e m sig a bl vf vargs fd m' m'_ t id (IFI: is_function_ident ge vf id),
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       Mem.unrecord_stack_block m' = Some m'_ ->
-      evalinf_funcall m'_ fd vargs t ->
+      evalinf_funcall m'_ fd vargs t (fn_stack_requirements id) ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
 End NATURALSEM.
@@ -855,7 +859,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      eval_funcall ge m0 f nil t m (Vint r) ->
+      eval_funcall ge m0 f nil t m (Vint r) (fn_stack_requirements (prog_main p)) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -866,7 +870,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      evalinf_funcall ge m0 f nil t ->
+      evalinf_funcall ge m0 f nil t (fn_stack_requirements (prog_main p)) ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=
@@ -919,11 +923,11 @@ Proof.
 Qed.
 
 Lemma eval_funcall_exec_stmt_steps:
-  (forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
+  (forall m fd args t m' res sz,
+      eval_funcall ge m fd args t m' res sz ->
    forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star step ge (Callstate fd args k m sz)
               t (Returnstate res k m'))
 /\(forall f sp e m s t e' m' out,
    exec_stmt ge f sp e m s t e' m' out ->
@@ -1084,11 +1088,11 @@ Proof.
 Qed.
 
 Lemma eval_funcall_steps:
-   forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
+   forall m fd args t m' res sz,
+   eval_funcall ge m fd args t m' res sz ->
    forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star step ge (Callstate fd args k m sz)
               t (Returnstate res k m').
 Proof (proj1 eval_funcall_exec_stmt_steps).
 
@@ -1102,9 +1106,9 @@ Lemma exec_stmt_steps:
 Proof (proj2 eval_funcall_exec_stmt_steps).
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T k,
-  evalinf_funcall ge m fd args T ->
-  forever_plus step ge (Callstate fd args k m) T.
+  forall m fd args T k sz,
+  evalinf_funcall ge m fd args T sz ->
+  forever_plus step ge (Callstate fd args k m sz) T.
 Proof.
   cofix CIH_FUN.
   assert (forall sp e m s T f k,

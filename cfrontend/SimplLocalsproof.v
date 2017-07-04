@@ -35,6 +35,8 @@ Qed.
 Section PRESERVATION.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
@@ -291,7 +293,7 @@ Lemma step_Sdebug_temp:
   forall f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tge (State f (Sdebug_temp id ty) k e le m)
+  step2 fn_stack_requirements tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None).
@@ -303,7 +305,7 @@ Qed.
 Lemma step_Sdebug_var:
   forall f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tge (State f (Sdebug_var id ty) k e le m)
+  (step2 fn_stack_requirements) tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None).
@@ -317,11 +319,11 @@ Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
   eval_expr tge e le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus step2 tge (State f (Sset_debug id ty a) k e le m)
+  plus (step2 fn_stack_requirements) tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
-  assert (forall k, step2 tge (State f (Sset id (make_cast a ty)) k e le m)
+  assert (forall k, (step2 fn_stack_requirements) tge (State f (Sset id (make_cast a ty)) k e le m)
                            E0 (State f Sskip k e (PTree.set id v' le) m)).
   { intros. apply step_set. eapply make_cast_correct; eauto. }
   destruct (Compopts.debug tt).
@@ -337,7 +339,7 @@ Qed.
 Lemma step_add_debug_vars:
   forall f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star step2 tge (State f (add_debug_vars vars s) k e le m)
+  star (step2 fn_stack_requirements) tge (State f (add_debug_vars vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -371,7 +373,7 @@ Lemma step_add_debug_params:
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star step2 tge (State f (add_debug_params params s) k e le m)
+  star (step2 fn_stack_requirements) tge (State f (add_debug_params params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -1002,7 +1004,7 @@ Proof.
   eapply alloc_variables_nextblock; eauto.
 
   (* other properties *)
-  intuition auto. edestruct F as (b & X & Y); eauto. rewrite H5 in Y.
+  intuition auto. edestruct F as (b & X & Y); eauto. rewrite H6 in Y.
   destruct Y as (tb & U & V). exists tb; auto.
 Qed.
 
@@ -1105,7 +1107,7 @@ Theorem store_params_correct:
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
-  star step2 tge (State f (store_params cenv params s) k te tle tm)
+  star (step2 fn_stack_requirements) tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
   /\ Mem.inject j m' tm'
@@ -1786,15 +1788,15 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State f s k e le m)
                    (State tf ts tk te tle tm)
   | match_call_state:
-      forall fd vargs k m tfd tvargs tk tm j targs tres cconv
+      forall fd vargs k m tfd tvargs tk tm j targs tres cconv sz
         (TRFD: transf_fundef fd = OK tfd)
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
         (ANORM: val_casted_list vargs targs),
-      match_states (Callstate fd vargs k m)
-                   (Callstate tfd tvargs tk tm)
+      match_states (Callstate fd vargs k m sz)
+                   (Callstate tfd tvargs tk tm sz)
   | match_return_state:
       forall v k m tv tk tm j
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
@@ -2029,8 +2031,8 @@ End FIND_LABEL.
 
 
 Lemma step_simulation:
-  forall S1 t S2, step1 ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'), exists S2', plus step2 tge S1' t S2' /\ match_states S2 S2'.
+  forall S1 t S2, step1 fn_stack_requirements ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 fn_stack_requirements) tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS).
 
@@ -2079,10 +2081,18 @@ Proof.
   exploit eval_simpl_expr; eauto with compat. intros [tvf [A B]].
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit match_cont_find_funct; eauto. intros [tfd [P Q]].
+  destruct IFI as (bb & oo & EQ3 & EQ2). 
   econstructor; split.
-  apply plus_one. eapply step_call with (fd0 := tfd).
+  apply plus_one. eapply step_call with (fd0 := tfd) (vf0:=tvf).
+  {
+    subst. inv B. eexists; eexists; split; eauto. rewrite symbols_preserved. rewrite EQ2.
+    f_equal.
+    edestruct match_cont_globalenv as (bnd & MG); eauto. inv MG. rewrite DOMAIN in H6. inv H6.
+    auto.
+    eapply SYMBOLS; eauto.
+  }
   rewrite typeof_simpl_expr. eauto.
-  eauto. eauto. eauto.
+  apply A. eauto. eauto. 
   erewrite type_of_fundef_preserved; eauto.
   econstructor; eauto.
   intros. econstructor; eauto.
@@ -2219,25 +2229,25 @@ Proof.
   exploit Mem.record_stack_blocks_inject. eauto. 3: eauto.
   instantiate (1 := map fst (map fst (blocks_of_env tge te))).
   {
-    intros b b' delta J'B.
+    intros b0 b' delta J'B.
     inv B.
     split; intros IN.
     - unfold blocks_of_env in IN.
       rewrite ! map_map, in_map_iff in IN.
-      destruct IN as [[id [bb ty]] [EQ' IN]].
+      destruct IN as [[id0 [bb ty]] [EQ' IN]].
       apply PTree.elements_complete in IN. simpl in EQ'; subst.
-      destruct (me_vars0 id); try congruence.
+      destruct (me_vars0 id0); try congruence.
       rewrite IN in ENV. inv ENV. rewrite J'B in MAPPED; inv MAPPED.
       unfold blocks_of_env; rewrite ! map_map, in_map_iff.
       repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
     - unfold blocks_of_env in IN.
       rewrite ! map_map, in_map_iff in IN.
-      destruct IN as [[id [bb ty]] [EQ' IN]].
+      destruct IN as [[id0 [bb ty]] [EQ' IN]].
       apply PTree.elements_complete in IN. simpl in EQ'; subst.
-      destruct (me_vars0 id); try congruence.
+      destruct (me_vars0 id0); try congruence.
       rewrite IN in TENV. inv TENV.
       exploit me_mapped0. eauto. rewrite ENV.
-      intros (b1 & ? & ?). inv H5.
+      intros (b1' & ? & ?). inv H5.
       exploit me_flat0. eauto. apply J'B. rewrite ENV. inversion 1. subst. inv H6.
       unfold blocks_of_env; rewrite ! map_map, in_map_iff.
       repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
@@ -2245,9 +2255,9 @@ Proof.
   {
     intros b' IN. unfold blocks_of_env in IN.
     rewrite ! map_map, in_map_iff in IN.
-    destruct IN as [[id [bb ty]] [EQ' IN]].
+    destruct IN as [[id0 [bb ty]] [EQ' IN]].
     apply PTree.elements_complete in IN. simpl in EQ'; subst.
-    inv B. destruct (me_vars0 id); try congruence.
+    inv B. destruct (me_vars0 id0); try congruence.
     eapply me_trange0; eauto. 
   }
   intros (m2' & RSB & INJ).
@@ -2261,7 +2271,7 @@ Proof.
       intros.
       eapply (Mem.load_unchanged_on (fun _ _ => True)).
       eapply Mem.strong_unchanged_on_weak.
-      eapply Mem.record_stack_blocks_unchanged_on; eauto. auto. auto.
+      eapply Mem.record_stack_block_unchanged_on; eauto. auto. auto.
     }
     eexact INJ.
     intros. apply (create_undef_temps_lifted id f). auto.
@@ -2274,7 +2284,8 @@ Proof.
   intros [X [Y Z]]. auto. auto.
   econstructor; split.
   eapply plus_left. econstructor.
-  econstructor. exact Y. exact X. exact Z. simpl. eexact A. eauto. simpl. eexact Q.
+  econstructor.
+  exact Y. exact X. exact Z. simpl. eexact A. eauto. simpl. eexact Q.
   simpl. eapply star_trans. eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
   eapply star_trans. eexact P. eapply step_add_debug_vars.
   unfold remove_lifted; intros. rewrite List.filter_In in H4. destruct H4.
@@ -2292,14 +2303,14 @@ Proof.
     eapply alloc_variables_load in H6. 2: eauto.
     eapply (Mem.load_unchanged_on (fun _ _ => True)).
     eapply Mem.strong_unchanged_on_weak.
-    eapply Mem.record_stack_blocks_unchanged_on; eauto. auto. auto.
+    eapply Mem.record_stack_block_unchanged_on; eauto. auto. auto.
   }
   apply compat_cenv_for.
   rewrite (bind_parameters_nextblock _ _ _ _ _ _ H3).
-  rewrite (Mem.record_stack_blocks_nextblock _ _ _ H2).
+  rewrite (Mem.record_stack_block_nextblock _ _ _ _ H2).
   xomega.
   rewrite T.
-  rewrite (Mem.record_stack_blocks_nextblock _ _ _ RSB). xomega.
+  rewrite (Mem.record_stack_block_nextblock _ _ _ _ RSB). xomega.
 
 (* external function *)
   monadInv TRFD. inv FUNTY.
@@ -2323,8 +2334,8 @@ Proof.
 Qed.
 
 Lemma initial_states_simulation:
-  forall S, initial_state prog S ->
-  exists R, initial_state tprog R /\ match_states S R.
+  forall S, initial_state fn_stack_requirements prog S ->
+  exists R, initial_state fn_stack_requirements tprog R /\ match_states S R.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
@@ -2336,12 +2347,13 @@ Proof.
   generalize (match_program_main (proj1 TRANSF)). simpl; auto.
   eauto.
   rewrite <- H3; apply type_of_fundef_preserved; auto.
+  inv TRANSF. inv H. inv H6. setoid_rewrite H. 
   econstructor; eauto.
   intros. instantiate (1 := Mem.flat_inj (Mem.nextblock m0)).
   econstructor. instantiate (1 := Mem.nextblock m0).
   constructor; intros.
   unfold Mem.flat_inj. apply pred_dec_true; auto.
-  unfold Mem.flat_inj in H. destruct (plt b1 (Mem.nextblock m0)); inv H. auto.
+  unfold Mem.flat_inj in H6. destruct (plt b1 (Mem.nextblock m0)); inv H6. auto.
   eapply Genv.find_symbol_not_fresh; eauto.
   eapply Genv.find_funct_ptr_not_fresh; eauto.
   eapply Genv.find_var_info_not_fresh; eauto.
@@ -2360,7 +2372,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics1 prog) (semantics2 tprog).
+  forward_simulation (semantics1 fn_stack_requirements prog) (semantics2 fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

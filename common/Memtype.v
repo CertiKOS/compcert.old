@@ -354,11 +354,8 @@ that we now axiomatize. *)
  ;
 
  (* Stack ADT and methods *)
- stack_adt: mem -> list frame_adt;
- (* push_frame: mem -> frame_info -> option (mem * block); *)
- (* pop_frame: mem -> option mem; *)
- record_stack_block: mem -> block -> option frame_info -> option mem;
- record_stack_blocks: mem -> list block -> option mem;
+ stack_adt: mem -> list (frame_adt * Z);
+ record_stack_blocks: mem -> ((block * option frame_info) + (list block)) -> Z -> option mem;
  unrecord_stack_block: mem -> option mem;
  frame_inject f m := frame_inject' f (perm m)
 }.
@@ -396,7 +393,7 @@ Proof.
 Qed.
 
 Lemma list_inject_frame_id m:
-  list_forall2 (frame_inject inject_id m) (stack_adt m) (stack_adt m).
+  list_forall2 (frame_inject inject_id m) (map fst (stack_adt m)) (map fst (stack_adt m)).
 Proof.
   generalize (stack_adt m); induction l; simpl; intros; constructor; auto.
   apply inject_frame_id.
@@ -557,8 +554,8 @@ Qed.
 Definition get_stack_top_blocks (m: mem) : list block :=
   match stack_adt m with
     nil => nil
-  | (frame_with_info b fi)::r => b :: nil
-  | (frame_without_info bl)::r => bl
+  | (frame_with_info b fi,_)::r => b :: nil
+  | (frame_without_info bl,_)::r => bl
   end.
 
 Definition is_stack_top (m: mem) (b: block) :=
@@ -566,7 +563,7 @@ Definition is_stack_top (m: mem) (b: block) :=
 
 
 Definition get_frame_info (m: mem) : block -> option frame_info :=
-  get_assoc (stack_adt m).
+  get_assoc (map fst (stack_adt m)).
 
 Definition strong_non_private_stack_access (m: mem) (b: block) (lo hi: Z) : Prop :=
   match get_frame_info m b with
@@ -598,29 +595,28 @@ Qed.
 
 Lemma not_in_frames_no_frame_info:
   forall m b,
-    ~ in_frames (stack_adt m) b ->
+    ~ in_frames (map fst (stack_adt m)) b ->
     get_frame_info m b = None.
 Proof.
   unfold get_frame_info.
   intro; generalize (stack_adt m).
   induction l; simpl; intros; eauto.
   intuition.
-  destruct a; simpl in *. rewrite pred_dec_false; eauto.
+  destruct (fst a); simpl in *. rewrite pred_dec_false; eauto.
   rewrite pred_dec_false; eauto.
 Qed.
 
 Lemma is_stack_top_stack_blocks:
   forall m b,
-    is_stack_top m b <-> (exists f r, in_frame f b /\ stack_adt m = f::r).
+    is_stack_top m b <-> (exists f n r, in_frame f b /\ stack_adt m = (f,n)::r).
 Proof.
   unfold is_stack_top, get_stack_top_blocks.
   intros.
   destruct (stack_adt m) eqn:?; intuition.
   decompose [ex and] H; intuition congruence.
-  repeat eexists. destruct f; simpl in *; intuition.
-  decompose [ex and] H; intuition. inv H2. destruct x; simpl in *; intuition.
+  destruct p. repeat eexists. destruct f; simpl in *; intuition.
+  destruct p. decompose [ex and] H; intuition. inv H2. destruct x; simpl in *; intuition.
 Qed.
-
 
 Lemma in_stack_data_inside:
   forall fi lo hi lo' hi',
@@ -1919,7 +1915,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
    f b = Some (b2, delta') ->
    perm m1 b ofs k p ->
    lo + delta <= ofs + delta' < hi + delta -> False) ->
-  ~ in_frames (stack_adt m2) b2 ->
+  ~ in_frames (map fst (stack_adt m2)) b2 ->
   exists f',
      inject f' m1' m2
   /\ inject_incr f f'
@@ -2001,12 +1997,18 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
  inject_stack_adt:
    forall f m1 m2,
      inject f m1 m2 ->
-     list_forall2 (frame_inject f m1) (stack_adt m1) (stack_adt m2);
+     list_forall2
+       (fun x y => frame_inject f m1 (fst x) (fst y)
+                /\ snd x = snd y)
+       (stack_adt m1) (stack_adt m2);
 
  extends_stack_adt:
    forall m1 m2,
      extends m1 m2 ->
-     list_forall2 (frame_inject inject_id m1) (stack_adt m1) (stack_adt m2);
+     list_forall2
+       (fun x y => frame_inject inject_id m1 (fst x) (fst y)
+                /\ snd x = snd y)
+       (stack_adt m1) (stack_adt m2);
 
 (* Needed by Stackingproof, with Linear2 to Mach,
    to compose extends (in Linear2) and inject. *)
@@ -2177,78 +2179,75 @@ for [unchanged_on]. *)
  (* Properties of record_stack_block *)
 
  record_stack_block_inject:
-   forall m1 m1' m2 j fi1 fi2 b b' delta,
+   forall m1 m1' m2 j fi1 fi2 b b' delta n,
      j b = Some (b', delta) ->
      inject j m1 m2 ->
      frame_inject j m1 (frame_with_info b fi1) (frame_with_info b' fi2) ->
-     record_stack_block m1 b fi1 = Some m1' ->
+     record_stack_blocks m1 (inl (b, fi1)) n = Some m1' ->
      exists m2',
-       record_stack_block m2 b' fi2 = Some m2' /\
+       record_stack_blocks m2 (inl (b', fi2)) n = Some m2' /\
        inject j m1' m2';
 
  record_stack_blocks_inject:
-    forall j m1 m2 bl bl' m1',
+    forall j m1 m2 bl bl' m1' n,
       Mem.inject j m1 m2 ->
       (forall b b' delta, j b = Some (b', delta) -> (In b bl <-> In b' bl')) ->
       (forall b' : block, In b' bl' -> valid_block m2 b') ->
-      Mem.record_stack_blocks m1 bl = Some m1' ->
+      Mem.record_stack_blocks m1 (inr bl) n = Some m1' ->
       exists m2',
-        Mem.record_stack_blocks m2 bl' = Some m2'
+        Mem.record_stack_blocks m2 (inr bl') n = Some m2'
         /\ Mem.inject j m1' m2';
 
  record_stack_blocks_inject_into_one:
-   forall j m1 m2 bl b m1',
+   forall j m1 m2 bl b m1' n,
      inject j m1 m2 ->
      (forall (b0 b' : block) (delta : Z), j b0 = Some (b', delta) -> In b0 bl <-> b' = b) ->
-     record_stack_blocks m1 bl = Some m1' ->
+     record_stack_blocks m1 (inr bl) n = Some m1' ->
      valid_block m2 b ->
      exists m2',
-       record_stack_block m2 b None = Some m2' /\
+       record_stack_blocks m2 (inl (b, None)) n = Some m2' /\
        inject j m1' m2';
 
  record_stack_block_extends:
-    forall m1 m2 m1' b fi,
+    forall m1 m2 m1' b fi n,
       extends m1 m2 ->
-      record_stack_block m1 b fi = Some m1' ->
+      record_stack_blocks m1 (inl (b,fi)) n = Some m1' ->
       exists m2',
-        record_stack_block m2 b fi = Some m2' /\
+        record_stack_blocks m2 (inl (b, fi)) n = Some m2' /\
         extends m1' m2';
 
  record_stack_blocks_extends:
-    forall m1 m2 m1' bl,
+    forall m1 m2 m1' bl n,
       extends m1 m2 ->
-      record_stack_blocks m1 bl = Some m1' ->
+      record_stack_blocks m1 (inr bl) n = Some m1' ->
       exists m2',
-        record_stack_blocks m2 bl = Some m2' /\
+        record_stack_blocks m2 (inr bl) n = Some m2' /\
         extends m1' m2';
 
  record_stack_block_mem_unchanged:
-   forall b fi, mem_unchanged (fun m1 m2 => record_stack_block m1 b fi = Some m2);
-
- record_stack_blocks_mem_unchanged:
-   forall bl, mem_unchanged (fun m1 m2 => record_stack_blocks m1 bl = Some m2);
+   forall bfi n, mem_unchanged (fun m1 m2 => record_stack_blocks m1 bfi n = Some m2);
 
  record_stack_blocks_stack_adt:
-   forall m bl m',
-     record_stack_blocks m bl = Some m' ->
-     stack_adt m' = frame_without_info bl :: stack_adt m;
+   forall m bl m' n,
+     record_stack_blocks m (inr bl) n = Some m' ->
+     stack_adt m' = (frame_without_info bl, n) :: stack_adt m;
 
  record_stack_block_stack_adt:
-   forall m b f m',
-     Mem.record_stack_block m b f = Some m' ->
-     Mem.stack_adt m' = frame_with_info b f :: Mem.stack_adt m;
+   forall m b f m' n,
+     record_stack_blocks m (inl (b, f)) n = Some m' ->
+     stack_adt m' = (frame_with_info b f, n) :: stack_adt m;
 
  record_stack_block_inject_neutral:
-   forall thr m b f m',
+   forall thr m b f m' n,
      inject_neutral thr m ->
-     record_stack_block m b f = Some m' ->
+     record_stack_blocks m (inl (b, f)) n = Some m' ->
      Plt b thr ->
      inject_neutral thr m';
 
  record_stack_blocks_inject_neutral:
-   forall thr m b m',
+   forall thr m b m' n,
      inject_neutral thr m ->
-     record_stack_blocks m b = Some m' ->
+     record_stack_blocks m (inr b) n = Some m' ->
      inject_neutral thr m';
 
 
@@ -2321,26 +2320,26 @@ for [unchanged_on]. *)
  not_in_frames_extends:
    forall m1 m2 b,
      extends m1 m2 ->
-     ~ in_frames (stack_adt m1) b ->
-     ~ in_frames (stack_adt m2) b;
+     ~ in_frames (map fst (stack_adt m1)) b ->
+     ~ in_frames (map fst (stack_adt m2)) b;
 
 
  not_in_frames_inject:
    forall f m1 m2 b b' delta,
      f b = Some (b', delta) ->
      inject f m1 m2 ->
-     ~ in_frames (stack_adt m1) b ->
-     ~ in_frames (stack_adt m2) b';
+     ~ in_frames (map fst (stack_adt m1)) b ->
+     ~ in_frames (map fst (stack_adt m2)) b';
 
  same_frame_extends:
-   forall m1 m2 b fi r,
+   forall m1 m2 b fi r n,
      Mem.extends m1 m2 ->
-     Mem.stack_adt m1 = frame_with_info b (Some fi) :: r ->
+     Mem.stack_adt m1 = (frame_with_info b (Some fi), n) :: r ->
      exists r',
-       Mem.stack_adt m2 = frame_with_info b (Some fi) :: r';
+       Mem.stack_adt m2 = (frame_with_info b (Some fi), n) :: r';
  in_frames_valid:
    forall m b,
-     in_frames (stack_adt m) b -> valid_block m b;
+     in_frames (map fst (stack_adt m)) b -> valid_block m b;
 
  is_stack_top_extends:
    forall m1 m2 b
@@ -2370,10 +2369,10 @@ Proof.
 Qed.
 
 Lemma get_frame_info_in_frames:
-  forall m b f, get_frame_info m b = Some f -> in_frames (stack_adt m) b.
+  forall m b f, get_frame_info m b = Some f -> in_frames (map fst (stack_adt m)) b.
 Proof.
   intros.
-  destruct (in_frames_dec (stack_adt m) b); auto.
+  destruct (in_frames_dec (map fst (stack_adt m)) b); auto.
   rewrite not_in_frames_no_frame_info in H; auto. congruence.
 Qed.
 
@@ -2491,47 +2490,47 @@ Proof.
 Qed.
 
 Lemma record_stack_block_unchanged_on:
-  forall m b fi m' P,
-    record_stack_block m b fi = Some m' ->
+  forall m bfi m' n P,
+    record_stack_blocks m bfi n = Some m' ->
     strong_unchanged_on P m m'.
 Proof.
   intros; eapply record_stack_block_mem_unchanged; eauto.
 Qed.
 
 Lemma record_stack_block_perm:
-  forall m b fi m',
-    record_stack_block m b fi = Some m' ->
+  forall m bfi m' n,
+    record_stack_blocks m bfi n = Some m' ->
     forall b' o k p,
       perm m' b' o k p ->
       perm m b' o k p.
 Proof.
   intros. eapply record_stack_block_mem_unchanged in H; eauto.
-  intuition. apply H; eauto.
+  apply H; eauto.
 Qed.
 
 Lemma record_stack_block_perm'
-  : forall m m' b ofi,
-    record_stack_block m b ofi = Some m' ->
+  : forall m m' bofi n,
+    record_stack_blocks m bofi n = Some m' ->
     forall (b' : block) (o : Z) (k : perm_kind) (p : permission),
       perm m b' o k p -> perm m' b' o k p.
 Proof.
   intros. eapply record_stack_block_mem_unchanged in H; eauto.
-  intuition. apply H; eauto.
+  apply H; eauto.
 Qed.
 
 Lemma record_stack_block_valid:
-  forall m b f m',
-    record_stack_block m b f = Some m' ->
+  forall m bf n m',
+    record_stack_blocks m bf n = Some m' ->
     forall b', valid_block m b' -> valid_block m' b'.
 Proof.
   unfold valid_block; intros.
   eapply record_stack_block_mem_unchanged in H; eauto.
-  intuition. rewrite H1. auto.
+  destruct H. rewrite H. auto.
 Qed.
 
 Lemma record_stack_block_nextblock:
-  forall m b f m',
-    record_stack_block m b f = Some m' ->
+  forall m bf n m',
+    record_stack_blocks m bf n = Some m' ->
     nextblock m' = nextblock m.
 Proof.
   intros.
@@ -2539,47 +2538,9 @@ Proof.
   intuition.
 Qed.
 
-Lemma record_stack_blocks_perm'
-  : forall m m' bl,
-    record_stack_blocks m bl = Some m' ->
-    forall (b' : block) (o : Z) (k : perm_kind) (p : permission),
-      perm m b' o k p -> perm m' b' o k p.
-Proof.
-  intros. eapply record_stack_blocks_mem_unchanged in H; eauto.
-  intuition. apply H; eauto.
-Qed.
-
-Lemma record_stack_blocks_perm
-  : forall m m' bl,
-    record_stack_blocks m bl = Some m' ->
-    forall (b' : block) (o : Z) (k : perm_kind) (p : permission),
-      perm m' b' o k p -> perm m b' o k p.
-Proof.
-  intros. eapply record_stack_blocks_mem_unchanged in H; eauto.
-  intuition. apply H; eauto.
-Qed.
-
-Lemma record_stack_blocks_nextblock:
-  forall m1 bl m1',
-    record_stack_blocks m1 bl = Some m1' ->
-    nextblock m1' = nextblock m1.
-Proof.
-  intros. eapply record_stack_blocks_mem_unchanged in H; eauto.
-  intuition.
-Qed.
-
-Lemma record_stack_blocks_unchanged_on:
-  forall P m1 bl m2,
-    Mem.record_stack_blocks m1 bl = Some m2 ->
-    Mem.strong_unchanged_on P m1 m2.
-Proof.
-  intros. eapply record_stack_blocks_mem_unchanged in H; eauto.
-  intuition.
-Qed.
-
 Lemma record_stack_block_is_stack_top:
-  forall m b f m',
-    Mem.record_stack_block m b f = Some m' ->
+  forall m b f n m',
+    record_stack_blocks m (inl (b, f)) n = Some m' ->
     Mem.is_stack_top m' b.
 Proof.
   unfold is_stack_top, get_stack_top_blocks.
@@ -2634,7 +2595,7 @@ Lemma unrecord_stack_block_get_frame_info:
 Proof.
   unfold is_stack_top, get_stack_top_blocks, get_frame_info. intros.
   exploit unrecord_stack_adt. eauto. intros (b0 & EQ).
-  rewrite EQ in *. simpl. destruct b0; intuition.
+  rewrite EQ in *. simpl. destruct b0. simpl. destruct f; intuition.
   destruct eq_block; simpl in *; intuition.
   destruct in_dec; simpl in *; intuition.
 Qed.

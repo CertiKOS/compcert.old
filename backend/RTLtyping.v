@@ -894,11 +894,11 @@ Inductive wt_state: state -> Prop :=
         (WT_RS: wt_regset env rs),
       wt_state (State s f sp pc rs m)
   | wt_state_call:
-      forall s f args m,
+      forall s f args m sz,
       wt_stackframes s (funsig f) ->
       wt_fundef f ->
       Val.has_type_list args (sig_args (funsig f)) ->
-      wt_state (Callstate s f args m)
+      wt_state (Callstate s f args m sz)
   | wt_state_return:
       forall s v m sg,
       wt_stackframes s sg ->
@@ -926,8 +926,10 @@ Let ge := Genv.globalenv p.
 
 Variable restyp: option typ.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Lemma subject_reduction:
-  forall st1 t st2, step ge st1 t st2 ->
+  forall st1 t st2, step fn_stack_requirements ge st1 t st2 ->
   forall (WT: wt_state restyp st1), wt_state restyp st2.
 Proof.
   induction 1; intros; inv WT;
@@ -974,7 +976,7 @@ Proof.
   econstructor; eauto.
   inv WTI; simpl. auto. unfold proj_sig_res; rewrite H3. auto.
   (* internal function *)
-  simpl in *. inv H6.
+  simpl in *. inv H7.
   econstructor; eauto.
   inv H2. apply wt_init_regs; auto. rewrite wt_params0. auto.
   (* external function *)
@@ -986,7 +988,7 @@ Proof.
 Qed.
 
 Lemma wt_initial_state:
-  forall S, initial_state p S -> wt_state (Some Tint) S.
+  forall S, initial_state fn_stack_requirements p S -> wt_state (Some Tint) S.
 Proof.
   intros. inv H. constructor. constructor. rewrite H3; auto.
   pattern f. apply Genv.find_funct_ptr_prop with fundef unit p b.

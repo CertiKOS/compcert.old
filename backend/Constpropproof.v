@@ -37,6 +37,8 @@ End WITHROMEMFOR.
 Section PRESERVATION.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Variable prog: program.
 Variable tprog: program.
 Let ge := Genv.globalenv prog.
@@ -317,13 +319,13 @@ Inductive match_states: nat -> state -> state -> Prop :=
       match_states n (State s f sp pc rs m)
                     (State s' (transf_function (romem_for cu) f) sp pc' rs' m')
   | match_states_call:
-      forall s f args m s' args' m' cu
+      forall s f args m s' args' m' cu sz
            (LINK: linkorder cu prog)
            (STACKS: list_forall2 match_stackframes s s')
            (ARGS: Val.lessdef_list args args')
            (MEM: Mem.extends m m'),
-      match_states O (Callstate s f args m)
-                     (Callstate s' (transf_fundef (romem_for cu) f) args' m')
+      match_states O (Callstate s f args m sz)
+                     (Callstate s' (transf_fundef (romem_for cu) f) args' m' sz)
   | match_states_return:
       forall s v m s' v' m'
            (STACKS: list_forall2 match_stackframes s s')
@@ -363,11 +365,13 @@ Ltac TransfInstr :=
 (** The proof of simulation proceeds by case analysis on the transition
   taken in the source code. *)
 
+
+
 Lemma transf_step_correct:
   forall s1 t s2,
-  step ge s1 t s2 ->
+  step fn_stack_requirements ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  (exists n2, exists s2', step tge s1' t s2' /\ match_states n2 s2 s2')
+  (exists n2, exists s2', step fn_stack_requirements tge s1' t s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try InvSoundState; try (inv PC; try congruence).
@@ -473,7 +477,28 @@ Proof.
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
   left; econstructor; econstructor; split.
-  eapply exec_Icall; eauto. apply sig_function_translated; auto.
+  eapply exec_Icall; eauto.
+  {
+    destruct ros; simpl in RIF |- *; auto.
+    assert (ros_is_function tge (inl r) rs' id).
+    {
+      destruct RIF as (b & o & EQ & EQ1).      
+      simpl. generalize (REGS r). rewrite EQ. inversion 1; subst.
+      rewrite symbols_preserved; eauto.
+    }
+    destruct (areg ae r)eqn:?; eauto.
+    destruct p; eauto.
+    destruct Ptrofs.eq; eauto.
+    simpl.
+    destruct RIF as (b & o & EQ & EQ1).
+    generalize (EM r). setoid_rewrite Heqa. rewrite EQ. inversion 1. subst.
+    inv H5.
+    apply GE in H6.
+    apply Genv.find_invert_symbol in H6.
+    apply Genv.find_invert_symbol in EQ1. unfold ge in EQ1. congruence.
+    auto.
+  }
+  apply sig_function_translated; auto.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
@@ -484,7 +509,28 @@ Proof.
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
   left; econstructor; econstructor; split.
-  eapply exec_Itailcall; eauto. apply sig_function_translated; auto.
+  eapply exec_Itailcall; eauto.
+  {
+    destruct ros; simpl in RIF |- *; auto.
+    assert (ros_is_function tge (inl r) rs' id).
+    {
+      destruct RIF as (b & o & EQ & EQ1).      
+      simpl. generalize (REGS r). rewrite EQ. inversion 1; subst.
+      rewrite symbols_preserved; eauto.
+    }
+    destruct (areg ae r)eqn:?; eauto.
+    destruct p; eauto.
+    destruct Ptrofs.eq; eauto.
+    simpl.
+    destruct RIF as (b & o & EQ & EQ1).
+    generalize (EM r). setoid_rewrite Heqa. rewrite EQ. inversion 1. subst.
+    inv H7.
+    apply GE in H8.
+    apply Genv.find_invert_symbol in H8.
+    apply Genv.find_invert_symbol in EQ1. unfold ge in EQ1. congruence.
+    auto.
+  }
+  apply sig_function_translated; auto.
   constructor; auto.
   apply regs_lessdef_regs; auto.
 
@@ -582,12 +628,12 @@ Local Existing Instance romem_for_wp_instance.
 Hypothesis TRANSL: match_prog prog tprog.
 
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 ->
-  exists n, exists st2, initial_state tprog st2 /\ match_states n st1 st2.
+  forall st1, initial_state fn_stack_requirements prog st1 ->
+  exists n, exists st2, initial_state fn_stack_requirements tprog st2 /\ match_states n st1 st2.
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & FIND & LINK).
-  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0); split.
+  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto.
   apply (Genv.init_mem_match TRANSL); auto.
   replace (prog_main tprog) with (prog_main prog).
@@ -595,6 +641,7 @@ Proof.
   assumption.
   symmetry; eapply match_program_main; eauto.
   rewrite <- H3. apply sig_function_translated.
+  erewrite <- match_program_main; eauto.
   constructor. auto. constructor. constructor. apply Mem.extends_refl.
 Qed.
 
@@ -609,7 +656,7 @@ Qed.
   follows. *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation (RTL.semantics fn_stack_requirements prog) (RTL.semantics fn_stack_requirements tprog).
 Proof.
   apply Forward_simulation with lt (fun n s1 s2 => sound_state prog s1 /\ match_states n s1 s2); constructor.
 - apply lt_wf.

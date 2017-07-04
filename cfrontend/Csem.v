@@ -53,6 +53,8 @@ Definition empty_env: env := (PTree.empty (block * type)).
 Section WITHEXTERNALCALLS.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Section SEMANTICS.
 
 Variable ge: genv.
@@ -320,14 +322,15 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
 (** Head reduction for function calls.
     (More exactly, identification of function calls that can reduce.) *)
 
-Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
-  | red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs,
-      Genv.find_funct ge vf = Some fd ->
-      cast_arguments m el tyargs vargs ->
-      type_of_fundef fd = Tfunction tyargs tyres cconv ->
-      classify_fun tyf = fun_case_f tyargs tyres cconv ->
-      callred (Ecall (Eval vf tyf) el ty) m
-              fd vargs ty.
+Inductive callred: expr -> mem -> fundef -> list val -> type -> ident -> Prop :=
+| red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs i
+              (IFI: is_function_ident ge vf i),
+    Genv.find_funct ge vf = Some fd ->
+    cast_arguments m el tyargs vargs ->
+    type_of_fundef fd = Tfunction tyargs tyres cconv ->
+    classify_fun tyf = fun_case_f tyargs tyres cconv ->
+    callred (Ecall (Eval vf tyf) el ty) m
+            fd vargs ty i.
 
 (** Reduction contexts.  In accordance with C's nondeterministic semantics,
   we allow reduction both to the left and to the right of a binary operator.
@@ -432,8 +435,8 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
       rred e m t e' m' ->
       context RV to C ->
       imm_safe to (C e) m
-  | imm_safe_callred: forall to C e m fd args ty,
-      callred e m fd args ty ->
+  | imm_safe_callred: forall to C e m fd args ty i,
+      callred e m fd args ty i ->
       context RV to C ->
       imm_safe to (C e) m.
 
@@ -522,7 +525,8 @@ Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
       (fd: fundef)
       (args: list val)
       (k: cont)
-      (m: mem) : state
+      (m: mem)
+      (sz: Z): state
   | Returnstate                         (**r returning from a function *)
       (res: val)
       (k: cont)
@@ -597,11 +601,11 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall C f a k e m fd vargs ty,
-      callred a m fd vargs ty ->
+  | step_call: forall C f a k e m fd vargs ty i,
+      callred a m fd vargs ty i ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty k) m (fn_stack_requirements i))
 
   | step_stuck: forall C f a k e m K,
       context K RV C -> ~(imm_safe e K a m) ->
@@ -747,17 +751,17 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f (Sgoto lbl) k e m)
          E0 (State f s' k' e m)
 
-  | step_internal_function: forall f vargs k m e m1 m1' m2,
+  | step_internal_function: forall f vargs k m e m1 m1' m2 sz,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env e))) = Some m1' ->
+      Mem.record_stack_blocks m1 (inr (map fst (map fst (blocks_of_env e)))) sz = Some m1' ->
       bind_parameters e m1' f.(fn_params) vargs m2 ->
-      sstep (Callstate (Internal f) vargs k m)
+      sstep (Callstate (Internal f) vargs k m sz)
          E0 (State f f.(fn_body) k e m2)
 
-  | step_external_function: forall ef targs tres cc vargs k m vres t m',
+  | step_external_function: forall ef targs tres cc vargs k m vres t m' sz,
       external_call ef ge vargs m t vres m' ->
-      sstep (Callstate (External ef targs tres cc) vargs k m)
+      sstep (Callstate (External ef targs tres cc) vargs k m sz)
           t (Returnstate vres k m')
 
   | step_returnstate: forall v f e C ty k m,
@@ -783,7 +787,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil Kstop m0 (fn_stack_requirements (prog_main p))).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 

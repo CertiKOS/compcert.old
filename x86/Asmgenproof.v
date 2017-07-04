@@ -383,8 +383,9 @@ Definition stack_blocks_of_callstack (l : list Mach.stackframe) : list (block*Z)
            end
          end) l.
 
-Definition list_prefix (l1: list (block*Z)) (l2 : list frame_adt) : Prop :=
-  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun b f => let '(b,sz) := b in
+Definition list_prefix (l1: list (block*Z)) (l2 : list (frame_adt * Z)) : Prop :=
+  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun b (f: frame_adt * Z) => let '(b,sz) := b in
+                                                   let (f,z) := f in
                                                    exists fi, f = frame_with_info b (Some fi) /\
                                                          frame_size fi = sz
                                           ) l1 l1'.
@@ -689,7 +690,7 @@ Opaque loadind.
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   destruct CallStackConsistency as (l1 & l2 & EQ & ADT). inv ADT.
-  destruct H12 as (fi & FREQ & SZEQ).
+  destruct b1. destruct H12 as (fi & FREQ & SZEQ).
   exploit Mem.free_parallel_extends; eauto. intros (m2_ & E & F).
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & G & I).
   (* exploit Mem.pop_frame_parallel_extends; eauto. rewrite EQ. *)
@@ -896,7 +897,7 @@ Transparent destroyed_by_jumptable.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   destruct CallStackConsistency as (l1 & l2 & EQ & ADT). inv ADT.
-  destruct H11 as (fi & FREQ & SZEQ).
+  destruct b1. destruct H11 as (fi & FREQ & SZEQ).
   exploit Mem.free_parallel_extends; eauto. intros (m2' & E & F).
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & G & I).
   exploit Mem.same_frame_extends. apply MEXT. simpl in EQ. eauto.

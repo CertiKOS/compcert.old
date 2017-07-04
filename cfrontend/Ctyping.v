@@ -1997,11 +1997,11 @@ Inductive wt_state: state -> Prop :=
         (WTB: wt_stmt ge te f.(fn_return) f.(fn_body))
         (WTE: wt_rvalue ge te r),
       wt_state (ExprState f r k e m)
-  | wt_call_state: forall b fd vargs k m
+  | wt_call_state: forall b fd vargs k m sz
         (WTK: wt_call_cont k (fundef_return fd))
         (WTFD: wt_fundef fd)
         (FIND: Genv.find_funct ge b = Some fd),
-      wt_state (Callstate fd vargs k m)
+      wt_state (Callstate fd vargs k m sz)
   | wt_return_state: forall v k m ty
         (WTK: wt_call_cont k ty)
         (VAL: wt_val v ty),
@@ -2057,8 +2057,12 @@ Qed.
 End WT_FIND_LABEL.
 
 
+
+Variable fn_stack_requirements: ident -> Z.
+
+
 Lemma preservation_estep:
-  forall S t S', estep ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', estep fn_stack_requirements ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
 - (* lred *)
@@ -2138,13 +2142,13 @@ Proof.
 Qed.
 
 Theorem preservation:
-  forall S t S', step ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', step fn_stack_requirements ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   intros. destruct H. eapply preservation_estep; eauto. eapply preservation_sstep; eauto.
 Qed.
 
 Theorem wt_initial_state:
-  forall S, initial_state prog S -> wt_state S.
+  forall S, initial_state fn_stack_requirements prog S -> wt_state S.
 Proof.
   intros. inv H. econstructor. constructor.
   apply Genv.find_funct_ptr_prop with (p := prog) (b := b); auto.

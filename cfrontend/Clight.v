@@ -227,6 +227,7 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :
 
 Section SEMANTICS.
 
+Variable fn_stack_requirements : ident -> Z.
 Variable ge: genv.
 
 Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
@@ -492,7 +493,7 @@ Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
       (fd: fundef)
       (args: list val)
       (k: cont)
-      (m: mem) : state
+      (m: mem) (sz: Z) : state
   | Returnstate
       (res: val)
       (k: cont)
@@ -545,7 +546,7 @@ with find_label_ls (lbl: label) (sl: labeled_statements) (k: cont)
   parameter binding semantics, then instantiate it later to give the two
   semantics described above. *)
 
-Variable function_entry: genv -> function -> list val -> mem -> env -> temp_env -> mem -> Prop.
+Variable function_entry: genv -> function -> list val -> mem -> env -> temp_env -> mem -> Z -> Prop.
 
 (** Transition relation *)
 
@@ -564,14 +565,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sset id a) k e le m)
         E0 (State f Sskip k e (PTree.set id v le) m)
 
-  | step_call:   forall f optid a al k e le m tyargs tyres cconv vf vargs fd,
+  | step_call:   forall f optid a al k e le m tyargs tyres cconv vf vargs fd id
+                   (IFI: is_function_ident ge vf id),
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr e le m a vf ->
       eval_exprlist e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       step (State f (Scall optid a al) k e le m)
-        E0 (Callstate fd vargs (Kcall optid f e le k) m)
+        E0 (Callstate fd vargs (Kcall optid f e le k) m (fn_stack_requirements id))
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
@@ -657,14 +659,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k e le m)
         E0 (State f s' k' e le m)
 
-  | step_internal_function: forall f vargs k m e le m1,
-      function_entry ge f vargs m e le m1 ->
-      step (Callstate (Internal f) vargs k m)
+  | step_internal_function: forall f vargs k m e le m1 sz,
+      function_entry ge f vargs m e le m1 sz ->
+      step (Callstate (Internal f) vargs k m sz)
         E0 (State f f.(fn_body) k e le m1)
 
-  | step_external_function: forall ef targs tres cconv vargs k m vres t m',
+  | step_external_function: forall ef targs tres cconv vargs k m vres t m' sz,
       external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef targs tres cconv) vargs k m)
+      step (Callstate (External ef targs tres cconv) vargs k m sz)
          t (Returnstate vres k m')
 
   | step_returnstate: forall v optid f e le k m,
@@ -685,7 +687,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil Kstop m0 (fn_stack_requirements (prog_main p))).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -697,50 +699,50 @@ End SEMANTICS.
 
 (** The two semantics for function parameters.  First, parameters as local variables. *)
 
-Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m': mem) : Prop :=
+Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m': mem) (sz: Z) : Prop :=
   | function_entry1_intro: forall m1 m1',
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env ge e))) = Some m1' ->
+      Mem.record_stack_blocks m1 (inr (map fst (map fst (blocks_of_env ge e)))) sz = Some m1' ->
       bind_parameters ge e m1' f.(fn_params) vargs m' ->
       le = create_undef_temps f.(fn_temps) ->
-      function_entry1 ge f vargs m e le m'.
+      function_entry1 ge f vargs m e le m' sz.
 
-Definition step1 (ge: genv) := step ge (function_entry1).
+Definition step1 fsr (ge: genv) := step fsr ge (function_entry1).
 
 (** Second, parameters as temporaries. *)
 
-Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m1': mem) : Prop :=
-  | function_entry2_intro m':
+Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m1': mem) (sz: Z) : Prop :=
+  | function_entry2_intro m': 
       list_norepet (var_names f.(fn_vars)) ->
       list_norepet (var_names f.(fn_params)) ->
       list_disjoint (var_names f.(fn_params)) (var_names f.(fn_temps)) ->
       alloc_variables ge empty_env m f.(fn_vars) e m' ->
-      Mem.record_stack_blocks m' (map fst (map fst (blocks_of_env ge e))) = Some m1' ->
+      Mem.record_stack_blocks m' (inr (map fst (map fst (blocks_of_env ge e)))) sz = Some m1' ->
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
-      function_entry2 ge f vargs m e le m1'.
+      function_entry2 ge f vargs m e le m1' sz.
 
-Definition step2 (ge: genv) := step ge (function_entry2).
+Definition step2 fsr (ge: genv) := step fsr ge (function_entry2).
 
 (** Wrapping up these definitions in two small-step semantics. *)
 
-Definition semantics1 (p: program) :=
+Definition semantics1 fsr (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step1 (initial_state p) final_state ge ge.
+  Semantics_gen (step1 fsr) (initial_state fsr p) final_state ge ge.
 
-Definition semantics2 (p: program) :=
+Definition semantics2 fsr (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step2 (initial_state p) final_state ge ge.
+  Semantics_gen (step2 fsr) (initial_state fsr p) final_state ge ge.
 
 (** This semantics is receptive to changes in events. *)
 
 Lemma semantics_receptive:
-  forall (p: program), receptive (semantics1 p).
+  forall fsr (p: program), receptive (semantics1 fsr p).
 Proof.
   intros. unfold semantics1.
   set (ge := globalenv p). constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step1 ge s t2 s2).
+  assert (t1 = E0 -> exists s2, step1 fsr ge s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   (* builtin *)

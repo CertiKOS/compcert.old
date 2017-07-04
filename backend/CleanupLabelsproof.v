@@ -33,6 +33,8 @@ Qed.
 Section CLEANUP.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
@@ -212,10 +214,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls m ts,
+      forall s f ls m ts sz,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f ls m)
-                   (Callstate ts (transf_fundef f) ls m)
+      match_states (Callstate s f ls m sz)
+                   (Callstate ts (transf_fundef f) ls m sz)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -241,10 +243,21 @@ Section WITHINITLS.
 
 Variable init_ls: locset.
 
+Lemma ros_is_function_translated:
+  forall ros rs i,
+    ros_is_function ge ros rs i ->
+    ros_is_function tge ros rs i.
+Proof.
+  destruct ros; simpl; intros.
+  rewrite symbols_preserved; eauto.
+  auto.
+Qed.
+
+
 Theorem transf_step_correct:
-  forall s1 t s2, step init_ls ge s1 t s2 ->
+  forall s1 t s2, step fn_stack_requirements init_ls ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step init_ls tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step fn_stack_requirements init_ls tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try rewrite remove_unused_labels_cons.
@@ -275,12 +288,15 @@ Proof.
   econstructor; eauto with coqlib.
 (* Lcall *)
   left; econstructor; split.
-  econstructor. eapply find_function_translated; eauto.
+  econstructor.
+  eapply ros_is_function_translated; eauto.
+  eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
-  econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
+  econstructor. eapply ros_is_function_translated; eauto.
+  symmetry; erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
   simpl. eauto. eauto.
   econstructor; eauto.
@@ -339,8 +355,8 @@ Qed.
 End WITHINITLS.
 
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 ->
-  exists st2, initial_state tprog st2 /\ match_states st1 st2.
+  forall st1, initial_state fn_stack_requirements prog st1 ->
+  exists st2, initial_state fn_stack_requirements tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inv H.
   econstructor; split.
@@ -349,7 +365,7 @@ Proof.
   rewrite (match_program_main TRANSL), symbols_preserved; eauto.
   apply function_ptr_translated; auto.
   rewrite sig_function_translated. auto.
-  constructor; auto. constructor.
+  inv TRANSL. inv H4. rewrite H5. constructor; auto. constructor.
 Qed.
 
 Lemma transf_final_states:
@@ -360,7 +376,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+  forward_simulation (Linear.semantics fn_stack_requirements prog) (Linear.semantics fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

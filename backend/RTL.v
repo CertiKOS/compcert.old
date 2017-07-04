@@ -171,7 +171,8 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (f: fundef)              (**r function to call *)
              (args: list val)         (**r arguments to the call *)
-             (m: mem),                (**r memory state *)
+             (m: mem)                (**r memory state *)
+             (sz: Z),
       state
   | Returnstate:
       forall (stack: list stackframe) (**r call stack *)
@@ -181,6 +182,8 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
 
 Section WITHEXTCALLS.
 Context `{external_calls_prf: ExternalCalls}.
+
+Variable fn_stack_requirements: ident -> Z.
 
 Section RELSEM.
 
@@ -201,6 +204,12 @@ Definition find_function
   [step ge st1 t st2], where [ge] is the global environment,
   [st1] the initial state, [st2] the final state, and [t] the trace
   of system calls performed during this transition. *)
+
+Definition ros_is_function (ros: reg + ident) (rs: regset) (i: ident) : Prop :=
+  match ros with
+  | inl r => exists b o, rs # r = Vptr b o /\ Genv.find_symbol ge i = Some b
+  | inr symb => i = symb
+  end.
 
 Inductive step : state -> trace -> state -> Prop :=
   | exec_Inop:
@@ -229,21 +238,23 @@ Inductive step : state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' fd,
-      (fn_code f)!pc = Some(Icall sig ros args res pc') ->
-      find_function ros rs = Some fd ->
-      funsig fd = sig ->
-      step (State s f sp pc rs m)
-        E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
+      forall s f sp pc rs m sig ros args res pc' fd id
+        (RIF: ros_is_function ros rs id),
+        (fn_code f)!pc = Some(Icall sig ros args res pc') ->
+        find_function ros rs = Some fd ->
+        funsig fd = sig ->
+        step (State s f sp pc rs m)
+             E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m (fn_stack_requirements id))
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd m' m'',
+      forall s f stk pc rs m sig ros args fd m' m'' id
+        (RIF: ros_is_function ros rs id),
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       Mem.unrecord_stack_block m' = Some m'' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Callstate s fd rs##args m'')
+        E0 (Callstate s fd rs##args m'' (fn_stack_requirements id))
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
@@ -274,10 +285,10 @@ Inductive step : state -> trace -> state -> Prop :=
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m'')
   | exec_function_internal:
-      forall s f args m m' stk m'',
+      forall s f args m m' stk m'' sz,
         Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
-        Mem.record_stack_block m' stk None = Some m'' ->
-      step (Callstate s (Internal f) args m)
+        Mem.record_stack_blocks m' (inl (stk, None)) sz = Some m'' ->
+      step (Callstate s (Internal f) args m sz)
         E0 (State s
                   f
                   (Vptr stk Ptrofs.zero)
@@ -285,9 +296,9 @@ Inductive step : state -> trace -> state -> Prop :=
                   (init_regs args f.(fn_params))
                   m'')
   | exec_function_external:
-      forall s ef args res t m m',
+      forall s ef args res t m m' sz,
       external_call ef ge args m t res m' ->
-      step (Callstate s (External ef) args m)
+      step (Callstate s (External ef) args m sz)
          t (Returnstate s res m')
   | exec_return:
       forall res f sp pc rs s vres m,
@@ -331,7 +342,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f nil m0).
+      initial_state p (Callstate nil f nil m0 (fn_stack_requirements (prog_main p))).
 
 (** A final state is a [Returnstate] with an empty call stack. *)
 

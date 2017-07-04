@@ -3667,8 +3667,8 @@ Proof.
 Qed.
 
 Lemma romatch_record:
-  forall m m' b fi rm,
-  Mem.record_stack_block m b fi  = Some m' ->
+  forall m m' b fi rm n1,
+  Mem.record_stack_blocks m (inl (b, fi)) n1  = Some m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
@@ -4105,8 +4105,8 @@ Proof.
 Qed.
 
 Lemma mmatch_record:
-  forall m m' b fi rm,
-  Mem.record_stack_block m b fi  = Some m' ->
+  forall m m' b fi rm n1,
+  Mem.record_stack_blocks m (inl (b,fi)) n1 = Some m' ->
   mmatch m rm ->
   mmatch m' rm.
 Proof.

@@ -111,6 +111,8 @@ Qed.
 (** * Correctness of the instruction selection functions for expressions *)
 
 Section PRESERVATION.
+
+Variable fn_stack_requirements: ident -> Z.
 Context `{external_calls_prf: ExternalCalls}.
 Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
@@ -227,7 +229,7 @@ Lemma eval_store:
   eval_expr tge sp e m nil a1 v1 ->
   eval_expr tge sp e m nil a2 v2 ->
   Mem.storev chunk m v1 v2 = Some m' ->
-  step tge (State f (store chunk a1 a2) k sp e m)
+  step fn_stack_requirements tge (State f (store chunk a1 a2) k sp e m)
         E0 (State f Sskip k sp e m').
 Proof.
   intros. generalize H1; destruct v1; simpl; intro; try discriminate.
@@ -780,15 +782,15 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
       match_states
         (Cminor.State f s k sp e m)
         (State f' s' k' sp e' m')
-  | match_callstate: forall cunit f f' args args' k k' m m'
+  | match_callstate: forall cunit f f' args args' k k' m m' sz
         (LINK: linkorder cunit prog)
         (TF: match_fundef cunit f f')
         (MC: match_call_cont k k')
         (LD: Val.lessdef_list args args')
         (ME: Mem.extends m m'),
       match_states
-        (Cminor.Callstate f args k m)
-        (Callstate f' args' k' m')
+        (Cminor.Callstate f args k m sz)
+        (Callstate f' args' k' m' sz)
   | match_returnstate: forall v v' k k' m m'
         (MC: match_call_cont k k')
         (LD: Val.lessdef v v')
@@ -796,7 +798,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
       match_states
         (Cminor.Returnstate v k m)
         (Returnstate v' k' m')
-  | match_builtin_1: forall cunit hf ef args args' optid f sp e k m al f' e' k' m'
+  | match_builtin_1: forall cunit hf ef args args' optid f sp e k m al f' e' k' m' sz
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
         (TF: sel_function (prog_defmap cunit) hf f = OK f')
@@ -807,7 +809,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (EA: list_forall2 (CminorSel.eval_builtin_arg tge sp e' m') al args'),
       forall BUILTIN_ENABLED : builtin_enabled ef,
         match_states
-          (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
+          (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m sz)
           (State f' (Sbuiltin (sel_builtin_res optid) ef al) k' sp e' m')
   | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k'
         (LINK: linkorder cunit prog)
@@ -890,17 +892,105 @@ Proof.
   destruct (ident_eq lbl l). auto. apply IHs; auto.
 Qed.
 
+
+
+(* Lemma linkorder_sel_stmt: *)
+(*   forall (cunit prog: Cminor.program), *)
+(*     linkorder cunit prog -> *)
+(*     forall x s s', *)
+(*       helper_functions_declared cunit x -> *)
+(*       sel_stmt (prog_defmap cunit) s = OK s' -> *)
+(*       sel_stmt (prog_defmap prog) s = OK s'. *)
+(* Proof. *)
+(*   induction s; simpl; intros; auto. *)
+(*   - unfold classify_call in *. *)
+(*     destr_in H1. *)
+(*     + repeat destr_in Heqc. *)
+(*     + destr_in Heqc. *)
+(*       generalize (fun v Heqo1 => prog_defmap_linkorder _ _ i v H Heqo1). intro A. *)
+(*       destr_in Heqc.  *)
+(*       * edestruct A as (gd2 & PDM & LO) ; eauto. *)
+(*         setoid_rewrite PDM. inv LO. inv H2. rewrite Heqc. auto. *)
+(*         destr_in Heqc. *)
+(*         inv Heqc. auto. *)
+(*       * inv H1.  inv Heqc. *)
+(*         destruct ((prog_defmap prog0) ! id) eqn:B; simpl; setoid_rewrite B; auto. *)
+(*         destruct g; auto. *)
+(*         destruct f; auto.  *)
+(*         destruct (ef_inline e0) eqn:INLINE; auto.  *)
+(*         unfold ef_inline in INLINE. *)
+(*         admit. *)
+(*     + repeat destr_in Heqc. *)
+(*       generalize (prog_defmap_linkorder _ _ _ _ H Heqo1). *)
+(*       destruct 1 as (gd2 & EQ & LO). setoid_rewrite EQ. *)
+(*       inv LO. inv H3. rewrite Heqb. auto. simpl in *. congruence. *)
+(*   - unfold classify_call in *. *)
+(*     destruct (expr_is_addrof_ident e) eqn:EIAI. *)
+(*     + destruct (prog_defmap cunit)!i eqn:EQPD. *)
+(*       * setoid_rewrite EQPD in H1. *)
+(*         edestruct (prog_defmap_linkorder _ _ _ _ H EQPD) as (g' & EQ & LO). *)
+(*         setoid_rewrite EQ. *)
+(*         inv LO. inv H2. auto. simpl in *. auto. auto. *)
+(*       * setoid_rewrite EQPD in H1. inv H1. *)
+(*         destruct ((prog_defmap prog0) ! i) eqn:B; simpl; setoid_rewrite B; auto. *)
+(*         destruct g; auto. *)
+(*         destruct f; auto.  *)
+(*         destruct (ef_inline e0) eqn:INLINE; auto.  *)
+(*         unfold ef_inline in INLINE. *)
+(*         admit. *)
+(*     + auto. *)
+(*   - monadInv H1. apply IHs1 in EQ; auto. apply IHs2 in EQ1; auto. *)
+(*     rewrite EQ, EQ1. simpl. auto. *)
+(*   - monadInv H1. apply IHs1 in EQ; auto. apply IHs2 in EQ1; auto. *)
+(*     rewrite EQ, EQ1. simpl. auto. *)
+(*   - monadInv H1. apply IHs in EQ; auto. *)
+(*     rewrite EQ. simpl. auto. *)
+(*   - monadInv H1. apply IHs in EQ; auto. rewrite EQ; simpl; auto. *)
+(*   - monadInv H1. apply IHs in EQ; auto. rewrite EQ; simpl; auto.  *)
+(* Qed. *)
+
+
+(* Lemma linkorder_sel_function: *)
+(*   forall (cunit prog: Cminor.program), *)
+(*     linkorder cunit prog -> *)
+(*     forall x f f', *)
+(*       helper_functions_declared cunit x -> *)
+(*       sel_function (prog_defmap cunit) x f = OK f' -> *)
+(*       sel_function (prog_defmap prog) x f = OK f'. *)
+(* Proof. *)
+(*   unfold sel_function. *)
+(*   intros. *)
+(*   monadInv H1. *)
+
+(* Qed. *)
+
+(* Lemma linkorder_sel_fundef: *)
+(*   forall (cunit prog: Cminor.program), *)
+(*     linkorder cunit prog -> *)
+(*     forall x f f', *)
+(*       helper_functions_declared cunit x -> *)
+(*       sel_fundef (prog_defmap cunit) x (Internal f) = OK f' -> *)
+(*       sel_fundef (prog_defmap prog) x (Internal f) = OK f'. *)
+(* Proof. *)
+(*   unfold sel_fundef. simpl. intros. monadInv H1. *)
+(*   erewrite linkorder_sel_function; eauto. simpl. auto. *)
+(* Qed. *)
+
+  
+
+
+
 Definition measure (s: Cminor.state) : nat :=
   match s with
-  | Cminor.Callstate _ _ _ _ => 0%nat
+  | Cminor.Callstate _ _ _ _ _ => 0%nat
   | Cminor.State _ _ _ _ _ _ => 1%nat
   | Cminor.Returnstate _ _ _ => 2%nat
   end.
 
 Lemma sel_step_correct:
-  forall S1 t S2, Cminor.step ge S1 t S2 ->
+  forall S1 t S2, Cminor.step fn_stack_requirements ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists T2, step tge T1 t T2 /\ match_states S2 T2)
+  (exists T2, step fn_stack_requirements tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
   induction 1; intros T1 ME; inv ME; try (monadInv TS).
@@ -930,13 +1020,16 @@ Proof.
   econstructor; eauto.
 - (* Scall *)
   exploit classify_call_correct; eauto.
-  destruct (classify_call (prog_defmap cunit) a) as [ | id | ef].
+  destruct (classify_call (prog_defmap cunit) a) as [ | id0 | ef].
 + (* indirect *)
   exploit sel_expr_correct; eauto. intros [vf' [A B]].
   exploit sel_exprlist_correct; eauto. intros [vargs' [C D]].
   exploit functions_translated; eauto. intros (cunit' & fd' & U & V & W).
   left; econstructor; split.
-  econstructor; eauto. econstructor; eauto.
+  econstructor; eauto.
+  destruct IFI as (bb & oo & EQ & EQ'). subst. inv B.
+  eexists; eexists; split; eauto. rewrite symbols_preserved; eauto.
+  econstructor; eauto.
   eapply sig_function_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   red; intros. eapply match_cont_call with (cunit := cunit) (hf := hf); eauto. 
@@ -944,12 +1037,19 @@ Proof.
   intros [b [U V]].
   exploit sel_exprlist_correct; eauto. intros [vargs' [C D]].
   exploit functions_translated; eauto. intros (cunit' & fd' & X & Y & Z).
+  destruct IFI as (bb & oo & EQ & EQ'). subst. inv V. 
   left; econstructor; split.
   econstructor; eauto.
-  subst vf. econstructor; eauto. rewrite symbols_preserved; eauto.
+  eexists; eexists; split; eauto. rewrite symbols_preserved; eauto.
+  econstructor; eauto. rewrite symbols_preserved; eauto.
   eapply sig_function_translated; eauto.
+  replace id0 with id.
   eapply match_callstate with (cunit := cunit'); eauto.
-  red; intros; eapply match_cont_call with (cunit := cunit) (hf := hf); eauto. 
+  red; intros; eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
+  apply Genv.find_invert_symbol in U.
+  apply Genv.find_invert_symbol in EQ'.
+  congruence.
+
 + (* turned into Sbuiltin *)
   intros [EQ ENABLED]. subst fd.
   exploit sel_builtin_args_correct; eauto. intros [vargs' [C D]].
@@ -964,11 +1064,20 @@ Proof.
   exploit functions_translated; eauto. intros (cunit' & fd' & E & F & G).
   left; econstructor; split.
   exploit classify_call_correct. eexact LINK. eauto. eauto. 
-  destruct (classify_call (prog_defmap cunit)) as [ | id | ef]; intros.
-  econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
+  destruct (classify_call (prog_defmap cunit)) as [ | id0 | ef]; intros.
+  econstructor; eauto.
+  destruct IFI as (bb & oo & EQ & EQ'). subst.
+  inv B. eexists; eexists; split; eauto. rewrite symbols_preserved; eauto.
+  econstructor; eauto. eapply sig_function_translated; eauto.
   destruct H2 as [b [U V]]. subst vf. inv B.
-  econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
-  econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
+  econstructor; eauto.
+  destruct IFI as (bb & oo & EQ & EQ'). subst.
+  inv EQ. eexists; eexists; split; eauto. rewrite symbols_preserved; eauto.
+  econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
+  econstructor; eauto.
+  destruct IFI as (bb & oo & EQ & EQ'). subst.
+  inv B. eexists; eexists; split; eauto. rewrite symbols_preserved; eauto.
+  econstructor; eauto. eapply sig_function_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)
@@ -1080,8 +1189,8 @@ Proof.
 Qed.
 
 Lemma sel_initial_states:
-  forall S, Cminor.initial_state prog S ->
-  exists R, initial_state tprog R /\ match_states S R.
+  forall S, Cminor.initial_state fn_stack_requirements prog S ->
+  exists R, initial_state fn_stack_requirements tprog R /\ match_states S R.
 Proof.
   destruct 1.
   exploit function_ptr_translated; eauto. intros (cu & f' & A & B & C).
@@ -1091,7 +1200,7 @@ Proof.
   rewrite (match_program_main TRANSF). fold tge. rewrite symbols_preserved. eauto.
   eexact A.
   rewrite <- H2. eapply sig_function_translated; eauto.
-  econstructor; eauto. red; intros; constructor. apply Mem.extends_refl.
+  inv TRANSF.  inv H4. rewrite H5. econstructor; eauto. red; intros; constructor. apply Mem.extends_refl.
 Qed.
 
 Lemma sel_final_states:
@@ -1104,7 +1213,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Cminor.semantics prog) (CminorSel.semantics tprog).
+  forward_simulation (Cminor.semantics fn_stack_requirements prog) (CminorSel.semantics fn_stack_requirements tprog).
 Proof.
   apply forward_simulation_opt with (match_states := match_states) (measure := measure).
   apply senv_preserved. 

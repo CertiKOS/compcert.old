@@ -1144,14 +1144,14 @@ Inductive sound_state_base: state -> Prop :=
         (SP: bc sp = BCstack),
       sound_state_base (State s f (Vptr sp Ptrofs.zero) pc e m)
   | sound_call_state:
-      forall s fd args m bc
+      forall s fd args m bc sz
         (STK: sound_stack bc s m (Mem.nextblock m))
         (ARGS: forall v, In v args -> vmatch bc v Vtop)
         (RO: romatch bc m rm)
         (MM: mmatch bc m mtop)
         (GE: genv_match bc ge)
         (NOSTK: bc_nostack bc),
-      sound_state_base (Callstate s fd args m)
+      sound_state_base (Callstate s fd args m sz)
   | sound_return_state:
       forall s v m bc
         (STK: sound_stack bc s m (Mem.nextblock m))
@@ -1251,7 +1251,7 @@ Qed.
 
 Lemma sound_stack_record:
   forall m m' b fi bc stk bound,
-  Mem.record_stack_block m b fi = Some m' ->
+  Mem.record_stack_blocks m b fi = Some m' ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
 Proof.
@@ -1316,8 +1316,10 @@ Proof.
   econstructor; eauto.
 Qed.
 
+Variable fn_stack_requirements: ident -> Z.
 Theorem sound_step_base:
-  forall st t st', RTL.step ge st t st' -> sound_state_base st -> sound_state_base st'.
+  forall st t st', RTL.step fn_stack_requirements ge st t st' -> sound_state_base st -> sound_state_base st'.
+
 Proof.
   induction 1; intros SOUND; inv SOUND.
 
@@ -1590,8 +1592,10 @@ Inductive sound_state: state -> Prop :=
       (forall cunit, linkorder cunit prog -> sound_state_base cunit ge st) ->
       sound_state st.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Theorem sound_step:
-  forall st t st', RTL.step ge st t st' -> sound_state st -> sound_state st'.
+  forall st t st', RTL.step fn_stack_requirements ge st t st' -> sound_state st -> sound_state st'.
 Proof.
   intros. inv H0. constructor; intros. eapply sound_step_base; eauto. 
 Qed.
@@ -1992,8 +1996,10 @@ Require Import Axioms.
 Section WITHROMEMWP.
 Local Existing Instance romem_for_wp_instance.
 
+Variable fn_stack_requirements: ident -> Z.
+
 Theorem sound_initial:
-  forall prog st, initial_state prog st -> sound_state prog st.
+  forall prog st, initial_state fn_stack_requirements prog st -> sound_state prog st.
 Proof.
   destruct 1.
   exploit initial_mem_matches; eauto. intros (bc & GE & BELOW & NOSTACK & RM & VALID).

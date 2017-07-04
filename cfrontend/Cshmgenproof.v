@@ -139,6 +139,8 @@ Qed.
 Section WITHEXTERNALCALLS.
 Context `{external_calls_prf: ExternalCalls}.
 
+Variable fn_stack_requirements : ident -> Z.
+
 (** * Properties of the translation functions *)
 
 (** Transformation of expressions and statements. *)
@@ -974,7 +976,7 @@ Lemma make_memcpy_correct:
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
   forall (STACK_TOP_NO_INFO: forall b, Mem.is_stack_top m b -> Mem.get_frame_info m b = None),
-  step ge (State f s k e le m) E0 (State f Sskip k e le m').
+  (step fn_stack_requirements) ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
   monadInv H3.
@@ -1005,7 +1007,7 @@ Lemma make_store_correct:
   eval_expr ge e le m rhs v ->
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   forall (STACK_TOP_NO_INFO: forall b, Mem.is_stack_top m b -> Mem.get_frame_info m b = None),
-  step ge (State f code k e le m) E0 (State f Sskip k e le m').
+  (step fn_stack_requirements) ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
   inversion ASSIGN; subst.
@@ -1343,7 +1345,7 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
 Lemma match_transl_step:
   forall ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
-  star step tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
+  star (step fn_stack_requirements) tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
 Proof.
   intros. inv H.
   apply star_one. constructor.
@@ -1412,24 +1414,24 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
           (MTR: match_transl ts tk ts' tk')
           (MENV: match_env e te)
           (MK: match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk)
-          (TOPNOINFO: nostackinfo (Mem.stack_adt m) (Kcall None tf te le tk))
+          (TOPNOINFO: nostackinfo (map fst (Mem.stack_adt m)) (Kcall None tf te le tk))
           (* (TOPNOINFO: forall b : block, Mem.is_stack_top m b -> Mem.get_frame_info m b = None) *),
         match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
-      forall fd args k m tfd tk targs tres cconv cu ce
+      forall fd args k m tfd tk targs tres cconv cu ce sz
           (LINK: linkorder cu prog)
           (TR: match_fundef cu fd tfd)
           (MK: match_cont ce Tvoid 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
-          (TOPNOINFO: nostackinfo (Mem.stack_adt m) tk)
+          (TOPNOINFO: nostackinfo (map fst (Mem.stack_adt m)) tk)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
-      match_states (Clight.Callstate fd args k m)
-                   (Callstate tfd args tk m)
+      match_states (Clight.Callstate fd args k m sz)
+                   (Callstate tfd args tk m sz)
   | match_returnstate:
       forall res k m tk ce
         (MK: match_cont ce Tvoid 0%nat 0%nat k tk)
-        (TOPNOINFO: nostackinfo (Mem.stack_adt m) tk),
+        (TOPNOINFO: nostackinfo (map fst (Mem.stack_adt m)) tk),
       match_states (Clight.Returnstate res k m)
                    (Returnstate res tk m).
 
@@ -1439,7 +1441,7 @@ Remark match_states_skip:
   transl_function cu.(prog_comp_env) f = OK tf ->
   match_env e te ->
   match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk ->
-  nostackinfo (Mem.stack_adt m) (Kcall None tf te le tk) ->
+  nostackinfo (map fst (Mem.stack_adt m)) (Kcall None tf te le tk) ->
   match_states (Clight.State f Clight.Sskip k e le m) (State tf Sskip tk te le m).
 Proof.
   intros. econstructor; eauto. simpl; reflexivity. constructor.
@@ -1628,9 +1630,9 @@ Qed.
 (** The simulation proof *)
 
 Lemma transl_step:
-  forall S1 t S2, Clight.step2 ge S1 t S2 ->
+  forall S1 t S2, Clight.step2 fn_stack_requirements ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
+  exists T2, plus (step fn_stack_requirements) tge T1 t T2 /\ match_states S2 T2.
 Proof.
   induction 1; intros T1 MST; inv MST.
 
@@ -1647,8 +1649,8 @@ Proof.
   eapply transl_lvalue_correct; eauto. eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
   unfold Mem.is_stack_top, Mem.get_stack_top_blocks, Mem.get_frame_info. simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
-  destruct TOPNOINFO. destruct f0; try intuition congruence. simpl.
+  destruct (Mem.stack_adt m) eqn:?; try intuition congruence. simpl in *. 
+  destruct p. simpl in *. destruct TOPNOINFO. destruct f0; try intuition congruence.
   intros. destruct (in_dec); try intuition congruence.
   eapply match_states_skip; eauto.
   erewrite assign_loc_stack_adt; eauto.
@@ -1665,6 +1667,7 @@ Proof.
   rewrite H in CF. simpl in CF. inv CF.
   econstructor; split.
   apply plus_one. econstructor; eauto.
+  destruct IFI as (bb & oo & EQ0 & EQ2). subst. red; rewrite symbols_preserved. eauto.
   eapply transl_expr_correct with (cunit := cu); eauto.
   eapply transl_arglist_correct with (cunit := cu); eauto.
   erewrite typlist_of_arglist_eq by eauto.
@@ -1773,7 +1776,8 @@ Proof.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
   simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct (Mem.stack_adt m) eqn:?; try intuition congruence. simpl in *. easy.
+  simpl in *. destruct p. simpl in *.
   destruct f0 ; try intuition congruence.
   erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
   exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H0.
@@ -1789,7 +1793,8 @@ Proof.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
   simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct (Mem.stack_adt m) eqn:?; simpl in *; try intuition congruence.
+  destruct p. simpl in *.
   destruct f0 ; try intuition congruence.
   erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
   exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H2.
@@ -1804,7 +1809,8 @@ Proof.
   eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; try intuition congruence.
+  destruct (Mem.stack_adt m) eqn:?; simpl in *; try intuition congruence.
+  destruct p; simpl in *.
   destruct f0 ; try intuition congruence.
   erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
   exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H1.
@@ -1856,20 +1862,25 @@ Proof.
   apply plus_one. constructor. simpl. eexact A.
   econstructor; eauto. constructor.
   simpl in *.
-  destruct (Mem.stack_adt m); auto.
+  destruct (Mem.stack_adt m); simpl in *; auto.
+  destruct p; simpl in *.
   destruct TOPNOINFO. destruct f0; try intuition congruence.
   split; auto.
   eapply find_label_nostackinfo. eauto.
   eapply nostackinfo_call_cont; eauto.
 
 - (* internal function *)
-  inv H. inv TR. monadInv H6.
+
+  inv H.
+  inv TR.
+  monadInv H6.
   exploit match_cont_is_call_cont; eauto. intros [A B].
-  exploit match_env_alloc_variables; eauto.
+  exploit match_env_alloc_variables. apply LINK. all: eauto.
   apply match_env_empty.
   intros [te1 [C D]].
   econstructor; split.
   apply plus_one. eapply step_internal_function.
+  eauto. eauto. 
   simpl. erewrite transl_vars_names by eauto. assumption.
   simpl. assumption.
   simpl. assumption.
@@ -1899,8 +1910,8 @@ Proof.
 Qed.
 
 Lemma transl_initial_states:
-  forall S, Clight.initial_state prog S ->
-  exists R, initial_state tprog R /\ match_states S R.
+  forall S, Clight.initial_state fn_stack_requirements prog S ->
+  exists R, initial_state fn_stack_requirements tprog R /\ match_states S R.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
@@ -1910,6 +1921,7 @@ Proof.
   { eapply transl_fundef_sig2; eauto. }
   econstructor; split.
   econstructor; eauto. apply (Genv.init_mem_match TRANSL). eauto.
+  inv TRANSL. inv H4. rewrite H5.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
   simpl; auto.
 Qed.
@@ -1922,7 +1934,7 @@ Proof.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).
+  forward_simulation (Clight.semantics2 fn_stack_requirements prog) (Csharpminor.semantics fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

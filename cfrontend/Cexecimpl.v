@@ -166,10 +166,10 @@ Definition step_expr ge := Cexec.step_expr ge do_external_function do_external_f
 Definition init_mem F V := Globalenvs.Genv.init_mem (F := F) (V := V).
 Arguments init_mem [_ _] _.
 
-Theorem do_step_sound ge:
+Theorem do_step_sound fsr ge:
   forall w S rule t S',
-  List.In (Cexec.TR rule t S') (do_step ge w S) ->
-  Csem.step ge S t S' \/ (t = Events.E0 /\ S' = Csem.Stuckstate /\ Cexec.can_crash_world ge w S).
+  List.In (Cexec.TR rule t S') (do_step ge fsr w S) ->
+  Csem.step fsr ge S t S' \/ (t = Events.E0 /\ S' = Csem.Stuckstate /\ Cexec.can_crash_world ge fsr w S).
 Proof.
   apply Cexec.do_step_sound;
   eauto using
@@ -177,11 +177,11 @@ Proof.
     do_inline_assembly_sound, do_inline_assembly_complete.
 Qed.
 
-Theorem do_step_complete ge:
+Theorem do_step_complete fsr ge:
   forall w S t S' w',
   Determinism.possible_trace w t w' ->
-  Csem.step ge S t S' ->
-  exists rule, List.In (Cexec.TR rule t S') (do_step ge w S).
+  Csem.step fsr ge S t S' ->
+  exists rule, List.In (Cexec.TR rule t S') (do_step ge fsr w S).
 Proof.
   apply Cexec.do_step_complete;
   eauto using

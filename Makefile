@@ -90,7 +90,6 @@ BACKEND=\
   Allocation.v Allocproof.v \
   Tunneling.v Tunnelingproof.v \
   Linear.v Lineartyping.v \
-  Linear2.v \
   Linearize.v Linearizeproof.v \
   CleanupLabels.v CleanupLabelsproof.v \
   Debugvar.v Debugvarproof.v \
