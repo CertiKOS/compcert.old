@@ -1466,3 +1466,8 @@ Ltac autospe :=
          | H: Some _ = None |- _ => inv H
          | |- _ => try subst
          end.
+
+Ltac trim H :=
+  match type of H with
+    ?a -> ?b => let x := fresh in assert a as x; [ clear H | specialize (H x); clear x]
+  end.

@@ -64,7 +64,7 @@ Definition perm_order'' (po1 po2: option permission) :=
 Fixpoint size_stack (l: list (frame_adt * Z)) : Z :=
   match l with
     nil => 0
-  | (a,n)::r => size_stack r + Z.max 0 n
+  | (a,n)::r => size_stack r + align (Z.max 0 n) 8
   end.
 
 Parameter stack_limit: Z.
@@ -950,7 +950,7 @@ Qed.
 Program Definition add_adt (m: mem) (f: frame_adt) (n: Z): option mem :=
   if valid_frame_dec f m
   then
-    if zlt (size_stack (stack_adt m) + Z.max 0 n) stack_limit
+    if zlt (size_stack (stack_adt m) + align (Z.max 0 n) 8) stack_limit
     then Some (mkmem (mem_contents m)
                    (mem_access m)
                    (nextblock m)
@@ -985,7 +985,8 @@ Lemma size_stack_tl:
     size_stack (tl l) <= size_stack l.
 Proof.
   induction l; simpl; intros. omega.
-  destruct a. rewrite Zmax_spec. destruct zlt; omega.
+  destruct a.
+  generalize (align_le (Z.max 0 z) 8) (Z.le_max_l 0 z); omega.
 Qed.
 
 Definition unrecord_stack_block (m: mem) : option mem :=
@@ -6450,7 +6451,7 @@ Proof.
   {
     
     destruct (valid_frame_dec (frame_with_info b0 o) m2).
-    destruct (zlt (size_stack (stack_adt m2) + Z.max 0 fi) stack_limit).
+    destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 fi) 8) stack_limit).
     - eexists; split; eauto.
       inv H.
       constructor; simpl; intros; eauto.
@@ -6466,7 +6467,7 @@ Proof.
   }
   {
     destruct (valid_frame_dec (frame_without_info l0) m2).
-    destruct (zlt (size_stack (stack_adt m2) + Z.max 0 fi) stack_limit).
+    destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 fi) 8) stack_limit).
     - eexists; split; eauto.
       inv H.
       constructor; simpl; intros; eauto.
@@ -6512,7 +6513,7 @@ Proof.
   unfold add_adt; intros; autospe.
   generalize (valid_frame_extends _ _ _ H v); intro v'.
   destruct (valid_frame_dec fi m2); try congruence.
-  destruct (zlt (size_stack (stack_adt m2) + Z.max 0 n) stack_limit). 
+  destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 n) 8) stack_limit). 
   - eexists; split; eauto.
     inv H; constructor; simpl; intros; eauto.
     inv mext_inj0; constructor; simpl; intros; eauto.
@@ -6545,7 +6546,7 @@ Proof.
   intros m1 m1' m2 j fi1 fi2 b b' delta n JB INJ FI RSB.
   autospe.
   destruct (valid_frame_dec (frame_with_info b' fi2)); auto.
-  destruct (zlt (size_stack (stack_adt m2) + Z.max 0 n) stack_limit).
+  destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 n) 8) stack_limit).
   - eexists; split; eauto.
     inv INJ; econstructor; simpl; intros; eauto.
     + inv mi_inj0; constructor; simpl; intros; eauto.
@@ -6576,7 +6577,7 @@ Proof.
   intros; autospe.
   clear Heqs.
   destruct (valid_frame_dec (frame_with_info b None) m2).
-  destruct (zlt (size_stack (stack_adt m2) + Z.max 0 n) stack_limit).
+  destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 n) 8) stack_limit).
   - eexists; split; eauto.
     inv INJ; econstructor; simpl; intros; eauto.
     + inv mi_inj0; constructor; simpl; intros; eauto.
@@ -6606,7 +6607,7 @@ Proof.
   intros j m1 m2 bl bl' m1' z INJ FOR RSB VALID; autospe.
   clear Heqs.
   destruct (valid_frame_dec (frame_without_info bl') m2).
-  destruct (zlt (size_stack (stack_adt m2) + Z.max 0 z) stack_limit).
+  destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 z) 8) stack_limit).
   - eexists; split; eauto.
     inv INJ; econstructor; simpl; intros; eauto.
     + inv mi_inj0; constructor; simpl; intros; eauto.
@@ -6635,7 +6636,7 @@ Proof.
   clear Heqs.
   {
     destruct (valid_frame_dec (frame_with_info b o) m2).
-    destruct (zlt (size_stack (stack_adt m2) + Z.max 0 z) stack_limit).
+    destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 z) 8) stack_limit).
     - eexists; split; eauto.
       inv INJ; econstructor; simpl; intros; eauto.
       inv mext_inj0; constructor; simpl; intros; eauto.
@@ -6651,7 +6652,7 @@ Proof.
   }
   {
     destruct (valid_frame_dec (frame_without_info l0) m2).
-    destruct (zlt (size_stack (stack_adt m2) + Z.max 0 z) stack_limit).
+    destruct (zlt (size_stack (stack_adt m2) + align (Z.max 0 z) 8) stack_limit).
     - eexists; split; eauto.
       inv INJ; econstructor; simpl; intros; eauto.
       inv mext_inj0; constructor; simpl; intros; eauto.

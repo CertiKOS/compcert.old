@@ -2999,10 +2999,6 @@ Proof.
   reflexivity.
 Qed.
 
-Ltac trim H :=
-  match type of H with
-    ?a -> ?b => let x := fresh in assert a as x; [ clear H | specialize (H x); clear x]
-  end.
 
 Lemma external_call_step_correct:
   forall s ef res rs1 m t m' sz
