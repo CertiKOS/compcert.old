@@ -749,8 +749,12 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
       Next (nextinstr_nf (rs#rd <- (Val.negl rs#rd))) m
   | Paddl_ri rd n =>
       Next (nextinstr_nf (rs#rd <- (Val.add rs#rd (Vint n)))) m
+  | Psubl_ri rd n =>
+    Next (nextinstr_nf (rs#rd <- (Val.sub rs#rd (Vint n)))) m
   | Paddq_ri rd n =>
-      Next (nextinstr_nf (rs#rd <- (Val.addl rs#rd (Vlong n)))) m
+    Next (nextinstr_nf (rs#rd <- (Val.addl rs#rd (Vlong n)))) m
+  | Psubq_ri rd n =>
+    Next (nextinstr_nf (rs#rd <- (Val.subl rs#rd (Vlong n)))) m
   | Psubl_rr rd r1 =>
       Next (nextinstr_nf (rs#rd <- (Val.sub rs#rd rs#r1))) m
   | Psubq_rr rd r1 =>
@@ -1025,6 +1029,8 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
               end
           end
       end
+  | Pcfi_adjust n => Next rs m
+  
   | Pbuiltin ef args res =>
       Stuck                             (**r treated specially below *)
   (** The following instructions and directives are not generated
@@ -1040,7 +1046,6 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Pbswap64 _
   | Pbswap32 _
   | Pbswap16 _
-  | Pcfi_adjust _
   | Pfmadd132 _ _ _
   | Pfmadd213 _ _ _
   | Pfmadd231 _ _ _
@@ -1064,8 +1069,7 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Prep_movsl
   | Psbbl_rr _ _
   | Psqrtsd _ _
-  | Psubl_ri _ _
-  | Psubq_ri _ _ => Stuck
+    => Stuck
   end.
 
 End WITH_FIND_LABELS.
