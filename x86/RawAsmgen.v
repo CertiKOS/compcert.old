@@ -520,6 +520,7 @@ Section WITHMEMORYMODEL.
           generalize (NIB b0 delta0 o k p H0 H2).
           destruct (peq b0 b). subst.
           assert (forall o k p, Mem.perm m1 b o k p -> 0 <= o < sz). admit. apply H4 in H2. intuition.
+          intuition.
           generalize (AGSP _ RSPEQ).
           generalize (Mem.unrecord_stack_adt _ _ Heqo2).
           erewrite Mem.free_stack_blocks. 2: eauto. intros (b0 & EQ).

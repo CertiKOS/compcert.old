@@ -1502,13 +1502,13 @@ Lemma function_epilogue_correct:
   j sp = Some(sp', fe.(fe_stack_data)) ->
   Mem.free m sp 0 f.(Linear.fn_stacksize) = Some m1 ->
   Mem.unrecord_stack_block m1 = Some m1_ ->
-  forall fi r n,
-    Mem.stack_adt m' = (frame_with_info sp' (Some fi), n) :: r ->
-    frame_size fi = fe_size fe ->
+  (* forall fi r n, *)
+  (*   Mem.stack_adt m' = (frame_with_info sp' (Some fi), n) :: r -> *)
+  (*   frame_size fi = fe_size fe -> *)
   exists rs1, exists m_ m1',
      load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) = Some pa
   /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) = Some ra
-  /\ Mem.free m' sp' 0 (frame_size fi) = Some m_
+  /\ Mem.free m' sp' 0 (fe_size fe) = Some m_
   /\ Mem.unrecord_stack_block m_ = Some m1'
   /\ star step tge
        (State cs fb (Vptr sp' Ptrofs.zero) (restore_callee_save fe k) rs m')
@@ -1517,16 +1517,15 @@ Lemma function_epilogue_correct:
   /\ agree_callee_save (return_regs ls0 ls) ls0
   /\ m1' |= minjection j m1_ ** P.
 Proof.
-  intros until fb; intros STACK SEP AGR AGL INJ FREE UNRECORD fi r n ADT SIZE.
+  intros until fb; intros STACK SEP AGR AGL INJ FREE UNRECORD.  (* fi r n ADT SIZE. *)
   (* Can free *)
-  exploit pop_frame_parallel_rule. 
+  exploit pop_frame_parallel_rule. exact 0.
   2: rewrite <- sep_assoc. 2: eapply mconj_proj2.
-  2: rewrite SIZE. 2: eexact SEP. eauto.
+  2: eexact SEP. eauto.
   eexact FREE.
   eauto.
   eexact INJ.
   auto. rewrite Z.max_comm; reflexivity.
-  eauto.
   intros (m_ & m1' & FREE' & UNRECORD' & SEP').
   (* Reloading the callee-save registers *)
   exploit restore_callee_save_correct.
@@ -1549,7 +1548,7 @@ Proof.
   split. assumption.
   split. eassumption.
   split. red; unfold return_regs; intros. 
-    destruct (is_callee_save r0) eqn:C.
+    destruct (is_callee_save r) eqn:C.
     apply CS; auto.
     rewrite NCS by auto. apply AGR.
   split. red; unfold return_regs; intros.
@@ -3473,13 +3472,10 @@ Proof.
 - (* Ltailcall *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
   inv CSC. rewrite FIND in FIND0; inv FIND0.
-  rename tf0 into tf. generalize (CallStackConsistency); intros (l1 & rr & EQADT & FORALL). inv FORALL.
-  destruct H4 as (fi & EQ & SIZEEQ). subst. simpl in EQADT.
-  destruct b1; simpl in *. subst. eauto. 
+  rename tf0 into tf. 
   exploit function_epilogue_correct; eauto.
   2: rewrite sep_swap12. 2: eapply mconj_proj1. 2:rewrite sep_swap12. 2: eauto.
   rewrite m_invar_stack_sepconj. rewrite stack_contents_invar_stack. reflexivity.
-  rewrite SIZEEQ. erewrite (unfold_transf_function _ _ TRANSL). reflexivity.
   rename SEP into SEP_init. intros (rs1 & m_ & m1' & P & Q & R1 & R2 & S & T & U & SEP).
   rewrite sep_swap in SEP.
   exploit find_function_translated; eauto.
@@ -3487,7 +3483,8 @@ Proof.
   intros [bf [tf' [A [B C]]]].
   econstructor; split.
   + eapply plus_right. eexact S. econstructor; eauto.
-    rewrite Ptrofs.unsigned_zero; simpl. rewrite <- SIZEEQ. eauto.
+    rewrite Ptrofs.unsigned_zero; simpl.
+    rewrite (unfold_transf_function _ _ TRANSL).  apply R1. 
     traceEq.
   + assert (TAILCALL: tailcall_possible (Linear.funsig f')).
     {
@@ -3505,11 +3502,11 @@ Proof.
       generalize (U (R m0)), (AGREGS m0), (T m0).
       destr_in IFI.
       simpl. rewrite IFI, Heqv. rewrite Heqb0. inversion 3; subst.
-      erewrite MPG1 in H9; eauto. inv H9.
+      erewrite MPG1 in H8; eauto. inv H8.
       eapply Genv.find_invert_symbol; eauto.
       rewrite symbols_preserved; eauto.
       simpl. rewrite IFI, Heqv. rewrite Heqb0. inversion 3; subst.
-      erewrite MPG1 in H9; eauto. inv H9.
+      erewrite MPG1 in H8; eauto. inv H8.
       eapply Genv.find_invert_symbol; eauto.
       rewrite symbols_preserved; eauto.
       subst. 
@@ -3529,7 +3526,7 @@ Proof.
             clear SEP_init. clear init_sp_int.
             clearbody step.
             destruct init_sp eqn:?; try discriminate.
-            unfold load_stack in H8 |- *; simpl in *.
+            unfold load_stack in H7 |- *; simpl in *.
             eapply Mem.load_unchanged_on with (P0:= fun b o => b <> sp') .
             eapply Mem.unchanged_on_trans. eapply Mem.free_unchanged_on. apply R1. intuition.
             eapply Mem.strong_unchanged_on_weak. eapply Mem.unrecord_stack_block_unchanged_on. eauto.
@@ -3712,17 +3709,14 @@ Proof.
 - (* Lreturn *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
   inv CSC. rewrite FIND0 in FIND; inv FIND.
-  generalize (CallStackConsistency); intros (l1 & rr & EQADT & FORALL). inv FORALL.
-  destruct H3 as (fi & EQ & SIZEEQ). destruct b1; simpl in *; subst. simpl in EQADT.
   exploit function_epilogue_correct; eauto.
   2: rewrite sep_swap12 in SEP |- *.
   2: apply mconj_proj1 in SEP; eauto.
   rewrite m_invar_stack_sepconj, stack_contents_invar_stack; reflexivity.
-  rewrite SIZEEQ. erewrite (unfold_transf_function _ _ TRANSL). reflexivity.
   intros (rs' & m_ & m1' & A & B & C1 & C2 & D & E & F & G).
   econstructor; split.
   eapply plus_right. eexact D. econstructor; eauto.
-  rewrite Ptrofs.unsigned_zero. simpl. rewrite <- SIZEEQ. eauto.
+  rewrite Ptrofs.unsigned_zero. simpl. erewrite (unfold_transf_function _ _ TRANSL). apply C1.
   traceEq.
   constr_match_states. all: try subst; eauto.
   + rewrite sep_swap.
@@ -3738,7 +3732,7 @@ Proof.
     clear SEP. clear init_sp_int.
     clearbody step.
     destruct init_sp eqn:?; try discriminate.
-    unfold load_stack in H7 |- *; simpl in *.
+    unfold load_stack in H6 |- *; simpl in *.
     eapply Mem.load_unchanged_on with (P:= fun b o => b <> sp') .
     eapply Mem.unchanged_on_trans. eapply Mem.free_unchanged_on. apply C1. intuition.
     eapply Mem.strong_unchanged_on_weak. eapply Mem.unrecord_stack_block_unchanged_on. eauto.

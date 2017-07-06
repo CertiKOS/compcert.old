@@ -991,11 +991,10 @@ Proof.
   (* PW: We need to prove that strong_non_private_stack_access m b for the memcpy extcall.
    * Intuitively, this holds because we have non_private_stack_access (from storebytes);
    * AND the stack top does not have any frame information associated with it.
-   * Sketchy proof below.
    *)
   apply Mem.storebytes_non_private_stack_access in H9.
   destruct H9; auto.
-  red; rewrite STACK_TOP_NO_INFO; auto.
+  red. rewrite STACK_TOP_NO_INFO; auto.
   auto.
 Qed.
 

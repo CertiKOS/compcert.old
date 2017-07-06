@@ -1139,20 +1139,19 @@ Proof.
 Qed.
 
 Lemma pop_frame_parallel_rule:
-  forall (j : meminj) (m1 : mem) (b1 : block) (sz1 : Z) (m1' m1'' m2 : mem) (b2 : block) (lo hi delta n : Z) (P : massert) f r,
+  forall (j : meminj) (m1 : mem) (b1 : block) (sz1 sz2 : Z) (m1' m1'' m2 : mem) (b2 : block) (lo hi delta n : Z) (P : massert),
     m_invar_stack P = false ->
-    m2 |= range b2 0 lo ** range b2 hi (frame_size f) ** minjection j m1 ** P ->
+    m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j m1 ** P ->
     Mem.free m1 b1 0 sz1 = Some m1' ->
     Mem.unrecord_stack_block m1' = Some m1'' ->
     j b1 = Some (b2, delta) ->
     lo = delta -> hi = delta + Z.max 0 sz1 ->
-    Mem.stack_adt m2 = (frame_with_info b2 (Some f), n) :: r ->
     exists m2_ m2',
-      Mem.free m2 b2 0 (frame_size f) = Some m2_ /\
+      Mem.free m2 b2 0 sz2 = Some m2_ /\
       Mem.unrecord_stack_block m2_ = Some m2'
       /\ m2' |= minjection j m1'' ** P.
 Proof.
-  intros j m1 b1 sz1 m1' m1'' m2 b2 lo hi delta n P f r INVAR SEP FREE UNRECORD JB LOEQ HIEQ STACK.
+  intros j m1 b1 sz1 sz2 m1' m1'' m2 b2 lo hi delta n P INVAR SEP FREE UNRECORD JB LOEQ HIEQ.
   exploit free_parallel_rule; eauto.
   intros (m2' & FREE' & SEP').
   exploit unrecord_stack_block_parallel_rule; eauto.
