@@ -1013,9 +1013,9 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
           | Some sp =>
               match rs#RSP with
               | Vptr stk ofs =>
-                match Mem.stack_adt m with
-                | (frame_with_info b (Some fi), n)::r =>
-                  match Mem.free m b 0 (frame_size fi) with
+                (* match Mem.stack_adt m with *)
+                (* | (frame_with_info b (Some fi), n)::r => *)
+                  match Mem.free m stk 0 sz with
                   | None => Stuck
                   | Some m' =>
                     match Mem.unrecord_stack_block m' with
@@ -1023,8 +1023,8 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
                     | None => Stuck
                     end
                   end
-                | _ => Stuck
-                end
+                (* | _ => Stuck *)
+                (* end *)
               | _ => Stuck
               end
           end

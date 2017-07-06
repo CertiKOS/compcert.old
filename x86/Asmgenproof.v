@@ -710,8 +710,9 @@ Opaque loadind.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. replace (chunk_of_type Tptr) with Mptr in * by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
   rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
-  rewrite EQ1. rewrite Ptrofs.unsigned_zero in E. simpl in E.
-  rewrite SZEQ. rewrite E. rewrite G.
+  rewrite Ptrofs.unsigned_zero in E. simpl in E.
+  erewrite frame_size_correct; eauto.
+  rewrite E. rewrite G.
   eauto.
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H5. simpl. eauto.
@@ -735,8 +736,9 @@ Opaque loadind.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. replace (chunk_of_type Tptr) with Mptr in * by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
   rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
-  rewrite EQ1. rewrite Ptrofs.unsigned_zero in E. simpl in E.
-  rewrite SZEQ. rewrite E. rewrite G. eauto.
+  rewrite Ptrofs.unsigned_zero in E. simpl in E.
+  erewrite frame_size_correct; eauto.
+  rewrite E. rewrite G. eauto.
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H5. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -909,7 +911,8 @@ Transparent destroyed_by_jumptable.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
   rewrite Ptrofs.unsigned_zero in E; simpl in E.
-  rewrite EQ1, SZEQ, E, G; eauto.
+  erewrite frame_size_correct; eauto.
+  rewrite  E, G; eauto.
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
