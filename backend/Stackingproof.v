@@ -2251,21 +2251,21 @@ Qed.
 
 Variables init_m : mem.
 
-Definition stack_blocks_of_callstack (l : list Mach.stackframe) : list (block*Z) :=
+Definition stack_blocks_of_callstack (l : list Mach.stackframe) : list (block) :=
   map (fun x =>
          match x with
            Stackframe fb sp _ _ =>
-           match Genv.find_funct_ptr tge fb with
-             Some (Internal f) =>
-             (sp, fn_stacksize f)
-           | _ => (sp, 0)
-           end
+           sp
+           (* match Genv.find_funct_ptr tge fb with *)
+           (*   Some (Internal f) => *)
+           (*   (sp, fn_stacksize f) *)
+           (* | _ => (sp, 0) *)
+           (* end *)
          end) l.
 
-Definition list_prefix (l1: list (block*Z)) (l2 : list (frame_adt * Z)) : Prop :=
-  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun b f => let '(b,sz) := b in
-                                                   exists fi, fst f = frame_with_info b (Some fi) /\
-                                                         frame_size fi = sz
+Definition list_prefix (l1: list (block)) (l2 : list (frame_adt * Z)) : Prop :=
+  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun b f => 
+                                                   exists fi, fst f = frame_with_info b (Some fi)
                                           ) l1 l1'.
 
 Definition init_sp_has_stackinfo (m: mem) : Prop :=
@@ -2302,7 +2302,7 @@ Inductive call_stack_consistency: Mach.state -> Prop :=
 | call_stack_consistency_intro:
     forall c cs' fb sp' rs m' tf
       (FIND: Genv.find_funct_ptr tge fb = Some (Internal tf))
-      (CallStackConsistency: list_prefix ((sp',fn_stacksize tf)::stack_blocks_of_callstack cs') (Mem.stack_adt m'))
+      (CallStackConsistency: list_prefix ((sp')::stack_blocks_of_callstack cs') (Mem.stack_adt m'))
       (CFD: callstack_function_defined cs'),
       call_stack_consistency (Mach.State cs' fb (Vptr sp' Ptrofs.zero) c rs m')
 | call_stack_consistency_call:
@@ -2329,10 +2329,7 @@ Proof.
   - econstructor; eauto. destruct a; simpl in *; try discriminate. erewrite Mem.store_no_abstract; eauto.
   - econstructor. simpl in *.
     destruct CallStackConsistency as (l1 & l2 & A & B).
-    rewrite H0.
-    repeat eexists; eauto. inv B; constructor; auto.
-    rewrite H0 in FIND; inv FIND. eauto.
-    econstructor; eauto.
+    repeat eexists; eauto.  econstructor; eauto.
   - econstructor. simpl in *.
     destruct CallStackConsistency as (l1 & l2 & A & B).
     exploit Mem.unrecord_stack_adt. eauto. intros (b & EQ).
@@ -2364,8 +2361,6 @@ Proof.
     erewrite <- external_call_stack_blocks; eauto.
     eauto.
   - inv CFD. econstructor; eauto.
-    destruct CallStackConsistency as (l1 & l2 & A & B).
-    repeat eexists; eauto. simpl in *. rewrite FINDF in B. eauto. 
 Qed.
 
 (*  *)
@@ -2497,7 +2492,7 @@ Proof.
     destruct CallStackConsistency as (l1 & l2 & A & B). inv B.
     unfold Mem.is_stack_top, Mem.get_stack_top_blocks.
     destruct (Mem.stack_adt m) eqn:?. simpl; easy. destruct p; simpl in *.
-    inv A. simpl. inv CFD. rewrite FINDF in H1.
+    inv A. simpl.
     decompose [ex and] H1; clear H1. simpl in *. intro; subst.
     simpl. intuition. subst b.
     eapply NI0; eauto.
@@ -2973,11 +2968,10 @@ Lemma match_stacks_not_init_sp:
   forall j s s' sig sig' b o,
     match_stacks j s s' sig sig' ->
     init_sp = Vptr b o ->
-    ~ In b (map fst (stack_blocks_of_callstack s')).
+    ~ In b (stack_blocks_of_callstack s').
 Proof.
   induction 1; simpl; intros; eauto.
   intros [A|A]. eapply NOT_INIT; eauto.
-  destruct (Genv.find_funct_ptr tge fb); auto. destruct f0; auto.
   eapply IHmatch_stacks in A; eauto.
 Qed.
 
@@ -3235,7 +3229,7 @@ Proof.
       inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
       destruct (Mem.stack_adt m') eqn:EQADT'. inv FORALL. simpl in EQADT. congruence.
       destruct p; simpl in *.
-      inv FORALL. simpl in EQADT. inv EQADT. destruct H1 as (fi & FWI & SZ). simpl in *. subst. simpl; auto.
+      inv FORALL. simpl in EQADT. inv EQADT. destruct H1 as (fi & FWI). simpl in *. subst. simpl; auto.
     }
     exploit wt_state_setstack; eauto. intros (SV & SW).
     set (ofs' := match sl with
