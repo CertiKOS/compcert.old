@@ -546,7 +546,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_internal_function: forall f vargs k m m' sp e m'' sz,
       Mem.alloc m 0 f.(fn_stackspace) = (m', sp) ->
-      Mem.record_stack_blocks m' (inl (sp, None)) sz = Some m'' ->
+      Mem.record_stack_blocks m' (Some (frame_with_info sp None)) sz = Some m'' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs k m sz)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m'')
@@ -659,7 +659,7 @@ Inductive eval_funcall:
   | eval_funcall_internal:
       forall m f vargs m1 sp e t e2 m1' m2 out vres m3 sz,
         Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
-        Mem.record_stack_blocks m1 (inl (sp, None)) sz = Some m1' ->
+        Mem.record_stack_blocks m1 (Some (frame_with_info sp None)) sz = Some m1' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1' f.(fn_body) t e2 m2 out ->
       outcome_result_value out f.(fn_sig).(sig_res) vres ->
@@ -787,7 +787,7 @@ CoInductive evalinf_funcall:
   | evalinf_funcall_internal:
       forall m f vargs m1 m1' sp e t sz,
         Mem.alloc m 0 f.(fn_stackspace) = (m1, sp) ->
-        Mem.record_stack_blocks m1 (inl (sp, None)) sz = Some m1' ->
+        Mem.record_stack_blocks m1 (Some (frame_with_info sp None)) sz = Some m1' ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m1' f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t sz

@@ -317,7 +317,9 @@ Proof.
   destruct (Archi.ptr64 || low_ireg r) eqn:E.
 (* low reg *)
   monadInv H. econstructor; split. apply exec_straight_one.
-  simpl. unfold exec_store. rewrite H0. eauto. auto.
+  simpl. unfold exec_store. rewrite H0.
+  eauto.
+  auto.
   intros; Simplifs.
 (* high reg *)
   InvBooleans. rewrite H1; simpl. destruct (addressing_mentions addr RAX) eqn:E; monadInv H.
@@ -329,12 +331,14 @@ Proof.
   apply exec_straight_three with rs2 m1 rs3 m1.
   simpl. auto.
   simpl. replace (rs2 r) with (rs1 r). auto. symmetry. unfold rs2; Simplifs.
-  simpl. unfold exec_store. unfold eval_addrmode; rewrite H1; simpl. rewrite Int.add_zero.
+  simpl. unfold exec_store.
+  unfold eval_addrmode; rewrite H1; simpl. rewrite Int.add_zero.
   change (rs3 RAX) with (rs1 r).
   change (rs3 RCX) with (eval_addrmode32 ge addr rs1).
   replace (Val.add (eval_addrmode32 ge addr rs1) (Vint Int.zero))
      with (eval_addrmode ge addr rs1).
-  rewrite H0. eauto.
+  rewrite H0.
+  eauto.
   unfold eval_addrmode in *; rewrite H1 in *.
   destruct (eval_addrmode32 ge addr rs1); simpl in H0; try discriminate H0.
   simpl. rewrite H1. rewrite Ptrofs.add_zero; auto.
@@ -347,7 +351,8 @@ Proof.
   simpl. auto.
   simpl. unfold exec_store. unfold eval_addrmode in *; rewrite H1 in *.
   rewrite (addressing_mentions_correct addr RAX rs2 rs1); auto.
-  change (rs2 RAX) with (rs1 r). rewrite H0. eauto.
+  change (rs2 RAX) with (rs1 r). rewrite H0.
+  eauto.
   intros. unfold rs2; Simplifs.
   auto. auto.
   intros. destruct H3. simpl. Simplifs. unfold rs2; Simplifs.
@@ -395,20 +400,20 @@ Qed.
 
 Lemma storeind_correct:
   forall (base: ireg) ofs ty src k (rs: regset) c m m',
-  storeind src base ofs ty k = OK c ->
-  Mem.storev (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) (rs#(preg_of src)) = Some m' ->
+    storeind src base ofs ty k = OK c ->
+    Mem.storev (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) (rs#(preg_of src)) = Some m' ->
   exists rs',
      exec_straight ge fn c rs m k rs' m'
   /\ forall r, data_preg r = true -> preg_notin r (destroyed_by_setstack ty) -> rs'#r = rs#r.
 Proof.
-  unfold storeind; intros.
+  unfold storeind; intros base ofs ty src k rs c m m' SI STORE.
   set (addr := Addrmode (Some base) None (inl (ident * ptrofs) (Ptrofs.unsigned ofs))) in *.
   assert (eval_addrmode ge addr rs = Val.offset_ptr rs#base ofs).
   { apply eval_addrmode_indexed. destruct (rs base); auto || discriminate. }
-  rewrite <- H1 in H0.
-  loadind_correct_solve; simpl in H0;
+  rewrite <- H in *.
+  loadind_correct_solve; simpl in *;
   (econstructor; split;
-  [apply exec_straight_one; [simpl; unfold exec_store; rewrite ?Heqb, H0;eauto|auto]
+  [apply exec_straight_one; [simpl; unfold exec_store; rewrite ?Heqb, STORE;eauto|auto]
   |simpl; intros; unfold undef_regs; repeat Simplifs]).
 Qed.
 
@@ -1440,18 +1445,20 @@ Proof.
   unfold transl_store; intros. monadInv H.
   exploit transl_addressing_mode_correct; eauto. intro EA.
   assert (EA': eval_addrmode ge x rs = a). destruct a; simpl in H1; try discriminate; inv EA; auto.
-  rewrite <- EA' in H1. destruct chunk; ArgsInv.
+  rewrite <- EA' in H1.
+  destruct chunk; ArgsInv.
 (* int8signed *)
   eapply mk_storebyte_correct; eauto.
   destruct (eval_addrmode ge x rs); simpl; auto. rewrite <- Mem.store_signed_unsigned_8; auto.
-(* int8unsigned *)
+  (* int8unsigned *)
   eapply mk_storebyte_correct; eauto.
 (* int16signed *)
   econstructor; split.
   apply exec_straight_one. simpl. unfold exec_store.
   replace (Mem.storev Mint16unsigned m (eval_addrmode ge x rs) (rs x0))
      with (Mem.storev Mint16signed m (eval_addrmode ge x rs) (rs x0)).
-  rewrite H1. eauto.
+  rewrite H1.
+  eauto.
   destruct (eval_addrmode ge x rs); simpl; auto. rewrite Mem.store_signed_unsigned_16; auto.
   auto.
   intros. Simplifs.

@@ -2256,7 +2256,13 @@ Proof.
   destruct (transf_function_inv _ _ EQ).
   exploit Mem.alloc_extends; eauto. apply Zle_refl. rewrite H9; apply Zle_refl.
   intros [tm' [U V]].
-  exploit Mem.record_stack_block_extends; eauto. intros (tm'' & W & X).
+  exploit Mem.record_stack_blocks_extends; eauto.
+  {
+    simpl. intros; subst.
+    erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
+    eapply Mem.fresh_block_alloc in INF; eauto.
+  }
+  intros (tm'' & W & X).
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
   { apply wt_init_regs. inv H0. rewrite wt_params. rewrite H10. auto. auto. }
   exploit (exec_moves mv). eauto. eauto.

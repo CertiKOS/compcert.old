@@ -2226,9 +2226,10 @@ Proof.
   intros [j' [te [tm0 [A [B [C [D [E [F G]]]]]]]]].
   assert (K: list_forall2 val_casted vargs (map snd (fn_params f))).
   { apply val_casted_list_params. unfold type_of_function in FUNTY. congruence. }
-  exploit Mem.record_stack_blocks_inject. eauto. 3: eauto.
-  instantiate (1 := map fst (map fst (blocks_of_env tge te))).
+  exploit Mem.record_stack_blocks_inject. eauto. 4: eauto.
+  instantiate (1 := Some (frame_without_info (map fst (map fst (blocks_of_env tge te))))).
   {
+    simpl. constructor. 
     intros b0 b' delta J'B.
     inv B.
     split; intros IN.
@@ -2253,8 +2254,41 @@ Proof.
       repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
   }
   {
+    intros b0 b'0 delta0 INF JB. simpl.
+    Lemma alloc_variables_stack_adt:
+      forall e m vars e' m',
+        alloc_variables ge e m vars e' m' ->
+        Mem.stack_adt m' = Mem.stack_adt m.
+    Proof.
+      induction 1; simpl; intros; eauto.
+      rewrite IHalloc_variables.
+      eapply Mem.alloc_stack_blocks; eauto.
+    Qed.
+    rewrite (alloc_variables_stack_adt _ _ _ _ _ H1) in INF.
+    apply Mem.in_frames_valid in INF.
+    split; intros IN. 
+    {
+      unfold blocks_of_env in IN.
+      rewrite ! map_map, in_map_iff in IN.
+      destruct IN as [[id0 [bb ty]] [EQ' IN]].
+      apply PTree.elements_complete in IN. simpl in EQ'; subst.
+      inv B. destruct (me_vars0 id0); try congruence.
+      eapply me_range0 in IN; eauto. clear - INF IN. destruct IN; red in INF.  xomega.
+    }
+    {
+      rewrite E in JB; auto.
+      eapply Mem.valid_block_inject_2 in JB; eauto.
+      unfold blocks_of_env in IN.
+      rewrite ! map_map, in_map_iff in IN.
+      destruct IN as [[id0 [bb ty]] [EQ' IN]].
+      apply PTree.elements_complete in IN. simpl in EQ'; subst.
+      inv B.
+      eapply me_trange0 in IN; eauto. clear - JB IN. destruct IN; red in JB.  xomega.
+    }
+  }
+  {
     intros b' IN. unfold blocks_of_env in IN.
-    rewrite ! map_map, in_map_iff in IN.
+    simpl in IN. rewrite ! map_map, in_map_iff in IN.
     destruct IN as [[id0 [bb ty]] [EQ' IN]].
     apply PTree.elements_complete in IN. simpl in EQ'; subst.
     inv B. destruct (me_vars0 id0); try congruence.

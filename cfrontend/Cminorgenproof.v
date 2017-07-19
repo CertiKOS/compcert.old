@@ -875,17 +875,19 @@ Lemma match_callstack_alloc_variables_rec:
     (Frame (cenv_remove cenv vars) tf e1 le te sp lo (Mem.nextblock m1) :: cs)
     (Mem.nextblock m1) (Mem.nextblock tm) ->
   Mem.inject f1 m1 tm ->
-  ~ in_frames (map fst (Mem.stack_adt tm)) sp ->
+  ~ in_frames ((Mem.stack_adt tm)) sp ->
   exists f2,
     match_callstack f2 m2 tm
       (Frame cenv tf e2 le te sp lo (Mem.nextblock m2) :: cs)
       (Mem.nextblock m2) (Mem.nextblock tm)
-  /\ Mem.inject f2 m2 tm.
+    /\ Mem.inject f2 m2 tm
+    /\ inject_incr f1 f2
+    /\ (forall b1 b2 delta, f1 b1 = None -> f2 b1 = Some (b2, delta) -> ~ Mem.valid_block m1 b1 /\ b2 = sp).
 Proof.
   intros until cs; intros VALID REPRES STKSIZE STKPERMS.
   induction 1; intros f1 NOREPET COMPAT SEP1 SEP2 UNBOUND MCS MINJ NIN.
   (* base case *)
-  simpl in MCS. exists f1; auto.
+  simpl in MCS. exists f1; split; auto. split; auto. split; auto. congruence.
   (* inductive case *)
   simpl in NOREPET. inv NOREPET.
 (* exploit Mem.alloc_result; eauto. intros RES.
@@ -917,6 +919,13 @@ Proof.
     eapply match_callstack_alloc_left; eauto.
     rewrite cenv_remove_gso; auto.
     apply UNBOUND with sz; auto with coqlib.
+    intros (f3 & MCS' & INJ & INCR & SEP); exists f3; split;[|split]; eauto.
+    split. red; intros. eapply INCR. eapply B. eauto.
+    intros.
+    destruct (peq b0 b1). subst. erewrite INCR in H2. 2: eauto. inv H2. split; auto.
+    eapply Mem.fresh_block_alloc; eauto.
+    rewrite <- D in H1; auto. apply SEP in H2; auto. destruct H2; split; auto.
+    intro VB. eapply Mem.valid_block_alloc in VB; eauto.
 Qed.
 
 Lemma match_callstack_alloc_variables:
@@ -934,13 +943,16 @@ Lemma match_callstack_alloc_variables:
   exists f2,
     match_callstack f2 m2 tm2 (Frame cenv fn e le te sp (Mem.nextblock m1) (Mem.nextblock m2) :: cs)
                     (Mem.nextblock m2) (Mem.nextblock tm2)
-  /\ Mem.inject f2 m2 tm2.
+    /\ Mem.inject f2 m2 tm2
+    /\ inject_incr f1 f2
+    /\ inject_separated f1 f2 m1 tm1.
 Proof.
   intros.
-  eapply match_callstack_alloc_variables_rec; eauto.
-  eapply Mem.valid_new_block; eauto.
+  exploit match_callstack_alloc_variables_rec. 
+  eapply Mem.valid_new_block; eauto. apply H0.
   intros. eapply Mem.perm_alloc_3; eauto.
   intros. apply Mem.perm_implies with Freeable; auto with mem. eapply Mem.perm_alloc_2; eauto.
+  eauto. eauto. eauto. eauto.
   instantiate (1 := f1). red; intros. eelim Mem.fresh_block_alloc; eauto.
   eapply Mem.valid_block_inject_2; eauto.
   intros. apply PTree.gempty.
@@ -952,6 +964,10 @@ Proof.
   eapply Mem.alloc_right_inject; eauto.
   erewrite Mem.alloc_stack_blocks; eauto.
   intro IN; eapply Mem.in_frames_valid in IN. eapply Mem.fresh_block_alloc; eauto.
+  intros (f2 & MCS & MINJ & INCR & SEP); eexists; split; [|split]; eauto.
+  split; auto.
+  red; intros.
+  specialize (SEP _ _ _ H9 H10). destruct SEP; subst; split; auto. eapply Mem.fresh_block_alloc; eauto.
 Qed.
 
 (** Properties of the compilation environment produced by [build_compilenv] *)
@@ -1310,7 +1326,9 @@ Theorem match_callstack_function_entry:
      match_callstack f' m' tm'
                      (Frame cenv tf e le te sp (Mem.nextblock m) (Mem.nextblock m') :: cs)
                      (Mem.nextblock m') (Mem.nextblock tm')
-  /\ Mem.inject f' m' tm'.
+     /\ Mem.inject f' m' tm'
+     /\ inject_incr f f'
+     /\ inject_separated f f' m tm.
 Proof.
   intros.
   exploit build_compilenv_sound; eauto. intros [C1 C2].
@@ -2035,9 +2053,9 @@ Qed.
 Lemma match_callstack_record:
   forall j m1 m2 cs b1 b2,
     match_callstack j m1 m2 cs b1 b2 ->
-    forall m1' bl b ofi m2' n,
-      Mem.record_stack_blocks m1 (inr bl) n = Some m1' ->
-      Mem.record_stack_blocks m2 (inl (b ,ofi)) n = Some m2' ->                                      
+    forall m1' f1 f2 m2' n,
+      Mem.record_stack_blocks m1 f1 n = Some m1' ->
+      Mem.record_stack_blocks m2 f2 n = Some m2' ->                                      
       match_callstack j m1' m2' cs b1 b2.
 Proof.
   induction 1; simpl; intros; econstructor; eauto.
@@ -2305,10 +2323,12 @@ Opaque PTree.set.
                         x0) in *.
   caseEq (Mem.alloc tm 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
-  intros [f2 [MCS2 MINJ2]].
-  exploit Mem.record_stack_blocks_inject_into_one. exact MINJ2.
-  2: eauto. 
+  intros [f2 [MCS2 [MINJ2 [INCR2 SEP2]]]].
+  exploit Mem.record_stack_blocks_inject. exact MINJ2.
+  4: eauto.
+  instantiate (1 := Some (frame_with_info sp None)).
   {
+    simpl. constructor. congruence.
     intros b0 b' delta FB.
     split; intros IN.
     rewrite map_map, in_map_iff in IN. destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
@@ -2320,7 +2340,33 @@ Opaque PTree.set.
     rewrite map_map, in_map_iff. eexists; split. 2: eapply in_blocks_of_env. reflexivity. eauto.
   }
   {
-    eapply Mem.valid_new_block; eauto.
+
+    Lemma alloc_variables_stack_adt:
+      forall e m vars e' m',
+        alloc_variables e m vars e' m' ->
+        Mem.stack_adt m' = Mem.stack_adt m.
+    Proof.
+      induction 1; simpl; intros; eauto.
+      rewrite IHalloc_variables.
+      eapply Mem.alloc_stack_blocks; eauto.
+    Qed.
+
+    simpl. intros b0 b'0 delta0 INF FB.
+    erewrite alloc_variables_stack_adt in INF; eauto. eapply Mem.in_frames_valid in INF.
+    split. 
+    intro IN.
+    rewrite map_map, in_map_iff in IN. destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
+    inv MCS2.
+    apply in_blocks_of_env_inv in IN. destruct IN as [id0 [EID LO0]].
+    exploit me_bounded. eauto. rewrite EID. eauto. red in INF. intuition xomega.
+    intro; subst.
+    destruct (f0 b0) as [[b z]|] eqn: FB0.
+    exploit INCR2. rewrite FB0. reflexivity. rewrite FB; inversion 1; subst.
+    eapply Mem.fresh_block_alloc. eauto. eapply Mem.valid_block_inject_2; eauto.
+    exploit SEP2; eauto. intuition congruence.
+  }
+  {
+    red; simpl; intros. subst. eapply Mem.valid_new_block; eauto.
   }
   intros (m2' & RSB & INJ3).
   left; econstructor; split.

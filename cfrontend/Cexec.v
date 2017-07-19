@@ -504,7 +504,7 @@ Definition do_ef_free
       do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr);
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
-      check (dec_not (in_frames_dec (map fst (Mem.stack_adt m)) b));
+      check (dec_not (in_frames_dec (Mem.stack_adt m) b));
       do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz);
       Some(w, E0, Vundef, m')
   | _ => None
@@ -646,7 +646,7 @@ Proof.
 (* EF_free *)
   inv H; unfold do_ef_free.
   inv H0. rewrite H1. erewrite SIZE by eauto. rewrite zlt_true. rewrite H3.
-  destruct (in_frames_dec (map fst (Mem.stack_adt m)) b); intuition congruence.
+  destruct (in_frames_dec ( (Mem.stack_adt m)) b); intuition congruence.
   omega.
 (* EF_memcpy *)
   inv H; unfold do_ef_memcpy.
@@ -2120,7 +2120,7 @@ Definition do_step (w: world) (s: state) : list transition :=
   | Callstate (Internal f) vargs k m sz =>
     check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
-      do m1 <- Mem.record_stack_blocks m1 (inr (map fst (map fst (blocks_of_env ge e)))) sz;
+      do m1 <- Mem.record_stack_blocks m1 (Some (frame_without_info (map fst (map fst (blocks_of_env ge e))))) sz;
         do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
         ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ _ _) vargs k m _ =>

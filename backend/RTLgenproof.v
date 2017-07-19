@@ -1555,7 +1555,10 @@ Proof.
     exploit (add_vars_valid (CminorSel.fn_params f)); eauto. intros [A B].
     eapply add_vars_wf; eauto. eapply add_vars_wf; eauto. apply init_mapping_wf.
   edestruct Mem.alloc_extends as [tm' []]; eauto; try apply Zle_refl.
-  exploit Mem.record_stack_block_extends; eauto. intros (m2' & USB & EXT).
+  exploit Mem.record_stack_blocks_extends; eauto.
+  simpl. intros. subst. erewrite Mem.alloc_stack_blocks; eauto. intro IFF. apply Mem.in_frames_valid in IFF.
+  eapply Mem.fresh_block_alloc in IFF; eauto.
+  intros (m2' & USB & EXT).
   econstructor; split.
   left; apply plus_one. eapply exec_function_internal; simpl; eauto.
   simpl. econstructor; eauto.

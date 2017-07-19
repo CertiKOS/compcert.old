@@ -296,7 +296,9 @@ Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
 Variable ge: genv.
 
-    
+Definition check_alloc_frame (f: frame_info) (fn: function) :=
+  zeq (Ptrofs.unsigned (fn_link_ofs fn)) (seg_ofs (frame_link f)) &&
+      zeq (Ptrofs.unsigned (fn_retaddr_ofs fn)) (seg_ofs (frame_retaddr f)).
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -408,15 +410,16 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate s rs m')
   | exec_function_internal:
       forall s fb rs m f m1 m1_ m2 m3 stk rs',
-      Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      Mem.alloc m 0 f.(fn_stacksize) = (m1_, stk) ->
-      Mem.record_stack_blocks m1_ (inl (stk, Some (fn_frame f))) (fn_stacksize f) = Some m1 ->
+        Genv.find_funct_ptr ge fb = Some (Internal f) ->
+        check_alloc_frame (fn_frame f) f = true ->
+      Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
+      Mem.record_stack_blocks m3 (Some (frame_with_info stk (Some (fn_frame f)))) (fn_stacksize f) = Some m1_ ->
       rs' = undef_regs destroyed_at_function_entry rs ->
       step (Callstate s fb rs m)
-        E0 (State s fb sp f.(fn_code) rs' m3)
+        E0 (State s fb sp f.(fn_code) rs' m1_)
   | exec_function_external:
       forall s fb rs m t rs' ef args res m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->

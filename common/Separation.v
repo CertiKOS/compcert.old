@@ -1027,23 +1027,35 @@ Lemma record_stack_block_parallel_rule:
     j b = Some (b', delta) ->
     m_invar_stack P = false ->
     m2 |= minjection j m1 ** P ->
-    Mem.record_stack_blocks m1 (inl (b, None)) n = Some m1' ->
+    forall (NIN: ~ in_frames (Mem.stack_adt m1) b /\ ~ in_frames (Mem.stack_adt m2) b'),
+    Mem.record_stack_blocks m1 (Some (frame_with_info b None)) n = Some m1' ->
     (forall (ofs : Z) (k : perm_kind) (p : permission),
         Mem.perm m1 b ofs k p -> in_segment (ofs + delta) (frame_data fi)) ->
     (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
     exists m2',
-      Mem.record_stack_blocks m2 (inl (b', Some fi)) n = Some m2' /\
+      Mem.record_stack_blocks m2 (Some (frame_with_info b' (Some fi))) n = Some m2' /\
       m2' |= minjection j m1' ** P.
 Proof.
-  intros m1 m1' m2 j P fi b b' delta n FB INVAR MINJ RSB1 INS UNIQ.
+  intros m1 m1' m2 j P fi b b' delta n FB INVAR MINJ NIN RSB1 INS UNIQ.
   destruct MINJ as (MINJ & PM & DISJ).
-  exploit Mem.record_stack_block_inject; eauto. apply MINJ.
+  exploit Mem.record_stack_blocks_inject; eauto.
+  simpl. 
+  apply MINJ.
   {
+    instantiate (1 := Some (frame_with_info b' (Some fi))).
+    simpl. 
     eapply frame_with_info_add_info.
     - rewrite FB. inversion 1; subst. eauto.
     - intros.
-      split; intros; subst. congruence. eapply UNIQ; eauto.      
+      split; intros; subst. congruence. eapply UNIQ; eauto. 
   }
+  {
+    simpl. intros.
+    destruct (peq b0 b); subst.
+    eapply NIN in H. easy.
+    split; auto. intro; subst. autospe. easy.
+  }
+  red; simpl; intros. subst. eapply Mem.valid_block_inject_2; eauto. apply MINJ.
   intros (m2' & RSB2 & INJ).
   eexists; split; eauto.
   split; [|split].
@@ -1064,7 +1076,7 @@ Lemma push_frame_parallel_rule
     m_invar_stack P = false ->
     m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
     Mem.alloc m1 0 sz1 = (m1', b1) ->
-    Mem.record_stack_blocks m1' (inl (b1, None)) n = Some m1'' ->
+    Mem.record_stack_blocks m1' (Some (frame_with_info b1 None)) n = Some m1'' ->
     (8 | delta) ->
     lo = delta ->
     hi = delta + Z.max 0 sz1 ->
@@ -1076,7 +1088,7 @@ Lemma push_frame_parallel_rule
     n = frame_size fi ->
     exists j' m2_1' b2 m2',
       Mem.alloc m2 0 (frame_size fi) = (m2_1', b2) 
-      /\ Mem.record_stack_blocks m2_1' (inl (b2 ,Some fi)) (frame_size fi) = Some m2' 
+      /\ Mem.record_stack_blocks m2_1' (Some (frame_with_info b2 (Some fi))) (frame_size fi) = Some m2' 
       /\ m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1'' ** globalenv_inject ge j' ** P
       /\ inject_incr j j'
       /\ j' b1 = Some (b2, delta)
@@ -1088,6 +1100,12 @@ Proof.
   intros (j' & INJ' & J1 & J2 & J3).
   rewrite sep_swap3 in INJ'.
   exploit record_stack_block_parallel_rule.  3: eauto. all: eauto.
+  {
+    erewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC1).
+    erewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC2). 
+    split; intros INF; apply Mem.in_frames_valid in INF;
+      (eapply Mem.fresh_block_alloc; [|eauto]); eauto.
+  }
   {
     intros.
     exploit Mem.perm_alloc_3. 2: eauto. eauto. intro RNG.

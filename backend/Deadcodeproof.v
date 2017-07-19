@@ -912,7 +912,13 @@ Ltac UseTransfer :=
   destruct (analyze (vanalyze cu f) f) as [an|] eqn:AN; inv EQ'.
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
   intros (tm' & A & B).
-  exploit Mem.record_stack_block_extends; eauto. intros (tm'' & C & D).
+  exploit Mem.record_stack_blocks_extends; eauto.
+  {
+    simpl. intros; subst.
+    erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
+    eapply Mem.fresh_block_alloc in INF; eauto.
+  }
+  intros (tm'' & C & D).
   econstructor; split.
   econstructor; simpl; eauto.
   simpl. econstructor; eauto.

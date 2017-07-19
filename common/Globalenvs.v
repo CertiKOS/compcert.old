@@ -1890,18 +1890,20 @@ Lemma store_zeros_exists:
   forall m b p n,
     Mem.range_perm m b p (p + n) Cur Writable ->
     Mem.non_private_stack_access m b p (p + n) ->
+    ~ Mem.is_stack_top m b ->
   exists m', store_zeros m b p n = Some m'.
 Proof.
-  intros until n. functional induction (store_zeros m b p n); intros PERM NPSA.
+  intros until n. functional induction (store_zeros m b p n); intros PERM NPSA NIST.
 - exists m; auto.
 - apply IHo. red; intros. eapply Mem.perm_store_1; eauto. apply PERM. omega.
   unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access in *; intros. 
   erewrite Mem.store_get_frame_info by eauto.
-  destruct NPSA.
   erewrite Mem.store_is_stack_top; eauto.
-  right.
+  destruct NPSA. intuition. right; split; auto.
+  destruct H.
   destruct (Mem.get_frame_info m b); auto.
   eapply Mem.in_stack_data_inside ; eauto; try omega.
+  erewrite Mem.store_is_stack_top; eauto.
 - destruct (Mem.valid_access_store m Mint8unsigned b p Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. omega. 
   split. simpl. apply Z.divide_1_l.
@@ -2000,24 +2002,32 @@ Proof.
 - destruct H as [P Q].
   set (sz := init_data_list_size (gvar_init v)).
   destruct (Mem.alloc m 0 sz) as [m1 b] eqn:ALLOC.
+  assert (NIST: ~ Mem.is_stack_top m1 b).
+  {
+    erewrite Mem.alloc_is_stack_top; eauto.
+    intro IST.
+    eapply Mem.stack_top_valid in IST. eapply Mem.fresh_block_alloc in IST; eauto.
+  } 
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access.
-  rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC). auto.
-  rewrite ZEROS.
-  assert (P2: Mem.range_perm m2 b 0 sz Cur Freeable).
-  { red; intros. erewrite <- store_zeros_perm by eauto. eauto. }
-  destruct (@store_init_data_list_exists b (gvar_init v) m2 0) as [m3 STORE]; auto.
-  red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  rewrite (store_zeros_non_private_stack_access _ _ _ _ ZEROS).
-  unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access.
-  rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC). auto.
-  rewrite STORE.
-  assert (P3: Mem.range_perm m3 b 0 sz Cur Freeable).
-  { red; intros. erewrite <- store_init_data_list_perm by eauto. eauto. }
-  destruct (Mem.range_perm_drop_2 m3 b 0 sz (perm_globvar v)) as [m4 DROP]; auto.
-  exists m4; auto.
+  + unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access.
+    rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC).
+    right; split; auto.
+  + auto. 
+  + rewrite ZEROS.
+    assert (P2: Mem.range_perm m2 b 0 sz Cur Freeable).
+    { red; intros. erewrite <- store_zeros_perm by eauto. eauto. }
+    destruct (@store_init_data_list_exists b (gvar_init v) m2 0) as [m3 STORE]; auto.
+    red; intros. apply Mem.perm_implies with Freeable; auto with mem.
+    rewrite (store_zeros_non_private_stack_access _ _ _ _ ZEROS).
+    unfold Mem.non_private_stack_access, Mem.strong_non_private_stack_access.
+    rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC). right; split; auto.
+    rewrite STORE.
+    assert (P3: Mem.range_perm m3 b 0 sz Cur Freeable).
+    { red; intros. erewrite <- store_init_data_list_perm by eauto. eauto. }
+    destruct (Mem.range_perm_drop_2 m3 b 0 sz (perm_globvar v)) as [m4 DROP]; auto.
+    exists m4; auto.
 - destruct (Mem.alloc _ _ _); eauto.
 Qed.
 

@@ -1140,7 +1140,7 @@ Proof.
   intro A; apply A.
   exploit Mem.invalid_block_non_private_stack_access. eapply Mem.fresh_block_alloc; eauto.
   unfold Mem.non_private_stack_access.
-  intros [B|B]. eapply Mem.stack_top_valid in B. eapply Mem.fresh_block_alloc in B; eauto. easy.
+  intros [[B C]|[B C]]. eapply Mem.stack_top_valid in B. eapply Mem.fresh_block_alloc in B; eauto. easy.
   eassumption.
 - inv H.
   rewrite  (Mem.store_stack_blocks _ _ _ _ _ _ H1).
@@ -1155,7 +1155,7 @@ Inductive extcall_free_sem (ge: Senv.t):
       Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) = Some (Vptrofs sz) ->
       Ptrofs.unsigned sz > 0 ->
       Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) = Some m' ->
-      ~ in_frames (map fst (Mem.stack_adt m)) b ->
+      ~ in_frames (Mem.stack_adt m) b ->
       extcall_free_sem ge (Vptr b lo :: nil) m E0 Vundef m'.
 
 

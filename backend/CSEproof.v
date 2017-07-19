@@ -1218,7 +1218,13 @@ Proof.
   destruct (analyze cu f) as [approx|] eqn:?; inv EQ.
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
   intros (m2' & A & B).
-  exploit Mem.record_stack_block_extends; eauto. intros (m2'' & C & D).
+  exploit Mem.record_stack_blocks_extends; eauto.
+  {
+    simpl. intros; subst.
+    erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
+    eapply Mem.fresh_block_alloc in INF; eauto.
+  }
+  intros (m2'' & C & D).
   econstructor; split.
   eapply exec_function_internal; simpl; eauto.
   simpl. econstructor; eauto.

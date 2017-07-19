@@ -620,7 +620,8 @@ Definition exec_store {F V} (ge: Genv.t F V) (chunk: memory_chunk) (m: mem)
                       (a: addrmode) (rs: regset) (r1: preg)
                       (destroyed: list preg) :=
   match Mem.storev chunk m (eval_addrmode ge a rs) (rs r1) with
-  | Some m' => Next (nextinstr_nf (undef_regs destroyed rs)) m'
+  | Some m' =>
+    Next (nextinstr_nf (undef_regs destroyed rs)) m'
   | None => Stuck
   end.
 
@@ -647,6 +648,32 @@ End MEM_ACCESSORS_DEFAULT.
     the fact that the processor updates some or all of those flags,
     but we do not need to model this precisely.
 *)
+
+Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link ofs_ra :=
+  match Mem.stack_adt m with
+  | (Some (frame_with_info b (Some fi)), n)::r =>
+    if peq b stk && zeq sz (frame_size fi) && zeq n sz
+           && zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link fi)) &&
+           zeq (Ptrofs.unsigned ofs_ra) (seg_ofs (frame_retaddr fi))
+ 
+    then
+      match oldsp with
+        Vptr bsp o =>
+        match r with
+          (Some (frame_with_info b _),_)::r =>
+          if peq bsp b && Ptrofs.eq_dec o Ptrofs.zero then true else false
+        | _ => false 
+        end
+      | Vundef => false
+      | _ => true
+      end
+    else false
+  | _ => false
+  end.
+
+Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
+  zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link f)) &&
+  zeq (Ptrofs.unsigned ofs_ra) (seg_ofs (frame_retaddr f)).
 
 Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_store} {F V} (ge: Genv.t F V) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
@@ -991,19 +1018,22 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
       Next (nextinstr rs) m
   | Pallocframe fi ofs_ra ofs_link =>
     let (m1, stk) := Mem.alloc m 0 (frame_size fi) in
-    match Mem.record_stack_blocks m1 (inl (stk, Some fi)) (frame_size fi) with
-      Some m1 =>
+    if check_alloc_frame fi ofs_link ofs_ra then
       let sp := Vptr stk Ptrofs.zero in
       match Mem.storev Mptr m1 (Val.offset_ptr sp ofs_link) rs#RSP with
       | None => Stuck
       | Some m2 =>
         match Mem.storev Mptr m2 (Val.offset_ptr sp ofs_ra) rs#RA with
         | None => Stuck
-        | Some m3 => Next (nextinstr (rs #RAX <- (rs#RSP) #RSP <- sp)) m3
+        | Some m3 =>
+          match Mem.record_stack_blocks m3 (Some (frame_with_info stk (Some fi))) (frame_size fi) with
+            Some m4 =>
+            Next (nextinstr (rs #RAX <- (rs#RSP) #RSP <- sp)) m4
+          | _ => Stuck
+          end
         end
       end
-    | _ => Stuck
-    end
+    else Stuck
   | Pfreeframe sz ofs_ra ofs_link =>
       match Mem.loadv Mptr m (Val.offset_ptr rs#RSP ofs_ra) with
       | None => Stuck
@@ -1013,8 +1043,8 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
           | Some sp =>
               match rs#RSP with
               | Vptr stk ofs =>
-                (* match Mem.stack_adt m with *)
-                (* | (frame_with_info b (Some fi), n)::r => *)
+                if check_top_frame m stk sz sp ofs_link ofs_ra
+                then
                   match Mem.free m stk 0 sz with
                   | None => Stuck
                   | Some m' =>
@@ -1023,8 +1053,7 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
                     | None => Stuck
                     end
                   end
-                (* | _ => Stuck *)
-                (* end *)
+                else Stuck
               | _ => Stuck
               end
           end

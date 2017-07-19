@@ -1434,6 +1434,11 @@ Qed.
 
 (* PW: Custom tactics *)
 
+Ltac destr :=
+  match goal with
+    |- context [match ?a with _ => _ end] => destruct a eqn:?; try intuition congruence
+  end.
+
 Ltac destr_in H :=
   match type of H with
     context [match ?a with _ => _ end] => destruct a eqn:?; try intuition congruence

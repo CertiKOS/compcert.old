@@ -100,7 +100,7 @@ Local Opaque Z.add Z.mul sepconj range.
 Qed.
 
 Lemma frame_env_separated':
-  forall `{memory_model_prf: Mem.MemoryModel},
+  (* forall `{memory_model_prf: Mem.MemoryModel} *)
   forall b ,
     let w := if Archi.ptr64 then 8 else 4 in
     let fe := make_env b in
@@ -185,18 +185,173 @@ Proof.
   apply align_divides; omega.
 Qed.
 
-Definition frame_of_frame_env (b: bounds) : frame_info :=
+Lemma le_add_pos:
+  forall a b,
+    0 <= b ->
+    a <= a + b.
+Proof.
+  intros; omega.
+Qed.
+
+(* fe_ofs_link fe_ofs_retaddr fe_size fe_ofs_local  fe_ofs_arg *)
+(*        fe_ofs_callee_save  fe_stack_data. *)
+Opaque bound_local bound_outgoing  size_callee_save_area bound_stack_data.
+
+
+Program Definition frame_of_frame_env (b: bounds) : frame_info :=
   let fe := make_env b in
   {|
     frame_size := fe_size fe;
-    frame_ofs_link := (fe_ofs_link fe);
-    frame_ofs_retaddr := (fe_ofs_retaddr fe);
+    frame_link := {| seg_ofs := (fe_ofs_link fe); seg_size := size_chunk Mptr |};
+    frame_retaddr := {| seg_ofs := (fe_ofs_retaddr fe); seg_size := size_chunk Mptr |};
     frame_locals := {| seg_ofs := (fe_ofs_local fe);
                       seg_size := 4 * bound_local b |};
     frame_outgoings := {| seg_ofs := fe_ofs_arg;
                         seg_size := 4 * bound_outgoing b |};
     frame_callee_saves := {| seg_ofs := (fe_ofs_callee_save fe);
-                             seg_size := size_callee_save_area b 0 |};
+                             seg_size := size_callee_save_area b (fe_ofs_callee_save fe) - fe_ofs_callee_save fe|};
     frame_data := {| seg_ofs := fe_stack_data fe;
                      seg_size := bound_stack_data b |};
   |}.
+Next Obligation.
+  generalize (frame_env_separated' b).
+  simpl.
+  intros A.
+  repeat match goal with
+           H : _ /\ _ |- _ => destruct H
+         end.
+  unfold in_segment; simpl.
+  repeat split; try easy.
+  - intros. intro A. destruct A; auto.
+    cut (o < o). omega.
+    eapply Z.lt_le_trans. apply H6.
+    etransitivity. 2: apply H7.
+    etransitivity. 2: apply align_le; omega.
+    etransitivity. 2: apply le_add_pos.
+    etransitivity. 2: apply align_le; omega.
+    omega.
+    generalize (bound_local_pos b); omega.
+  - intros. intro A. destruct A; auto.
+    + cut (o < o). omega. 
+      eapply Z.lt_le_trans. apply H6.
+      etransitivity. 2: apply H7.
+      change fe_ofs_arg with 0. rewrite Z.add_0_l.
+      etransitivity. 2: apply le_add_pos.
+      apply align_le. destruct Archi.ptr64; omega.
+      destruct Archi.ptr64; omega.
+    + destruct H7; auto.
+      cut (o < o). omega.
+      eapply Z.lt_le_trans. apply H6.
+      etransitivity. 2: apply H7.
+      change fe_ofs_arg with 0. rewrite Z.add_0_l.
+      etransitivity. 2: apply align_le; omega.
+      etransitivity. 2: apply le_add_pos.
+      etransitivity. 2: apply align_le; omega.
+      etransitivity. 2: apply size_callee_save_area_incr.
+      etransitivity. 2: apply le_add_pos.
+      etransitivity. 2: apply align_le. omega.
+      destruct Archi.ptr64; omega.
+      destruct Archi.ptr64; omega.
+      generalize (bound_local_pos b); omega.
+  - intros. intro A. destruct A; auto.
+    + cut (o < o). omega.
+      eapply Z.lt_le_trans. apply H7.
+      etransitivity. 2: apply H6.
+      change fe_ofs_arg with 0. rewrite Z.add_0_l.
+      etransitivity. 2: apply align_le; omega.
+      etransitivity. 2: apply size_callee_save_area_incr.
+      etransitivity. 2: apply le_add_pos.
+      etransitivity. 2: apply align_le. omega.
+      destruct Archi.ptr64; omega.
+      destruct Archi.ptr64; omega.
+    + destruct H7; auto.
+      * cut (o < o). omega.
+        eapply Z.lt_le_trans. apply H7.
+        etransitivity. 2: apply H6. omega.
+      * destruct H7; auto.
+        cut (o < o). omega.
+        eapply Z.lt_le_trans. apply H6.
+        etransitivity. 2: apply H7. omega.
+  - intros. intro A. destruct A; auto.
+    + cut (o < o). omega.
+      eapply Z.lt_le_trans. apply H7.
+      etransitivity. 2: apply H6. 
+      etransitivity. 2: apply align_le.
+      etransitivity. 2: apply le_add_pos.
+      apply align_le. omega.
+      generalize (bound_stack_data_pos b); omega.
+      destruct Archi.ptr64; omega.
+    + destruct H7; auto.
+      * cut (o < o). omega.
+        eapply Z.lt_le_trans. apply H7.
+        etransitivity. 2: apply H6.
+        change fe_ofs_arg with 0. rewrite Z.add_0_l.
+        etransitivity. 2: apply align_le.
+        etransitivity. 2: apply le_add_pos.
+        etransitivity. 2: apply align_le.
+        etransitivity. 2: apply le_add_pos.
+        etransitivity. 2: apply align_le.
+        etransitivity. 2: apply size_callee_save_area_incr.
+        etransitivity. 2: apply le_add_pos.
+        apply align_le.
+        destruct Archi.ptr64; omega.
+        destruct Archi.ptr64; omega. omega.
+        generalize (bound_local_pos b); omega.
+        omega.
+        generalize (bound_stack_data_pos b); omega.
+        destruct Archi.ptr64; omega.
+      * destruct H7; auto.
+        -- cut (o < o). omega.
+           eapply Z.lt_le_trans. apply H7.
+           etransitivity. 2: apply H6.
+           assert (forall x y, x + (y - x) = y) by (intros; omega).
+           rewrite H8.
+           etransitivity. 2: apply align_le.
+           etransitivity. 2: apply le_add_pos.
+           etransitivity. 2: apply align_le.
+           etransitivity. 2: apply le_add_pos.
+           apply align_le. omega.
+           generalize (bound_local_pos b); omega.
+           omega.
+           generalize (bound_stack_data_pos b); omega.
+           destruct Archi.ptr64; omega.
+        -- destruct H7; auto. 
+           cut (o < o). omega.
+           eapply Z.lt_le_trans. apply H7.
+           etransitivity. 2: apply H6.
+           apply align_le.
+           destruct Archi.ptr64; omega.
+  - intros. intro A.
+    cut (o < o). omega.
+    repeat match goal with
+             H: _ \/ _ |- _ => destruct H; auto
+           end.
+    + eapply Z.lt_le_trans. apply H6.
+      etransitivity. 2: apply H7.
+
+      Ltac t := repeat match goal with
+             | |- ?x <= ?y + ?z => etransitivity; [| apply le_add_pos]
+             | |- ?x <= align ?x ?z => apply align_le
+             | |- ?x <= align ?y ?z => etransitivity; [| apply align_le]
+             | |- 8 > 0 => omega
+             | |- 0 <= 4 * bound_local ?b => generalize (bound_local_pos b); omega
+             | |- 0 <= bound_stack_data ?b => generalize (bound_stack_data_pos b); omega
+             | |- (if ?x then _ else _) > 0 => destruct x; omega
+             | |- context [if Archi.ptr64 then 8 else 4] => rewrite <- size_chunk_Mptr
+             | |- ?x <= size_callee_save_area _ ?x => apply size_callee_save_area_incr
+             end.
+      t. 
+    + eapply Z.lt_le_trans. apply H6.
+      etransitivity. 2: apply H7.
+      t.
+    + eapply Z.lt_le_trans. apply H7.
+      etransitivity. 2: apply H6.
+      change fe_ofs_arg with 0. rewrite Z.add_0_l.
+      t.
+    + eapply Z.lt_le_trans. apply H6.
+      etransitivity. 2: apply H7. rewrite <- size_chunk_Mptr; omega.
+    + eapply Z.lt_le_trans. apply H6.
+      etransitivity. 2: apply H7.
+      t.
+    + easy.
+Qed.

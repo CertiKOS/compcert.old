@@ -50,7 +50,14 @@ Class MemoryModelX (mem: Type) `{memory_model_prf: MemoryModel mem}: Prop :=
        exists v2,
          loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
          memval_inject f v1 v2) ->
-  list_forall2 (fun x y => frame_inject f m1 (fst x) (fst y) /\ snd x = snd y) (stack_adt m1) (stack_adt m2) ->
+  list_forall2 (option_frame_inject f m1) (stack_adt m1) (stack_adt m2) ->
+  list_forall2
+    (fun x y : option frame_adt * BinNums.Z =>
+     forall (b b' : Values.block) (delta : BinNums.Z),
+     in_frame (fst x) b ->
+     fst y = None ->
+     f b = Some (b', delta) -> ~ in_frames (Mem.stack_adt m2) b')
+    (Mem.stack_adt m1) (Mem.stack_adt m2) ->
   inject f m1 m2
 }.
 
@@ -1124,8 +1131,10 @@ Proof.
     intros. destruct (eq_block b1 stk).
     subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
     rewrite G in H2 by auto. congruence. }
-  exploit Mem.record_stack_block_inject; eauto.
-  constructor. eauto.
+  exploit Mem.record_stack_blocks_inject; eauto.
+  instantiate (1 := Some (frame_with_info tstk None)).
+  simpl.
+  constructor.
   {
     rewrite F. inversion 1. eauto.
   }
@@ -1133,8 +1142,21 @@ Proof.
     intros b'0 delta.
     destruct (eq_block b'0 stk); auto. rewrite G; inversion 1; auto.
     eapply Mem.valid_block_inject_2 in H1; eauto. eapply Mem.fresh_block_alloc in H1; eauto. easy.
-
   }
+  {
+    simpl. intros.
+    subst.
+    erewrite Mem.alloc_stack_blocks in H1. 2: eauto.
+    assert (b0 <> Mem.nextblock m).
+    {
+      intro; subst.
+      apply Mem.in_frames_valid in H1. red in H1; xomega.
+    }
+    split; auto.
+    rewrite G in H2 by auto. intro; subst.
+    eapply Mem.valid_block_inject_2 in H2; eauto. red in H2; xomega.
+  }
+  red; simpl; intros; subst. eapply Mem.valid_block_inject_2; eauto.
   intros (m2' & RSB & INJ').
   econstructor; split.
   eapply exec_function_internal; eauto.
@@ -1396,6 +1418,9 @@ Proof.
   instantiate (1 := o); omega.
 - 
   rewrite (Genv.init_mem_stack_adt _ IM).
+  rewrite (Genv.init_mem_stack_adt _ TIM).
+  constructor.
+- rewrite (Genv.init_mem_stack_adt _ IM).
   rewrite (Genv.init_mem_stack_adt _ TIM).
   constructor.
 (*

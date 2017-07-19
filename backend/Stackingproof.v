@@ -1060,6 +1060,11 @@ Lemma save_callee_save_rec_correct:
   m |= range sp pos (size_callee_save_area_rec l pos) ** P ->
   agree_regs j ls rs ->
   Mem.is_stack_top m sp ->
+  (forall fi,
+      Mem.get_frame_info m sp = Some fi ->
+      forall o, pos <= o < size_callee_save_area_rec l pos ->
+           ~ in_segment o (frame_link fi) /\ ~ in_segment o (frame_retaddr fi)
+  ) ->
   exists rs', exists m',
      star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save_rec l pos k) rs m)
@@ -1073,7 +1078,7 @@ Lemma save_callee_save_rec_correct:
   /\ Mem.unchanged_on (fun b o => b <> sp) m m'.
 Proof.
 Local Opaque mreg_type.
-  induction l as [ | r l]; simpl; intros until P; intros CS SEP AG IST.
+  induction l as [ | r l]; simpl; intros until P; intros CS SEP AG IST GFIspec.
 - exists rs, m. 
   split. apply star_refl.
   split. rewrite sep_pure; split; auto. eapply sep_drop; eauto.
@@ -1098,8 +1103,12 @@ Local Opaque mreg_type.
   apply range_contains in SEP; auto.
   exploit (contains_set_stack (fun v' => Val.inject j (ls (R r)) v') (rs r)).
   eexact SEP.
-  left. auto.
-  apply load_result_inject; auto. apply wt_ls. 
+  left. split. auto.
+  red. red.
+  destr.
+  intros; eapply GFIspec; eauto. split. omega.
+  eapply Z.lt_le_trans. apply H. rewrite size_type_chunk.  unfold sz in *; omega.
+  apply load_result_inject; auto. apply wt_ls.
   clear SEP; intros (m1 & STORE & SEP).
   set (rs1 := undef_regs (destroyed_by_setstack ty) rs).
   assert (AG1: agree_regs j ls rs1).
@@ -1109,9 +1118,12 @@ Local Opaque mreg_type.
   rewrite sep_swap in SEP. 
   exploit (IHl (pos1 + sz) rs1 m1); eauto.
   eapply store_stack_is_stack_top; eauto.
+  intros. erewrite store_stack_get_frame_info in H. 2: eauto.
+  eapply GFIspec in H; eauto. omega.
   intros (rs2 & m2 & A & B & C & ST & GFI & D & VALID & UNCH).
   exists rs2, m2. 
-  split. eapply star_left; eauto. constructor. exact STORE. auto. traceEq.
+  split. eapply star_left; eauto. constructor. exact STORE.
+  auto. traceEq.
   split. rewrite sep_assoc, sep_swap. exact B.
   split. intros. apply C. unfold store_stack in STORE; simpl in STORE. eapply Mem.perm_store_1; eauto.
   split. intros; rewrite <- ST. symmetry. eapply store_stack_stack_blocks; eauto.
@@ -1122,7 +1134,10 @@ Local Opaque mreg_type.
   unfold store_stack, Val.offset_ptr, Mem.storev in STORE.
   eapply Mem.unchanged_on_trans. 2: apply UNCH.
   eapply Mem.store_unchanged_on; eauto.
-  left. auto.
+  left. split; auto.
+  red. red. destr.
+  intros; eapply GFIspec; eauto. split. omega.
+  eapply Z.lt_le_trans. apply H. rewrite size_type_chunk.  unfold sz in *; omega.
 Qed.
 
 End SAVE_CALLEE_SAVE.
@@ -1167,6 +1182,7 @@ Lemma save_callee_save_correct:
   agree_callee_save ls ls0 ->
   agree_regs j ls rs ->
   Mem.is_stack_top m sp ->
+  Mem.get_frame_info m sp = Some (frame_of_frame_env b) ->
   let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) in
   let rs1 := undef_regs destroyed_at_function_entry rs in
   exists rs', exists m',
@@ -1181,7 +1197,7 @@ Lemma save_callee_save_correct:
   /\ (forall b, Mem.valid_block m b -> Mem.valid_block m' b )
   /\ Mem.unchanged_on (fun b o => b <> sp) m m'.
 Proof.
-  intros until P; intros SEP TY AGCS AG IST; intros ls1 rs1.
+  intros until P; intros SEP TY AGCS AG IST GFI; intros ls1 rs1.
   exploit (save_callee_save_rec_correct j cs fb sp ls1).
 - intros. unfold ls1. apply LTL_undef_regs_same. eapply destroyed_by_setstack_function_entry; eauto.
 - intros. unfold ls1. apply undef_regs_type. apply TY. 
@@ -1189,7 +1205,15 @@ Proof.
 - eexact SEP.
 - instantiate (1 := rs1). apply agree_regs_undef_regs. apply agree_regs_call_regs. auto.
 - auto.
-- clear SEP. intros (rs' & m' & EXEC & SEP & PERMS & ST & GFI & AG' & VALID & UNCH).
+- rewrite GFI. inversion 1; subst.
+  intros. split; intro A.
+  eapply frame_disjoints in A.
+  apply A. right. right. right. left. Opaque fe_ofs_callee_save. unfold in_segment; simpl.
+  fold fe. unfold size_callee_save_area. omega.
+  eapply frame_disjoints in A.
+  apply A. right. right. left. unfold in_segment; simpl.
+  fold fe. unfold size_callee_save_area. omega.
+- clear SEP. intros (rs' & m' & EXEC & SEP & PERMS & ST & GFI' & AG' & VALID & UNCH).
   exists rs', m'. 
   split. eexact EXEC.
   split. rewrite (contains_callee_saves_exten j sp ls0 ls1). exact SEP.
@@ -1204,7 +1228,7 @@ Proof.
     congruence.
   split. exact PERMS.
   split. exact ST.
-  split. exact GFI.
+  split. exact GFI'.
   split. exact AG'.
   split. exact VALID.
   exact UNCH.
@@ -1216,6 +1240,12 @@ Qed.
   (allocation of the frame + saving of the link and return address +
   saving of the used callee-save registers). *)
 
+Lemma m_invar_stack_sepconj:
+  forall P Q,
+    m_invar_stack (P ** Q) = m_invar_stack P || m_invar_stack Q.
+Proof.
+  reflexivity.
+Qed.
 
 Lemma function_prologue_correct:
   forall j ls ls0 ls1 rs rs1 m1 m1' m2 m2' sp parent ra cs fb k P,
@@ -1226,14 +1256,14 @@ Lemma function_prologue_correct:
   ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) ->
   rs1 = undef_regs destroyed_at_function_entry rs ->
   Mem.alloc m1 0 f.(Linear.fn_stacksize) = (m2', sp) ->
-  Mem.record_stack_blocks m2' (inl (sp,None)) (frame_size (frame_of_frame_env b)) = Some m2 ->
+  Mem.record_stack_blocks m2' (Some (frame_with_info sp None)) (frame_size (frame_of_frame_env b)) = Some m2 ->
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
   exists j' rs' m2_ m2' sp' m3' m4' m5',
     Mem.alloc m1' 0 (frame_size (fn_frame tf)) = (m2_, sp')
-    /\ Mem.record_stack_blocks m2_ (inl (sp' , Some tf.(fn_frame))) (frame_size (fn_frame tf)) = Some m2'
-    /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent = Some m3'
-    /\ store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) ra = Some m4'
+    /\ store_stack m2_ (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent = Some m2'
+    /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) ra = Some m3'
+    /\ Mem.record_stack_blocks m3' (Some (frame_with_info sp' (Some tf.(fn_frame)))) (frame_size (fn_frame tf)) = Some m4'
     /\ star step tge
            (State cs fb (Vptr sp' Ptrofs.zero) (save_callee_save fe k) rs1 m4')
            E0 (State cs fb (Vptr sp' Ptrofs.zero) k rs' m5')
@@ -1247,68 +1277,146 @@ Lemma function_prologue_correct:
     /\ (forall b, Mem.valid_block m1' b -> Mem.valid_block m5' b)
     /\ (forall b o k p, Mem.perm m1' b o k p -> Mem.perm m5' b o k p)
     /\ Mem.unchanged_on (fun b o => b <> sp') m1' m5'
-    /\ Mem.stack_adt m5' = (frame_with_info sp' (Some tf.(fn_frame)), frame_size (fn_frame tf)) :: Mem.stack_adt m1'
+    /\ Mem.stack_adt m5' = (Some (frame_with_info sp' (Some tf.(fn_frame))), frame_size (fn_frame tf)) :: Mem.stack_adt m1'
     /\ (forall b, Mem.get_frame_info m5' b = Mem.get_frame_info m4' b).
 Proof.
   intros until P; intros STACK AGREGS AGCS WTREGS LS1 RS1 ALLOC RECORD TYPAR TYRA SEP.
   rewrite unfold_transf_function.
   unfold fn_frame, fn_stacksize, fn_link_ofs, fn_retaddr_ofs.
   (* Stack layout info *)
-  Local Opaque b fe.
+  Local Opaque b fe fe_size.
   generalize (frame_env_range b) (frame_env_aligned b). replace (make_env b) with fe by auto. simpl.
+  replace (make_env b) with fe by auto. simpl.
   intros LAYOUT1 LAYOUT2.
   (* Allocation step *)
-  exploit push_frame_parallel_rule.
-  2: eexact SEP. auto. eexact ALLOC. exact RECORD. 
+  destruct (Mem.alloc m1' 0 (fe_size fe)) as (m2_ & sp') eqn:ALLOC'. 
+  exploit alloc_parallel_rule_2.
+  eexact SEP. eexact ALLOC. eauto.
   instantiate (1 := fe_stack_data fe). tauto.
   reflexivity. 
   instantiate (1 := fe_stack_data fe + bound_stack_data b). rewrite Z.max_comm. reflexivity.
-  instantiate (1:= frame_of_frame_env b).
   change (0 <= fe_size fe <= Ptrofs.max_unsigned). generalize (bound_stack_data_pos b) size_no_overflow; omega.
   tauto.
   tauto.
-  reflexivity.
-  rewrite Z.max_comm. reflexivity.
-  reflexivity.
-  clear SEP. intros (j' & m2__ & sp' & m2_ & ALLOC' & RECORD' & SEP & INCR & SAME & INJSEP).
+  rename SEP into SEP_init.
+  intros (j' & SEP & INCR1 & NEW & INJSEP).
+  (* clear SEP. intros (j' & m2__ & sp' & m2_ & ALLOC' & RECORD' & SEP & INCR & SAME & INJSEP). *)
   (* Remember the freeable permissions using a mconj *)
   assert (SEPCONJ:
             m2_ |= mconj (range sp' 0 (fe_stack_data fe) ** range sp' (fe_stack_data fe + bound_stack_data b) (fe_size fe))
                 (range sp' 0 (fe_stack_data fe) ** range sp' (fe_stack_data fe + bound_stack_data b) (fe_size fe))
-                ** minjection j' m2 ** globalenv_inject ge j' ** P).
+                ** minjection j' m2' ** globalenv_inject ge j' ** P).
   { apply mconj_intro; rewrite sep_assoc; assumption. }
   (* Dividing up the frame *)
-  apply (frame_env_separated b) in SEP. replace (make_env b) with fe in SEP by auto.
+  apply (frame_env_separated b) in SEP. replace (make_env b) with fe in * by auto.
   (* Store of parent *)
   rewrite sep_swap3 in SEP.
   apply (range_contains Mptr) in SEP. 2: tauto.
   Focus 2.
-  left; eapply Mem.record_stack_block_is_stack_top; eauto.
+  right; split. rewrite Mem.alloc_is_stack_top; eauto.  intro IST.
+  apply Mem.stack_top_valid in IST. eapply Mem.fresh_block_alloc in IST; eauto.
+  red. erewrite Mem.alloc_get_frame_info_fresh; eauto.
   exploit (contains_set_stack (fun v' => v' = parent) parent (fun _ => True) m2_ Tptr).
   rewrite chunk_of_Tptr; eexact SEP.
-  left; eapply Mem.record_stack_block_is_stack_top; eauto.
+  right; split. rewrite Mem.alloc_is_stack_top; eauto.  intro IST.
+  apply Mem.stack_top_valid in IST. eapply Mem.fresh_block_alloc in IST; eauto.
+  red. erewrite Mem.alloc_get_frame_info_fresh; eauto.
   apply Val.load_result_same; auto.
   clear SEP; intros (m3' & STORE_PARENT & SEP).
   rewrite sep_swap3 in SEP.
   (* Store of return address *)
   rewrite sep_swap4 in SEP.
   apply (range_contains Mptr) in SEP; [|tauto|].
-  2: left; eapply store_stack_is_stack_top, Mem.record_stack_block_is_stack_top; eauto.
+  Focus 2.
+  right; split.
+  erewrite store_stack_is_stack_top.
+  rewrite Mem.alloc_is_stack_top; eauto.  intro IST.
+  apply Mem.stack_top_valid in IST. eapply Mem.fresh_block_alloc in IST; eauto. eauto.
+  red. erewrite store_stack_get_frame_info. erewrite Mem.alloc_get_frame_info_fresh; eauto. eauto.
   exploit (contains_set_stack (fun v' => v' = ra) ra (fun _ => True) m3' Tptr).
   rewrite chunk_of_Tptr; eexact SEP.
-  left; eapply store_stack_is_stack_top, Mem.record_stack_block_is_stack_top; eauto.
+  right; split. rewrite store_stack_is_stack_top, Mem.alloc_is_stack_top; eauto.  intro IST.
+  apply Mem.stack_top_valid in IST. eapply Mem.fresh_block_alloc in IST; eauto.
+  red. erewrite store_stack_get_frame_info, Mem.alloc_get_frame_info_fresh; eauto.
   apply Val.load_result_same; auto.
   clear SEP; intros (m4' & STORE_RETADDR & SEP).
   rewrite sep_swap4 in SEP.
+
+
+  assert (SEP' : m4' |= minjection j' m2' **
+                     range sp' (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b) **
+                     range sp' fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b) **
+                     contains (chunk_of_type Tptr) sp' (fe_ofs_link fe) (fun v' : val => v' = parent) **
+                     contains (chunk_of_type Tptr) sp' (fe_ofs_retaddr fe) (fun v' : val => v' = ra) **
+                     range sp' (fe_ofs_callee_save fe) (size_callee_save_area b (fe_ofs_callee_save fe)) **
+                     globalenv_inject ge j' ** P).
+  {
+    rewrite sep_swap12.
+    rewrite sep_swap23.
+    rewrite sep_swap34.
+    rewrite sep_swap45.
+    rewrite (sep_swap (minjection j' m2')); auto.
+  }
+  exploit record_stack_block_parallel_rule. apply NEW.
+  2: apply SEP'. rewrite ! m_invar_stack_sepconj. simpl. auto.
+  {
+    split; intro INF.
+    erewrite Mem.alloc_stack_blocks in INF; eauto.
+    eapply Mem.in_frames_valid in INF. eapply Mem.fresh_block_alloc in INF; eauto.
+    erewrite store_stack_stack_blocks in INF. 2: eauto.
+    erewrite store_stack_stack_blocks in INF. 2: eauto.
+    erewrite Mem.alloc_stack_blocks in INF; eauto.
+    eapply Mem.in_frames_valid in INF. eapply Mem.fresh_block_alloc in INF; eauto.
+  }
+  eauto.
+  {
+    instantiate (1 := (frame_of_frame_env b)).
+    Opaque fe_stack_data. unfold in_segment. simpl.
+    intros.
+    eapply Mem.perm_alloc_3 in H; eauto.
+    Transparent fe. fold fe.
+    generalize bound_stack_data_stacksize.
+    omega.
+  }
+  {
+    intros.
+    destruct (j bb) eqn:JBB.
+    destruct p.
+    exploit INCR1. eauto. rewrite H. intro A; inv A.
+    eapply Mem.valid_block_inject_2 in JBB; eauto. 2: apply SEP_init.
+    eapply Mem.fresh_block_alloc in JBB; eauto. easy.
+    generalize (INJSEP _ _ _ JBB H). intros (NVB1 & NVB2).
+    destruct (peq bb sp); auto.
+    exfalso; apply NVB1. eapply Mem.valid_block_alloc_inv in ALLOC.
+    destruct ALLOC; eauto. congruence.
+    eapply Mem.valid_block_inject_1; eauto.
+    apply SEP.
+  }
+  intros (m5' & RSB & SEP2).
   (* Saving callee-save registers *)
+  assert (SEP3 : m5'
+         |= range sp' (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b) **
+            range sp' fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b) **
+            contains (chunk_of_type Tptr) sp' (fe_ofs_link fe) (fun v' : val => v' = parent) **
+            contains (chunk_of_type Tptr) sp' (fe_ofs_retaddr fe) (fun v' : val => v' = ra) **
+            range sp' (fe_ofs_callee_save fe) (size_callee_save_area b (fe_ofs_callee_save fe)) **
+            minjection j' m2 **
+            globalenv_inject ge j' ** P).
+  {
+    rewrite <- ! (sep_swap (minjection j' m2)). auto.
+  }
+  clear SEP2 SEP' SEP.
+  rename SEP3 into SEP.
   rewrite sep_swap5 in SEP.
   exploit (save_callee_save_correct j' ls ls0 rs); eauto.
   apply agree_regs_inject_incr with j; auto.
-  eapply store_stack_is_stack_top. eauto.
-  eapply store_stack_is_stack_top. eauto. eapply Mem.record_stack_block_is_stack_top; eauto.
+  eapply Mem.record_stack_block_is_stack_top; eauto.
+  simpl; auto.
+  unfold Mem.get_frame_info.
+  erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl. rewrite pred_dec_true; auto. 
   replace (LTL.undef_regs destroyed_at_function_entry (call_regs ls)) with ls1 by auto.
   replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto.
-  clear SEP; intros (rs2 & m5' & SAVE_CS & SEP & PERMS & ST & GFI & AGREGS' & VALID & UNCH).
+  clear SEP; intros (rs2 & m6' & SAVE_CS & SEP & PERMS & ST & GFI & AGREGS' & VALID & UNCH).
   rewrite sep_swap5 in SEP.
   (* Materializing the Local and Outgoing locations *)
   exploit (initial_locations j'). eexact SEP. tauto. 
@@ -1322,26 +1430,49 @@ Proof.
   clear SEP; intros SEP.
   rewrite sep_swap in SEP.
   (* Now we frame this *)
-  assert (SEPFINAL: m5' |= frame_contents j' sp' ls1 ls0 parent ra ** minjection j' m2 ** globalenv_inject ge j' ** P).
-  { eapply frame_mconj. eexact SEPCONJ.
-    rewrite chunk_of_Tptr in SEP.  
-    unfold frame_contents_1; rewrite ! sep_assoc. exact SEP.
-    assert (forall ofs k p, Mem.perm m2_ sp' ofs k p -> Mem.perm m5' sp' ofs k p).
-    { intros. apply PERMS. 
-      unfold store_stack in STORE_PARENT, STORE_RETADDR.
-      simpl in STORE_PARENT, STORE_RETADDR.
-      eauto using Mem.perm_store_1. }
-    eapply sep_preserved. eapply sep_proj1. eapply mconj_proj2. eexact SEPCONJ.
-    intros; apply range_preserved with m2_; auto.
-    intros; apply range_preserved with m2_; auto.
+  assert (SEPFINAL: m6' |= frame_contents j' sp' ls1 ls0 parent ra ** minjection j' m2 ** globalenv_inject ge j' ** P).
+  {
+    assert (forall ofs k p, Mem.perm m2_ sp' ofs k p -> Mem.perm m6' sp' ofs k p) as PERMS'.
+      { intros. apply PERMS. 
+        unfold store_stack in STORE_PARENT, STORE_RETADDR.
+        eapply Mem.record_stack_block_perm'. eauto.
+        simpl in STORE_PARENT, STORE_RETADDR.
+        eauto using Mem.perm_store_1. }
+    assert (  m6' |= range sp' 0 (fe_stack_data fe) ** range sp' (fe_stack_data fe + bound_stack_data b) (fe_size fe)) as RANGE.
+    {
+      split. eapply range_preserved. apply SEPCONJ. auto.
+      split. eapply range_preserved. apply SEPCONJ. auto.
+      red; intros b0 ofs R1 R2. simpl in R1, R2.
+      generalize (bound_stack_data_pos b). omega.
+    }
+    eapply frame_mconj.
+    - split. split; apply RANGE. 
+      split. apply SEP.
+      intros bb o. simpl.
+      intros FP1 FP2.      
+      destruct SEPCONJ as (? & ? & DISJ).
+      apply (DISJ bb o). simpl. auto.
+      change (m_footprint (minjection j' m2') bb o \/ m_footprint (globalenv_inject ge j' ** P) bb o).
+      change (m_footprint (minjection j' m2) bb o \/ m_footprint (globalenv_inject ge j' ** P) bb o) in FP2.
+      destruct FP2 as [FP2|FP2]; auto.
+      left.
+      simpl. simpl in FP2.
+      destruct FP2 as (b0 & delta & EQ & PERM).
+      exists b0, delta; rewrite EQ; split; auto.
+      eapply Mem.record_stack_block_perm. eauto. eauto.
+    - rewrite chunk_of_Tptr in SEP.
+      unfold frame_contents_1; rewrite ! sep_assoc. exact SEP.
+    - eapply sep_preserved. eapply sep_proj1. eapply mconj_proj2. eexact SEPCONJ.
+      intros; apply range_preserved with m2_; auto.
+      intros; apply range_preserved with m2_; auto.
   }
   clear SEP SEPCONJ.
   (* Conclusions *)
-  exists j', rs2, m2__, m2_, sp', m3', m4', m5'.
+  exists j', rs2, m2_, m3', sp', m4', m5', m6'.
   split. auto.
   split. auto.
-  split. exact STORE_PARENT.
-  split. exact STORE_RETADDR.
+  split. auto. 
+  split. auto.
   split. eexact SAVE_CS.
   split. exact AGREGS'.
   split. rewrite LS1. apply agree_locs_undef_locs; [|reflexivity].
@@ -1349,8 +1480,8 @@ Proof.
   unfold mreg_within_bounds in H; tauto.
   unfold call_regs. apply AGCS. auto.
   split. exact SEPFINAL.
-  split. exact SAME.
-  split. exact INCR.
+  split. auto.
+  split. exact INCR1.
   split. exact INJSEP.
   split.
   {
@@ -1362,36 +1493,37 @@ Proof.
     unfold store_stack, Val.offset_ptr, Mem.storev in *.
     intros.
     eapply VALID.
-    eapply Mem.store_valid_block_1; eauto.
-    eapply Mem.store_valid_block_1; eauto.
     eapply Mem.record_stack_block_valid; eauto.
+    eapply Mem.store_valid_block_1; eauto.
+    eapply Mem.store_valid_block_1; eauto.
     eapply Mem.valid_block_alloc; eauto.
   }
   split.
   {
     intros.
     eapply PERMS.
+    eapply Mem.record_stack_block_perm'; eauto.
     unfold store_stack, Val.offset_ptr, Mem.storev in * .
     eapply Mem.perm_store_1; eauto.
     eapply Mem.perm_store_1; eauto.
-    eapply Mem.record_stack_block_perm'; eauto.
     eapply Mem.perm_alloc_1; eauto.
   }
   split.
   - eapply Mem.unchanged_on_trans. eapply Mem.alloc_unchanged_on. eauto.
-    eapply Mem.unchanged_on_trans. eapply Mem.strong_unchanged_on_weak. eapply Mem.record_stack_block_unchanged_on. eauto.
+
     eapply Mem.unchanged_on_trans. eapply Mem.store_unchanged_on.
     unfold store_stack in STORE_PARENT. simpl in STORE_PARENT. eauto.
     intuition.
     eapply Mem.unchanged_on_trans. eapply Mem.store_unchanged_on.
     unfold store_stack in STORE_RETADDR. simpl in STORE_RETADDR. eauto.
     intuition.
+    eapply Mem.unchanged_on_trans. eapply Mem.strong_unchanged_on_weak. eapply Mem.record_stack_block_unchanged_on. eauto.
     exact UNCH.
   - split.
     rewrite <- ST.
+    erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. f_equal.
     erewrite store_stack_stack_blocks. 2: eauto.
     erewrite store_stack_stack_blocks. 2: eauto.
-    erewrite Mem.record_stack_block_stack_adt. 2: eauto. f_equal.
     eapply Mem.alloc_stack_blocks. eauto.
     intros. rewrite GFI. auto.
 Qed.
@@ -2251,21 +2383,21 @@ Qed.
 
 Variables init_m : mem.
 
-Definition stack_blocks_of_callstack (l : list Mach.stackframe) : list (block) :=
+Definition stack_blocks_of_callstack (l : list Mach.stackframe)  :=
   map (fun x =>
          match x with
            Stackframe fb sp _ _ =>
-           sp
-           (* match Genv.find_funct_ptr tge fb with *)
-           (*   Some (Internal f) => *)
-           (*   (sp, fn_stacksize f) *)
-           (* | _ => (sp, 0) *)
-           (* end *)
+           match Genv.find_funct_ptr tge fb with
+             Some (Internal f) =>
+             (Some (Mach.fn_frame f), sp)
+           | _ => (None, sp)
+           end
          end) l.
 
-Definition list_prefix (l1: list (block)) (l2 : list (frame_adt * Z)) : Prop :=
-  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun b f => 
-                                                   exists fi, fst f = frame_with_info b (Some fi)
+Definition list_prefix (l1: list (option frame_info * block)) (l2 : list (option frame_adt * Z)) : Prop :=
+  exists l1' l3, l2 = l1' ++ l3 /\ list_forall2 (fun (b: option frame_info * block) f =>
+                                             let (fn,b) := b in
+                                             fst f = Some (frame_with_info b fn)
                                           ) l1 l1'.
 
 Definition init_sp_has_stackinfo (m: mem) : Prop :=
@@ -2302,7 +2434,7 @@ Inductive call_stack_consistency: Mach.state -> Prop :=
 | call_stack_consistency_intro:
     forall c cs' fb sp' rs m' tf
       (FIND: Genv.find_funct_ptr tge fb = Some (Internal tf))
-      (CallStackConsistency: list_prefix ((sp')::stack_blocks_of_callstack cs') (Mem.stack_adt m'))
+      (CallStackConsistency: list_prefix ((Some (Mach.fn_frame tf),sp')::stack_blocks_of_callstack cs') (Mem.stack_adt m'))
       (CFD: callstack_function_defined cs'),
       call_stack_consistency (Mach.State cs' fb (Vptr sp' Ptrofs.zero) c rs m')
 | call_stack_consistency_call:
@@ -2328,7 +2460,7 @@ Proof.
   - econstructor; eauto. erewrite store_stack_no_abstract; eauto.
   - econstructor; eauto. destruct a; simpl in *; try discriminate. erewrite Mem.store_no_abstract; eauto.
   - econstructor. simpl in *.
-    destruct CallStackConsistency as (l1 & l2 & A & B).
+    destruct CallStackConsistency as (l1 & l2 & A & B). rewrite FIND.
     repeat eexists; eauto.  econstructor; eauto.
   - econstructor. simpl in *.
     destruct CallStackConsistency as (l1 & l2 & A & B).
@@ -2348,9 +2480,9 @@ Proof.
     repeat eexists; eauto.
     eauto.
   - econstructor. eauto.
+    erewrite Mem.record_stack_blocks_stack_adt. 2: eauto.
     rewrite store_stack_no_abstract; eauto.
     rewrite store_stack_no_abstract; eauto.
-    erewrite Mem.record_stack_block_stack_adt. 2: eauto.
     erewrite Mem.alloc_no_abstract; eauto.
     destruct CallStackConsistency as (l1 & l2 & A & B).
     repeat eexists; eauto. 2: constructor. simpl. f_equal. eauto.
@@ -2361,6 +2493,8 @@ Proof.
     erewrite <- external_call_stack_blocks; eauto.
     eauto.
   - inv CFD. econstructor; eauto.
+    destruct CallStackConsistency as (l1 & l2 & A & B).
+    repeat eexists; eauto. simpl in B. rewrite FINDF in B. auto.
 Qed.
 
 (*  *)
@@ -2443,10 +2577,10 @@ Proof.
                  generalize (fun b => Mem.unrecord_stack_block_get_frame_info _ _ b H);
                  revert H
            | H: Mem.record_stack_blocks _ _ _ = Some _ |- _ =>
-             generalize (Mem.record_stack_block_mem_unchanged _ _ _ _ H);
+             generalize (Mem.record_stack_blocks_mem_unchanged _ _ _ _ H);
                let A := fresh in
                intro A; decompose [and] A; clear A;
-               generalize (Mem.record_stack_block_stack_adt _ _ _ _ _ H);
+               generalize (Mem.record_stack_blocks_stack_adt _ _ _ _ H);
                  revert H
            | H: external_call _ _ _ _ _ _ _ |- _ =>
              generalize (external_call_nextblock _ _ _ _ _ _ _ H);
@@ -2476,13 +2610,14 @@ Proof.
     erewrite (Mem.stack_adt_eq_get_frame_info); eauto.
     erewrite (Mem.stack_adt_eq_is_stack_top); eauto.
   - red in ISP'VALID. xomega.
-  - unfold Mem.is_stack_top, Mem.get_stack_top_blocks. rewrite H0.
+  - unfold Mem.is_stack_top, Mem.get_stack_top_blocks. rewrite H1.
     simpl. intuition. subst b.
     eapply Mem.fresh_block_alloc; eauto.
-  - unfold Mem.get_frame_info. rewrite H0.
+  - unfold Mem.get_frame_info. rewrite H1.
     simpl. destruct eq_block; eauto.
     subst.
     exfalso; eapply Mem.fresh_block_alloc; eauto.
+    rewrite H15, H12.
     erewrite Mem.alloc_no_abstract; eauto.
   - xomega.
   - intros. intro. subst.
@@ -2491,9 +2626,10 @@ Proof.
   - clearbody step. revert Heqv; inv CSC; inv NI.
     destruct CallStackConsistency as (l1 & l2 & A & B). inv B.
     unfold Mem.is_stack_top, Mem.get_stack_top_blocks.
+    inv CFD. rewrite FINDF in H1. destruct b1. simpl in *. subst.
     destruct (Mem.stack_adt m) eqn:?. simpl; easy. destruct p; simpl in *.
     inv A. simpl.
-    decompose [ex and] H1; clear H1. simpl in *. intro; subst.
+    decompose [ex and] H3; clear H3. simpl in *. intro; subst.
     simpl. intuition. subst b.
     eapply NI0; eauto.
   - inv NI. auto.
@@ -2542,7 +2678,7 @@ Lemma bounds_stack_record_stack_block:
     bounds_stack m' s.
 Proof.
   intros.
-  generalize (Mem.record_stack_block_mem_unchanged _ _ _ _ FREE);
+  generalize (Mem.record_stack_blocks_mem_unchanged _ _ _ _ FREE);
     let A := fresh in
     intro A; decompose [and] A; clear A.
   intros; eapply bounds_stack_perm; eauto.
@@ -2581,10 +2717,10 @@ Proof.
                  generalize (fun b => Mem.unrecord_stack_block_get_frame_info _ _ b H);
                  revert H
            | H: Mem.record_stack_blocks _ _ _ = Some _ |- _ =>
-             generalize (Mem.record_stack_block_mem_unchanged _ _ _ _ H);
+             generalize (Mem.record_stack_blocks_mem_unchanged _ _ _ _ H);
                let A := fresh in
                intro A; decompose [and] A; clear A;
-               generalize (Mem.record_stack_block_stack_adt _ _ _ _ _ H);               
+               generalize (Mem.record_stack_blocks_stack_adt _ _ _ _ H);               
                  revert H
            | H: external_call _ _ _ _ _ _ _ |- _ =>
              generalize (external_call_nextblock _ _ _ _ _ _ _ H);
@@ -2635,7 +2771,6 @@ Definition fn_stack_requirements (i: ident) : Z :=
     end
   | None => 0
   end.
-
 
 Inductive match_states: Linear.state -> Mach.state -> Prop :=
 | match_states_intro:
@@ -2968,9 +3103,10 @@ Lemma match_stacks_not_init_sp:
   forall j s s' sig sig' b o,
     match_stacks j s s' sig sig' ->
     init_sp = Vptr b o ->
-    ~ In b (stack_blocks_of_callstack s').
+    ~ In b (map snd (stack_blocks_of_callstack s')).
 Proof.
   induction 1; simpl; intros; eauto.
+  rewrite FINDF. simpl.
   intros [A|A]. eapply NOT_INIT; eauto.
   eapply IHmatch_stacks in A; eauto.
 Qed.
@@ -2985,11 +3121,78 @@ Proof.
 Qed.
 
 
-Lemma m_invar_stack_sepconj:
-  forall P Q,
-    m_invar_stack (P ** Q) = m_invar_stack P || m_invar_stack Q.
+
+
+
+Lemma le_add_pos:
+  forall a b,
+    0 <= b ->
+    a <= a + b.
 Proof.
-  reflexivity.
+  intros; omega.
+Qed.
+
+
+Lemma fe_ofs_link_fe_size:
+  forall b,
+    fe_ofs_link (make_env b) <= fe_size (make_env b).
+Proof.
+  destruct b. simpl.
+  etransitivity.
+  2: apply le_add_pos. 2: destruct Archi.ptr64; omega.
+  etransitivity. 2: apply align_le.
+  2: destruct Archi.ptr64; omega.
+  etransitivity. 2: apply le_add_pos.
+  etransitivity. 2: apply align_le. 2: omega. 
+  etransitivity. 2: apply le_add_pos.
+  etransitivity. 2: apply align_le. 2: omega. 
+  etransitivity. 2: apply size_callee_save_area_incr.
+  destruct Archi.ptr64; omega.
+  omega.  omega.
+Qed.
+
+
+
+Lemma fe_ofs_retaddr_fe_size:
+  forall b,
+    fe_ofs_retaddr (make_env b) <= fe_size (make_env b).
+Proof.
+  destruct b. simpl.
+  apply le_add_pos. 
+  destruct Archi.ptr64; omega.
+Qed.
+
+
+Lemma fe_ofs_link_pos:
+  forall b,
+    0 <= fe_ofs_link (make_env b).
+Proof.
+  destruct b.
+  Transparent Bounds.bound_outgoing.
+  Local Opaque Z.mul.
+  simpl.
+  etransitivity. 2: apply align_le.
+  Local Transparent Z.mul.
+  -  omega.
+  - destruct Archi.ptr64; omega.
+Qed.
+
+Lemma fe_ofs_retaddr_pos:
+  forall b,
+    0 <= fe_ofs_retaddr (make_env b).
+Proof.
+  destruct b.
+  Local Opaque Z.mul.
+  simpl.
+  etransitivity. 2: apply align_le; try now (destruct Archi.ptr64; omega).
+  apply Z.add_nonneg_nonneg; try omega.
+  etransitivity. 2: apply align_le; try omega.
+  apply Z.add_nonneg_nonneg; try omega.
+  etransitivity. 2: apply align_le; try now (destruct Archi.ptr64; omega).
+  etransitivity. 2: apply size_callee_save_area_incr.
+  apply Z.add_nonneg_nonneg; try now (destruct Archi.ptr64; omega).
+  etransitivity. 2: apply align_le; try now (destruct Archi.ptr64; omega).
+  omega.
 Qed.
 
 
@@ -3125,6 +3328,36 @@ Proof.
 Qed.
 
 
+Lemma fe_ofs_local_pos:
+  forall b,
+    0 <= fe_ofs_local (make_env b).
+Proof.
+  destruct b.
+  Local Opaque Z.mul .
+  simpl.
+  etransitivity. 2: apply align_le ; try omega.
+  etransitivity. 2: apply size_callee_save_area_incr.
+  Local Transparent Bounds.bound_outgoing.
+  apply Z.add_nonneg_nonneg.
+  - etransitivity. 2: apply align_le; try omega. simpl. omega. destruct Archi.ptr64; omega.
+  - destruct Archi.ptr64; omega.
+Qed.
+
+Lemma fe_ofs_local_fe_size:
+  forall b,
+    fe_ofs_local (make_env b) <= fe_size (make_env b).
+Proof.
+  destruct b. simpl.
+  etransitivity. 2: apply le_add_pos.
+  etransitivity. 2: apply align_le. 
+  etransitivity. 2: apply le_add_pos.
+  etransitivity. 2: apply align_le.
+  apply le_add_pos. omega. omega.
+  omega.
+  destruct Archi.ptr64; omega.
+  destruct Archi.ptr64; omega.
+Qed.
+
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step fn_stack_requirements init_ls ge s1 t s2 ->
              forall (WTS: wt_state init_ls s1) s1'
@@ -3229,7 +3462,8 @@ Proof.
       inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
       destruct (Mem.stack_adt m') eqn:EQADT'. inv FORALL. simpl in EQADT. congruence.
       destruct p; simpl in *.
-      inv FORALL. simpl in EQADT. inv EQADT. destruct H1 as (fi & FWI). simpl in *. subst. simpl; auto.
+      inv FORALL. destruct b1. simpl in EQADT. inv EQADT.
+      simpl in *; subst. simpl; auto.
     }
     exploit wt_state_setstack; eauto. intros (SV & SW).
     set (ofs' := match sl with
@@ -3247,14 +3481,38 @@ Proof.
            ).
     {
       unfold ofs'; destruct sl; try discriminate.
-      eapply frame_set_local; eauto. left; auto.
-      eapply frame_set_outgoing; eauto. left; auto.
+      eapply frame_set_local; eauto. left; split; auto.
+      red; red.
+      inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
+      inv FORALL. destruct b1. simpl in H1. subst.
+      unfold Mem.get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
+      rewrite pred_dec_true.
+      rewrite FIND in FIND0. inv FIND0.
+      rewrite (unfold_transf_function _ _ TRANSL).  Opaque frame_link frame_retaddr. simpl.
+      intros. split; intro A.
+      eapply frame_disjoints in A.
+      apply A. right. left. unfold in_segment; simpl. omega.
+      eapply frame_disjoints in A.
+      apply A. left. unfold in_segment; simpl. omega. auto.
+      eapply frame_set_outgoing; eauto. left; split; auto.
+      red; red.
+      inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
+      inv FORALL. destruct b1. simpl in H1. subst.
+      unfold Mem.get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
+      rewrite pred_dec_true.
+      rewrite FIND in FIND0. inv FIND0.
+      rewrite (unfold_transf_function _ _ TRANSL).  Opaque frame_link frame_retaddr. simpl.
+      intros. split; intro A; eapply frame_disjoints in A; apply A.
+      right. right. left. unfold in_segment; simpl. omega.
+      right. left. unfold in_segment; simpl. omega. auto.
     }
     clear SEP; destruct A as (m'' & STORE & SEP).
     econstructor; split.
     + apply plus_one. destruct sl; try discriminate.
-      econstructor. eexact STORE. eauto.
-      econstructor. eexact STORE. eauto.
+      econstructor. eexact STORE.
+      eauto.
+      econstructor. eexact STORE.
+      eauto.
     + constr_match_states. all: eauto with coqlib. 
       * apply agree_regs_set_slot. apply agree_regs_undef_regs. auto.
       * apply agree_locs_set_slot. apply agree_locs_undef_locs. auto. apply destroyed_by_setstack_caller_save. auto.
@@ -3333,7 +3591,8 @@ Proof.
   econstructor; split.
   + apply plus_one. econstructor.
     instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
-    eexact C. eauto.
+    eexact C.
+    eauto.
   + destruct a, a'; try discriminate. simpl in *. constr_match_states. all: eauto with coqlib.
     * rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.
     * apply agree_locs_undef_locs. auto. apply destroyed_by_store_caller_save.
@@ -3364,7 +3623,6 @@ Proof.
                        (Ptrofs.unsigned i)); auto.
          destruct (zle (Ptrofs.unsigned i + size_chunk chunk)
                        (Ptrofs.unsigned (Ptrofs.add i1 (Ptrofs.repr (4 * of))))); auto.
-
          eapply Mem.store_valid_access_3 in C. destruct C as (C1 & C2 & C3).
          specialize (C3 (perm_refl _)). red in C3.
          inv MACH.
@@ -3373,7 +3631,7 @@ Proof.
          destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
          unfold Mem.strong_non_private_stack_access in C3. rewrite MSI1 in C3.
          destruct C3 as [C3 | C3]; try congruence.
-
+         simpl in ISP'NST. exfalso; apply ISP'NST. apply C3.
          destruct (match_stacks_is_init_sg _ _ _ _ _ STACKS).
          generalize (loc_arguments_bounded _ _ _ IN').
          generalize (typesize_pos ty). destruct H1. rewrite H2.
@@ -3381,16 +3639,18 @@ Proof.
          exploit loc_arguments_acceptable_2. apply IN'. simpl.
          omega.
          subst sg_.
-         
          cut (exists o,
                  Ptrofs.unsigned i <= o < Ptrofs.unsigned i + size_chunk chunk /\
                  Ptrofs.unsigned  i1 + (fe_ofs_arg + 4 * of) <= o <
                  Ptrofs.unsigned i1 + (fe_ofs_arg + 4 * of) + size_chunk (chunk_of_type ty)).
          intros (o & RNG1 & RNG2).
-
          exfalso.
-         eapply MSI3. 2: eapply (C3 o). 2: omega.
-         apply MSI2.
+         destruct C3 as (C3 & C3').
+         red in C3'. red in C3'.
+         specialize (C3' o). 
+         specialize (C3' RNG1).
+         eapply MSI3.
+         apply MSI2. 2: apply C3'.
          split. etransitivity. 2: apply RNG2.
          exploit loc_arguments_acceptable_2. apply IN'. simpl.
          generalize (loc_arguments_bounded _ _ _ IN').
@@ -3399,12 +3659,9 @@ Proof.
          eapply Z.lt_le_trans. apply RNG2.
          generalize (loc_arguments_bounded _ _ _ IN').
          generalize (typesize_pos ty).
-
          exploit loc_arguments_acceptable_2. apply IN'. simpl.
          rewrite size_type_chunk. rewrite typesize_typesize.
          omega.
-             
-         
          simpl.
          exists (Z.max (Ptrofs.unsigned i) (Ptrofs.unsigned (Ptrofs.add i1 (Ptrofs.repr (4*of))))).
          repeat split.
@@ -3762,10 +4019,23 @@ Proof.
   intros (j' & rs' & m2_ & m2' & sp' & m3' & m4' & m5' & A1 & A2 & B & C & D & E & F & SEP & J & K & KSEP & KV & KV' & PERMS & UNCH & IST & GFI).
   econstructor; split.
   + eapply plus_left. econstructor; eauto.
+    {
+      unfold check_alloc_frame. 
+      rewrite (unfold_transf_function _ _ TRANSL). Opaque fe_ofs_link fe_ofs_retaddr. simpl.
+      assert (forall z, proj_sumbool (zeq z z) = true).
+      {
+        intros. destruct zeq. reflexivity. congruence.
+      }
+      rewrite Ptrofs.unsigned_repr.
+      rewrite Ptrofs.unsigned_repr.
+      rewrite ! andb_true_iff. split. 
+      apply H1. apply H1.
+      split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size. eapply size_no_overflow; eauto.
+      split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size. eapply size_no_overflow; eauto.
+    }
     rewrite <- A1. f_equal.
-    rewrite (unfold_transf_function _ _ TRANSL). reflexivity. rewrite <- A2.
-    f_equal. 
-    rewrite (unfold_transf_function _ _ TRANSL). reflexivity. 
+    rewrite (unfold_transf_function _ _ TRANSL). reflexivity.
+    rewrite <- C. f_equal. rewrite (unfold_transf_function _ _ TRANSL). reflexivity. 
     rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
     eexact D. traceEq.
   + constr_match_states.
@@ -3836,7 +4106,6 @@ Proof.
         exfalso. subst. eapply Mem.fresh_block_alloc; eauto. tauto.
 
 - (* external function *)
-
   eapply external_call_step_correct; eauto.
   
 - (* return *)
@@ -3996,7 +4265,9 @@ Lemma stacking_frame_correct:
     match_prog p tp ->
     forall (fb : Values.block) (f : Mach.function),
       Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) fb = Some (Internal f) ->
-      Memtype.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f.
+      Memtype.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f /\
+      Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) /\
+      Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))).
 Proof.
   intros p tp MP fb f FFP.
   red in MP.
@@ -4007,8 +4278,14 @@ Proof.
   inv MIOG. simpl in *. subst. inv H2. inv H4.
   destruct f1; simpl in *; try discriminate.
   monadInv H6.
-  apply unfold_transf_function in EQ. subst.
-  reflexivity.
+  rewrite (unfold_transf_function _ _ EQ). 
+  split. reflexivity.
+  split. Opaque fe_ofs_link. simpl. apply Ptrofs.unsigned_repr.
+  split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size.
+  eapply size_no_overflow; eauto.
+  Opaque fe_ofs_retaddr. simpl. apply Ptrofs.unsigned_repr.
+  split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size.
+  eapply size_no_overflow; eauto.
 Qed.
 
 Theorem transf_program_correct:
