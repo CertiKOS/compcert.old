@@ -974,6 +974,8 @@ Opaque loadind.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
+  clear. induction res; simpl; intros; eauto. intro; subst.
+  eapply preg_of_not_SP in H. congruence.
   eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
@@ -1228,7 +1230,11 @@ Transparent destroyed_at_function_entry.
     rewrite ATLR.
     eapply parent_ra_def; eauto.
   }
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  unfold loc_external_result.
+  clear. destruct (loc_result (ef_sig ef)); simpl; try split;
+  apply preg_of_not_SP.
+  auto.
   econstructor; eauto.
   unfold loc_external_result.
   apply agree_set_other; auto.

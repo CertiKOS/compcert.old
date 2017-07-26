@@ -332,6 +332,13 @@ Definition set_pair (p: rpair preg) (v: val) (rs: regset) : regset :=
   | Twolong rhi rlo => rs#rhi <- (Val.hiword v) #rlo <- (Val.loword v)
   end.
 
+Fixpoint no_rsp_pair (b: rpair preg) :=
+  match b with
+    One r => r <> RSP
+  | Twolong hi lo => hi <> RSP /\ lo <> RSP
+  end.
+
+
 (** Assigning the result of a builtin *)
 
 Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
@@ -339,6 +346,13 @@ Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   | BR r => rs#r <- v
   | BR_none => rs
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
+  end.
+
+Fixpoint no_rsp_builtin_preg (b: builtin_res preg) :=
+  match b with
+    BR r => r <> RSP
+  | BR_none => True
+  | BR_splitlong hi lo => no_rsp_builtin_preg lo /\ no_rsp_builtin_preg hi
   end.
 
 Section WITHEXTERNALCALLS.
@@ -1194,6 +1208,7 @@ Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} (ge:
       eval_builtin_args ge rs (rs RSP) m args vargs ->
       external_call ef ge vargs m t vres m' ->
       forall BUILTIN_ENABLED: builtin_enabled ef,
+        no_rsp_builtin_preg res ->
         rs' = nextinstr_nf
                 (set_res res vres
                          (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
@@ -1216,6 +1231,7 @@ Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} (ge:
         (RA_NOT_VUNDEF: rs RA <> Vundef)
       ,      (* CompCertX: END additional conditions for calling convention *)
         external_call ef ge args m t res m' ->
+        no_rsp_pair (loc_external_result (ef_sig ef)) ->
         rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_regs (CR ZF :: CR CF :: CR PF :: CR SF :: CR OF :: nil) (undef_regs (map preg_of destroyed_at_call) rs))) #PC <- (rs RA) #RA <- Vundef ->
         step ge (State rs m) t (State rs' m').
 
@@ -1284,10 +1300,10 @@ Ltac Equalities :=
 + discriminate.
 + discriminate.
 + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
-  exploit external_call_determ. eexact H5. eexact H11. intros [A B].
+  exploit external_call_determ. eexact H5. eexact H12. intros [A B].
   split. auto. intros. destruct B; auto. subst. auto.
 + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
-  exploit external_call_determ. eexact H4. eexact H9. intros [A B].
+  exploit external_call_determ. eexact H4. eexact H10. intros [A B].
   split. auto. intros. destruct B; auto. subst. auto.
 - (* trace length *)
   red; intros; inv H; simpl.

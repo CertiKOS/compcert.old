@@ -1970,6 +1970,79 @@ Section EVAL_BUILTIN_ARG_LESSDEF''.
 End EVAL_BUILTIN_ARG_LESSDEF''.
 
 
+Section EVAL_BUILTIN_ARG_INJECT.
+
+Variable A: Type.
+Variable ge1 ge2: Senv.t.
+Variables e1 e2: A -> val.
+Variables sp1 sp2: val.
+Variables m1 m2: mem.
+
+Variable j: meminj.
+
+Hypothesis sp_inject: Val.inject j sp1 sp2.
+Hypothesis env_inject: forall x, Val.inject j (e1 x) (e2 x).
+Hypothesis mem_extends: Mem.inject j m1 m2.
+
+Hypothesis senv_preserved:
+  forall s b,
+    Senv.find_symbol ge1 s = Some b ->
+    Senv.find_symbol ge2 s = Some b.
+
+Hypothesis senv_inject:
+  forall s b,
+    Senv.find_symbol ge1 s = Some b ->
+    j b = Some (b,0).
+
+Lemma senv_preserved_symbol_address:
+  forall s o,
+    Val.inject j (Senv.symbol_address ge1 s o) (Senv.symbol_address ge2 s o).
+Proof.
+  unfold Senv.symbol_address.
+  intros.
+  destruct (Senv.find_symbol ge1 s) eqn:FS; auto.
+  exploit senv_preserved. eauto. intro B; rewrite B.
+  econstructor; eauto. rewrite Ptrofs.add_zero. auto.
+Qed.
+
+Lemma eval_builtin_arg_inject:
+  forall a v1, eval_builtin_arg ge1 e1 sp1 m1 a v1 ->
+  exists v2, eval_builtin_arg ge2 e2 sp2 m2 a v2 /\ Val.inject j v1 v2.
+Proof.
+  induction 1.
+- exists (e2 x); auto with barg.
+- econstructor; eauto with barg.
+- econstructor; eauto with barg.
+- econstructor; eauto with barg.
+- econstructor; eauto with barg.
+- exploit Mem.loadv_inject; eauto. apply Val.offset_ptr_inject. eauto.
+  intros (v' & P & Q). exists v'; eauto with barg.
+- econstructor; split; eauto with barg.
+  apply Val.offset_ptr_inject; eauto.
+- exploit Mem.loadv_inject; eauto. apply senv_preserved_symbol_address.
+  intros (v' & P & Q). exists v'; eauto with barg.
+- econstructor; split; eauto with barg.
+  apply senv_preserved_symbol_address.
+- destruct IHeval_builtin_arg1 as (vhi' & P & Q).
+  destruct IHeval_builtin_arg2 as (vlo' & R & S).
+  econstructor; split; eauto with barg. apply Val.longofwords_inject; auto.
+Qed.
+
+Lemma eval_builtin_args_inject:
+  forall al vl1, eval_builtin_args ge1 e1 sp1 m1 al vl1 ->
+  exists vl2, eval_builtin_args ge2 e2 sp2 m2 al vl2 /\ Val.inject_list j vl1 vl2.
+Proof.
+  induction 1.
+- econstructor; split. constructor. auto.
+- exploit eval_builtin_arg_inject; eauto. intros (v1' & P & Q).
+  destruct IHlist_forall2 as (vl' & U & V).
+  exists (v1'::vl'); split; constructor; auto.
+Qed.
+
+End EVAL_BUILTIN_ARG_INJECT.
+
+
+
 End WITHEXTERNALCALLS.
 
 Hint Constructors eval_builtin_arg: barg.
