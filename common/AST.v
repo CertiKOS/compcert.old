@@ -499,7 +499,7 @@ Inductive external_function : Type :=
      (** Dynamic memory allocation.  Takes the requested size in bytes
          as argument; returns a pointer to a fresh block of the given size.
          Produces no observable event. *)
-  | EF_free
+  (* | EF_free *)
      (** Dynamic memory deallocation.  Takes a pointer to a block
          allocated by an [EF_malloc] external call and frees the
          corresponding block.
@@ -535,7 +535,7 @@ Definition ef_sig (ef: external_function): signature :=
   | EF_vload chunk => mksignature (Tptr :: nil) (Some (type_of_chunk chunk)) cc_default
   | EF_vstore chunk => mksignature (Tptr :: type_of_chunk chunk :: nil) None cc_default
   | EF_malloc => mksignature (Tptr :: nil) (Some Tptr) cc_default
-  | EF_free => mksignature (Tptr :: nil) None cc_default
+  (* | EF_free => mksignature (Tptr :: nil) None cc_default *)
   | EF_memcpy sz al => mksignature (Tptr :: Tptr :: nil) None cc_default
   | EF_annot text targs => mksignature targs None cc_default
   | EF_annot_val text targ => mksignature (targ :: nil) (Some targ) cc_default
@@ -553,7 +553,7 @@ Definition ef_inline (ef: external_function) : bool :=
   | EF_vload chunk => true
   | EF_vstore chunk => true
   | EF_malloc => false
-  | EF_free => false
+  (* | EF_free => false *)
   | EF_memcpy sz al => true
   | EF_annot text targs => true
   | EF_annot_val text targ => true

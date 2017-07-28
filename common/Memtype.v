@@ -205,7 +205,13 @@ Qed.
 Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
   forall ofs, lo <= ofs < hi -> in_segment ofs (frame_data fi).
 
-Inductive frame_inject' (f: meminj) (P: block -> Z -> perm_kind -> permission -> Prop):
+Class InjectPerm :=
+  {
+    inject_perm_condition: permission -> Prop;
+    inject_perm_condition_writable: forall p, perm_order Writable p -> inject_perm_condition p;
+  }.
+
+Inductive frame_inject' {injperm: InjectPerm} (f: meminj) (P: block -> Z -> perm_kind -> permission -> Prop):
   frame_adt -> frame_adt -> Prop :=
 | frame_inject_with_info:
     forall b1 b2 fi
@@ -226,6 +232,7 @@ Inductive frame_inject' (f: meminj) (P: block -> Z -> perm_kind -> permission ->
              f b1 = Some (b2, delta) ->
              forall ofs k p,
                P b1 ofs k p ->
+               inject_perm_condition p ->
                in_segment (ofs + delta) (frame_data fi))
       (INJlist: forall b b' delta, f b = Some (b', delta) -> (In b bl <-> b' = b2)),
       frame_inject' f P (frame_without_info bl) (frame_with_info b2 ofi)
@@ -235,6 +242,7 @@ Inductive frame_inject' (f: meminj) (P: block -> Z -> perm_kind -> permission ->
           f b1 = Some (b2, delta) ->
           forall ofs k p,
             P b1 ofs k p ->
+            inject_perm_condition p ->
             in_segment (ofs + delta) (frame_data fi))
       (INJ: forall b1' b2' delta, f b1' = Some (b2', delta) -> (b1' = b1 <-> b2' = b2)),
       frame_inject' f P (frame_with_info b1 None) (frame_with_info b2 (Some fi)).
@@ -244,8 +252,8 @@ Module Mem.
 Definition locset := block -> Z -> Prop.
 
 Class MemoryModelOps
-
-(** The abstract type of memory states. *)
+      {injperm: InjectPerm}
+      (** The abstract type of memory states. *)
  (mem: Type)
 
 : Type
@@ -390,11 +398,9 @@ that we now axiomatize. *)
  frame_inject f m := frame_inject' f (perm m)
 }.
 
+
 Section WITHMEMORYMODELOPS.
 Context `{memory_model_ops: MemoryModelOps}.
-
-
-
 
 Lemma frame_inject_invariant:
   forall m m' f f1 f2,
@@ -427,7 +433,7 @@ Qed.
 
 Definition option_frame_inject f m1 (x y: option frame_adt * Z) :=
   match fst x, fst y with
-    Some f1, Some f2 => frame_inject' f (perm m1) f1 f2
+    Some f1, Some f2 => frame_inject f m1 f1 f2
   | None, Some f => False
   | _, _ => True
   end /\ snd x = snd y.
@@ -438,7 +444,7 @@ Lemma list_inject_frame_id m:
 Proof.
   generalize (stack_adt m); induction l; simpl; intros; constructor; auto.
   constructor; simpl; auto.
-  destruct a. simpl. destruct o; auto. apply inject_frame_id.
+  destruct a. simpl. destruct o; auto. eapply inject_frame_id.
 Qed.
 
 Lemma frame_inject_incr:
@@ -547,6 +553,7 @@ Lemma frame_inject_compose:
       (forall b1 b2 delta o k p,
           f b1 = Some (b2, delta) ->
           perm m1 b1 o k p ->
+          inject_perm_condition p ->
           perm m2 b2 (o + delta) k p) ->
       frame_inject (compose_meminj f f') m1 l1 l3.
 Proof.
@@ -554,14 +561,16 @@ Proof.
   inv H; inv H0; unfold compose_meminj.
   - econstructor; eauto; intros; autospe; auto.
   - econstructor; eauto; intros; autospe; auto.
-    eapply INDATA; eauto. replace ofs with (ofs + 0). eapply PERM; eauto. omega.
+    eapply INDATA; eauto. replace ofs with (ofs + 0). eapply PERM; eauto.
+    omega.
     split; intros; subst; autospe; intuition subst.
     eapply INJ; eauto.
   - econstructor; eauto. intros; autospe. intuition.
   - econstructor; eauto.
     + intros; autospe.
       replace (ofs + (z + z0)) with ((ofs + z) + z0).
-      eapply INDATA; eauto. intuition. omega.
+      eapply INDATA; eauto. intuition.
+      omega.
     + intros; autospe. intuition.
   - econstructor; eauto; intros; autospe; intuition subst.
     rewrite Z.add_0_r. eapply INDATA; eauto.
@@ -570,7 +579,7 @@ Proof.
   - econstructor; eauto; intros; autospe; intuition subst.
     replace (ofs + (z + z0)) with ((ofs + z) + z0) by omega.
     eapply INDATA0; eauto. 
-  - econstructor; eauto; intros; autospe; intuition subst. 
+  - econstructor; eauto; intros; autospe; intuition subst.
     rewrite Z.add_0_r. eapply INDATA; eauto.
     eapply FB; eauto.
     apply H0. eapply INJ0; eauto.
@@ -584,6 +593,7 @@ Lemma list_frame_inject_compose:
       (forall b1 b2 delta o k p,
           f b1 = Some (b2, delta) ->
           perm m1 b1 o k p ->
+          inject_perm_condition p ->
           perm m2 b2 (o + delta) k p) ->
     list_forall2 (frame_inject (compose_meminj f f') m1) l1 l3.
 Proof.
@@ -594,7 +604,6 @@ Proof.
   eapply frame_inject_compose; eauto.
   eapply IHlist_forall2; eauto.
 Qed.
-
 
 Definition get_stack_top_blocks (m: mem) : list block :=
   match stack_adt m with
@@ -945,7 +954,9 @@ Qed.
 
 End WITHMEMORYMODELOPS.
 
-Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
+
+Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
+  : Prop :=
 {
 
  valid_not_valid_diff:
@@ -1667,7 +1678,8 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  free_parallel_extends:
   forall m1 m2 b lo hi m1',
-  extends m1 m2 ->
+    extends m1 m2 ->
+    inject_perm_condition Freeable ->
   free m1 b lo hi = Some m1' ->
   exists m2',
      free m2 b lo hi = Some m2'
@@ -1679,10 +1691,11 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   (valid_block m1 b <-> valid_block m2 b);
  perm_extends:
   forall m1 m2 b ofs k p,
-  extends m1 m2 -> perm m1 b ofs k p -> perm m2 b ofs k p;
+  extends m1 m2 -> perm m1 b ofs k p -> inject_perm_condition p -> perm m2 b ofs k p;
  valid_access_extends:
   forall m1 m2 chunk b ofs p,
-  extends m1 m2 -> valid_access m1 chunk b ofs p -> valid_access m2 chunk b ofs p;
+    extends m1 m2 -> valid_access m1 chunk b ofs p -> inject_perm_condition p ->
+    valid_access m2 chunk b ofs p;
  valid_pointer_extends:
   forall m1 m2 b ofs,
   extends m1 m2 -> valid_pointer m1 b ofs = true -> valid_pointer m2 b ofs = true;
@@ -1698,6 +1711,7 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
      magree m1 m2 P ->
      forall b ofs k p,
        perm m1 b ofs k p ->
+       inject_perm_condition p ->
        perm m2 b ofs k p;
 
  magree_monotone:
@@ -1754,17 +1768,19 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
 
  magree_free:
   forall m1 m2 (P Q: locset) b lo hi m1',
-  magree m1 m2 P ->
-  free m1 b lo hi = Some m1' ->
-  (forall b' i, Q b' i ->
-                b' <> b \/ ~(lo <= i < hi) ->
-                P b' i) ->
-  exists m2', free m2 b lo hi = Some m2' /\ magree m1' m2' Q;
+    magree m1 m2 P ->
+    inject_perm_condition Freeable ->
+    free m1 b lo hi = Some m1' ->
+    (forall b' i, Q b' i ->
+             b' <> b \/ ~(lo <= i < hi) ->
+             P b' i) ->
+    exists m2', free m2 b lo hi = Some m2' /\ magree m1' m2' Q;
 
  magree_valid_access:
   forall m1 m2 (P: locset) chunk b ofs p,
   magree m1 m2 P ->
   valid_access m1 chunk b ofs p ->
+  inject_perm_condition p ->
   valid_access m2 chunk b ofs p;
 
 (** ** Properties of [inject]. *)
@@ -1795,19 +1811,24 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   forall f m1 m2 b1 b2 delta ofs k p,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  perm m1 b1 ofs k p -> perm m2 b2 (ofs + delta) k p;
+  perm m1 b1 ofs k p ->
+  inject_perm_condition p ->
+  perm m2 b2 (ofs + delta) k p;
 
  range_perm_inject:
   forall f m1 m2 b1 b2 delta lo hi k p,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  range_perm m1 b1 lo hi k p -> range_perm m2 b2 (lo + delta) (hi + delta) k p;
+  range_perm m1 b1 lo hi k p ->
+  inject_perm_condition p ->
+  range_perm m2 b2 (lo + delta) (hi + delta) k p;
 
  valid_access_inject:
   forall f m1 m2 chunk b1 ofs b2 delta p,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
   valid_access m1 chunk b1 ofs p ->
+  inject_perm_condition p ->
   valid_access m2 chunk b2 (ofs + delta) p;
 
  valid_pointer_inject:
@@ -2087,14 +2108,15 @@ Class MemoryModel mem {memory_model_ops: MemoryModelOps mem}: Prop :=
   inject f m1 m2 ->
   free m1 b lo hi = Some m1' ->
   f b = Some(b', delta) ->
+  inject_perm_condition Freeable ->
   exists m2',
      free m2 b' (lo + delta) (hi + delta) = Some m2'
   /\ inject f m1' m2';
 
  drop_outside_inject:
   forall f m1 m2 b lo hi p m2',
-  inject f m1 m2 ->
-  drop_perm m2 b lo hi p = Some m2' ->
+    inject f m1 m2 ->
+    drop_perm m2 b lo hi p = Some m2' ->
   (forall b' delta ofs k p,
     f b' = Some(b, delta) ->
     perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
@@ -2712,7 +2734,7 @@ Proof.
   intros m1 chunk b ofs v H.
   destruct (store _ _ _ _ _) eqn:STORE; eauto.
   exfalso.
-  apply @valid_access_store' with (v := v) in H; auto.
+  eapply @valid_access_store' with (v := v) in H; eauto.
   destruct H.
   congruence.
 Defined.
@@ -2752,7 +2774,7 @@ Proof.
   intros m b lo hi p H.
   destruct (drop_perm _ _ _ _ _) eqn:DROP; eauto.
   exfalso.
-  apply @range_perm_drop_2' with (p := p) in H; auto.
+  eapply @range_perm_drop_2' with (p := p) in H; eauto.
   destruct H.
   congruence.
 Defined.

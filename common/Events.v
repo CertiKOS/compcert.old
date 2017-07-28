@@ -1159,96 +1159,96 @@ Inductive extcall_free_sem (ge: Senv.t):
       extcall_free_sem ge (Vptr b lo :: nil) m E0 Vundef m'.
 
 
-Lemma extcall_free_ok:
-  extcall_properties extcall_free_sem
-                     (mksignature (Tptr :: nil) None cc_default).
-Proof.
-  constructor; intros.
-(* well typed *)
-- inv H. unfold proj_sig_res. simpl. auto.
-(* symbols preserved *)
-- inv H0; econstructor; eauto.
-(* valid block *)
-- inv H. eauto with mem.
-(* perms *)
-- inv H. eapply Mem.perm_free_3; eauto.
-(* readonly *)
-- inv H. eapply Mem.free_unchanged_on; eauto.
-  intros. red; intros. elim H4.
-  apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
-  eapply Mem.free_range_perm; eauto.
-(* mem extends *)
-- inv H. inv H1. inv H9. inv H7.
-  exploit Mem.load_extends; eauto. intros [v' [A B]].
-  assert (v' = Vptrofs sz).
-  { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. }
-  subst v'.
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [C D]].
-  exists Vundef; exists m2'.
-  repeat
-    match goal with
-        |- _ /\ _ =>
-        split; try now auto
-    end.
-  econstructor; eauto.
-  eapply Mem.not_in_frames_extends; eauto.
-  eapply Mem.free_unchanged_on; eauto.
-  unfold loc_out_of_bounds; intros.
-  assert (Mem.perm m1 b i Max Nonempty).
-  { apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
-    eapply Mem.free_range_perm. eexact H4. eauto. }
-  tauto.
-(* mem inject *)
-- inv H0. inv H2. inv H8. inv H10.
-  exploit Mem.load_inject; eauto. intros [v' [A B]].
-  assert (v' = Vptrofs sz).
-  { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. }
-  subst v'.
-  assert (P: Mem.range_perm m1 b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) Cur Freeable).
-    eapply Mem.free_range_perm; eauto.
-  exploit Mem.address_inject; eauto.
-    apply Mem.perm_implies with Freeable; auto with mem.
-    apply P. instantiate (1 := lo). 
-    generalize (size_chunk_pos Mptr); omega.
-  intro EQ.
-  exploit Mem.free_parallel_inject; eauto. intros (m2' & C & D).
-  exists f, Vundef, m2'; split.
-  apply extcall_free_sem_intro with (sz := sz) (m' := m2').
-    rewrite EQ. rewrite <- A. f_equal. omega.
-    auto. 
-    rewrite ! EQ. rewrite <- C. f_equal; omega.
-    eapply Mem.not_in_frames_inject; eauto.
-  split. auto.
-  split. auto.
-  split. eapply Mem.free_unchanged_on; eauto. unfold loc_unmapped. intros; congruence.
-  split. eapply Mem.free_unchanged_on; eauto. unfold loc_out_of_reach.
-    intros. red; intros. eelim H2; eauto.
-    apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
-    apply P. omega.
-  split. auto.
-  red; intros. congruence.
-(* trace length *)
-- inv H; simpl; omega.
-(* receptive *)
-- assert (t1 = t2). inv H; inv H0; auto. subst t2.
-  exists vres1; exists m1; auto.
-(* determ *)
-- inv H; inv H0.
-  assert (EQ1: Vptrofs sz0 = Vptrofs sz) by congruence.
-  assert (EQ2: sz0 = sz).
-  { unfold Vptrofs in EQ1; destruct Archi.ptr64 eqn:SF.
-    rewrite <- (Ptrofs.of_int64_to_int64 SF sz0), <- (Ptrofs.of_int64_to_int64 SF sz). congruence.
-    rewrite <- (Ptrofs.of_int_to_int SF sz0), <- (Ptrofs.of_int_to_int SF sz). congruence.
-  }
-  subst sz0.
-  split. constructor. intuition congruence.
--  inv H. eapply Mem.free_unchanged_on. eauto.
-   intros. intro A; apply A.
-   red.
-   rewrite Mem.not_in_frames_no_frame_info; auto.
-- inv H.
-  symmetry; eapply Mem.free_stack_blocks; eauto.
-Qed.
+(* Lemma extcall_free_ok: *)
+(*   extcall_properties extcall_free_sem *)
+(*                      (mksignature (Tptr :: nil) None cc_default). *)
+(* Proof. *)
+(*   constructor; intros. *)
+(* (* well typed *) *)
+(* - inv H. unfold proj_sig_res. simpl. auto. *)
+(* (* symbols preserved *) *)
+(* - inv H0; econstructor; eauto. *)
+(* (* valid block *) *)
+(* - inv H. eauto with mem. *)
+(* (* perms *) *)
+(* - inv H. eapply Mem.perm_free_3; eauto. *)
+(* (* readonly *) *)
+(* - inv H. eapply Mem.free_unchanged_on; eauto. *)
+(*   intros. red; intros. elim H4. *)
+(*   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem. *)
+(*   eapply Mem.free_range_perm; eauto. *)
+(* (* mem extends *) *)
+(* - inv H. inv H1. inv H9. inv H7. *)
+(*   exploit Mem.load_extends; eauto. intros [v' [A B]]. *)
+(*   assert (v' = Vptrofs sz). *)
+(*   { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. } *)
+(*   subst v'. *)
+(*   exploit Mem.free_parallel_extends; eauto. intros [m2' [C D]]. *)
+(*   exists Vundef; exists m2'. *)
+(*   repeat *)
+(*     match goal with *)
+(*         |- _ /\ _ => *)
+(*         split; try now auto *)
+(*     end. *)
+(*   econstructor; eauto. *)
+(*   eapply Mem.not_in_frames_extends; eauto. *)
+(*   eapply Mem.free_unchanged_on; eauto. *)
+(*   unfold loc_out_of_bounds; intros. *)
+(*   assert (Mem.perm m1 b i Max Nonempty). *)
+(*   { apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem. *)
+(*     eapply Mem.free_range_perm. eexact H4. eauto. } *)
+(*   tauto. *)
+(* (* mem inject *) *)
+(* - inv H0. inv H2. inv H8. inv H10. *)
+(*   exploit Mem.load_inject; eauto. intros [v' [A B]]. *)
+(*   assert (v' = Vptrofs sz). *)
+(*   { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. } *)
+(*   subst v'. *)
+(*   assert (P: Mem.range_perm m1 b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) Cur Freeable). *)
+(*     eapply Mem.free_range_perm; eauto. *)
+(*   exploit Mem.address_inject; eauto. *)
+(*     apply Mem.perm_implies with Freeable; auto with mem. *)
+(*     apply P. instantiate (1 := lo).  *)
+(*     generalize (size_chunk_pos Mptr); omega. *)
+(*   intro EQ. *)
+(*   exploit Mem.free_parallel_inject; eauto. intros (m2' & C & D). *)
+(*   exists f, Vundef, m2'; split. *)
+(*   apply extcall_free_sem_intro with (sz := sz) (m' := m2'). *)
+(*     rewrite EQ. rewrite <- A. f_equal. omega. *)
+(*     auto.  *)
+(*     rewrite ! EQ. rewrite <- C. f_equal; omega. *)
+(*     eapply Mem.not_in_frames_inject; eauto. *)
+(*   split. auto. *)
+(*   split. auto. *)
+(*   split. eapply Mem.free_unchanged_on; eauto. unfold loc_unmapped. intros; congruence. *)
+(*   split. eapply Mem.free_unchanged_on; eauto. unfold loc_out_of_reach. *)
+(*     intros. red; intros. eelim H2; eauto. *)
+(*     apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem. *)
+(*     apply P. omega. *)
+(*   split. auto. *)
+(*   red; intros. congruence. *)
+(* (* trace length *) *)
+(* - inv H; simpl; omega. *)
+(* (* receptive *) *)
+(* - assert (t1 = t2). inv H; inv H0; auto. subst t2. *)
+(*   exists vres1; exists m1; auto. *)
+(* (* determ *) *)
+(* - inv H; inv H0. *)
+(*   assert (EQ1: Vptrofs sz0 = Vptrofs sz) by congruence. *)
+(*   assert (EQ2: sz0 = sz). *)
+(*   { unfold Vptrofs in EQ1; destruct Archi.ptr64 eqn:SF. *)
+(*     rewrite <- (Ptrofs.of_int64_to_int64 SF sz0), <- (Ptrofs.of_int64_to_int64 SF sz). congruence. *)
+(*     rewrite <- (Ptrofs.of_int_to_int SF sz0), <- (Ptrofs.of_int_to_int SF sz). congruence. *)
+(*   } *)
+(*   subst sz0. *)
+(*   split. constructor. intuition congruence. *)
+(* -  inv H. eapply Mem.free_unchanged_on. eauto. *)
+(*    intros. intro A; apply A. *)
+(*    red. *)
+(*    rewrite Mem.not_in_frames_no_frame_info; auto. *)
+(* - inv H. *)
+(*   symmetry; eapply Mem.free_stack_blocks; eauto. *)
+(* Qed. *)
 
 (** ** Semantics of [memcpy] operations. *)
 
@@ -1537,7 +1537,7 @@ End WITHMEMORYMODEL.
   semantics, but only assume that it satisfies
   [extcall_properties]. *)
 
-Class ExternalCallsOps (mem: Type) {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
+Class ExternalCallsOps (mem: Type) `{memory_model_ops: Mem.MemoryModelOps mem}: Type :=
 {
   external_functions_sem: String.string -> signature -> extcall_sem;
   builtin_functions_sem: String.string -> signature -> extcall_sem;
@@ -1582,15 +1582,17 @@ Definition builtin_enabled `{enable_builtin_instance: EnableBuiltins} (ec: exter
 
 Hint Unfold builtin_enabled.
 
-Class ExternalCalls mem `{external_calls_ops: ExternalCallsOps mem}
-      `{enable_builtins_instance: !EnableBuiltins mem}
+Class ExternalCalls 
+      mem 
+      `{external_calls_ops: ExternalCallsOps mem}
+      `{enable_builtins_instance: EnableBuiltins mem}
       `{symbols_inject_instance: SymbolsInject}
-      `{memory_model_prf: !Mem.MemoryModel mem}
-      `{external_calls_props: !ExternalCallsProps mem}
+      {memory_model_prf: Mem.MemoryModel mem}
+      {external_calls_props: ExternalCallsProps mem}
   : Type :=
   {
   }.
-Global Arguments ExternalCalls mem { memory_model_ops external_calls_ops enable_builtins_instance symbols_inject_instance memory_model_prf external_calls_props }.
+Global Arguments ExternalCalls mem { injperm memory_model_ops external_calls_ops enable_builtins_instance symbols_inject_instance memory_model_prf external_calls_props }.
 
 
 (** ** Combined semantics of external calls *)
@@ -1618,7 +1620,7 @@ Definition external_call (ef: external_function): extcall_sem :=
   | EF_vload chunk       => volatile_load_sem chunk
   | EF_vstore chunk      => volatile_store_sem chunk
   | EF_malloc            => extcall_malloc_sem
-  | EF_free              => extcall_free_sem
+  (* | EF_free              => extcall_free_sem *)
   | EF_memcpy sz al      => extcall_memcpy_sem sz al
   | EF_annot txt targs   => extcall_annot_sem txt targs
   | EF_annot_val txt targ => extcall_annot_val_sem txt targ
@@ -1637,7 +1639,7 @@ Proof.
   apply volatile_load_ok.
   apply volatile_store_ok.
   apply extcall_malloc_ok.
-  apply extcall_free_ok.
+  (* apply extcall_free_ok. *)
   apply extcall_memcpy_ok.
   apply extcall_annot_ok.
   apply extcall_annot_val_ok.
