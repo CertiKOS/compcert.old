@@ -34,7 +34,7 @@ Require Import Coqlib Decidableplus.
 Require Import AST Integers Values Memory Events Globalenvs.
 
 Section WITHMEM.
-Context `{memory_model_prf: Mem.MemoryModel}.
+  Context `{memory_model_prf: Mem.MemoryModel (injperm:= inject_perm_all)}.
 
 (** * Assertions about memory *)
 
@@ -817,6 +817,7 @@ Lemma free_parallel_rule:
   forall j m1 b1 sz1 m1' m2 b2 sz2 lo hi delta P,
   m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j m1 ** P ->
   Mem.free m1 b1 0 sz1 = Some m1' ->
+  inject_perm_condition Freeable ->
   j b1 = Some (b2, delta) ->
   lo = delta -> hi = delta + Zmax 0 sz1 ->
   exists m2',
@@ -845,7 +846,7 @@ Proof.
   destruct (zlt (ofs + delta0) lo). intuition auto.
   destruct (zle hi (ofs + delta0)). intuition auto. 
   destruct (eq_block b0 b1).
-* subst b0. rewrite H1 in H; inversion H; clear H; subst delta0.
+* subst b0. rewrite H2 in H; inversion H; clear H; subst delta0.
   eelim (Mem.perm_free_2 m1); eauto. xomega.
 * exploit Mem.mi_no_overlap; eauto. 
   apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem. 
@@ -935,7 +936,7 @@ Qed.
 Context `{external_calls_ops: !ExternalCallsOps mem}.
 Context `{symbols_inject'_instance: !SymbolsInject}.
 Context `{external_calls_props: !ExternalCallsProps mem}.
-Context `{enable_builtins_instance: !EnableBuiltins mem}.
+Context `{enable_builtins_instance: !EnableBuiltins mem external_calls_ops}.
 Context `{external_calls_prf: !ExternalCalls mem}.
 
 Lemma external_call_parallel_rule:
@@ -1171,6 +1172,7 @@ Lemma pop_frame_parallel_rule:
 Proof.
   intros j m1 b1 sz1 sz2 m1' m1'' m2 b2 lo hi delta n P INVAR SEP FREE UNRECORD JB LOEQ HIEQ.
   exploit free_parallel_rule; eauto.
+  simpl. auto.
   intros (m2' & FREE' & SEP').
   exploit unrecord_stack_block_parallel_rule; eauto.
   intros (m2'0 & UNRECORD' & SEP'').

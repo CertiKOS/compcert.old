@@ -28,7 +28,7 @@ Proof.
 Qed.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 Local Existing Instance mem_accessors_default.
 
@@ -885,7 +885,7 @@ Opaque loadind.
   exploit Mem.loadv_extends. eauto. eexact H2. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
-  exploit Mem.free_parallel_extends; eauto. intros (m2_ & E & F).
+  exploit Mem.free_parallel_extends; eauto. constructor. intros (m2_ & E & F).
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & G & I).
   destruct ros as [rf|fid]; simpl in H; monadInv H8.
 + (* Indirect call *)
@@ -1113,7 +1113,7 @@ Transparent destroyed_by_jumptable.
   exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
   exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
-  exploit Mem.free_parallel_extends; eauto. intros (m2' & E & F).
+  exploit Mem.free_parallel_extends; eauto. constructor. intros (m2' & E & F).
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & G & I).
   monadInv H7.
   exploit code_tail_next_int; eauto. intro CT1.

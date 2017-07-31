@@ -33,7 +33,7 @@ Proof.
 Qed.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 Variable fn_stack_requirements: ident -> Z.
 
@@ -1335,6 +1335,7 @@ Local Opaque ge tge.
     change 0 with (0 + 0). replace (sizeof ge ty) with (sizeof ge ty + 0) by omega.
     eapply Mem.range_perm_inject; eauto.
     eapply free_blocks_of_env_perm_2; eauto.
+    constructor.
   - (* no overlap *)
     unfold blocks_of_env; eapply blocks_of_env_no_overlap; eauto.
     intros. eapply free_blocks_of_env_perm_2; eauto.
@@ -2030,6 +2031,16 @@ Qed.
 End FIND_LABEL.
 
 
+Lemma alloc_variables_stack_adt:
+  forall e m vars e' m',
+    alloc_variables ge e m vars e' m' ->
+    Mem.stack_adt m' = Mem.stack_adt m.
+Proof.
+  induction 1; simpl; intros; eauto.
+  rewrite IHalloc_variables.
+  eapply Mem.alloc_stack_blocks; eauto.
+Qed.
+
 Lemma step_simulation:
   forall S1 t S2, step1 fn_stack_requirements ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 fn_stack_requirements) tge S1' t S2' /\ match_states S2 S2'.
@@ -2255,15 +2266,6 @@ Proof.
   }
   {
     intros b0 b'0 delta0 INF JB. simpl.
-    Lemma alloc_variables_stack_adt:
-      forall e m vars e' m',
-        alloc_variables ge e m vars e' m' ->
-        Mem.stack_adt m' = Mem.stack_adt m.
-    Proof.
-      induction 1; simpl; intros; eauto.
-      rewrite IHalloc_variables.
-      eapply Mem.alloc_stack_blocks; eauto.
-    Qed.
     rewrite (alloc_variables_stack_adt _ _ _ _ _ H1) in INF.
     apply Mem.in_frames_valid in INF.
     split; intros IN. 

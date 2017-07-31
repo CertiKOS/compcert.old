@@ -47,57 +47,58 @@ Definition make_env (b: bounds) : frame_env :=
      fe_stack_data := ostkdata;
      fe_used_callee_save := b.(used_callee_save) |}.
 
-Lemma frame_env_separated:
-  forall `{memory_model_prf: Mem.MemoryModel},
-  forall b sp m P,
-  let fe := make_env b in
-  m |= range sp 0 (fe_stack_data fe) ** range sp (fe_stack_data fe + bound_stack_data b) (fe_size fe) ** P ->
-  m |= range sp (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b)
-       ** range sp fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b)
-       ** range sp (fe_ofs_link fe) (fe_ofs_link fe + size_chunk Mptr)
-       ** range sp (fe_ofs_retaddr fe) (fe_ofs_retaddr fe + size_chunk Mptr)
-       ** range sp (fe_ofs_callee_save fe) (size_callee_save_area b (fe_ofs_callee_save fe))
-       ** P.
-Proof.
-Local Opaque Z.add Z.mul sepconj range.
-  intros; simpl.
-  set (w := if Archi.ptr64 then 8 else 4).
-  set (olink := align (4 * b.(bound_outgoing)) w).
-  set (ocs := olink + w).
-  set (ol :=  align (size_callee_save_area b ocs) 8).
-  set (ostkdata := align (ol + 4 * b.(bound_local)) 8).
-  set (oretaddr := align (ostkdata + b.(bound_stack_data)) w).
-  replace (size_chunk Mptr) with w by (rewrite size_chunk_Mptr; auto).
-  assert (0 < w) by (unfold w; destruct Archi.ptr64; omega).
-  generalize b.(bound_local_pos) b.(bound_outgoing_pos) b.(bound_stack_data_pos); intros.
-  assert (0 <= 4 * b.(bound_outgoing)) by omega.
-  assert (4 * b.(bound_outgoing) <= olink) by (apply align_le; omega).
-  assert (olink + w <= ocs) by (unfold ocs; omega).
-  assert (ocs <= size_callee_save_area b ocs) by (apply size_callee_save_area_incr). 
-  assert (size_callee_save_area b ocs <= ol) by (apply align_le; omega).
-  assert (ol + 4 * b.(bound_local) <= ostkdata) by (apply align_le; omega).
-  assert (ostkdata + bound_stack_data b <= oretaddr) by (apply align_le; omega).
-(* Reorder as:
+Section WITHMEM.
+  Context `{memory_model_prf: Mem.MemoryModel (injperm:=inject_perm_all)}.
+  Lemma frame_env_separated:
+    forall b sp (m: mem) P,
+      let fe := make_env b in
+      m |= range sp 0 (fe_stack_data fe) ** range sp (fe_stack_data fe + bound_stack_data b) (fe_size fe) ** P ->
+      m |= range sp (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b)
+        ** range sp fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b)
+        ** range sp (fe_ofs_link fe) (fe_ofs_link fe + size_chunk Mptr)
+        ** range sp (fe_ofs_retaddr fe) (fe_ofs_retaddr fe + size_chunk Mptr)
+        ** range sp (fe_ofs_callee_save fe) (size_callee_save_area b (fe_ofs_callee_save fe))
+        ** P.
+  Proof.
+    Local Opaque Z.add Z.mul sepconj range.
+    intros; simpl.
+    set (w := if Archi.ptr64 then 8 else 4).
+    set (olink := align (4 * b.(bound_outgoing)) w).
+    set (ocs := olink + w).
+    set (ol :=  align (size_callee_save_area b ocs) 8).
+    set (ostkdata := align (ol + 4 * b.(bound_local)) 8).
+    set (oretaddr := align (ostkdata + b.(bound_stack_data)) w).
+    replace (size_chunk Mptr) with w by (rewrite size_chunk_Mptr; auto).
+    assert (0 < w) by (unfold w; destruct Archi.ptr64; omega).
+    generalize b.(bound_local_pos) b.(bound_outgoing_pos) b.(bound_stack_data_pos); intros.
+    assert (0 <= 4 * b.(bound_outgoing)) by omega.
+    assert (4 * b.(bound_outgoing) <= olink) by (apply align_le; omega).
+    assert (olink + w <= ocs) by (unfold ocs; omega).
+    assert (ocs <= size_callee_save_area b ocs) by (apply size_callee_save_area_incr). 
+    assert (size_callee_save_area b ocs <= ol) by (apply align_le; omega).
+    assert (ol + 4 * b.(bound_local) <= ostkdata) by (apply align_le; omega).
+    assert (ostkdata + bound_stack_data b <= oretaddr) by (apply align_le; omega).
+    (* Reorder as:
      outgoing
      back link
      callee-save
      local
      retaddr *)
-  rewrite sep_swap12.
-  rewrite sep_swap23.
-  rewrite sep_swap45.
-  rewrite sep_swap34.
-(* Apply range_split and range_split2 repeatedly *)
-  unfold fe_ofs_arg.
-  apply range_split_2. fold olink. omega. omega. 
-  apply range_split. omega.
-  apply range_split_2. fold ol. omega. omega.
-  apply range_drop_right with ostkdata. omega.
-  rewrite sep_swap.
-  apply range_drop_left with (ostkdata + bound_stack_data b). omega.
-  rewrite sep_swap. 
-  exact H.
-Qed.
+    rewrite sep_swap12.
+    rewrite sep_swap23.
+    rewrite sep_swap45.
+    rewrite sep_swap34.
+    (* Apply range_split and range_split2 repeatedly *)
+    unfold fe_ofs_arg.
+    apply range_split_2. fold olink. omega. omega. 
+    apply range_split. omega.
+    apply range_split_2. fold ol. omega. omega.
+    apply range_drop_right with ostkdata. omega.
+    rewrite sep_swap.
+    apply range_drop_left with (ostkdata + bound_stack_data b). omega.
+    rewrite sep_swap. 
+    exact H.
+  Qed.
 
 Lemma frame_env_separated':
   (* forall `{memory_model_prf: Mem.MemoryModel} *)
@@ -355,3 +356,5 @@ Next Obligation.
       t.
     + easy.
 Qed.
+
+End WITHMEM.

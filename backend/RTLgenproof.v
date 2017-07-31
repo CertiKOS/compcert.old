@@ -358,7 +358,7 @@ Proof.
 Qed.
 
 Section CORRECTNESS.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 Variable fn_stack_requirements: ident -> Z.
 Variable prog: CminorSel.program.
 Variable tprog: RTL.program.
@@ -1313,6 +1313,7 @@ Proof.
   assert (fn_stacksize tf = fn_stackspace f) as SZEQ.
     inv TF. auto.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
+  constructor.
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
@@ -1398,6 +1399,7 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
+  constructor.
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
@@ -1416,6 +1418,7 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
+  constructor.
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; eapply plus_right. eexact E.
@@ -1510,6 +1513,7 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   inversion TF.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
+  constructor.
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
@@ -1523,6 +1527,7 @@ Proof.
   exploit match_stacks_call_cont; eauto. intros [U V].
   inversion TF.
   edestruct Mem.free_parallel_extends as [tm'' []]; eauto.
+  constructor.
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.

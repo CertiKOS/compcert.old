@@ -144,7 +144,7 @@ Proof.
   + split; intros; edestruct inline_assembly_sem_empty; eauto.
 Qed.
 
-Local Instance enable_builtins_instance: Events.EnableBuiltins Memimpl.Mem.mem.
+Local Instance enable_builtins_instance: !Events.EnableBuiltins (injperm:= Memtype.inject_perm_all) Memimpl.Mem.mem.
 Proof.
   constructor.
   exact true.

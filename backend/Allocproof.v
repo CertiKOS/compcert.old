@@ -1283,7 +1283,7 @@ Proof.
 Qed.
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 Variable fn_stack_requirements: ident -> Z.
 
@@ -2129,7 +2129,7 @@ Proof.
 (* tailcall *)
 - set (sg := RTL.funsig fd) in *.
   set (args' := loc_arguments sg) in *.
-  exploit Mem.free_parallel_extends; eauto. intros [tm' [P Q]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [tm' [P Q]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (tm'' & R & S).
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
@@ -2220,7 +2220,7 @@ Proof.
 
 (* return *)
 - destruct (transf_function_inv _ _ FUN).
-  exploit Mem.free_parallel_extends; eauto. rewrite H11. intros [tm' [P Q]].
+  exploit Mem.free_parallel_extends; eauto. constructor. rewrite H11. intros [tm' [P Q]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (tm'' & RR & S).
   inv WTI; MonadInv.
 + (* without an argument *)

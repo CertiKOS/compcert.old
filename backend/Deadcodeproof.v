@@ -175,7 +175,7 @@ Qed.
 (** * Basic properties of the translation *)
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 Variable prog: program.
 Variable tprog: program.
@@ -457,7 +457,9 @@ Proof.
   {
     intros. destruct addr; simpl in H; try discriminate.
     eapply Mem.valid_access_load. eapply magree_valid_access; eauto.
-    eapply Mem.load_valid_access; eauto. }
+    eapply Mem.load_valid_access; eauto.
+    eapply inject_perm_condition_writable; constructor.
+  }
   induction 1; try (econstructor; now constructor).
 - exploit LD; eauto. intros (v' & A). exists v'; constructor; auto.
 - exploit LD; eauto. intros (v' & A). exists v'; constructor.
@@ -574,7 +576,7 @@ Ltac UseTransfer :=
   destruct args.
   * (* kept as is because no arguments -- should never happen *)
   simpl in *.
-  exploit needs_of_operation_sound. eapply ma_perm; eauto.
+  exploit needs_of_operation_sound. intros; eapply ma_perm; eauto. constructor.
   eauto. instantiate (1 := nreg ne res). eauto with na. eauto with na. intros [tv [A B]].
   econstructor; split.
   eapply exec_Iop with (v0 := tv); eauto.
@@ -592,7 +594,7 @@ Ltac UseTransfer :=
   eapply eagree_update; eauto 2 with na.
 + (* preserved operation *)
   simpl in *.
-  exploit needs_of_operation_sound. eapply ma_perm; eauto. eauto. eauto 2 with na. eauto with na.
+  exploit needs_of_operation_sound. intros; eapply ma_perm; eauto. constructor. eauto. eauto 2 with na. eauto with na.
   intros [tv [A B]].
   econstructor; split.
   eapply exec_Iop with (v0 := tv); eauto.
@@ -690,7 +692,7 @@ Ltac UseTransfer :=
 - (* tailcall *)
   TransfInstr; UseTransfer.
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & L).
-  exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
+  exploit magree_free. eauto. constructor. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & C & D).
   exploit Mem.unrecord_stack_block_extends; eauto. eapply magree_extends; eauto.
@@ -881,7 +883,7 @@ Ltac UseTransfer :=
   TransfInstr; UseTransfer.
   econstructor; split.
   eapply exec_Icond; eauto.
-  eapply needs_of_condition_sound. eapply ma_perm; eauto. eauto. eauto with na.
+  eapply needs_of_condition_sound. intros; eapply ma_perm; eauto. constructor. eauto. eauto with na.
   eapply match_succ_states; eauto 2 with na.
   simpl; destruct b; auto.
 
@@ -896,7 +898,7 @@ Ltac UseTransfer :=
 
 - (* return *)
   TransfInstr; UseTransfer.
-  exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
+  exploit magree_free. eauto. constructor. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & A & B).
   exploit Mem.unrecord_stack_block_extends; eauto. eapply magree_extends; eauto.

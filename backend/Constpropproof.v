@@ -35,7 +35,7 @@ Qed.
 End WITHROMEMFOR.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 Variable fn_stack_requirements: ident -> Z.
 
@@ -504,7 +504,7 @@ Proof.
   apply regs_lessdef_regs; auto.
 
 - (* Itailcall *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [A B]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
@@ -588,7 +588,7 @@ Opaque builtin_strength_reduction.
   eapply match_states_succ; eauto.
 
 - (* Ireturn *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [A B]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   left; exists O; exists (Returnstate s' (regmap_optget or Vundef rs') m2''); split.
   eapply exec_Ireturn; eauto. TransfInstr; auto.

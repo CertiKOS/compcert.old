@@ -69,6 +69,7 @@ Require CleanupLabelsproof.
 Require Debugvarproof.
 Require Stackingproof.
 Require Asmgenproof.
+Require RawAsmgen.
 (** Command-line flags. *)
 Require Import Compopts.
 
@@ -145,7 +146,7 @@ Definition transf_rtl_program (f: RTL.program) : res Asm.program :=
   @@@ partial_if Compopts.debug (time "Debugging info for local variables" Debugvar.transf_program)
   @@@ time "Mach generation" Stacking.transf_program
    @@ print print_Mach
-  @@@ time "Asm generation" Asmgen.transf_program.
+   @@@ time "Asm generation" Asmgen.transf_program.
 
 Definition transf_cminor_program (p: Cminor.program) : res Asm.program :=
    OK p
@@ -349,10 +350,13 @@ Proof.
 Qed.
 
 Section WITHEXTERNALCALLS.
-Local Existing Instance Events.symbols_inject_instance.
-Context `{external_calls_prf: Events.ExternalCalls (symbols_inject_instance := Events.symbols_inject_instance) }.
-Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
-Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
+  Local Existing Instance Events.symbols_inject_instance.
+  Local Existing Instance Memtype.inject_perm_all.
+  Context `{external_calls_prf: Events.ExternalCalls
+                                  (injperm:= Memtype.inject_perm_all)
+                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
+  Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
+  Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
 
 Definition fn_stack_requirements (tp: Asm.program) (id: ident) : Z :=
   match Globalenvs.Genv.find_symbol (Globalenvs.Genv.globalenv tp) id with
@@ -534,3 +538,101 @@ Proof.
 Qed.
 
 End WITHEXTERNALCALLS.
+
+Section PERMINJECTCHANGE.
+
+  Context {mem:Type}.
+  Context `{external_calls_prf1: Events.ExternalCalls
+                                   (mem:=mem)
+                                  (injperm:= Memtype.inject_perm_all)
+                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
+  Context `{external_calls_prf2: Events.ExternalCalls
+                                   (mem:=mem)
+                                  (injperm:= Memtype.inject_perm_upto_writable)
+                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
+
+
+  Context `{enable_builtins_1: !Events.EnableBuiltins
+                                (injperm:= Memtype.inject_perm_all) mem external_calls_ops}.
+  Context `{enable_builtins_2: !Events.EnableBuiltins
+                                (injperm:= Memtype.inject_perm_upto_writable) mem external_calls_ops0}.
+
+
+
+  Lemma alloc_global_change_perm_inject:
+    forall F V l (ge: Globalenvs.Genv.t F V) m,
+      Globalenvs.Genv.alloc_global (memory_model_ops := memory_model_ops) ge m l =
+      Globalenvs.Genv.alloc_global (memory_model_ops := memory_model_ops0) ge m l.
+  Proof.
+    destruct l; simpl; intros.
+    repeat destr.
+  Qed.
+
+  Lemma add_globals_change_perm_inject:
+    forall F V l (ge: Globalenvs.Genv.t F V) m,
+      Globalenvs.Genv.alloc_globals (memory_model_ops := memory_model_ops) ge m l=
+      Globalenvs.Genv.alloc_globals (memory_model_ops := memory_model_ops0) ge m l.
+  Proof.
+    induction l; simpl; intros; eauto.
+  Qed.
+    
+
+  Lemma init_mem_change_perm_inject:
+    forall F V (p: program F V),
+      Globalenvs.Genv.init_mem (injperm := Memtype.inject_perm_all) p =
+      Globalenvs.Genv.init_mem (injperm := Memtype.inject_perm_upto_writable) p.
+  Proof.
+    unfold Globalenvs.Genv.init_mem, Globalenvs.Genv.globalenv.
+    simpl.
+    
+  Qed.
+
+  Lemma fs_change_perm_inject:
+    forall p,
+      forward_simulation
+        (Asm.semantics (external_calls_ops := external_calls_ops) p)
+        (Asm.semantics (external_calls_ops := external_calls_ops0) p).
+  Proof.
+    intros.
+    eapply forward_simulation_step with (match_states := fun s1 s2 =>
+                                           match s1, s2 with
+                                             Asm.State rs1 m1, Asm.State rs2 m2 =>
+                                             rs1 = rs2 /\ m1 = m2
+                                           end).
+    - simpl. reflexivity.
+    - simpl. inversion 1; subst. exists (Asm.State rs0 m0); split; eauto.
+      constructor.
+      Set Printing All.
+      rewrite H0.
+  Qed.
+
+End PERMINJECTCHANGE.
+
+Section WITHEXTERNALCALLS2.
+  Local Existing Instance Events.symbols_inject_instance.
+  Context `{external_calls_prf: Events.ExternalCalls
+                                  (injperm:= Memtype.inject_perm_upto_writable)
+                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
+  Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
+  Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
+
+  Theorem rawasmgen_semantic_preservation:
+    forall p,
+      forward_simulation (Asm.semantics p) (RawAsmgen.mono_semantics p p).
+  Proof.
+    intros; eapply RawAsmgen.transf_program_correct.
+  Admitted.
+
+
+  Theorem complete_semantic_preservation:
+    forall fsr p tp,
+      match_prog p tp ->
+      forward_simulation (Cstrategy.semantics fsr p) (RawAsmgen.mono_semantics tp tp).
+  Proof.
+    intros.
+    eapply compose_forward_simulations.
+    Set Printing All.
+    eapply cstrategy_semantic_preservation.
+    intros; eapply RawAsmgen.transf_program_correct.
+  Admitted.
+

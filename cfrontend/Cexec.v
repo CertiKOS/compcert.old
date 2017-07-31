@@ -86,7 +86,7 @@ Proof.
 Defined.
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 (** * Events, volatile memory accesses, and external functions. *)
 
@@ -558,7 +558,7 @@ Definition do_external (ef: external_function):
   | EF_vload chunk => do_ef_volatile_load chunk
   | EF_vstore chunk => do_ef_volatile_store chunk
   | EF_malloc => do_ef_malloc
-  | EF_free => do_ef_free
+  (* | EF_free => do_ef_free *)
   | EF_memcpy sz al => do_ef_memcpy sz al
   | EF_annot text targs => do_ef_annot text targs
   | EF_annot_val text targ => do_ef_annot_val text targ
@@ -596,9 +596,9 @@ Proof with try congruence.
   unfold do_ef_malloc. destruct vargs... destruct vargs... mydestr.
   destruct (Mem.alloc m (- size_chunk Mptr) (Ptrofs.unsigned i)) as [m1 b] eqn:?. mydestr.
   split. apply SIZE in Heqo. subst v. econstructor; eauto. constructor.
-(* EF_free *)
-  unfold do_ef_free. destruct vargs... destruct v... destruct vargs...
-  mydestr. split. apply SIZE in Heqo0. econstructor; eauto. congruence. omega. constructor.
+(* (* EF_free *) *)
+(*   unfold do_ef_free. destruct vargs... destruct v... destruct vargs... *)
+(*   mydestr. split. apply SIZE in Heqo0. econstructor; eauto. congruence. omega. constructor. *)
 (* EF_memcpy *)
   unfold do_ef_memcpy. destruct vargs... destruct v... destruct vargs...
   destruct v... destruct vargs... mydestr. 
@@ -643,11 +643,11 @@ Proof.
 (* EF_malloc *)
   inv H; unfold do_ef_malloc.
   inv H0. erewrite SIZE by eauto. rewrite H1, H2. auto.
-(* EF_free *)
-  inv H; unfold do_ef_free.
-  inv H0. rewrite H1. erewrite SIZE by eauto. rewrite zlt_true. rewrite H3.
-  destruct (in_frames_dec ( (Mem.stack_adt m)) b); intuition congruence.
-  omega.
+(* (* EF_free *) *)
+(*   inv H; unfold do_ef_free. *)
+(*   inv H0. rewrite H1. erewrite SIZE by eauto. rewrite zlt_true. rewrite H3. *)
+(*   destruct (in_frames_dec ( (Mem.stack_adt m)) b); intuition congruence. *)
+(*   omega. *)
 (* EF_memcpy *)
   inv H; unfold do_ef_memcpy.
   inv H0. rewrite Decidable_complete. rewrite H7; rewrite H8; auto.

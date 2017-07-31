@@ -529,7 +529,7 @@ Qed.
 
 Section WITHEXTERNALCALLS.
 Local Existing Instance symbols_inject_instance.
-Context `{external_calls_prf: ExternalCalls (symbols_inject_instance := symbols_inject_instance) }.
+Context `{external_calls_prf: ExternalCalls (symbols_inject_instance := symbols_inject_instance) (injperm:= inject_perm_all)}.
 Context `{memory_model_x_prf: !Mem.MemoryModelX mem}.
 
 Variable fn_stack_requirements: ident -> Z.
@@ -1059,7 +1059,7 @@ Proof.
   eapply match_stacks_preserves_globals; eauto. eauto.
   destruct ros as [r|id0]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
-  exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
+  exploit Mem.free_parallel_inject; eauto. constructor. rewrite ! Zplus_0_r. intros (tm' & C & D).
   exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & USB & INJ).
   econstructor; split.
   eapply exec_Itailcall; eauto.
@@ -1106,7 +1106,7 @@ Proof.
   econstructor; eauto.
 
 - (* return *)
-  exploit Mem.free_parallel_inject; eauto. rewrite ! Zplus_0_r. intros (tm' & C & D).
+  exploit Mem.free_parallel_inject; eauto. constructor. rewrite ! Zplus_0_r. intros (tm' & C & D).
   exploit Mem.unrecord_stack_block_inject; eauto. intros (m2' & USB & INJ).
   econstructor; split.
   eapply exec_Ireturn; eauto.

@@ -767,6 +767,21 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
       Mem.unchanged_on
         (fun b o => ~ Mem.strong_non_private_stack_access m1 b o (o+1))
         m1 m2;
+
+  ec_perm_frames:
+    forall ge args m1 t res m2,
+      sem ge args m1 t res m2 ->
+      forall b o k p,
+        in_frames (Mem.stack_adt m1) b ->
+        Mem.perm m2 b o k p <-> Mem.perm m1 b o k p;
+
+  ec_perm_unchanged:
+    forall ge args m1 t res m2,
+      sem ge args m1 t res m2 ->
+      forall b o k p,
+        Mem.valid_block m1 b ->
+        (forall p, Mem.perm m1 b o k p -> ~ perm_order p Freeable) ->
+        Mem.perm m2 b o k p <-> Mem.perm m1 b o k p;
   
   ec_stack_blocks:
     forall ge vargs m1 t vres m2,
@@ -863,11 +878,14 @@ Proof.
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
   exists v'; exists m1'; intuition. constructor; auto.
+  apply Mem.unchanged_on_refl.
 (* mem injects *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0. inv H2. inv H7. inversion H5; subst.
   exploit volatile_load_inject; eauto. intros [v' [A B]].
   exists f; exists v'; exists m1'; intuition. constructor; auto.
+  apply Mem.unchanged_on_refl.
+  apply Mem.unchanged_on_refl.
   red; intros. congruence.
 (* trace length *)
 - inv H; inv H0; simpl; omega.
@@ -886,6 +904,8 @@ Proof.
   auto.
   split. constructor. intuition congruence.
 - inv H. inv H0; apply Mem.unchanged_on_refl.
+- inv H. tauto.
+- inv H. tauto.
 - inv H; inv H0; auto.
 Qed.
 
@@ -938,7 +958,8 @@ Proof.
   intros. inv H.
   - econstructor; split. econstructor; eauto.
     eapply eventval_match_lessdef; eauto. apply Val.load_result_lessdef; auto.
-    auto with mem.
+    split; auto with mem.
+    apply Mem.unchanged_on_refl.
   - exploit Mem.store_within_extends; eauto. intros [m2' [A B]].
     exists m2'; repeat (split; auto).
     + econstructor; eauto.
@@ -974,6 +995,8 @@ Proof.
   constructor; auto. erewrite S; eauto.
   eapply eventval_match_inject; eauto. apply Val.load_result_inject. auto.
   intuition auto with mem.
+  apply Mem.unchanged_on_refl.
+  apply Mem.unchanged_on_refl.
 - (* normal store *)
   inversion AI; subst.
   assert (Mem.storev chunk m1 (Vptr b ofs) v = Some m2). simpl; auto.
@@ -1047,6 +1070,10 @@ Proof.
   eapply Mem.store_unchanged_on. eauto.
   intros. intro A; apply A. 
   eapply Mem.strong_non_private_stack_access_inside; eauto; omega.
+- inv H.  inv H1. tauto.
+  split; intros. eapply Mem.perm_store_2; eauto. eapply Mem.perm_store_1; eauto.
+- inv H. inv H2. tauto.
+  split; intros. eapply Mem.perm_store_2; eauto. eapply Mem.perm_store_1; eauto.
 - inv H. inv H0. auto.
   symmetry; eapply Mem.store_stack_blocks; eauto.
 Qed.
@@ -1142,6 +1169,23 @@ Proof.
   unfold Mem.non_private_stack_access.
   intros [[B C]|[B C]]. eapply Mem.stack_top_valid in B. eapply Mem.fresh_block_alloc in B; eauto. easy.
   eassumption.
+- inv H.  
+  assert (b <> b0).
+  intro; subst.
+  eapply Mem.in_frames_valid in H0. eapply Mem.fresh_block_alloc in H0; eauto.
+  split; intros.
+  eapply Mem.perm_alloc_4; eauto.
+  eapply Mem.perm_store_2; eauto.
+  eapply Mem.perm_store_1; eauto.
+  eapply Mem.perm_alloc_1; eauto.
+- inv H.  
+  assert (b <> b0).  intro; subst.
+  eapply Mem.fresh_block_alloc in H0; eauto.
+  split; intros.
+  eapply Mem.perm_alloc_4; eauto.
+  eapply Mem.perm_store_2; eauto.
+  eapply Mem.perm_store_1; eauto.
+  eapply Mem.perm_alloc_1; eauto.
 - inv H.
   rewrite  (Mem.store_stack_blocks _ _ _ _ _ _ H1).
   symmetry; eapply Mem.alloc_stack_blocks; eauto.
@@ -1384,6 +1428,10 @@ Proof.
   eapply Mem.storebytes_unchanged_on; eauto.
   simpl; intros. intro A; apply A.
   eapply Mem.strong_non_private_stack_access_inside; eauto. omega. omega.
+- intros. inv H.
+  split; first [ now (eapply Mem.perm_storebytes_1; eauto) | now (eapply Mem.perm_storebytes_2; eauto)].
+- intros. inv H.
+  split; first [ now (eapply Mem.perm_storebytes_1; eauto) | now (eapply Mem.perm_storebytes_2; eauto)].
 - intros; inv H.
   symmetry; eapply Mem.storebytes_stack_blocks; eauto.
 Qed.
@@ -1418,12 +1466,15 @@ Proof.
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_lessdef; eauto.
+  apply Mem.unchanged_on_refl.
 (* mem injects *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
+  apply Mem.unchanged_on_refl.
+  apply Mem.unchanged_on_refl.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
@@ -1435,6 +1486,8 @@ Proof.
   assert (args = args0). eapply eventval_list_match_determ_2; eauto. subst args0.
   split. constructor. auto.
 - inv H; apply Mem.unchanged_on_refl.
+- inv H; tauto.
+- inv H; tauto.
 - inv H; auto.
 Qed.
 
@@ -1466,12 +1519,15 @@ Proof.
   exists v2; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
+  apply Mem.unchanged_on_refl.
 (* mem inject *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0. inv H2. inv H7.
   exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
+  apply Mem.unchanged_on_refl.
+  apply Mem.unchanged_on_refl.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
@@ -1483,6 +1539,8 @@ Proof.
   assert (arg = arg0). eapply eventval_match_determ_2; eauto. subst arg0.
   split. constructor. auto.
 - inv H; apply Mem.unchanged_on_refl.
+- inv H; tauto.
+- inv H; tauto.
 - inv H; auto.
 Qed.
 
@@ -1511,11 +1569,14 @@ Proof.
 - inv H.
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
+  apply Mem.unchanged_on_refl.
 (* mem injects *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
+  apply Mem.unchanged_on_refl.
+  apply Mem.unchanged_on_refl.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
@@ -1525,6 +1586,8 @@ Proof.
 - inv H; inv H0.
   split. constructor. auto.
 - inv H; apply Mem.unchanged_on_refl.
+- inv H; tauto.
+- inv H; tauto.
 - inv H; auto.
 Qed.
 
@@ -1565,8 +1628,7 @@ Class ExternalCallsProps mem `{external_calls_ops: ExternalCallsOps mem}
   inline_assembly_properties:
     forall id sg, extcall_properties (inline_assembly_sem id sg) sg
 }.
-Global Arguments ExternalCallsProps _ {_ _ _ _}.
-
+Global Arguments ExternalCallsProps _ {_ _ _ _ }.
 
 Class EnableBuiltins mem `{ExternalCallsOps mem}: Type :=
   {
@@ -1583,17 +1645,18 @@ Definition builtin_enabled `{enable_builtin_instance: EnableBuiltins} (ec: exter
 Hint Unfold builtin_enabled.
 
 Class ExternalCalls 
-      mem 
-      `{external_calls_ops: ExternalCallsOps mem}
-      `{enable_builtins_instance: EnableBuiltins mem}
+      mem
+      `{injperm: InjectPerm}
+      `{memory_model_ops: !Mem.MemoryModelOps mem}
+      `{external_calls_ops: !ExternalCallsOps mem}
+      `{memory_model_prf: !Mem.MemoryModel mem}
+      `{enable_builtins_instance: !EnableBuiltins mem}
       `{symbols_inject_instance: SymbolsInject}
-      {memory_model_prf: Mem.MemoryModel mem}
-      {external_calls_props: ExternalCallsProps mem}
+      `{external_calls_props: !ExternalCallsProps mem}
   : Type :=
   {
   }.
-Global Arguments ExternalCalls mem { injperm memory_model_ops external_calls_ops enable_builtins_instance symbols_inject_instance memory_model_prf external_calls_props }.
-
+Global Arguments ExternalCalls mem { injperm memory_model_ops external_calls_ops enable_builtins_instance  memory_model_prf symbols_inject_instance external_calls_props }.
 
 (** ** Combined semantics of external calls *)
 

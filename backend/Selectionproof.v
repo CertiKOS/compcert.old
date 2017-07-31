@@ -113,7 +113,7 @@ Qed.
 Section PRESERVATION.
 
 Variable fn_stack_requirements: ident -> Z.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: Cminor.program.
@@ -999,7 +999,7 @@ Proof.
 - (* skip block *)
   inv MC. left; econstructor; split. econstructor. econstructor; eauto.
 - (* skip call *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [A B]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   left; econstructor; split.
   econstructor. inv MC; simpl in H; simpl; auto.
@@ -1056,7 +1056,7 @@ Proof.
   right; split. simpl. omega. split. auto.
   econstructor; eauto.
 - (* Stailcall *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [P Q]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & CC & DD).
   erewrite <- stackspace_function_translated in P by eauto.
   exploit sel_expr_correct; eauto. intros [vf' [A B]].
@@ -1124,14 +1124,14 @@ Proof.
   econstructor. eapply sel_switch_long_correct; eauto.
   econstructor; eauto.
 - (* Sreturn None *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [P Q]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   erewrite <- stackspace_function_translated in P by eauto.
   left; econstructor; split.
   econstructor. simpl; eauto. eauto.
   econstructor; eauto. eapply call_cont_commut; eauto.
 - (* Sreturn Some *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [P Q]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & C & D).
   erewrite <- stackspace_function_translated in P by eauto.
   exploit sel_expr_correct; eauto. intros [v' [A B]].

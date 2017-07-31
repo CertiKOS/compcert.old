@@ -48,8 +48,6 @@ Local Notation "a # b" := (PMap.get b a) (at level 1).
 Module Mem.
 Export Memtype.Mem.
 
-Section WITHINJPERM.
-Context {injperm: InjectPerm}.
 
 
 Definition perm_order' (po: option permission) (p: permission) :=
@@ -823,7 +821,7 @@ Next Obligation.
   apply stack_below_limit.
 Qed.
 
-Definition option_frame_inject f m1 (x y: option frame_adt * Z) :=
+Definition option_frame_inject {injperm: InjectPerm} f m1 (x y: option frame_adt * Z) :=
   match fst x, fst y with
     Some f1, Some f2 => frame_inject' f (perm m1) f1 f2
   | None, Some f => False
@@ -831,7 +829,7 @@ Definition option_frame_inject f m1 (x y: option frame_adt * Z) :=
   end /\ snd x = snd y.
 
 
-Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
+Record mem_inj {injperm: InjectPerm} (f: meminj) (m1 m2: mem) : Prop :=
   mk_mem_inj {
     mi_perm:
       forall b1 b2 delta ofs k p,
@@ -868,7 +866,7 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
   the [Vundef] values stored in [m1] by more defined values stored
   in [m2] at the same locations. *)
 
-Record extends'  (m1 m2: mem) : Prop :=
+Record extends' {injperm: InjectPerm} (m1 m2: mem) : Prop :=
   mk_extends {
     mext_next: nextblock m1 = nextblock m2;
     mext_inj:  mem_inj inject_id m1 m2;
@@ -877,7 +875,7 @@ Record extends'  (m1 m2: mem) : Prop :=
       perm m1 b ofs k p \/ ~perm m1 b ofs Max Nonempty
   }.
 
-Definition extends  := extends'.
+Definition extends {injperm: InjectPerm} := extends'.
 
 (** * Memory injections *)
 
@@ -904,7 +902,7 @@ Definition meminj_no_overlap (f: meminj) (m: mem) : Prop :=
   perm m b2 ofs2 Max Nonempty ->
   b1' <> b2' \/ ofs1 + delta1 <> ofs2 + delta2.
 
-Record inject'  (f: meminj) (m1 m2: mem) : Prop :=
+Record inject' {injperm: InjectPerm} (f: meminj) (m1 m2: mem) : Prop :=
   mk_inject {
     mi_inj:
       mem_inj f m1 m2;
@@ -929,7 +927,7 @@ Record inject'  (f: meminj) (m1 m2: mem) : Prop :=
       perm m2 b2 (ofs + delta) k p ->
       perm m1 b1 ofs k p \/ ~perm m1 b1 ofs Max Nonempty
   }.
-Definition inject  := inject'.
+Definition inject {injperm: InjectPerm} := inject'.
 
 Local Hint Resolve mi_mappedblocks: mem.
 
@@ -941,7 +939,7 @@ Local Hint Resolve mi_mappedblocks: mem.
 
 Definition locset := block -> Z -> Prop.
 
-Record magree' (m1 m2: mem) (P: locset) : Prop := mk_magree {
+Record magree' {injperm: InjectPerm} (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_perm:
     forall b ofs k p,
       perm m1 b ofs k p -> inject_perm_condition p -> perm m2 b ofs k p;
@@ -967,14 +965,14 @@ Record magree' (m1 m2: mem) (P: locset) : Prop := mk_magree {
         ) (stack_adt m1) (stack_adt m2)
 }.
 
-Definition magree  := magree'.
+Definition magree {injperm: InjectPerm} := magree'.
 
 (** Injecting a memory into itself. *)
 
 Definition flat_inj (thr: block) : meminj :=
   fun (b: block) => if plt b thr then Some(b, 0) else None.
 
-Definition inject_neutral  (thr: block) (m: mem) :=
+Definition inject_neutral {injperm: InjectPerm} (thr: block) (m: mem) :=
   mem_inj (flat_inj thr) m m.
 
 Record unchanged_on' (P: block -> Z -> Prop) (m_before m_after: mem) : Prop := mk_unchanged_on {
@@ -1110,7 +1108,7 @@ Ltac unfold_unrecord :=
   match goal with
     H: unrecord_stack_block ?m = _ |- _ => unfold_unrecord' H m
   end.
-
+ 
 Local Instance memory_model_ops :
   MemoryModelOps mem.
 Proof.
@@ -1126,10 +1124,10 @@ Proof.
   exact nextblock.
   (* exact perm. *)
   exact valid_pointer.
-  exact extends.
-  exact magree.
-  exact inject.
-  exact inject_neutral.
+  exact @extends.
+  exact @magree.
+  exact @inject.
+  exact @inject_neutral.
   exact unchanged_on.
   exact unchanged_on.
   exact stack_adt.
@@ -1139,6 +1137,8 @@ Proof.
   exact perm.
 Defined.
 
+Section WITHINJPERM.
+Context {injperm: InjectPerm}.
 
 (** * Properties of the memory operations *)
 
@@ -3967,7 +3967,7 @@ Lemma alloc_left_mapped_inj:
     alloc m1 lo hi = (m1', b1) ->
     valid_block m2 b2 ->
     inj_offset_aligned delta (hi-lo) ->
-    (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
+    (forall ofs k p, lo <= ofs < hi -> inject_perm_condition p -> perm m2 b2 (ofs + delta) k p) ->
     f b1 = Some(b2, delta) ->
     mem_inj f m1' m2.
 Proof.
@@ -5560,7 +5560,7 @@ Theorem alloc_left_mapped_inject:
   valid_block m2 b2 ->
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
-  (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
+  (forall ofs k p, lo <= ofs < hi -> inject_perm_condition p -> perm m2 b2 (ofs + delta) k p) ->
   inj_offset_aligned delta (hi-lo) ->
   (forall b delta' ofs k p,
    f b = Some (b2, delta') ->
@@ -5598,8 +5598,8 @@ Proof.
     eapply list_forall2_imply. apply mi_stack_blocks0. 
     intros.
     unfold option_frame_inject in *. repeat destr_in H10. split; auto.
-    change (frame_inject' f (perm m1)) with (frame_inject f m1) in H11.
-    change (frame_inject' f' (perm m1)) with (frame_inject f' m1).
+    change (frame_inject' f (perm m1)) with (frame_inject _ f m1) in H11.
+    change (frame_inject' f' (perm m1)) with (frame_inject _ f' m1).
     eapply frame_inject_incr; eauto.
     destruct v1, v2; simpl in *; subst.
     unfold f'. intros. destruct (eq_block b b1); try congruence. inv H12.
@@ -5643,9 +5643,11 @@ Proof.
       destruct H10.
       exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
       exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
+      eapply inject_perm_condition_writable; constructor.
       generalize (Ptrofs.unsigned_range_2 ofs). omega.
       exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
       exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
+      eapply inject_perm_condition_writable; constructor.
       generalize (Ptrofs.unsigned_range_2 ofs). omega.
     - exploit mi_representable0; try eassumption.
       intros [A B]; split; auto.
@@ -5908,7 +5910,6 @@ Proof.
         destruct n2.
         red. intros ofs0 H.
         eapply PERM; eauto.
-        apply r. omega.
         eapply inject_perm_condition_writable; constructor.
       + destruct n1.
         red. intros ofs0 H.
@@ -6046,7 +6047,7 @@ Qed.
 Lemma frame_inject_in_frame:
   forall f m f1 f2,
     match f1, f2 with
-      Some f1, Some f2 => frame_inject f m f1 f2
+      Some f1, Some f2 => frame_inject _ f m f1 f2
     | _, _ => False
     end ->
     forall b b' delta,
@@ -7072,7 +7073,7 @@ Lemma record_stack_block_inject':
      (* (JB: j b = Some (b', delta)) *)
      (INJ: inject j m1 m2)
      (FI: match fi1, fi2 with
-            Some fi1, Some fi2 => frame_inject j m1 fi1 fi2
+            Some fi1, Some fi2 => frame_inject _ j m1 fi1 fi2
           | _, None => True
           | _, _ => False
           end)
@@ -7088,14 +7089,16 @@ Proof.
   unfold record_stack_blocks.
   intros.
   destr_in RSB.
-  exploit add_adt_mem_inj; eauto. inv INJ; eauto.
-  constructor; simpl; auto.
+  exploit add_adt_mem_inj; eauto. inversion INJ; eauto.
+  red. simpl. unfold frame_inject in FI. simpl in *. split; auto.
+  repeat destr_in FI.
+  simpl. 
   intros (m2' & ADT & INJ').
   simpl. rewrite ADT.
   eexists; split; eauto.
   edestruct (add_adt_mem_unchanged _ _ _ _ H0) as (NB1 & PERM1 & _) ;
   edestruct (add_adt_mem_unchanged _ _ _ _ ADT) as (NB & PERM & _); simpl in *.
-  inv INJ; econstructor; simpl; intros; eauto.
+  inversion INJ; econstructor; simpl; intros; eauto.
   + eapply mi_freeblocks0; eauto.
     unfold valid_block in H; rewrite NB1 in H; eauto.
   + unfold valid_block; rewrite NB; eauto.
@@ -7112,7 +7115,7 @@ Lemma record_stack_block_inject:
    forall m1 m1' m2 j fi1 fi2 b b' delta n
      (JB: j b = Some (b', delta))
      (INJ: inject j m1 m2)
-     (FI: frame_inject j m1 (frame_with_info b fi1) (frame_with_info b' fi2))
+     (FI: frame_inject _ j m1 (frame_with_info b fi1) (frame_with_info b' fi2))
      (NOINJ: forall (b0 b'0 : block) (delta0 : Z), in_frames (stack_adt m1) b0 -> j b0 = Some (b'0, delta0) -> b0 <> b /\ b'0 <> b')
      (RSB: record_stack_blocks m1 (Some (frame_with_info b fi1)) n = Some m1'),
      exists m2',
@@ -7123,6 +7126,8 @@ Proof.
   eapply record_stack_block_inject'; eauto. simpl; auto.
   simpl; auto.
   red; simpl; intros. subst. eapply valid_block_inject_2; eauto.
+  Unshelve.
+  eauto.
 Qed.
 
 Lemma record_stack_blocks_inject_into_one:
@@ -7144,6 +7149,8 @@ Proof.
   }
   rewrite Forall_forall in FORALL. eapply FORALL. rewrite FOR. reflexivity. eauto. eauto.
   red; simpl. intros ? ->. auto.
+  Unshelve.
+  eauto.
 Qed.
 
 Lemma record_stack_blocks_inject:
@@ -7164,7 +7171,8 @@ Proof.
   rewrite Forall_forall in H2.
   rewrite <- ! H0; eauto.
   cut (~ In b0 bl); intuition.
-  exploit H2; eauto. 
+  exploit H2; eauto.
+  Unshelve. eauto.
 Qed.
 
 Lemma add_adt_none_mem_inj:
@@ -7609,6 +7617,7 @@ Proof.
   exact in_frames_valid.
   exact is_stack_top_extends.
   exact is_stack_top_inject.
+  Unshelve. eauto.
 Qed.
 
 End WITHINJPERM.

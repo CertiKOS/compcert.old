@@ -24,18 +24,23 @@ Section WITHMEMORYMODEL.
         forall m: mem, Memimpl.Mem.size_stack (Memtype.Mem.stack_adt m) < Memimpl.Mem.stack_limit;
     }.
   
-  Context `{memory_model: MemoryModelSingleStack}.
+  Context `{memory_model: MemoryModelSingleStack (injperm := inject_perm_upto_writable)}.
 
   Inductive mono_initial_state {F V} (prog: program F V): state -> Prop :=
   |mis_intro:
-     forall rs m m1 bstack,
+     forall rs m m1 bstack m2,
        initial_state prog (State rs m) ->
        Mem.alloc m 0 (Memimpl.Mem.stack_limit) = (m1,bstack) ->
-       mono_initial_state prog (State rs m1).
+       Mem.drop_perm m1 bstack 0 (Memimpl.Mem.stack_limit) Writable = Some m2 ->
+       mono_initial_state prog (State rs m2).
 
   Existing Instance mem_accessors_default.
 
-  Context `{!ExternalCallsOps mem} `{!EnableBuiltins mem}.
+  Context `{external_calls_ops : !ExternalCallsOps mem }.
+  Context `{!EnableBuiltins mem external_calls_ops}.
+  Existing Instance symbols_inject_instance.
+  Context `{external_calls_props : !ExternalCallsProps mem }.
+
 
   Variable prog: Asm.program.
   Let ge := Genv.globalenv prog.
@@ -143,12 +148,12 @@ Section WITHMEMORYMODEL.
 
   Definition perm_bstack m2:=
     forall (ofs : Z) (k : perm_kind) (p : permission),
-       Mem.perm m2 bstack ofs k p -> 0 <= ofs < Ptrofs.max_unsigned.
+       Mem.perm m2 bstack ofs k p -> 0 <= ofs < Ptrofs.max_unsigned /\  perm_order Writable p.
 
   Definition perm_bstack_stack_limit m2:=
-    forall (ofs : Z) (k : perm_kind) (p : permission),
+    forall (ofs : Z) (k : perm_kind),
       0 <= ofs < Memimpl.Mem.stack_limit ->
-      Mem.perm m2 bstack ofs k p.
+      Mem.perm m2 bstack ofs k Writable.
 
   Definition sp_aligned rs2:=
     forall ostack,
@@ -741,15 +746,17 @@ Section WITHMEMORYMODEL.
     trim A. intros; right; eapply PBS; now eauto.
     trim A.
     {
-      intros; eapply PBSL; eauto.
+      intros; eapply Mem.perm_implies. eapply PBSL; eauto.
       split. omega.
       unfold newostack, offset_after_alloc.
       eapply Z.lt_le_trans with curofs.
       generalize (align_le (Z.max 0 (frame_size fi)) 8) (Z.le_max_l 0 (frame_size fi)).
       rewrite Z.max_r by omega. omega.
       destruct (RSPDEC) as [[EQRSP ?]|[NOPTR [EQ NIL]]]; subst. 
-      rewrite H0. erewrite (AGSP _ EQRSP); eauto.
+      rewrite H2. erewrite (AGSP _ EQRSP); eauto.
       generalize (size_stack_pos (Mem.stack_adt m1)); intros. omega. omega. 
+      simpl in H0.
+      auto.
     }
     trim A.
     {
@@ -1283,7 +1290,7 @@ Section WITHMEMORYMODEL.
           intros ofs k p PERM.
           eapply Mem.unrecord_stack_block_perm in PERM. 2: eauto. eauto.
         * red.
-          intros ofs k p RNG.
+          intros ofs k RNG.
           eapply Mem.unrecord_stack_block_perm'. 2: eauto. eauto.                 
         * red.
           edestruct Mem.unrecord_stack_adt. apply USB. red in NS. rewrite H0 in NS.
@@ -1419,22 +1426,9 @@ Section WITHMEMORYMODEL.
 
   Hypothesis prog_no_rsp: asm_prog_no_rsp ge.
 
-  Existing Instance symbols_inject_instance.
+
   Context `{ecprops: !ExternalCallsProps mem}.
 
-  Axiom external_call_perm_frames:
-    forall {F V} ef (ge: Genv.t F V) args m1 t res m2,
-      external_call ef ge args m1 t res m2 ->
-      forall b o k p,
-        in_frames (Mem.stack_adt m1) b ->
-        Mem.perm m2 b o k p <-> Mem.perm m1 b o k p.
-
-
-  Axiom external_call_perm_bstack:
-    forall {F V} ef (ge: Genv.t F V) args m1 t res m2,
-      external_call ef ge args m1 t res m2 ->
-      forall o k p,
-        Mem.perm m2 bstack o k p <-> Mem.perm m1 bstack o k p.
 
 
   Lemma inj_incr_sep_same:
@@ -1772,7 +1766,9 @@ Section WITHMEMORYMODEL.
         eauto. eauto.
       + red.
         intros.
-        eapply external_call_perm_bstack. eauto.
+        eapply ec_perm_unchanged. eapply external_call_spec. eauto.
+        eauto.
+        intros. eapply PBS in H7. destruct H7.  intro A; inv A; inv H9. 
         eauto.
       + red.
         erewrite <- external_call_stack_blocks. 2: eauto.
@@ -1813,7 +1809,8 @@ Section WITHMEMORYMODEL.
       + erewrite <- external_call_stack_blocks. 2: eauto.
         eapply perm_stack_inv. eauto.
         apply Mem.in_frames_valid.
-        eapply external_call_perm_frames; eauto.
+        eapply ec_perm_frames; eauto.
+        apply external_call_spec.
       + erewrite <- external_call_stack_blocks. 2: eauto.
         eapply load_rsp_inv'. eauto.
         eapply Mem.unchanged_on_implies.
@@ -1983,8 +1980,10 @@ Section WITHMEMORYMODEL.
         eauto. eauto.
       + red.
         intros.
-        eapply external_call_perm_bstack. eauto.
-        eauto. 
+        eapply ec_perm_unchanged. eapply external_call_spec. eauto.
+        eauto.
+        intros. eapply PBS in H6. destruct H6.  intro A; inv A; inv H8.
+        eauto.
       + red.
         erewrite <- external_call_stack_blocks. 2: eauto.
         eauto.
@@ -2027,7 +2026,7 @@ Section WITHMEMORYMODEL.
       + erewrite <- external_call_stack_blocks. 2: eauto.
         eapply perm_stack_inv. eauto.
         apply Mem.in_frames_valid.
-        eapply external_call_perm_frames; eauto.
+        eapply ec_perm_frames; eauto. apply external_call_spec.
       + erewrite <- external_call_stack_blocks. 2: eauto.
         eapply load_rsp_inv'. eauto.
         eapply Mem.unchanged_on_implies.
@@ -2083,6 +2082,9 @@ End PRESERVATION.
   Hypothesis repr_stack_limit:
     0 <= Memimpl.Mem.stack_limit <= Ptrofs.max_unsigned.
 
+  Hypothesis align_stack_limit:
+    (8 | Memimpl.Mem.stack_limit).
+
 
   Lemma match_initial_states s:
     Asm.initial_state prog s ->
@@ -2108,12 +2110,18 @@ End PRESERVATION.
     {
       exploit Mem.alloc_result; eauto.
     }
+    edestruct (Mem.range_perm_drop_2).
+    red; intros; eapply Mem.perm_alloc_2; eauto.
     do 2 eexists; exists (Ptrofs.unsigned Ptrofs.zero); split.
     2: econstructor; eauto.
     exploit Genv.initmem_inject; eauto.
     intro FLATINJ.
     exploit Mem.alloc_right_inject. apply FLATINJ.
     eauto. intro STACKINJ.
+    exploit Mem.drop_outside_inject. apply STACKINJ. eauto.
+    unfold Mem.flat_inj. intros b' delta ofs k p FB1 PERM RNG. destr_in FB1. inv FB1.
+    exploit Mem.alloc_result; eauto. intro A; clear Heqs. rewrite A in p0.  xomega.
+    intro STACKINJ'.
     econstructor; eauto.
     - unfold rs0.
       rewrite Pregmap.gss. inversion 1.
@@ -2129,7 +2137,9 @@ End PRESERVATION.
       + constructor.
       + constructor.
     - red.         
-      rewrite stackeq. exploit Mem.nextblock_alloc; eauto. intro A; rewrite A; xomega.
+      rewrite stackeq. exploit Mem.nextblock_alloc; eauto.
+      exploit Mem.nextblock_drop. eauto.
+      intros A B; rewrite A, B; xomega.
     - red.
       unfold rs0.
       rewrite Pregmap.gss. inversion 1.
@@ -2138,11 +2148,18 @@ End PRESERVATION.
       unfold rs0.
       rewrite Pregmap.gss. inversion 1.
     - red. intros.
-      eapply Mem.perm_alloc_3 in H1. 2: eauto.
-      split. omega. eapply Z.lt_le_trans. apply H1. apply repr_stack_limit.
+      assert (0 <= ofs < Memimpl.Mem.stack_limit).
+      {
+        eapply Mem.perm_drop_4 in H1; eauto.
+        eapply Mem.perm_alloc_3 in H1. 2: eauto. auto.
+      }
+      exploit Mem.perm_drop_2; eauto. intros.
+      split; auto. split. omega. eapply Z.lt_le_trans. apply H2. apply repr_stack_limit.
     - red; intros.
-      eapply Mem.perm_implies. eapply Mem.perm_alloc_2; eauto. constructor.
-    - red. erewrite Mem.alloc_stack_blocks; eauto.
+      eapply Mem.perm_drop_1; eauto.
+    - red.
+      erewrite Mem.drop_perm_stack_adt; eauto.
+      erewrite Mem.alloc_stack_blocks; eauto.
       erewrite Genv.init_mem_stack_adt; eauto.
     - unfold rs0.
       rewrite Pregmap.gss. inversion 1.
@@ -2170,7 +2187,8 @@ End PRESERVATION.
       simpl; intros b1 b2 delta; unfold Mem.flat_inj.
       intro A; destr_in A.
     - erewrite <- Genv.init_mem_genv_next; eauto. unfold ge; apply Ple_refl.
-    - erewrite Mem.nextblock_alloc.  erewrite <- Genv.init_mem_genv_next; eauto. unfold ge; xomega.
+    - erewrite Mem.nextblock_drop; eauto. erewrite Mem.nextblock_alloc.
+      erewrite <- Genv.init_mem_genv_next; eauto. unfold ge; xomega.
       eauto.
   Qed.
 
@@ -2185,7 +2203,23 @@ End PRESERVATION.
     generalize (RINJ RAX). rewrite H5. unfold Vnullptr. destruct ptr64; inversion 1; auto.
   Qed.
 
+  Definition mono_semantics (p: Asm.program) :=
+    Semantics step (mono_initial_state p) final_state (Genv.globalenv p).
+  
+  Theorem transf_program_correct:
+    asm_prog_no_rsp ge ->
+    forward_simulation (Asm.semantics prog) (mono_semantics prog).
+  Proof.
+    intro APNR.
+    eapply forward_simulation_step.
+    - simpl. reflexivity. 
+    - instantiate (1:= fun s1 s2 => exists j o, match_states Vnullptr j o s1 s2).
+      simpl. intros; exploit match_initial_states. eauto. intros (s' & j & ostack & MS & MIS); eexists; split; eauto.
+    - simpl. intros s1 s2 r (j & o & MS) FS. eapply transf_final_states; eauto.
+    - simpl. intros s1 t s1' STEP s2 (j & o & MS). 
+      edestruct step_simulation as (isp' & j' & o' & STEP' & MS'); eauto.
+      apply Val.Vnullptr_has_type.
+  Qed.
+  
 End WITHMEMORYMODEL.
 
-
-Print Assumptions step_simulation.

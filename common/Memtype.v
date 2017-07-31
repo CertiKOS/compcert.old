@@ -252,7 +252,6 @@ Module Mem.
 Definition locset := block -> Z -> Prop.
 
 Class MemoryModelOps
-      {injperm: InjectPerm}
       (** The abstract type of memory states. *)
  (mem: Type)
 
@@ -347,7 +346,7 @@ Class MemoryModelOps
   blocks) and replacing some of the [Vundef] values stored in [m1] by
   more defined values stored in [m2] at the same addresses. *)
 
- extends: mem -> mem -> Prop;
+ extends: forall {injperm: InjectPerm}, mem -> mem -> Prop;
 
 (** The [magree] predicate is a variant of [extends] where we
   allow the contents of the two memory states to differ arbitrarily
@@ -355,7 +354,7 @@ Class MemoryModelOps
   contents must be in the [lessdef] relation.
   Needed by Deadcodeproof. *)
 
- magree: forall (m1 m2: mem) (P: locset), Prop;
+ magree: forall {injperm: InjectPerm} (m1 m2: mem) (P: locset), Prop;
 
 (** ** Memory injections *)
 
@@ -373,11 +372,11 @@ values as prescribed by [f].  (See module [Values].)
 Likewise, a memory injection [f] defines a relation between memory states
 that we now axiomatize. *)
 
- inject: meminj -> mem -> mem -> Prop;
+ inject: forall {injperm: InjectPerm}, meminj -> mem -> mem -> Prop;
 
 (** Memory states that inject into themselves. *)
 
- inject_neutral: forall (thr: block) (m: mem), Prop;
+ inject_neutral: forall {injperm: InjectPerm} (thr: block) (m: mem), Prop;
 
 (** ** Invariance properties between two memory states *)
 
@@ -395,18 +394,19 @@ that we now axiomatize. *)
  stack_adt: mem -> list (option frame_adt * Z);
  record_stack_blocks: mem -> option frame_adt -> Z -> option mem;
  unrecord_stack_block: mem -> option mem;
- frame_inject f m := frame_inject' f (perm m)
+ frame_inject {injperm: InjectPerm} f m := frame_inject' f (perm m)
 }.
 
 
 Section WITHMEMORYMODELOPS.
 Context `{memory_model_ops: MemoryModelOps}.
+Context {injperm: InjectPerm}.
 
 Lemma frame_inject_invariant:
   forall m m' f f1 f2,
     (forall b ofs k p b' delta, f b = Some (b', delta) -> perm m' b ofs k p -> perm m b ofs k p) ->
-    frame_inject f m f1 f2 ->
-    frame_inject f m' f1 f2.
+    frame_inject _ f m f1 f2 ->
+    frame_inject _ f m' f1 f2.
 Proof.
   intros m m' f f1 f2 PERM FI.
   destruct FI; try now (econstructor; eauto).
@@ -415,8 +415,8 @@ Qed.
 Lemma list_forall2_frame_inject_invariant:
   forall m m' f f1 f2,
     (forall b ofs k p b' delta, f b = Some (b', delta) -> perm m' b ofs k p -> perm m b ofs k p) ->
-    list_forall2 (frame_inject f m) f1 f2 ->
-    list_forall2 (frame_inject f m') f1 f2.
+    list_forall2 (frame_inject _ f m) f1 f2 ->
+    list_forall2 (frame_inject _ f m') f1 f2.
 Proof.
   intros m m' f f1 f2 PERM FI.
   eapply list_forall2_imply. eauto.
@@ -424,16 +424,15 @@ Proof.
   eapply frame_inject_invariant; eauto.
 Qed.
 
-
 Lemma inject_frame_id m a:
-  frame_inject inject_id m a a.
+  frame_inject _ inject_id m a a.
 Proof.
   destruct a; try (econstructor; inversion 1; tauto).
 Qed.
 
 Definition option_frame_inject f m1 (x y: option frame_adt * Z) :=
   match fst x, fst y with
-    Some f1, Some f2 => frame_inject f m1 f1 f2
+    Some f1, Some f2 => frame_inject _ f m1 f1 f2
   | None, Some f => False
   | _, _ => True
   end /\ snd x = snd y.
@@ -457,8 +456,8 @@ Lemma frame_inject_incr:
     forall f1' f2',
       f1 = Some f1' ->
       f2 = Some f2' ->
-    frame_inject f m f1' f2' ->
-    frame_inject f' m f1' f2'.
+    frame_inject _ f m f1' f2' ->
+    frame_inject _ f' m f1' f2'.
 Proof.
   intros f f' m f1 f2 INCR NEW f1' f2' EQf1 EQf2 FI. subst.
   inversion FI; try now (econstructor; eauto).
@@ -512,7 +511,7 @@ Qed.
 
 Lemma frame_inject_in_frame:
   forall f m v1 v2 b b' delta,
-    frame_inject f m v1 v2 ->
+    frame_inject _ f m v1 v2 ->
     in_frame (Some v1) b ->
     f b = Some (b', delta) ->
     in_frame (Some v2) b'.
@@ -527,7 +526,7 @@ Qed.
 
 Lemma self_inject_frame f m a:
   (forall b, f b = None \/ f b = Some (b,0)) ->
-  frame_inject f m a a.
+  frame_inject _ f m a a.
 Proof.
   intros SELF.
   destruct a;  constructor; auto; intros; autospe; try intuition congruence.
@@ -539,7 +538,7 @@ Qed.
 
 Lemma self_inject_list_frames f m a:
   (forall b, f b = None \/ f b = Some (b,0)) ->
-  list_forall2 (frame_inject f m) a a.
+  list_forall2 (frame_inject _ f m) a a.
 Proof.
   induction a; intros SELF; constructor; auto.
   apply self_inject_frame; eauto.
@@ -547,15 +546,15 @@ Qed.
 
 Lemma frame_inject_compose:
   forall (f f' : meminj) m1 l1 l2,
-    frame_inject f m1 l1 l2 ->
+    frame_inject _ f m1 l1 l2 ->
     forall m2 l3,
-      frame_inject f' m2 l2 l3 ->
+      frame_inject _ f' m2 l2 l3 ->
       (forall b1 b2 delta o k p,
           f b1 = Some (b2, delta) ->
           perm m1 b1 o k p ->
           inject_perm_condition p ->
           perm m2 b2 (o + delta) k p) ->
-      frame_inject (compose_meminj f f') m1 l1 l3.
+      frame_inject _ (compose_meminj f f') m1 l1 l3.
 Proof.
   intros f f' m1 l1 l2 H m2 l3 H0 PERM.
   inv H; inv H0; unfold compose_meminj.
@@ -587,15 +586,15 @@ Qed.
 
 Lemma list_frame_inject_compose:
   forall (f f' : meminj) m1 l1 l2,
-    list_forall2 (frame_inject f m1) l1 l2 ->
+    list_forall2 (frame_inject _ f m1) l1 l2 ->
     forall m2 l3,
-      list_forall2 (frame_inject f' m2) l2 l3 ->
+      list_forall2 (frame_inject _ f' m2) l2 l3 ->
       (forall b1 b2 delta o k p,
           f b1 = Some (b2, delta) ->
           perm m1 b1 o k p ->
           inject_perm_condition p ->
           perm m2 b2 (o + delta) k p) ->
-    list_forall2 (frame_inject (compose_meminj f f') m1) l1 l3.
+    list_forall2 (frame_inject _ (compose_meminj f f') m1) l1 l3.
 Proof.
   induction 1; simpl; intros; eauto.
   inv H. constructor.
@@ -955,7 +954,7 @@ Qed.
 End WITHMEMORYMODELOPS.
 
 
-Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
+Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem} {injperm: InjectPerm}
   : Prop :=
 {
 
@@ -2048,7 +2047,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
   valid_block m2 b2 ->
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
-  (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
+  (forall ofs k p, lo <= ofs < hi -> inject_perm_condition p -> perm m2 b2 (ofs + delta) k p) ->
   inj_offset_aligned delta (hi-lo) ->
   (forall b delta' ofs k p,
    f b = Some (b2, delta') ->
@@ -2140,7 +2139,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
      list_forall2
        (fun x y =>
           match fst x, fst y with
-            Some f1, Some f2 => frame_inject f m1 f1 f2
+            Some f1, Some f2 => frame_inject _ f m1 f1 f2
           | None, Some _ => False
           | _, _ => True
           end
@@ -2153,7 +2152,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
      list_forall2
        (fun x y =>
           match fst x, fst y with
-            Some f1, Some f2 => frame_inject inject_id m1 f1 f2
+            Some f1, Some f2 => frame_inject _ inject_id m1 f1 f2
           | None, Some _ => False
           | _, _ => True
           end
@@ -2332,7 +2331,7 @@ for [unchanged_on]. *)
    forall m1 m1' m2 j fi1 fi2 n,
      inject j m1 m2 ->
      match fi1, fi2 with
-     | Some fi1, Some fi2 => frame_inject j m1 fi1 fi2
+     | Some fi1, Some fi2 => frame_inject _ j m1 fi1 fi2
      | None, Some _ => False
      | _, _ => True
      end ->

@@ -23,7 +23,8 @@ Section WITHMEMORYMODEL.
 
   Existing Instance mem_accessors_default.
 
-  Context `{!ExternalCallsOps mem} `{!EnableBuiltins mem}.
+  Context `{external_calls_ops: !ExternalCallsOps mem}
+          `{enable_builtins_instance: EnableBuiltins (injperm:=injperm) (memory_model_ops:=memory_model_ops) mem}.
 
   Definition is_unchanged (i: instruction) :=
     match i with
@@ -54,9 +55,8 @@ Section WITHMEMORYMODEL.
       asm_code_no_rsp (a::l).
   Proof.
     unfold asm_code_no_rsp.
-    intros. simpl in H1. destruct H1; subst; auto.
+    intros. simpl in H2. destruct H2; subst; auto.
   Qed.
-
 
   Lemma nextinstr_rsp:
     forall rs,
@@ -91,7 +91,8 @@ Section WITHMEMORYMODEL.
       IR x <> RSP.
   Proof.
     unfold Asmgen.ireg_of.
-    intros. destr_in H. inv H.
+    intros m x A.
+    destr_in A. inv A.
     eapply preg_of_not_rsp in Heqp.
     intro; subst. congruence.
   Qed.
@@ -102,7 +103,7 @@ Section WITHMEMORYMODEL.
       FR x <> RSP.
   Proof.
     unfold Asmgen.freg_of.
-    intros. destr_in H. 
+    intros m x A. destr_in A. 
   Qed.
 
 
@@ -196,8 +197,8 @@ Section WITHMEMORYMODEL.
       Asmgen.mk_mov (preg_of m) (preg_of m0) x0 = OK x1 ->
       asm_code_no_rsp x1.
   Proof.
-    intros.
-    unfold Asmgen.mk_mov in H0; repeat destr_in H0; apply asm_code_no_rsp_cons; auto; red; simpl; intros;
+    intros x0 x1 m m0 A B.
+    unfold Asmgen.mk_mov in B; repeat destr_in B; apply asm_code_no_rsp_cons; auto; red; simpl; intros;
       inv H1; rewrite nextinstr_rsp;
         rewrite Pregmap.gso; auto;
           apply not_eq_sym; eapply preg_of_not_rsp; eauto.
@@ -218,29 +219,39 @@ Section WITHMEMORYMODEL.
       Asmgen.ireg_of m = OK x2 ->
       asm_instr_no_rsp i.
   Proof.
-    intros x0 m x2 i c H H1 H0.
-    unfold Asmgen.mk_setcc in H1. destr_in H1.
+    intros x0 m x2 i c A B C.
+    unfold Asmgen.mk_setcc in B. destr_in B. 
+    - destruct c. simpl in *.
+      destruct B; subst; auto; red; intros; simpl in H1; solve_rs.
+      simpl in B. destr_in B.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      simpl in B. destr_in B.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      simpl in B. destr_in B.
+      red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
     - destruct c.
-      destruct H1; subst; auto; red; intros; simpl in H2; solve_rs.
-      simpl in H1. destr_in H1.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      simpl in H1. destr_in H1.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-    - destruct c.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      destruct H1; subst; auto. red; intros; simpl in H2; solve_rs.
-      simpl in H1. intuition subst; auto; red; intros; simpl in H2; solve_rs.
-      simpl in H1. intuition subst; auto; red; intros; simpl in H2; solve_rs.
+      simpl in B.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      simpl in B.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      simpl in B.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
   Qed.
 
   Lemma asmgen_transl_cond_rsp:
@@ -250,8 +261,9 @@ Section WITHMEMORYMODEL.
       Asmgen.transl_cond cond l (Asmgen.mk_setcc (Asmgen.testcond_for_condition cond) x2 x0) = OK x1 ->
       asm_code_no_rsp x1.
   Proof.
-    unfold Asmgen.transl_cond; simpl; intros; eauto.
-    repeat destr_in H1.
+    unfold Asmgen.transl_cond; simpl.
+    intros x0 m x2 x1 cond l ACNR IREG TRANSL.
+    repeat destr_in TRANSL.
     invasm;  eapply mkset_cc_no_rsp; eauto.
     invasm. eapply mkset_cc_no_rsp; eauto. 
     invasm;  eapply mkset_cc_no_rsp; eauto.
@@ -276,8 +288,8 @@ Section WITHMEMORYMODEL.
       rs2 RSP = rs1 RSP.
   Proof.
     unfold goto_label.
-    intros.
-    repeat destr_in H. solve_rs.
+    intros F V ge rs1 rs2 f l m1 m2 A.
+    repeat destr_in A. solve_rs.
   Qed.
 
   Lemma mkjcc_no_rsp:
@@ -286,19 +298,19 @@ Section WITHMEMORYMODEL.
       In i (Asmgen.mk_jcc c x2 x0) ->
       asm_instr_no_rsp i.
   Proof.
-    intros x0 x2 i c H H1.
+    intros x0 x2 i c A H1.
     unfold Asmgen.mk_jcc in H1. destr_in H1.
     - destruct H1. subst.  red; simpl; intros.
       repeat destr_in H1. eapply goto_label_rsp; eauto. solve_rs.
-      intros. eapply H; eauto.
+      intros. eapply A; eauto.
     - destruct H1. subst. red; simpl; intros.
       repeat destr_in H1. eapply goto_label_rsp; eauto. solve_rs.
       destruct H0. subst.  red; simpl; intros.
       repeat destr_in H1. eapply goto_label_rsp; eauto. solve_rs.
-      intros. eapply H; eauto.
+      intros. eapply A; eauto.
     - destruct H1. subst.  red; simpl; intros.
       repeat destr_in H1. eapply goto_label_rsp; eauto. solve_rs. solve_rs.
-      intros. eapply H. eauto. 
+      intros. eapply A. eauto. 
   Qed.
   
   Lemma asmgen_transl_cond_rsp':
@@ -307,8 +319,9 @@ Section WITHMEMORYMODEL.
       Asmgen.transl_cond cond l (Asmgen.mk_jcc (Asmgen.testcond_for_condition cond) x2 x0) = OK x1 ->
       asm_code_no_rsp x1.
   Proof.
-    unfold Asmgen.transl_cond; simpl; intros; eauto.
-    repeat destr_in H0.
+    unfold Asmgen.transl_cond; simpl.
+    intros x0 x2 x1 cond l ACNR TRANSL.
+    repeat destr_in TRANSL.
     invasm. intuition subst; eauto. red; simpl; intros. repeat destr_in H1.
     eapply goto_label_rsp; eauto. solve_rs.
     invasm. intuition subst; eauto. red; simpl; intros. repeat destr_in H1.
@@ -356,14 +369,14 @@ Section WITHMEMORYMODEL.
     set (P := fun f => forall x y, f x = OK y -> asm_code_no_rsp x -> asm_code_no_rsp y).
     assert (P (fun c => OK c)).
     { unfold P; simpl. inversion 1; tauto. }
-    revert H.
+    revert H0.
     generalize (Mach.fn_code f) true (fun c : code => OK c).
     clear g Heqs.
     induction c; simpl; intros; eauto.
-    eapply H; eauto. red; easy.
+    eapply H0; eauto. red; easy.
     eapply IHc. 2: apply EQ0.
-    unfold P. intros. monadInv H0.
-    eapply H; eauto.
+    unfold P. intros. monadInv H1.
+    eapply H0; eauto.
     destruct a; simpl in EQ.
     - eapply loadind_no_change_rsp; eauto. 
     - eapply storeind_no_change_rsp; eauto.
@@ -385,7 +398,7 @@ Section WITHMEMORYMODEL.
       invasm.
       invasm.
 
-      monadInv H2.
+      monadInv H3.
       unfold Asmgen.mk_intconv in EQ4.
       destr_in EQ4. inv EQ4.
       apply asm_code_no_rsp_cons; auto.
@@ -400,7 +413,7 @@ Section WITHMEMORYMODEL.
       solve_rs.
 
 
-      monadInv H2.
+      monadInv H3.
       unfold Asmgen.mk_intconv in EQ4.
       destr_in EQ4. inv EQ4.
       apply asm_code_no_rsp_cons; auto.
@@ -423,30 +436,13 @@ Section WITHMEMORYMODEL.
       progress invasm.
       progress invasm.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs. solve_rs. solve_rs.
-      progress invasm.
-      progress invasm.
-      progress invasm.
-      progress invasm.
+      repeat destr_in H3. solve_rs.
       progress invasm.
       progress invasm.
       progress invasm.
@@ -459,13 +455,30 @@ Section WITHMEMORYMODEL.
       progress invasm.
       progress invasm.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs. solve_rs. solve_rs.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
+      progress invasm.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs.
       repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
-      repeat destr_in H2. solve_rs.
+      repeat destr_in H3. solve_rs.
+      repeat apply asm_code_no_rsp_cons; auto; red; simpl; intros; solve_rs.
+      repeat destr_in H3. solve_rs.
       progress invasm.
       progress invasm.
       progress invasm.
@@ -527,12 +540,12 @@ Section WITHMEMORYMODEL.
                 red; intros; simpl in *; solve_rs.
       invasm; try eapply exec_store_rsp; eauto; try apply not_eq_sym; try eapply ireg_of_not_rsp; eauto;
         try eapply freg_of_not_rsp; eauto.
-      eapply H1; eauto.
+      eapply H2; eauto.
       invasm. intuition subst;
                 red; intros; simpl in *; solve_rs.
       invasm; try eapply exec_store_rsp; eauto; try apply not_eq_sym; try eapply ireg_of_not_rsp; eauto;
         try eapply freg_of_not_rsp; eauto.
-      eapply H1; eauto.
+      eapply H2; eauto.
       unfold Asmgen.mk_storebyte in EQ4. repeat destr_in EQ4.
       invasm; try eapply exec_store_rsp; eauto; try apply not_eq_sym; try eapply ireg_of_not_rsp; eauto;
         try eapply freg_of_not_rsp; eauto.
@@ -540,42 +553,39 @@ Section WITHMEMORYMODEL.
                 red; intros; simpl in *; solve_rs.
       invasm; try eapply exec_store_rsp; eauto; try apply not_eq_sym; try eapply ireg_of_not_rsp; eauto;
         try eapply freg_of_not_rsp; eauto.
-      eapply H1; eauto.
+      eapply H2; eauto.
       invasm. intuition subst;
                 red; intros; simpl in *; solve_rs.
       invasm; try eapply exec_store_rsp; eauto; try apply not_eq_sym; try eapply ireg_of_not_rsp; eauto;
         try eapply freg_of_not_rsp; eauto.
-      eapply H1; eauto.
+      eapply H2; eauto.
       inv EQ3.
       inv EQ3.
     - destr_in EQ; invasm. inv EQ. invasm.
-    - destr_in EQ; invasm. repeat destr_in H2.
+    - destr_in EQ; invasm. repeat destr_in H3.
       intuition subst;
         red; intros; simpl in *; solve_rs.
-      eapply H1; eauto.
+      eapply H2; eauto.
       inv EQ. invasm.
-      repeat destr_in H2.
+      repeat destr_in H3.
       intuition subst;
         red; intros; simpl in *; solve_rs.
-      eapply H1; eauto.
+      eapply H2; eauto.
     - inv EQ. red; intros; simpl in *.
-      intuition subst; red; intros; simpl in *; solve_rs. inv H2. eapply H1; eauto.
+      intuition subst; red; intros; simpl in *; solve_rs. inv H3. eapply H2; eauto.
     - inv EQ. invasm.
     - inv EQ. invasm.
       eapply goto_label_rsp; eauto.
     - eapply asmgen_transl_cond_rsp'; eauto.
-    - inv EQ. invasm. repeat destr_in H2.
-      erewrite goto_label_rsp. 2: apply H4.
+    - inv EQ. invasm. repeat destr_in H3.
+      erewrite goto_label_rsp. 2: apply H5.
       solve_rs.
     - inv EQ. invasm.
-      repeat destr_in H2.
+      repeat destr_in H3.
       intuition subst;
         red; intros; simpl in *; solve_rs.
-      eapply H1; eauto.
+      eapply H2; eauto.
   Qed.
-
-
-
 
   Definition asm_instr_no_stack (i : Asm.instruction) : Prop :=
     is_unchanged i = true ->
@@ -589,8 +599,8 @@ Section WITHMEMORYMODEL.
       exec_store ge k m1 a rs1 rs l = Next rs2 m2 ->
       Mem.stack_adt m2 = Mem.stack_adt m1 /\ (forall b o k p, Mem.perm m2 b o k p <-> Mem.perm m1 b o k p).
   Proof.
-    intros.
-    unfold exec_store in H; repeat destr_in H. 
+    intros F V ge k m1 a rs1 rs l rs2 m2 STORE.
+    unfold exec_store in STORE; repeat destr_in STORE. 
     unfold Mem.storev in Heqo; destr_in Heqo; inv Heqo.
     erewrite Mem.store_stack_blocks. 2: eauto.
     split; auto.
@@ -604,8 +614,8 @@ Section WITHMEMORYMODEL.
       exec_load ge k m1 a rs1 rs = Next rs2 m2 ->
       Mem.stack_adt m2 = Mem.stack_adt m1 /\ (forall b o k p, Mem.perm m2 b o k p <-> Mem.perm m1 b o k p).
   Proof.
-    intros.
-    unfold exec_load in H; destr_in H.
+    intros F V ge k m1 a rs1 rs rs2 m2 LOAD.
+    unfold exec_load in LOAD; destr_in LOAD.
   Qed.
 
   Lemma goto_label_stack:
@@ -613,8 +623,8 @@ Section WITHMEMORYMODEL.
       goto_label ge f l rs1 m1 = Next rs2 m2 ->
       Mem.stack_adt m2 = Mem.stack_adt m1 /\ (forall b o k p, Mem.perm m2 b o k p <-> Mem.perm m1 b o k p).
   Proof.
-    intros.
-    unfold goto_label in H; repeat destr_in H.
+    intros F V ge f l m1 rs1 rs2 m2 GOTO.
+    unfold goto_label in GOTO; repeat destr_in GOTO.
   Qed.
 
   Lemma asmgen_no_change_stack i:
@@ -627,8 +637,8 @@ Section WITHMEMORYMODEL.
           first [ split;[reflexivity|tauto]
                 | now (eapply exec_load_stack; eauto)
                 | now (eapply exec_store_stack; eauto)
-                | now (repeat destr_in H0; eapply goto_label_stack; eauto)
-                | now (repeat destr_in H0)
+                | now (repeat destr_in H1; eapply goto_label_stack; eauto)
+                | now (repeat destr_in H1)
                 | idtac ].
   Qed.
 
@@ -647,20 +657,19 @@ Section WITHMEMORYMODEL.
         exec_store ge k m1 a rs1 rs l = Next rs2 m2 ->
         Ple (Mem.nextblock m1) (Mem.nextblock m2).
     Proof.
-      intros.
-      unfold exec_store in H; repeat destr_in H. 
+      intros F V ge k m1 a rs1 rs l rs2 m2 STORE.
+      unfold exec_store in STORE; repeat destr_in STORE. 
       unfold Mem.storev in Heqo; destr_in Heqo; inv Heqo.
-      erewrite (Mem.nextblock_store _ _ _ _ _ _ H0); apply Ple_refl.
+      erewrite (Mem.nextblock_store _ _ _ _ _ _ H1); apply Ple_refl.
     Qed.
-
 
     Lemma exec_load_nb:
       forall F V (ge: _ F V) k m1 a rs1 rs rs2 m2,
         exec_load ge k m1 a rs1 rs = Next rs2 m2 ->
         Ple (Mem.nextblock m1) (Mem.nextblock m2).
     Proof.
-      intros.
-      unfold exec_load in H; destr_in H. inv H.
+      intros F V ge k m1 a rs1 rs rs2 m2 LOAD.
+      unfold exec_load in LOAD; destr_in LOAD. inv LOAD.
       apply Ple_refl.
     Qed.
 
@@ -668,8 +677,8 @@ Section WITHMEMORYMODEL.
   Lemma asmgen_nextblock_forward i:
     asm_instr_nb_fw i.
   Proof.
-    red; intros.
-    destruct i; simpl in H; inv H; try (apply Ple_refl);
+    red. intros F V ge f rs1 m1 rs2 m2 EI.
+    destruct i; simpl in EI; inv EI; try (apply Ple_refl);
       first [now eapply exec_load_nb; eauto
             | now (eapply exec_store_nb; eauto)
             | idtac ].
@@ -684,14 +693,14 @@ Section WITHMEMORYMODEL.
     - unfold goto_label in H1. repeat destr_in H1; apply Ple_refl.
     - repeat destr_in H1.
       edestruct Mem.record_stack_blocks_mem_unchanged; eauto. simpl. eauto.
-      rewrite H.
+      rewrite H0.
       rewrite (Mem.nextblock_store _ _ _ _ _ _ Heqo0).
       rewrite (Mem.nextblock_store _ _ _ _ _ _ Heqo).
       rewrite (Mem.nextblock_alloc _ _ _ _ _ Heqp).
       xomega.
     - repeat destr_in H1.
       edestruct Mem.unrecord_stack_block_mem_unchanged. simpl; eauto.
-      rewrite H.
+      rewrite H0.
       rewrite (Mem.nextblock_free _ _ _ _ _ Heqo1). apply Ple_refl.
   Qed.
 

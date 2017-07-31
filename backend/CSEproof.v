@@ -50,7 +50,7 @@ Definition valu_agree (valu1 valu2: valuation) (upto: valnum) :=
   forall v, Plt v upto -> valu2 v = valu1 v.
 
 Section EXTEN.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
+Context `{memory_model_ops: Mem.MemoryModelOps (injperm:= inject_perm_all)}.
 
 Variable valu1: valuation.
 Variable upto: valnum.
@@ -109,7 +109,7 @@ End EXTEN.
 Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
  
 Lemma valnum_reg_holds:
   forall valu1 ge sp rs m n r n' v,
@@ -1124,7 +1124,7 @@ Proof.
 
 - (* Itailcall *)
   exploit find_function_translated; eauto. intros (cu' & tf & FIND' & TRANSF' & LINK').
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [A B]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & E & F).
   econstructor; split.
   eapply exec_Itailcall; eauto.
@@ -1161,7 +1161,6 @@ Proof.
   + apply CASE1.
   + apply CASE2; inv H1; auto.
   + apply CASE3.
-  + apply CASE1.
   + apply CASE1.
   + inv H0; auto. inv H3; auto. inv H4; auto.
     simpl in H1. inv H1.
@@ -1206,7 +1205,7 @@ Proof.
   unfold transfer; rewrite H; auto.
 
 - (* Ireturn *)
-  exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
+  exploit Mem.free_parallel_extends; eauto. constructor. intros [m2' [A B]].
   exploit Mem.unrecord_stack_block_extends; eauto. intros (m2'' & E & D).
   econstructor; split.
   eapply exec_Ireturn; eauto.

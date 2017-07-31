@@ -32,7 +32,7 @@ Proof.
 Qed.
 
 Section TRANSLATION.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
 
 Variable fn_stack_requirements: ident -> Z.
 
@@ -664,6 +664,7 @@ Proof.
   eapply free_list_freeable; eauto. eapply in_blocks_of_env; eauto.
   replace ofs with ((ofs - delta) + delta) by omega.
   eapply Mem.perm_inject; eauto. apply H3. omega.
+  constructor.
   destruct X as  [tm' FREE].
   exploit nextblock_freelist; eauto. intro NEXT.
   exploit Mem.nextblock_free; eauto. intro NEXT'.
@@ -2067,6 +2068,16 @@ Proof.
     auto.
 Qed.
 
+Lemma alloc_variables_stack_adt:
+  forall e m vars e' m',
+    alloc_variables e m vars e' m' ->
+    Mem.stack_adt m' = Mem.stack_adt m.
+Proof.
+  induction 1; simpl; intros; eauto.
+  rewrite IHalloc_variables.
+  eapply Mem.alloc_stack_blocks; eauto.
+Qed.
+
 Lemma transl_step_correct:
   forall S1 t S2, Csharpminor.step fn_stack_requirements ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
@@ -2341,15 +2352,7 @@ Opaque PTree.set.
   }
   {
 
-    Lemma alloc_variables_stack_adt:
-      forall e m vars e' m',
-        alloc_variables e m vars e' m' ->
-        Mem.stack_adt m' = Mem.stack_adt m.
-    Proof.
-      induction 1; simpl; intros; eauto.
-      rewrite IHalloc_variables.
-      eapply Mem.alloc_stack_blocks; eauto.
-    Qed.
+
 
     simpl. intros b0 b'0 delta0 INF FB.
     erewrite alloc_variables_stack_adt in INF; eauto. eapply Mem.in_frames_valid in INF.

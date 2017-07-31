@@ -76,7 +76,7 @@ Qed.
 
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
+Context `{external_calls_prf: ExternalCalls (injperm:=inject_perm_all)}.
 
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
 
