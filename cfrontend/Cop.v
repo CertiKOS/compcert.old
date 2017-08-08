@@ -1623,6 +1623,8 @@ Qed.
 
 End GENERIC_INJECTION.
 
+Context  {injperm: InjectPerm}.
+
 Lemma sem_cast_inject:
   forall f v1 ty1 ty m v tv1 tm,
   sem_cast v1 ty1 ty m = Some v ->

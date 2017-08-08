@@ -351,9 +351,8 @@ Qed.
 
 Section WITHEXTERNALCALLS.
   Local Existing Instance Events.symbols_inject_instance.
-  Local Existing Instance Memtype.inject_perm_all.
+  Local Existing Instance Memory.inject_perm_all.
   Context `{external_calls_prf: Events.ExternalCalls
-                                  (injperm:= Memtype.inject_perm_all)
                                   (symbols_inject_instance := Events.symbols_inject_instance) }.
   Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
   Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
@@ -390,6 +389,42 @@ Proof.
     apply Globalenvs.Genv.find_funct_ptr_iff in H4. congruence.
 Qed.
 
+Lemma mono_semantics_determinate:
+  forall p,
+    determinate (RawAsmgen.mono_semantics p p).
+Proof.
+  Ltac Equalities :=
+    match goal with
+    | [ H1: ?a = ?b, H2: ?a = ?c |- _ ] =>
+      rewrite H1 in H2; inv H2; Equalities
+    | _ => idtac
+    end.
+  intros; constructor; simpl; intros.
+  - (* determ *)
+    inv H; inv H0; Equalities.
+    + split. constructor. auto.
+    + discriminate.
+    + discriminate.
+    + assert (vargs0 = vargs) by (eapply Events.eval_builtin_args_determ; eauto). subst vargs0.
+      exploit Events.external_call_determ. eexact H5. eexact H11. intros [A B].
+      split. auto. intros. destruct B; auto. subst. auto.
+    + assert (args0 = args) by (eapply Asm.extcall_arguments_determ; eauto). subst args0.
+      exploit Events.external_call_determ. eexact H4. eexact H9. intros [A B].
+      split. auto. intros. destruct B; auto. subst. auto.
+  - (* trace length *)
+    red; intros; inv H; simpl.
+    omega.
+    eapply Events.external_call_trace_length; eauto.
+    eapply Events.external_call_trace_length; eauto.
+  - (* initial states *)
+    inv H; inv H0. inv H; inv H1. f_equal. congruence.
+  - (* final no step *)
+    assert (NOTNULL: forall b ofs, Values.Vnullptr <> Values.Vptr b ofs).
+    { intros; unfold Values.Vnullptr; destruct Archi.ptr64; congruence. }
+    inv H. red; intros; red; intros. inv H; rewrite H0 in *; eelim NOTNULL; eauto.
+  - (* final states *)
+    inv H; inv H0. congruence.
+Qed.
 Theorem cstrategy_semantic_preservation:
   forall p tp,
   match_prog p tp ->
@@ -473,6 +508,52 @@ Ltac DestructM :=
   apply Asm.semantics_determinate.
 Qed.
 
+Theorem cstrategy_semantic_preservation_raw:
+  forall p tp,
+    match_prog p tp ->
+    forall NORSP:     RawAsmgen.asm_prog_no_rsp (Globalenvs.Genv.globalenv tp),
+      forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp)
+  /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (RawAsmgen.mono_semantics tp tp).
+Proof.
+  intros p tp M NORSP.
+  assert (F: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics tp)).
+  {
+    eapply cstrategy_semantic_preservation; eauto.
+  }
+  assert (G: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p)
+                                (RawAsmgen.mono_semantics tp tp)).
+  {
+    eapply compose_forward_simulations. apply F.
+    eapply RawAsmgen.transf_program_correct. auto.
+  }
+  split. auto.
+  apply forward_to_backward_simulation.
+  apply factor_forward_simulation. auto. eapply sd_traces. eapply mono_semantics_determinate.
+  apply atomic_receptive. apply Cstrategy.semantics_strongly_receptive.
+  apply mono_semantics_determinate.
+Qed.
+
+Theorem cstrategy_semantic_preservation_raw':
+  forall p tp,
+    match_prog p tp ->
+    forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp)
+    /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (RawAsmgen.mono_semantics tp tp).
+Proof.
+  intros p tp M.
+  eapply cstrategy_semantic_preservation_raw; eauto.
+  unfold match_prog, pass_match in M; simpl in M.
+  repeat DestructM. 
+  red.
+  intros.
+  destruct (Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv p18) b) eqn:?; auto.
+  eapply Asmgenproof.functions_translated in Heqo.
+  destruct Heqo as (tf & FFP & TF); rewrite FFP in H. inv H.
+  destruct f0; simpl in TF; monadInv TF; try congruence.
+  eapply AsmFacts.asmgen_no_change_rsp; eauto.
+  subst; eauto.
+  eapply match_program_no_more_functions in Heqo; eauto. subst. congruence.
+Qed.
+
 Theorem c_semantic_preservation:
   forall p tp,
   match_prog p tp ->
@@ -486,6 +567,21 @@ Proof.
   apply Csem.semantics_single_events.
   eapply ssr_well_behaved; eapply Cstrategy.semantics_strongly_receptive.
   exact (proj2 (cstrategy_semantic_preservation _ _ H)).
+Qed.
+
+Theorem c_semantic_preservation_raw:
+  forall p tp,
+  match_prog p tp ->
+  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp).
+Proof.
+  intros.
+  apply compose_backward_simulation with (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)).
+  eapply sd_traces; eapply mono_semantics_determinate.
+  apply factor_backward_simulation.
+  apply Cstrategy.strategy_simulation.
+  apply Csem.semantics_single_events.
+  eapply ssr_well_behaved; eapply Cstrategy.semantics_strongly_receptive.
+  exact (proj2 (cstrategy_semantic_preservation_raw' _ _ H)).
 Qed.
 
 (** * Correctness of the CompCert compiler *)
@@ -507,6 +603,15 @@ Theorem transf_c_program_correct:
 Proof.
   intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
 Qed.
+
+Theorem transf_c_program_correct_raw:
+  forall p tp,
+  transf_c_program p = OK tp ->
+  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp).
+Proof.
+  intros. apply c_semantic_preservation_raw. apply transf_c_program_match; auto.
+Qed.
+
 
 (** Here is the separate compilation case.  Consider a nonempty list [c_units]
   of C source files (compilation units), [C1 ,,, Cn].  Assume that every
@@ -538,101 +643,4 @@ Proof.
 Qed.
 
 End WITHEXTERNALCALLS.
-
-Section PERMINJECTCHANGE.
-
-  Context {mem:Type}.
-  Context `{external_calls_prf1: Events.ExternalCalls
-                                   (mem:=mem)
-                                  (injperm:= Memtype.inject_perm_all)
-                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
-  Context `{external_calls_prf2: Events.ExternalCalls
-                                   (mem:=mem)
-                                  (injperm:= Memtype.inject_perm_upto_writable)
-                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
-
-
-  Context `{enable_builtins_1: !Events.EnableBuiltins
-                                (injperm:= Memtype.inject_perm_all) mem external_calls_ops}.
-  Context `{enable_builtins_2: !Events.EnableBuiltins
-                                (injperm:= Memtype.inject_perm_upto_writable) mem external_calls_ops0}.
-
-
-
-  Lemma alloc_global_change_perm_inject:
-    forall F V l (ge: Globalenvs.Genv.t F V) m,
-      Globalenvs.Genv.alloc_global (memory_model_ops := memory_model_ops) ge m l =
-      Globalenvs.Genv.alloc_global (memory_model_ops := memory_model_ops0) ge m l.
-  Proof.
-    destruct l; simpl; intros.
-    repeat destr.
-  Qed.
-
-  Lemma add_globals_change_perm_inject:
-    forall F V l (ge: Globalenvs.Genv.t F V) m,
-      Globalenvs.Genv.alloc_globals (memory_model_ops := memory_model_ops) ge m l=
-      Globalenvs.Genv.alloc_globals (memory_model_ops := memory_model_ops0) ge m l.
-  Proof.
-    induction l; simpl; intros; eauto.
-  Qed.
-    
-
-  Lemma init_mem_change_perm_inject:
-    forall F V (p: program F V),
-      Globalenvs.Genv.init_mem (injperm := Memtype.inject_perm_all) p =
-      Globalenvs.Genv.init_mem (injperm := Memtype.inject_perm_upto_writable) p.
-  Proof.
-    unfold Globalenvs.Genv.init_mem, Globalenvs.Genv.globalenv.
-    simpl.
-    
-  Qed.
-
-  Lemma fs_change_perm_inject:
-    forall p,
-      forward_simulation
-        (Asm.semantics (external_calls_ops := external_calls_ops) p)
-        (Asm.semantics (external_calls_ops := external_calls_ops0) p).
-  Proof.
-    intros.
-    eapply forward_simulation_step with (match_states := fun s1 s2 =>
-                                           match s1, s2 with
-                                             Asm.State rs1 m1, Asm.State rs2 m2 =>
-                                             rs1 = rs2 /\ m1 = m2
-                                           end).
-    - simpl. reflexivity.
-    - simpl. inversion 1; subst. exists (Asm.State rs0 m0); split; eauto.
-      constructor.
-      Set Printing All.
-      rewrite H0.
-  Qed.
-
-End PERMINJECTCHANGE.
-
-Section WITHEXTERNALCALLS2.
-  Local Existing Instance Events.symbols_inject_instance.
-  Context `{external_calls_prf: Events.ExternalCalls
-                                  (injperm:= Memtype.inject_perm_upto_writable)
-                                  (symbols_inject_instance := Events.symbols_inject_instance) }.
-  Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
-  Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
-
-  Theorem rawasmgen_semantic_preservation:
-    forall p,
-      forward_simulation (Asm.semantics p) (RawAsmgen.mono_semantics p p).
-  Proof.
-    intros; eapply RawAsmgen.transf_program_correct.
-  Admitted.
-
-
-  Theorem complete_semantic_preservation:
-    forall fsr p tp,
-      match_prog p tp ->
-      forward_simulation (Cstrategy.semantics fsr p) (RawAsmgen.mono_semantics tp tp).
-  Proof.
-    intros.
-    eapply compose_forward_simulations.
-    Set Printing All.
-    eapply cstrategy_semantic_preservation.
-    intros; eapply RawAsmgen.transf_program_correct.
-  Admitted.
 

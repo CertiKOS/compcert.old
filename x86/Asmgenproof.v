@@ -28,7 +28,8 @@ Proof.
 Qed.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+  Existing Instance inject_perm_all.
+Context `{external_calls_prf: ExternalCalls}.
 
 Local Existing Instance mem_accessors_default.
 

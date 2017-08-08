@@ -1133,7 +1133,7 @@ let convertFundecl env (sto, id, ty, optinit) =
   let sg = signature_of_type args res cconv in
   let ef =
     if id.name = "malloc" then AST.EF_malloc else
-    if id.name = "free" then AST.EF_free else
+    (* if id.name = "free" then AST.EF_free else *)
     if Str.string_match re_runtime id.name 0 then  AST.EF_runtime(id'', sg) else
     if Str.string_match re_builtin id.name 0
    && List.mem_assoc id.name builtins.Builtins.functions

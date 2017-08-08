@@ -32,7 +32,8 @@ Proof.
 Qed.
 
 Section TRANSLATION.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+  Existing Instance inject_perm_all.
+  Context `{external_calls_prf: ExternalCalls}.
 
 Variable fn_stack_requirements: ident -> Z.
 

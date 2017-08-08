@@ -4,7 +4,7 @@ Require Import Asm.
 Require Import Integers.
 Require Import List.
 Require Import ZArith.
-Require Memimpl.
+(* Require Memimpl. *)
 Require Import Memtype.
 Require Import Memory.
 Require Import Archi.
@@ -17,30 +17,26 @@ Require Import Conventions1.
 Require Import AsmFacts.
 
 Section WITHMEMORYMODEL.
-
-  Class MemoryModelSingleStack {mem} `{memory_model: Mem.MemoryModel mem} :=
-    {
-      size_stack_below:
-        forall m: mem, Memimpl.Mem.size_stack (Memtype.Mem.stack_adt m) < Memimpl.Mem.stack_limit;
-    }.
   
-  Context `{memory_model: MemoryModelSingleStack (injperm := inject_perm_upto_writable)}.
+  Context `{memory_model: Mem.MemoryModel }.
+  Existing Instance inject_perm_upto_writable.
 
   Inductive mono_initial_state {F V} (prog: program F V): state -> Prop :=
   |mis_intro:
      forall rs m m1 bstack m2,
        initial_state prog (State rs m) ->
-       Mem.alloc m 0 (Memimpl.Mem.stack_limit) = (m1,bstack) ->
-       Mem.drop_perm m1 bstack 0 (Memimpl.Mem.stack_limit) Writable = Some m2 ->
+       Mem.alloc m 0 (Mem.stack_limit) = (m1,bstack) ->
+       Mem.drop_perm m1 bstack 0 (Mem.stack_limit) Writable = Some m2 ->
        mono_initial_state prog (State rs m2).
 
   Existing Instance mem_accessors_default.
 
   Context `{external_calls_ops : !ExternalCallsOps mem }.
-  Context `{!EnableBuiltins mem external_calls_ops}.
+  Context `{!EnableBuiltins mem}.
   Existing Instance symbols_inject_instance.
-  Context `{external_calls_props : !ExternalCallsProps mem }.
-
+  Context `{external_calls_props : !ExternalCallsProps mem
+                                    (memory_model_ops := memory_model_ops)
+                                    }.
 
   Variable prog: Asm.program.
   Let ge := Genv.globalenv prog.
@@ -50,7 +46,7 @@ Section WITHMEMORYMODEL.
   Definition current_offset (v: val) :=
     match v with
       Vptr stk ofs => Ptrofs.unsigned ofs
-    | _ => Memimpl.Mem.stack_limit
+    | _ => Mem.stack_limit
     end.
 
   Definition offset_after_alloc (p: Z) fi :=
@@ -123,12 +119,9 @@ Section WITHMEMORYMODEL.
           rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_regs (CR ZF :: CR CF :: CR PF :: CR SF :: CR OF :: nil) (undef_regs (map preg_of destroyed_at_call) rs))) #PC <- (rs RA) #RA <- Vundef ->
           step ge (State rs m) t (State rs' m').
 
-  Hypothesis repr_stack_limit:
-    0 <= Memimpl.Mem.stack_limit <= Ptrofs.max_unsigned.
-
   Lemma size_stack_pos:
     forall {A} (l: list (A*Z)),
-      0 <= Memimpl.Mem.size_stack l.
+      0 <= Memtype.size_stack l.
   Proof.
     induction l; simpl; intros; eauto. omega.
     destruct a.
@@ -144,7 +137,7 @@ Section WITHMEMORYMODEL.
   Definition agree_sp m1 rs2:=
     forall ostack,
       rs2 # RSP = Vptr bstack ostack ->
-      Ptrofs.unsigned ostack = Memimpl.Mem.stack_limit - Memimpl.Mem.size_stack (Mem.stack_adt m1).
+      Ptrofs.unsigned ostack = Mem.stack_limit - Memtype.size_stack (Mem.stack_adt m1).
 
   Definition perm_bstack m2:=
     forall (ofs : Z) (k : perm_kind) (p : permission),
@@ -152,7 +145,7 @@ Section WITHMEMORYMODEL.
 
   Definition perm_bstack_stack_limit m2:=
     forall (ofs : Z) (k : perm_kind),
-      0 <= ofs < Memimpl.Mem.stack_limit ->
+      0 <= ofs < Mem.stack_limit ->
       Mem.perm m2 bstack ofs k Writable.
 
   Definition sp_aligned rs2:=
@@ -168,7 +161,7 @@ Section WITHMEMORYMODEL.
       inject_stack j nil
   | inject_stack_cons j l b fi:
       inject_stack j l ->
-      j b = Some (bstack, Memimpl.Mem.stack_limit - Memimpl.Mem.size_stack l - align (Z.max 0 (frame_size fi)) 8) ->
+      j b = Some (bstack, Mem.stack_limit - Memtype.size_stack l - align (Z.max 0 (frame_size fi)) 8) ->
       inject_stack j ((Some (frame_with_info b (Some fi)),frame_size fi)::l).
 
   Variable init_sp: val.
@@ -201,10 +194,10 @@ Section WITHMEMORYMODEL.
         j b' = Some (bstack, delta') ->
         Mem.perm m b' o k p ->
         ~ ( delta + Z.max 0 (frame_size fi) <= o + delta' < delta + align (Z.max 0 (frame_size fi)) 8).
-  
+
   Inductive match_states: meminj -> Z -> state -> state -> Prop :=
   | match_states_intro:
-      forall j (rs: regset) m (rs': regset) m'
+      forall j (rs: regset) (m: mem) (rs': regset) m'
         (MINJ: Mem.inject j m m')
         (RSPzero: forall b o, rs # RSP = Vptr b o -> o = Ptrofs.zero )
         (RINJ: forall r, Val.inject j (rs # r) (rs' # r))
@@ -254,8 +247,6 @@ Section WITHMEMORYMODEL.
   Qed.
 
 
-  Hypothesis stack_limit_divides:
-    (8 | Memimpl.Mem.stack_limit).
 
 
   Lemma perm_stack_inv:
@@ -535,7 +526,7 @@ Section WITHMEMORYMODEL.
         get_assoc l b = Some fi ->
         exists l1 l2,
           l = l1 ++ l2 /\
-          j b = Some (bstack, Memimpl.Mem.stack_limit - Memimpl.Mem.size_stack l2).
+          j b = Some (bstack, Mem.stack_limit - Memtype.size_stack l2).
   Proof.
     induction 1; simpl; intros; eauto.
     congruence.
@@ -556,7 +547,7 @@ Section WITHMEMORYMODEL.
 
   Lemma size_stack_app:
     forall {A} (l1 l2: list (A * Z)),
-      Memimpl.Mem.size_stack (l1 ++ l2) = Memimpl.Mem.size_stack l1 + Memimpl.Mem.size_stack l2.
+      Memtype.size_stack (l1 ++ l2) = Memtype.size_stack l1 + Memtype.size_stack l2.
   Proof.
     induction l1; simpl; intros; eauto.
     destruct a.
@@ -705,7 +696,7 @@ Section WITHMEMORYMODEL.
     intros j ostack m1 rs1 rs1' fi b m1' m2 m3 m4 m5 MS ALLOC STORE_PARENT STORE_RETADDR RSB REPRlink REPRretaddr curofs newostack rs2 rs2'.
     inv MS.
     assert (RSPDEC: (rs1' RSP = Vptr bstack ostack0 /\ curofs = Ptrofs.unsigned ostack0)
-                    \/ (~ is_ptr (rs1' RSP) /\ curofs = Memimpl.Mem.stack_limit /\ Mem.stack_adt m1 = nil)).
+                    \/ (~ is_ptr (rs1' RSP) /\ curofs = Mem.stack_limit /\ Mem.stack_adt m1 = nil)).
     {
       destruct (is_ptr_dec (rs1' RSP)).
       left; destruct (rs1' RSP) eqn:?; simpl in *; try easy.
@@ -721,7 +712,7 @@ Section WITHMEMORYMODEL.
     assert (REPRcur: align (Z.max 0 (frame_size fi)) 8 <= curofs <= Ptrofs.max_unsigned).
     {
       generalize (align_le (Z.max 0 (frame_size fi)) 8) (Z.le_max_l 0 (frame_size fi)).
-      generalize (size_stack_below m5).
+      generalize (Mem.size_stack_below m5).
       erewrite Mem.record_stack_blocks_stack_adt. 2: eauto.
       simpl.
       erewrite Mem.store_stack_blocks. 2: simpl in *; eauto.
@@ -730,8 +721,11 @@ Section WITHMEMORYMODEL.
       destruct (RSPDEC) as [[EQRSP ?]|[NOPTR [EQ NIL]]]; subst.
       unfold curofs, current_offset. rewrite EQRSP. erewrite AGSP; eauto.
       generalize (size_stack_pos (Mem.stack_adt m1)); intros.
-      omega. 
-      rewrite EQ, NIL. simpl. omega.
+      generalize (Mem.stack_limit_range).
+      omega.
+      rewrite EQ, NIL. simpl.
+      generalize (Mem.stack_limit_range).
+      omega.
     }
     assert (REPR: 0 <= newostack <= Ptrofs.max_unsigned).
     {
@@ -771,7 +765,7 @@ Section WITHMEMORYMODEL.
       apply Z.divide_sub_r.
       destruct (RSPDEC) as [[EQRSP ?]|[NOPTR [EQ NIL]]]; subst. 
       rewrite H0. apply SPAL; auto.
-      rewrite EQ. auto.
+      rewrite EQ. apply Mem.stack_limit_aligned.
       apply align_divides. omega.
     }
     trim A.
@@ -875,7 +869,7 @@ Section WITHMEMORYMODEL.
       apply Z.divide_sub_r.
       destruct (RSPDEC) as [[EQRSP ?]|[NOPTR [EQRSP NIL]]]; subst. 
       rewrite H; apply SPAL; auto.
-      rewrite EQRSP. auto.
+      rewrite EQRSP. apply Mem.stack_limit_aligned.
       apply align_divides. omega.
     - red. intros ofs k p PERM.
       repeat rewrite_perms_bw PERM. eauto.
@@ -945,8 +939,8 @@ Section WITHMEMORYMODEL.
           rewrite Z.max_r in * by omega.
           unfold offset_after_alloc.
           rewrite Z.max_r by omega.
-          cut (Memimpl.Mem.size_stack (Mem.stack_adt m1) 
-               >= Memimpl.Mem.size_stack l2).
+          cut (Memtype.size_stack (Mem.stack_adt m1) 
+               >= Memtype.size_stack l2).
           generalize (align_le (frame_size fi) 8). omega.
           rewrite EQADT.
           rewrite size_stack_app.
@@ -1060,7 +1054,7 @@ Section WITHMEMORYMODEL.
   Qed.
 
   Lemma size_stack_divides {A} (l: list (A*Z)):
-    (8 | Memimpl.Mem.size_stack l).
+    (8 | Memtype.size_stack l).
   Proof.
     induction l; simpl; intros; eauto.
     exists 0; omega.
@@ -1234,10 +1228,11 @@ Section WITHMEMORYMODEL.
         generalize (Mem.unrecord_stack_adt _ _ Heqo2).
         erewrite Mem.free_stack_blocks. 2: eauto. rewrite Heql. intros (bb0 & EQ).
         inv EQ.
-        assert (0 <= Memimpl.Mem.stack_limit - Memimpl.Mem.size_stack (Mem.stack_adt m1') <= Ptrofs.max_unsigned) as RNGnewofs. 
+        assert (0 <= Mem.stack_limit - Memtype.size_stack (Mem.stack_adt m1') <= Ptrofs.max_unsigned) as RNGnewofs. 
         {
-          generalize (size_stack_below m1').
+          generalize (Mem.size_stack_below m1').
           generalize (size_stack_pos (Mem.stack_adt m1')).
+          generalize (Mem.stack_limit_range).
           omega.
         }
         assert (0 <= newostack <= Ptrofs.max_unsigned) as RNGnew.
@@ -1282,7 +1277,7 @@ Section WITHMEMORYMODEL.
           rewrite Ptrofs.unsigned_repr. rewrite Heql in AGSP. simpl in AGSP.
           apply Z.divide_sub_r.
           apply Z.divide_sub_r.
-          auto.
+          apply Mem.stack_limit_aligned.
           apply size_stack_divides.
           apply align_divides; omega.
           simpl in RNGnewofs. omega.
@@ -2079,11 +2074,6 @@ Section WITHMEMORYMODEL.
 
 End PRESERVATION.
 
-  Hypothesis repr_stack_limit:
-    0 <= Memimpl.Mem.stack_limit <= Ptrofs.max_unsigned.
-
-  Hypothesis align_stack_limit:
-    (8 | Memimpl.Mem.stack_limit).
 
 
   Lemma match_initial_states s:
@@ -2092,7 +2082,7 @@ End PRESERVATION.
                         mono_initial_state prog s'.
   Proof.
     inversion 1. subst.
-    destruct (Mem.alloc m0 0 Memimpl.Mem.stack_limit) as [m1 bstack0] eqn:ALLOC.
+    destruct (Mem.alloc m0 0 Mem.stack_limit) as [m1 bstack0] eqn:ALLOC.
     assert (bstack = bstack0).
     {
       unfold bstack.
@@ -2148,13 +2138,13 @@ End PRESERVATION.
       unfold rs0.
       rewrite Pregmap.gss. inversion 1.
     - red. intros.
-      assert (0 <= ofs < Memimpl.Mem.stack_limit).
+      assert (0 <= ofs < Mem.stack_limit).
       {
         eapply Mem.perm_drop_4 in H1; eauto.
         eapply Mem.perm_alloc_3 in H1. 2: eauto. auto.
       }
       exploit Mem.perm_drop_2; eauto. intros.
-      split; auto. split. omega. eapply Z.lt_le_trans. apply H2. apply repr_stack_limit.
+      split; auto. split. omega. eapply Z.lt_le_trans. apply H2. apply Mem.stack_limit_range.
     - red; intros.
       eapply Mem.perm_drop_1; eauto.
     - red.

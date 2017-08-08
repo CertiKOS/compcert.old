@@ -35,8 +35,8 @@ Qed.
 End WITHROMEMFOR.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
-
+Context `{external_calls_prf: ExternalCalls}.
+Existing Instance inject_perm_all.
 Variable fn_stack_requirements: ident -> Z.
 
 Variable prog: program.

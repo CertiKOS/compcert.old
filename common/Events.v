@@ -716,7 +716,7 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
-  ec_mem_extends:
+  ec_mem_extends {perminj: InjectPerm}:
     forall ge vargs m1 t vres m2 m1' vargs',
     sem ge vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
@@ -729,7 +729,7 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** External calls must commute with memory injections,
   in the following sense. *)
-  ec_mem_inject:
+  ec_mem_inject {perminj: InjectPerm}:
     forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
     symbols_inject' f ge1 ge2 ->
     sem ge1 vargs m1 t vres m2 ->
@@ -811,7 +811,7 @@ Proof.
   rewrite C; auto.
 Qed.
 
-Lemma volatile_load_extends:
+Lemma volatile_load_extends{perminj: InjectPerm}:
   forall ge chunk m b ofs t v m',
   volatile_load ge chunk m b ofs t v ->
   Mem.extends m m' ->
@@ -822,7 +822,7 @@ Proof.
   exploit Mem.load_extends; eauto. intros [v' [A B]]. exists v'; split; auto. constructor; auto.
 Qed.
 
-Lemma volatile_load_inject:
+Lemma volatile_load_inject {perminj: InjectPerm}:
   forall ge1 ge2 f chunk m b ofs t v b' ofs' m',
   symbols_inject f ge1 ge2 ->
   volatile_load ge1 chunk m b ofs t v ->
@@ -878,14 +878,11 @@ Proof.
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
   exists v'; exists m1'; intuition. constructor; auto.
-  apply Mem.unchanged_on_refl.
 (* mem injects *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0. inv H2. inv H7. inversion H5; subst.
   exploit volatile_load_inject; eauto. intros [v' [A B]].
   exists f; exists v'; exists m1'; intuition. constructor; auto.
-  apply Mem.unchanged_on_refl.
-  apply Mem.unchanged_on_refl.
   red; intros. congruence.
 (* trace length *)
 - inv H; inv H0; simpl; omega.
@@ -945,7 +942,7 @@ Qed.
 
 
 
-Lemma volatile_store_extends:
+Lemma volatile_store_extends {perminj: InjectPerm}:
   forall ge chunk m1 b ofs v t m2 m1' v',
     volatile_store ge chunk m1 b ofs v t m2 ->
     Mem.extends m1 m1' ->
@@ -959,7 +956,6 @@ Proof.
   - econstructor; split. econstructor; eauto.
     eapply eventval_match_lessdef; eauto. apply Val.load_result_lessdef; auto.
     split; auto with mem.
-    apply Mem.unchanged_on_refl.
   - exploit Mem.store_within_extends; eauto. intros [m2' [A B]].
     exists m2'; repeat (split; auto).
     + econstructor; eauto.
@@ -973,7 +969,7 @@ Proof.
       tauto.
 Qed.
 
-Lemma volatile_store_inject:
+Lemma volatile_store_inject {perminj: InjectPerm}:
   forall ge1 ge2 f chunk m1 b ofs v t m2 m1' b' ofs' v',
   symbols_inject f ge1 ge2 ->
   volatile_store ge1 chunk m1 b ofs v t m2 ->
@@ -995,8 +991,6 @@ Proof.
   constructor; auto. erewrite S; eauto.
   eapply eventval_match_inject; eauto. apply Val.load_result_inject. auto.
   intuition auto with mem.
-  apply Mem.unchanged_on_refl.
-  apply Mem.unchanged_on_refl.
 - (* normal store *)
   inversion AI; subst.
   assert (Mem.storev chunk m1 (Vptr b ofs) v = Some m2). simpl; auto.
@@ -1466,15 +1460,12 @@ Proof.
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_lessdef; eauto.
-  apply Mem.unchanged_on_refl.
 (* mem injects *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
-  apply Mem.unchanged_on_refl.
-  apply Mem.unchanged_on_refl.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
@@ -1519,15 +1510,12 @@ Proof.
   exists v2; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
-  apply Mem.unchanged_on_refl.
 (* mem inject *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0. inv H2. inv H7.
   exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
-  apply Mem.unchanged_on_refl.
-  apply Mem.unchanged_on_refl.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
@@ -1569,14 +1557,11 @@ Proof.
 - inv H.
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
-  apply Mem.unchanged_on_refl.
 (* mem injects *)
 - apply symbols_inject'_symbols_inject in H.
   inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
-  apply Mem.unchanged_on_refl.
-  apply Mem.unchanged_on_refl.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
@@ -1628,7 +1613,7 @@ Class ExternalCallsProps mem `{external_calls_ops: ExternalCallsOps mem}
   inline_assembly_properties:
     forall id sg, extcall_properties (inline_assembly_sem id sg) sg
 }.
-Global Arguments ExternalCallsProps _ {_ _ _ _ }.
+Global Arguments ExternalCallsProps _ {_ _ _ _}.
 
 Class EnableBuiltins mem `{ExternalCallsOps mem}: Type :=
   {
@@ -1644,9 +1629,8 @@ Definition builtin_enabled `{enable_builtin_instance: EnableBuiltins} (ec: exter
 
 Hint Unfold builtin_enabled.
 
-Class ExternalCalls 
+Class ExternalCalls
       mem
-      `{injperm: InjectPerm}
       `{memory_model_ops: !Mem.MemoryModelOps mem}
       `{external_calls_ops: !ExternalCallsOps mem}
       `{memory_model_prf: !Mem.MemoryModel mem}
@@ -1656,7 +1640,7 @@ Class ExternalCalls
   : Type :=
   {
   }.
-Global Arguments ExternalCalls mem { injperm memory_model_ops external_calls_ops enable_builtins_instance  memory_model_prf symbols_inject_instance external_calls_props }.
+Global Arguments ExternalCalls mem { memory_model_ops external_calls_ops memory_model_prf enable_builtins_instance symbols_inject_instance external_calls_props }.
 
 (** ** Combined semantics of external calls *)
 
@@ -1715,8 +1699,8 @@ Definition external_call_symbols_preserved ef := ec_symbols_preserved (external_
 Definition external_call_valid_block ef := ec_valid_block (external_call_spec ef).
 Definition external_call_max_perm ef := ec_max_perm (external_call_spec ef).
 Definition external_call_readonly ef := ec_readonly (external_call_spec ef).
-Definition external_call_mem_extends ef := ec_mem_extends (external_call_spec ef).
-Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec ef).
+Definition external_call_mem_extends {perminj: InjectPerm} ef := ec_mem_extends (external_call_spec ef).
+Definition external_call_mem_inject_gen {perminj: InjectPerm} ef := ec_mem_inject (external_call_spec ef).
 Definition external_call_trace_length ef := ec_trace_length (external_call_spec ef).
 Definition external_call_receptive ef := ec_receptive (external_call_spec ef).
 Definition external_call_determ ef := ec_determ (external_call_spec ef).
@@ -1771,7 +1755,7 @@ Proof.
     exploit C; eauto. intros EQ; subst b2. congruence.
 Qed.
 
-Lemma external_call_mem_inject:
+Lemma external_call_mem_inject {perminj: InjectPerm}:
   forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
   external_call ef ge vargs m1 t vres m2 ->
@@ -1904,7 +1888,7 @@ Variable ge: Senv.t.
 Variables e1 e2: A -> val.
 Variable sp: val.
 Variables m1 m2: mem.
-
+Context {perminj: InjectPerm}.
 Hypothesis env_lessdef: forall x, Val.lessdef (e1 x) (e2 x).
 Hypothesis mem_extends: Mem.extends m1 m2.
 
@@ -1950,7 +1934,7 @@ Section EVAL_BUILTIN_ARG_LESSDEF'.
   Variables sp sp' : val.
   Hypothesis sp_lessdef: Val.lessdef sp sp'.
   Variable m : mem.
-
+  Context {perminj: InjectPerm}.
 
   Lemma eval_builtin_arg_lessdef':
   forall arg v v'
@@ -1991,6 +1975,7 @@ Section EVAL_BUILTIN_ARG_LESSDEF''.
   Variables sp sp' : val.
   Hypothesis sp_lessdef: Val.lessdef sp sp'.
   Variables m m' : mem.
+  Context {perminj: InjectPerm}.
   Hypotheses MEXT:  Mem.extends m m'.
 
 
@@ -2047,6 +2032,7 @@ Variable j: meminj.
 
 Hypothesis sp_inject: Val.inject j sp1 sp2.
 Hypothesis env_inject: forall x, Val.inject j (e1 x) (e2 x).
+Context {perminj: InjectPerm}.
 Hypothesis mem_extends: Mem.inject j m1 m2.
 
 Hypothesis senv_preserved:

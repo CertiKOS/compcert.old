@@ -358,7 +358,8 @@ Proof.
 Qed.
 
 Section CORRECTNESS.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+Existing Instance inject_perm_all.
+Context `{external_calls_prf: ExternalCalls}.
 Variable fn_stack_requirements: ident -> Z.
 Variable prog: CminorSel.program.
 Variable tprog: RTL.program.

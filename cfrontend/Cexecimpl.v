@@ -74,6 +74,7 @@ Proof.
 Qed.
 
 Local Existing Instance Events.symbols_inject_instance.
+Existing Instance Memory.inject_perm_all.
 
 Axiom external_functions_properties:
   forall id sg, Events.extcall_properties (external_functions_sem id sg) sg.
@@ -144,7 +145,7 @@ Proof.
   + split; intros; edestruct inline_assembly_sem_empty; eauto.
 Qed.
 
-Local Instance enable_builtins_instance: !Events.EnableBuiltins (injperm:= Memtype.inject_perm_all) Memimpl.Mem.mem.
+Local Instance enable_builtins_instance: !Events.EnableBuiltins Memimpl.Mem.mem.
 Proof.
   constructor.
   exact true.

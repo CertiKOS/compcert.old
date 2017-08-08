@@ -46,8 +46,8 @@ let mkef sg toks =
       EF_vstore c
   | [EFT_tok "malloc"] ->
       EF_malloc
-  | [EFT_tok "free"] ->
-      EF_free
+  (* | [EFT_tok "free"] -> *)
+  (*     EF_free *)
   | [EFT_tok "memcpy"; EFT_tok "size"; EFT_int sz; EFT_tok "align"; EFT_int al] ->
       EF_memcpy(Z.of_sint32 sz, Z.of_sint32 al)
   | [EFT_tok "annot"; EFT_string txt] ->

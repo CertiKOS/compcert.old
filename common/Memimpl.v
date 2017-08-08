@@ -63,15 +63,9 @@ Definition perm_order'' (po1 po2: option permission) :=
   | None, Some _ => False
  end.
 
-Fixpoint size_stack {A} (l: list (A * Z)) : Z :=
-  match l with
-    nil => 0
-  | (a,n)::r => size_stack r + align (Z.max 0 n) 8
-  end.
 
-Parameter stack_limit: Z.
-Axiom stack_limit_pos: 0 < stack_limit.
-
+Let stack_limit: Z := 4096.
+(* Axiom stack_limit_pos: 0 < stack_limit. *)
 
 Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
@@ -521,7 +515,7 @@ Next Obligation.
   easy.
 Qed.
 Next Obligation.
-  apply stack_limit_pos.
+  unfold stack_limit. omega.
 Qed. 
 (** Allocation of a fresh block with the given bounds.  Return an updated
   memory state and the address of the fresh block, which initially contains
@@ -1122,7 +1116,7 @@ Proof.
   exact storebytes.
   exact drop_perm.
   exact nextblock.
-  (* exact perm. *)
+  exact perm.
   exact valid_pointer.
   exact @extends.
   exact @magree.
@@ -1133,8 +1127,7 @@ Proof.
   exact stack_adt.
   exact record_stack_blocks.
   exact unrecord_stack_block.
-  Unshelve.
-  exact perm.
+  exact stack_limit.
 Defined.
 
 Section WITHINJPERM.
@@ -7356,6 +7349,8 @@ Proof.
   red; intros. eapply drop_perm_stack_adt; simpl; eauto. 
 Qed.
 
+End WITHINJPERM.
+
 Local Instance memory_model_prf:
   MemoryModel mem.
 Proof.
@@ -7482,145 +7477,147 @@ Proof.
   exact perm_drop_4.
   exact loadbytes_drop.
   exact load_drop.
-  exact extends_refl.
-  exact load_extends.
-  exact loadv_extends.
-  exact loadbytes_extends.
-  exact store_within_extends.
-  exact store_outside_extends.
-  exact storev_extends.
-  exact storebytes_within_extends.
-  exact storebytes_outside_extends.
-  exact alloc_extends.
-  exact free_left_extends.
-  exact free_right_extends.
-  exact free_parallel_extends.
-  exact valid_block_extends.
-  exact perm_extends.
-  exact valid_access_extends.
-  exact valid_pointer_extends.
-  exact weak_valid_pointer_extends.
-  exact ma_perm.
-  exact magree_monotone.
-  exact mextends_agree.
-  exact magree_extends.
-  exact magree_loadbytes.
-  exact magree_load.
-  exact magree_storebytes_parallel.
-  exact magree_storebytes_left.
-  exact magree_store_left.
-  exact magree_free.
-  exact magree_valid_access.
-  exact mi_no_overlap.
-  exact delta_pos.
-  exact valid_block_inject_1.
-  exact valid_block_inject_2.
-  exact perm_inject.
-  exact range_perm_inject.
-  exact valid_access_inject.
-  exact valid_pointer_inject.
-  exact weak_valid_pointer_inject.
-  exact address_inject.
-  exact address_inject' .
-  exact valid_pointer_inject_no_overflow.
-  exact weak_valid_pointer_inject_no_overflow.
-  exact valid_pointer_inject_val.
-  exact weak_valid_pointer_inject_val.
-  exact inject_no_overlap.
-  exact different_pointers_inject.
-  exact disjoint_or_equal_inject.
-  exact aligned_area_inject.
-  exact load_inject.
-  exact loadv_inject.
-  exact loadbytes_inject.
-  exact store_mapped_inject.
-  exact store_unmapped_inject.
-  exact store_outside_inject.
-  exact storev_mapped_inject.
-  exact storebytes_mapped_inject.
-  exact storebytes_unmapped_inject.
-  exact storebytes_outside_inject.
-  exact storebytes_empty_inject.
-  exact alloc_right_inject.
-  exact alloc_left_unmapped_inject.
-  exact alloc_left_mapped_inject.
-  exact alloc_parallel_inject.
-  exact free_inject.
-  exact free_left_inject.
-  exact free_list_left_inject.
-  exact free_right_inject.
-  exact free_parallel_inject.
-  exact drop_outside_inject.
-  exact self_inject.
+  intros; eapply extends_refl; eauto.
+  intros; eapply load_extends; eauto.
+  intros; eapply loadv_extends; eauto.
+  intros; eapply loadbytes_extends; eauto.
+  intros; eapply store_within_extends; eauto.
+  intros; eapply store_outside_extends; eauto.
+  intros; eapply storev_extends; eauto.
+  intros; eapply storebytes_within_extends; eauto.
+  intros; eapply storebytes_outside_extends; eauto.
+  intros; eapply alloc_extends; eauto.
+  intros; eapply free_left_extends; eauto.
+  intros; eapply free_right_extends; eauto.
+  intros; eapply free_parallel_extends; eauto.
+  intros; eapply valid_block_extends; eauto.
+  intros; eapply perm_extends; eauto.
+  intros; eapply valid_access_extends; eauto.
+  intros; eapply valid_pointer_extends; eauto.
+  intros; eapply weak_valid_pointer_extends; eauto.
+  intros; eapply ma_perm; eauto.
+  intros; eapply magree_monotone; eauto.
+  intros; eapply mextends_agree; eauto.
+  intros; eapply magree_extends; eauto.
+  intros; eapply magree_loadbytes; eauto.
+  intros; eapply magree_load; eauto.
+  intros; eapply magree_storebytes_parallel; eauto.
+  intros; eapply magree_storebytes_left; eauto.
+  intros; eapply magree_store_left; eauto.
+  intros; eapply magree_free; eauto.
+  intros; eapply magree_valid_access; eauto.
+  intros; eapply mi_no_overlap; eauto.
+  intros; eapply delta_pos; eauto.
+  intros; eapply valid_block_inject_1; eauto.
+  intros; eapply valid_block_inject_2; eauto.
+  intros; eapply perm_inject; eauto.
+  intros; eapply range_perm_inject; eauto.
+  intros; eapply valid_access_inject; eauto.
+  intros; eapply valid_pointer_inject; eauto.
+  intros; eapply weak_valid_pointer_inject; eauto.
+  intros; eapply address_inject; eauto.
+  intros; eapply address_inject' ; eauto.
+  intros; eapply valid_pointer_inject_no_overflow; eauto.
+  intros; eapply weak_valid_pointer_inject_no_overflow; eauto.
+  intros; eapply valid_pointer_inject_val; eauto.
+  intros; eapply weak_valid_pointer_inject_val; eauto.
+  intros; eapply inject_no_overlap; eauto.
+  intros; eapply different_pointers_inject; eauto.
+  intros; eapply disjoint_or_equal_inject; eauto.
+  intros; eapply aligned_area_inject; eauto.
+  intros; eapply load_inject; eauto.
+  intros; eapply loadv_inject; eauto.
+  intros; eapply loadbytes_inject; eauto.
+  intros; eapply store_mapped_inject; eauto.
+  intros; eapply store_unmapped_inject; eauto.
+  intros; eapply store_outside_inject; eauto.
+  intros; eapply storev_mapped_inject; eauto.
+  intros; eapply storebytes_mapped_inject; eauto.
+  intros; eapply storebytes_unmapped_inject; eauto.
+  intros; eapply storebytes_outside_inject; eauto.
+  intros; eapply storebytes_empty_inject; eauto.
+  intros; eapply alloc_right_inject; eauto.
+  intros; eapply alloc_left_unmapped_inject; eauto.
+  intros; eapply alloc_left_mapped_inject; eauto.
+  intros; eapply alloc_parallel_inject; eauto.
+  intros; eapply free_inject; eauto.
+  intros; eapply free_left_inject; eauto.
+  intros; eapply free_list_left_inject; eauto.
+  intros; eapply free_right_inject; eauto.
+  intros; eapply free_parallel_inject; eauto.
+  intros; eapply drop_outside_inject; eauto.
+  intros; eapply self_inject; eauto.
   {
     intros; eapply mi_stack_blocks. inv H; auto.
   }
   {
     intros; eapply mi_stack_blocks. inv H; auto.
   }
-  exact extends_inject_compose.
-  exact extends_extends_compose.
-  exact neutral_inject.
-  exact empty_inject_neutral.
+  intros; eapply extends_inject_compose; eauto.
+  intros; eapply extends_extends_compose; eauto.
+  intros; eapply neutral_inject; eauto.
+  intros; eapply empty_inject_neutral; eauto.
   reflexivity.
-  exact alloc_inject_neutral.
-  exact store_inject_neutral.
-  exact drop_inject_neutral.
-  exact drop_perm_stack_adt.
+  intros; eapply alloc_inject_neutral; eauto.
+  intros; eapply store_inject_neutral; eauto.
+  intros; eapply drop_inject_neutral; eauto.
+  intros; eapply drop_perm_stack_adt; eauto.
   tauto.
-  exact unchanged_on_nextblock.
-  exact unchanged_on_refl.
-  exact unchanged_on_trans.
-  exact unchanged_on_trans.
-  exact perm_unchanged_on.
-  exact perm_unchanged_on_2.
-  exact loadbytes_unchanged_on_1.
-  exact loadbytes_unchanged_on.
-  exact load_unchanged_on_1.
-  exact load_unchanged_on.
-  exact store_unchanged_on.
-  exact storebytes_unchanged_on.
-  exact alloc_unchanged_on.
-  exact free_unchanged_on.
-  exact drop_perm_unchanged_on.
-  exact unchanged_on_implies.
-  exact unchanged_on_implies.
-  exact inject_unchanged_on.
-  exact store_no_abstract.
-  exact storebytes_no_abstract.
-  exact alloc_no_abstract.
-  exact free_no_abstract.
-  exact freelist_no_abstract.
-  exact drop_perm_no_abstract.
+  intros; eapply unchanged_on_nextblock; eauto.
+  intros; eapply unchanged_on_refl; eauto.
+  intros; eapply unchanged_on_trans; eauto.
+  intros; eapply unchanged_on_trans; eauto.
+  intros; eapply perm_unchanged_on; eauto.
+  intros; eapply perm_unchanged_on_2; eauto.
+  intros; eapply loadbytes_unchanged_on_1; eauto.
+  intros; eapply loadbytes_unchanged_on; eauto.
+  intros; eapply load_unchanged_on_1; eauto.
+  intros; eapply load_unchanged_on; eauto.
+  intros; eapply store_unchanged_on; eauto.
+  intros; eapply storebytes_unchanged_on; eauto.
+  intros; eapply alloc_unchanged_on; eauto.
+  intros; eapply free_unchanged_on; eauto.
+  intros; eapply drop_perm_unchanged_on; eauto.
+  intros; eapply unchanged_on_implies; eauto.
+  intros; eapply unchanged_on_implies; eauto.
+  intros; eapply inject_unchanged_on; eauto.
+  intros; eapply store_no_abstract; eauto.
+  intros; eapply storebytes_no_abstract; eauto.
+  intros; eapply alloc_no_abstract; eauto.
+  intros; eapply free_no_abstract; eauto.
+  intros; eapply freelist_no_abstract; eauto.
+  intros; eapply drop_perm_no_abstract; eauto.
   {
     simpl. intros. eapply record_stack_block_inject'; simpl in *; eauto.
     destruct fi1, fi2; eauto.
   }
   { intros; eapply record_stack_blocks_extends; eauto. }
-  exact record_stack_block_mem_unchanged.
+  intros; eapply record_stack_block_mem_unchanged; eauto.
   {
     simpl; intros.
     unfold record_stack_blocks, add_adt in H. autospe. reflexivity.
   }
-  exact record_stack_blocks_inject_neutral.
+  intros; eapply record_stack_blocks_inject_neutral; eauto.
   intros; eapply unrecord_stack_block_inject; eauto.
-  exact unrecord_stack_block_extends.
-  exact unrecord_stack_block_mem_unchanged.
-  exact unrecord_stack_adt.
-  exact unrecord_stack_block_succeeds.
-  exact unrecord_stack_block_inject_neutral.
-  exact strong_non_private_stack_access_extends.
+  intros; eapply unrecord_stack_block_extends; eauto.
+  intros; eapply unrecord_stack_block_mem_unchanged; eauto.
+  intros; eapply unrecord_stack_adt; eauto.
+  intros; eapply unrecord_stack_block_succeeds; eauto.
+  intros; eapply unrecord_stack_block_inject_neutral; eauto.
+  intros; eapply strong_non_private_stack_access_extends; eauto.
   intros; eapply strong_non_private_stack_access_inject; eauto.
-  exact strong_non_private_stack_access_magree.
-  exact not_in_frames_extends.
-  exact not_in_frames_inject.
-  exact in_frames_valid.
-  exact is_stack_top_extends.
-  exact is_stack_top_inject.
+  intros; eapply strong_non_private_stack_access_magree; eauto.
+  intros; eapply not_in_frames_extends; eauto.
+  intros; eapply not_in_frames_inject; eauto.
+  intros; eapply in_frames_valid; eauto.
+  intros; eapply is_stack_top_extends; eauto.
+  intros; eapply is_stack_top_inject; eauto.
+  simpl. vm_compute. intuition congruence.
+  simpl. unfold stack_limit. exists 512; omega.
+  intros. simpl. eapply stack_below_limit. 
   Unshelve. eauto.
 Qed.
 
-End WITHINJPERM.
 
 End Mem.
 

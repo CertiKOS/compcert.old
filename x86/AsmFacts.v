@@ -24,7 +24,7 @@ Section WITHMEMORYMODEL.
   Existing Instance mem_accessors_default.
 
   Context `{external_calls_ops: !ExternalCallsOps mem}
-          `{enable_builtins_instance: EnableBuiltins (injperm:=injperm) (memory_model_ops:=memory_model_ops) mem}.
+          `{enable_builtins_instance: EnableBuiltins (memory_model_ops:=memory_model_ops) mem}.
 
   Definition is_unchanged (i: instruction) :=
     match i with

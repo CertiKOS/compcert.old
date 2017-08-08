@@ -111,9 +111,10 @@ Qed.
 (** * Correctness of the instruction selection functions for expressions *)
 
 Section PRESERVATION.
+  Existing Instance inject_perm_all.
 
 Variable fn_stack_requirements: ident -> Z.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+Context `{external_calls_prf: ExternalCalls}.
 Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: Cminor.program.

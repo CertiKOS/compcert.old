@@ -247,7 +247,8 @@ Program Definition romem_for_wp_instance: ROMemFor :=
 (** * Soundness proof *)
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
+  Existing Instance inject_perm_all.
+  Context `{external_calls_prf: ExternalCalls}.
 
 (** Properties of the dataflow solution. *)
 
@@ -273,7 +274,7 @@ Proof.
   split. auto.
   split. eapply ematch_ge; eauto. apply ematch_init; auto.
   destruct external_calls_prf.
-  auto.
+  eauto.
 - exists AE.top, mtop.
   split. apply PMap.gi.
   split. apply ematch_ge with (einit_regs (fn_params f)).

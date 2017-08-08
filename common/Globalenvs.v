@@ -699,6 +699,7 @@ End GENV.
 
 Section WITHMEMORYMODEL.
 Context `{memory_model_prf: Mem.MemoryModel}.
+Context {injperm: InjectPerm}.
 
 Variable F: Type.  (**r The type of function descriptions *)
 Variable V: Type.  (**r The type of information attached to variables *)

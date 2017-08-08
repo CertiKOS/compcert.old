@@ -48,7 +48,7 @@ Definition make_env (b: bounds) : frame_env :=
      fe_used_callee_save := b.(used_callee_save) |}.
 
 Section WITHMEM.
-  Context `{memory_model_prf: Mem.MemoryModel (injperm:=inject_perm_all)}.
+  Context `{memory_model_prf: Mem.MemoryModel}.
   Lemma frame_env_separated:
     forall b sp (m: mem) P,
       let fe := make_env b in

@@ -50,7 +50,7 @@ Local Notation magree_storebytes_left := Mem.magree_storebytes_left.
 Local Notation mextends_agree := Mem.mextends_agree.
 
 Lemma magree_store_parallel:
-  forall `{memory_model_prf: Mem.MemoryModel},
+  forall `{memory_model_prf: Mem.MemoryModel} {injperm: InjectPerm},
   forall m1 m2 (P Q: locset) chunk b ofs v1 m1' v2,
   magree m1 m2 P ->
   Mem.store chunk m1 b ofs v1 = Some m1' ->
@@ -175,7 +175,8 @@ Qed.
 (** * Basic properties of the translation *)
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+Context `{external_calls_prf: ExternalCalls}.
+Existing Instance inject_perm_all.
 
 Variable prog: program.
 Variable tprog: program.

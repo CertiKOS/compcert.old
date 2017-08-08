@@ -29,7 +29,7 @@ Export Memtype.Mem.
 
 Class MemoryModelX (mem: Type) `{memory_model_prf: MemoryModel mem}: Prop :=
 {
- zero_delta_inject f m1 m2:
+ zero_delta_inject f m1 m2 {injperm: InjectPerm}:
   (forall b1 b2 delta, f b1 = Some (b2, delta) -> delta = 0) ->
   (forall b1 b2, f b1 = Some (b2, 0) -> valid_block m1 b1 /\ valid_block m2 b2) ->
   (forall b1 p, f b1 = Some p -> forall b2, f b2 = Some p -> b1 = b2) ->
@@ -529,7 +529,8 @@ Qed.
 
 Section WITHEXTERNALCALLS.
 Local Existing Instance symbols_inject_instance.
-Context `{external_calls_prf: ExternalCalls (symbols_inject_instance := symbols_inject_instance) (injperm:= inject_perm_all)}.
+Existing Instance inject_perm_all.
+Context `{external_calls_prf: ExternalCalls (symbols_inject_instance := symbols_inject_instance)}.
 Context `{memory_model_x_prf: !Mem.MemoryModelX mem}.
 
 Variable fn_stack_requirements: ident -> Z.

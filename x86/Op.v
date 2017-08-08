@@ -1286,7 +1286,7 @@ End EVAL_COMPAT.
 
 Section EVAL_LESSDEF.
 Context `{memory_model_prf: Mem.MemoryModel}.
-
+Context {injperm: InjectPerm}.
 Variable F V: Type.
 Variable genv: Genv.t F V.
 
@@ -1393,6 +1393,7 @@ End EVAL_LESSDEF.
 
 Section EVAL_INJECT.
 Context `{memory_model_prf: Mem.MemoryModel}.
+Context {injperm: InjectPerm}.
 
 Variable F V: Type.
 Variable genv: Genv.t F V.

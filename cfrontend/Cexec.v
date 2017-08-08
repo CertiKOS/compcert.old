@@ -86,7 +86,7 @@ Proof.
 Defined.
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+Context `{external_calls_prf: ExternalCalls}.
 
 (** * Events, volatile memory accesses, and external functions. *)
 

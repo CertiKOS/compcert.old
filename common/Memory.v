@@ -43,21 +43,15 @@ Require Export Memtype.
 Local Unset Elimination Schemes.
 Local Unset Case Analysis Schemes.
 
-Instance inject_perm_upto_writable: InjectPerm :=
-  {
+Program Definition inject_perm_upto_writable: InjectPerm :=
+  {|
     inject_perm_condition := fun p => perm_order Writable p
-  }.
-Proof.
-  tauto.
-Defined.
+  |}.
 
-Instance inject_perm_all: InjectPerm :=
-  {
+Program Definition inject_perm_all: InjectPerm :=
+  {|
     inject_perm_condition := fun p => True
-  }.
-Proof.
-  tauto.
-Defined.
+  |}.
 
 Hint Resolve
   Mem.valid_not_valid_diff

@@ -50,6 +50,7 @@ Hint Extern 2 (_ > _) => xomega : va.
 Hint Extern 2 (_ >= _) => xomega : va.
 
 Section WITHMEMORYMODEL.
+  Existing Instance inject_perm_all.
 Context `{memory_model_prf: Mem.MemoryModel}.
 
 Section MATCH.
@@ -4576,7 +4577,7 @@ Module VA <: SEMILATTICE.
   Proof.
     destruct x, y; simpl; try tauto. intros [A B]; split.
     apply AE.ge_refl; auto.
-    intros. rewrite B; auto.
+    intros. rewrite B; eauto.
   Qed.
   Lemma ge_trans: forall x y z, ge x y -> ge y z -> ge x z.
   Proof.

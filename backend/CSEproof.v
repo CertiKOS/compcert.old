@@ -50,7 +50,9 @@ Definition valu_agree (valu1 valu2: valuation) (upto: valnum) :=
   forall v, Plt v upto -> valu2 v = valu1 v.
 
 Section EXTEN.
-Context `{memory_model_ops: Mem.MemoryModelOps (injperm:= inject_perm_all)}.
+Existing Instance inject_perm_all.
+Context `{memory_model: Mem.MemoryModel}.
+
 
 Variable valu1: valuation.
 Variable upto: valnum.
@@ -109,7 +111,8 @@ End EXTEN.
 Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
 
 Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls (injperm:= inject_perm_all)}.
+Existing Instance inject_perm_all.
+Context `{external_calls_prf: ExternalCalls}.
  
 Lemma valnum_reg_holds:
   forall valu1 ge sp rs m n r n' v,
@@ -483,7 +486,7 @@ Lemma kill_loads_after_store_holds:
 Proof.
   intros. apply kill_equations_hold with m; auto.
   intros. unfold filter_after_store in H6; inv H7.
-- constructor. rewrite <- H8. apply op_depends_on_memory_correct; auto.
+- constructor. rewrite <- H8. eapply op_depends_on_memory_correct; auto.
 - destruct (regs_valnums n vl) as [rl|] eqn:RV; try discriminate.
   econstructor; eauto. rewrite <- H9.
   destruct a; simpl in H1; try discriminate.
@@ -495,6 +498,7 @@ Proof.
   apply match_aptr_of_aval. eapply eval_static_addressing_sound; eauto.
   erewrite <- regs_valnums_sound by eauto. eauto with va.
   apply match_aptr_of_aval. eapply eval_static_addressing_sound; eauto with va.
+  Unshelve.
 Qed.
 
 Lemma store_normalized_range_sound:
@@ -536,11 +540,10 @@ Proof.
   red; simpl; intros. auto.
 + destruct H4; eauto with cse. subst eq. apply eq_holds_lessdef with (Val.load_result chunk rs#src).
   apply load_eval_to with a. rewrite <- Q; auto.
-  destruct a; try discriminate. simpl. eapply Mem.load_store_same; eauto.
-  rewrite B. rewrite R by auto. apply store_normalized_range_sound with bc.
+  destruct a; try discriminate. simpl. eapply Mem.load_store_same; eauto. 
+  rewrite B. rewrite R by auto. eauto. apply store_normalized_range_sound with bc.
   rewrite <- B. eapply vmatch_ge. apply vincl_ge; eauto. apply H2.
 + eauto with cse.
-
 - exists valu1; auto.
 Qed.
 
@@ -801,7 +804,7 @@ Proof.
   intros.
   assert (Numbering.ge approx!!pc' (transfer f vapprox pc approx!!pc)).
     eapply Solver.fixpoint_solution; eauto.
-  destruct H2 as [valu NH]. exists valu; apply H3; auto.
+  destruct H2 as [valu NH]. exists valu; eapply H3; auto.
 Qed.
 
 Theorem analysis_correct_entry:

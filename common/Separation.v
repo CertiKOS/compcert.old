@@ -34,7 +34,8 @@ Require Import Coqlib Decidableplus.
 Require Import AST Integers Values Memory Events Globalenvs.
 
 Section WITHMEM.
-  Context `{memory_model_prf: Mem.MemoryModel (injperm:= inject_perm_all)}.
+  Existing Instance inject_perm_all.
+  Context `{memory_model_prf: Mem.MemoryModel}.
 
 (** * Assertions about memory *)
 
@@ -141,7 +142,7 @@ Next Obligation.
     destruct (m_invar_weak P); simpl in *.
     - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
     - destruct (m_invar_weak Q).
-      * apply Mem.strong_unchanged_on_weak.
+      * eapply Mem.strong_unchanged_on_weak.
         eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
       * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
     - intro A; rewrite A in H1; apply H1. reflexivity.
@@ -149,7 +150,7 @@ Next Obligation.
     destruct (m_invar_weak Q); try rewrite orb_true_r in *.
     - eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
     - destruct (m_invar_weak P); simpl in *.
-      * apply Mem.strong_unchanged_on_weak.
+      * eapply Mem.strong_unchanged_on_weak.
         eapply Mem.strong_unchanged_on_implies; eauto. simpl; auto.
       * eapply Mem.unchanged_on_implies; eauto. simpl; auto.
     - intro A; rewrite A in H1; apply H1. rewrite orb_true_r. reflexivity.
@@ -936,7 +937,7 @@ Qed.
 Context `{external_calls_ops: !ExternalCallsOps mem}.
 Context `{symbols_inject'_instance: !SymbolsInject}.
 Context `{external_calls_props: !ExternalCallsProps mem}.
-Context `{enable_builtins_instance: !EnableBuiltins mem external_calls_ops}.
+Context `{enable_builtins_instance: !EnableBuiltins mem}.
 Context `{external_calls_prf: !ExternalCalls mem}.
 
 Lemma external_call_parallel_rule:

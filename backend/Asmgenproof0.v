@@ -315,6 +315,7 @@ Qed.
 
 Section WITHEXTERNALCALLS.
 Context `{external_calls_prf: ExternalCalls}.
+Context {injperm: InjectPerm}.
 
 Lemma extcall_arg_match:
   forall ms sp rs m m' l v,
