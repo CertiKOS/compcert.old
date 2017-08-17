@@ -173,7 +173,7 @@ Qed.
 Lemma contains_set_stack:
   forall (spec: val -> Prop) v spec1 m ty sp ofs P,
   m |= contains (chunk_of_type ty) sp ofs spec1 ** P ->
-  Mem.non_private_stack_access m sp ofs (ofs + size_chunk (chunk_of_type ty)) ->
+  non_private_stack_access (Mem.stack_adt m) sp ofs (ofs + size_chunk (chunk_of_type ty)) ->
   spec (Val.load_result (chunk_of_type ty) v) ->
   exists m',
       store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) v = Some m'
@@ -225,7 +225,7 @@ Remark valid_access_location:
   forall m sp pos bound ofs ty p,
   (8 | pos) ->
   Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable ->
-  (perm_order p Writable -> Mem.non_private_stack_access m sp pos (pos + 4 * bound)) ->
+  (perm_order p Writable -> non_private_stack_access (Mem.stack_adt m) sp pos (pos + 4 * bound)) ->
   0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
   Mem.valid_access m (chunk_of_type ty) sp (pos + 4 * ofs) p.
 Proof.
@@ -237,7 +237,7 @@ Proof.
   exists (8 / (4 * typealign ty)); destruct ty; reflexivity.
   apply Z.mul_divide_mono_l. auto.
 - intros.
-  eapply Mem.non_private_stack_access_inside; eauto. omega.
+  eapply non_private_stack_access_inside; eauto. omega.
   rewrite size_type_chunk. rewrite typesize_typesize. omega.
 Qed.
 
@@ -258,7 +258,7 @@ Qed.
 Lemma set_location:
   forall m j sp pos bound sl ls P ofs ty v v',
   m |= contains_locations j sp pos bound sl ls ** P ->
-  Mem.non_private_stack_access m sp pos (pos + 4 * bound) ->
+  non_private_stack_access (Mem.stack_adt m) sp pos (pos + 4 * bound) ->
   0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
   Val.inject j v v' ->
   exists m',
@@ -498,8 +498,8 @@ Lemma store_stack_non_private_stack_access:
   forall m sp ty o v m',
     store_stack m sp ty o v = Some m' ->
     forall b lo hi,
-      Mem.non_private_stack_access m' b lo hi <->
-      Mem.non_private_stack_access m b lo hi.
+      non_private_stack_access (Mem.stack_adt m') b lo hi <->
+      non_private_stack_access (Mem.stack_adt m) b lo hi.
 Proof.
   unfold store_stack, Mem.storev.
   intros.
@@ -512,7 +512,7 @@ Lemma frame_set_local:
   m |= frame_contents j sp ls ls0 parent retaddr ** P ->
   slot_within_bounds b Local ofs ty -> slot_valid f Local ofs ty = true ->
   Val.inject j v v' ->
-  Mem.non_private_stack_access m sp (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b) ->
+  non_private_stack_access (Mem.stack_adt m) sp (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b) ->
   exists m',
      store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_local fe ofs)) v' = Some m'
   /\ m' |= frame_contents j sp (Locmap.set (S Local ofs ty) v ls) ls0 parent retaddr ** P.
@@ -539,7 +539,7 @@ Lemma frame_set_outgoing:
     m |= frame_contents j sp ls ls0 parent retaddr ** P ->
     slot_within_bounds b Outgoing ofs ty -> slot_valid f Outgoing ofs ty = true ->
     Val.inject j v v' ->
-    Mem.non_private_stack_access m sp fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b) ->
+    non_private_stack_access (Mem.stack_adt m) sp fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b) ->
   exists m',
      store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_arg ofs)) v' = Some m'
   /\ m' |= frame_contents j sp (Locmap.set (S Outgoing ofs ty) v ls) ls0 parent retaddr ** P.
@@ -1015,10 +1015,10 @@ Lemma store_stack_is_stack_top:
   forall m sp ty o v m',
     store_stack m sp ty o v = Some m' ->
     forall b,
-      Mem.is_stack_top m' b <->
-      Mem.is_stack_top m b.
+      is_stack_top (Mem.stack_adt m') b <->
+      is_stack_top (Mem.stack_adt m) b.
 Proof.
-  intros; eapply Mem.stack_adt_eq_is_stack_top, store_stack_no_abstract; eauto.
+  intros; erewrite store_stack_no_abstract; eauto. tauto.
 Qed.
 
 Lemma store_stack_stack_blocks:
@@ -1032,9 +1032,9 @@ Qed.
 Lemma store_stack_get_frame_info:
   forall m1 sp ty o v m2 b,
     store_stack m1 sp ty o v = Some m2 ->
-    Mem.get_frame_info m2 b = Mem.get_frame_info m1 b.
+    get_frame_info (Mem.stack_adt m2) b = get_frame_info (Mem.stack_adt m1) b.
 Proof.
-  intros; eapply Mem.stack_adt_eq_get_frame_info, store_stack_no_abstract; eauto.
+  intros; erewrite store_stack_no_abstract; eauto.
 Qed.
 
 (** The following lemmas show the correctness of the register saving
@@ -1060,9 +1060,9 @@ Lemma save_callee_save_rec_correct:
   (forall r, In r l -> is_callee_save r = true) ->
   m |= range sp pos (size_callee_save_area_rec l pos) ** P ->
   agree_regs j ls rs ->
-  Mem.is_stack_top m sp ->
+  is_stack_top (Mem.stack_adt m) sp ->
   (forall fi,
-      Mem.get_frame_info m sp = Some fi ->
+      get_frame_info (Mem.stack_adt m) sp = Some fi ->
       forall o, pos <= o < size_callee_save_area_rec l pos ->
            ~ in_segment o (frame_link fi) /\ ~ in_segment o (frame_retaddr fi)
   ) ->
@@ -1073,7 +1073,7 @@ Lemma save_callee_save_rec_correct:
   /\ m' |= contains_callee_saves j sp pos l ls ** P
   /\ (forall b ofs k p, Mem.perm m b ofs k p -> Mem.perm m' b ofs k p)
   /\ Mem.stack_adt m = Mem.stack_adt m'
-  /\ (forall b, Mem.get_frame_info m' b = Mem.get_frame_info m b)
+  /\ (forall b, get_frame_info (Mem.stack_adt m') b = get_frame_info (Mem.stack_adt m) b)
   /\ agree_regs j ls rs'
   /\ (forall b, Mem.valid_block m b -> Mem.valid_block m' b)
   /\ Mem.unchanged_on (fun b o => b <> sp) m m'.
@@ -1182,8 +1182,8 @@ Lemma save_callee_save_correct:
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
   agree_callee_save ls ls0 ->
   agree_regs j ls rs ->
-  Mem.is_stack_top m sp ->
-  Mem.get_frame_info m sp = Some (frame_of_frame_env b) ->
+  is_stack_top (Mem.stack_adt m) sp ->
+  get_frame_info (Mem.stack_adt m) sp = Some (frame_of_frame_env b) ->
   let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) in
   let rs1 := undef_regs destroyed_at_function_entry rs in
   exists rs', exists m',
@@ -1193,7 +1193,7 @@ Lemma save_callee_save_correct:
   /\ m' |= contains_callee_saves j sp fe.(fe_ofs_callee_save) b.(used_callee_save) ls0 ** P
   /\ (forall b ofs k p, Mem.perm m b ofs k p -> Mem.perm m' b ofs k p)
   /\ Mem.stack_adt m = Mem.stack_adt m'
-  /\ (forall b, Mem.get_frame_info m' b = Mem.get_frame_info m b)
+  /\ (forall b, get_frame_info (Mem.stack_adt m') b = get_frame_info (Mem.stack_adt m) b)
   /\ agree_regs j ls1 rs'
   /\ (forall b, Mem.valid_block m b -> Mem.valid_block m' b )
   /\ Mem.unchanged_on (fun b o => b <> sp) m m'.
@@ -1279,7 +1279,7 @@ Lemma function_prologue_correct:
     /\ (forall b o k p, Mem.perm m1' b o k p -> Mem.perm m5' b o k p)
     /\ Mem.unchanged_on (fun b o => b <> sp') m1' m5'
     /\ Mem.stack_adt m5' = (Some (frame_with_info sp' (Some tf.(fn_frame))), frame_size (fn_frame tf)) :: Mem.stack_adt m1'
-    /\ (forall b, Mem.get_frame_info m5' b = Mem.get_frame_info m4' b).
+    /\ (forall b, get_frame_info (Mem.stack_adt m5') b = get_frame_info (Mem.stack_adt m4') b).
 Proof.
   intros until P; intros STACK AGREGS AGCS WTREGS LS1 RS1 ALLOC RECORD TYPAR TYRA SEP.
   rewrite unfold_transf_function.
@@ -1413,7 +1413,6 @@ Proof.
   apply agree_regs_inject_incr with j; auto.
   eapply Mem.record_stack_block_is_stack_top; eauto.
   simpl; auto.
-  unfold Mem.get_frame_info.
   erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl. rewrite pred_dec_true; auto. 
   replace (LTL.undef_regs destroyed_at_function_entry (call_regs ls)) with ls1 by auto.
   replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto.
@@ -2404,7 +2403,7 @@ Definition list_prefix (l1: list (option frame_info * block)) (l2 : list (option
 Definition init_sp_has_stackinfo (m: mem) : Prop :=
   match init_sp with
     Vptr b i1 =>
-    exists fi, Mem.get_frame_info m b = Some fi
+    exists fi, get_frame_info (Mem.stack_adt m) b = Some fi
           /\ (forall o,
                 Ptrofs.unsigned i1 + fe_ofs_arg <= o < Ptrofs.unsigned i1 + 4 * size_arguments init_sg ->
                 in_segment o (frame_outgoings fi)
@@ -2513,7 +2512,7 @@ Inductive nextblock_properties_mach: Mach.state -> Prop :=
 | nextblock_properties_mach_intro:
     forall c cs' fb sp' rs m' 
       (ISP'VALID: block_prop (Mem.valid_block m') init_sp)
-      (ISP'NST: block_prop (fun b => ~ Mem.is_stack_top m' b) init_sp)
+      (ISP'NST: block_prop (fun b => ~ is_stack_top (Mem.stack_adt m') b) init_sp)
       (MSISHS: init_sp_has_stackinfo m')
       (INIT_VB': Ple (Mem.nextblock init_m) (Mem.nextblock m'))
       (SP_NOT_INIT: forall b o, init_sp = Vptr b o -> b <> sp')
@@ -2535,7 +2534,6 @@ Inductive nextblock_properties_mach: Mach.state -> Prop :=
         (NI: callstack_not_init cs'),
         nextblock_properties_mach (Mach.Returnstate cs' rs m').
 
-
 Lemma store_stack_nextblock:
   forall m v ty p v1 m',
     store_stack m v ty p v1 = Some m' ->
@@ -2552,6 +2550,21 @@ Theorem np_step:
     nextblock_properties_mach s1 ->
     nextblock_properties_mach s2.
 Proof.
+  Ltac rewtac :=
+     repeat match goal with
+             | H: Mem.nextblock ?m = _ |- Mem.valid_block ?m ?b => red; rewrite H; eauto
+             | H: Ple (Mem.nextblock ?m) (Mem.nextblock ?m'),
+                  H': Mem.valid_block ?m ?b |- Mem.valid_block ?m' ?b => unfold Mem.valid_block in *; xomega
+             | H: Mem.nextblock ?m = _ |- context [Mem.nextblock ?m] => rewrite H; eauto
+             (* | H: Mem.stack_adt ?m = _ |- ~ is_stack_top (Mem.stack_adt ?m) ?b => *)
+             (*   rewrite H; eauto *)
+             | H: Mem.stack_adt ?m = _ |- context [ (Mem.stack_adt ?m) ] =>
+               rewrite H; eauto
+             (* | H: Mem.stack_adt ?m = _ |- context [get_frame_info (Mem.stack_adt ?m) ?b] => *)
+             (*   rewrite H; eauto *)
+             | |- match init_sp with _ => _ end => (destruct init_sp eqn:?; auto); [idtac]
+             | |- init_sp_has_stackinfo ?m => unfold init_sp_has_stackinfo in *; destruct init_sp; auto 
+             end.
   destruct 1; simpl; intros CSC NPM; inv NPM; 
     repeat match goal with
            | H: store_stack _ _ _ _ _ = Some _ |- _ =>
@@ -2590,43 +2603,25 @@ Proof.
            end; intros;
       constructor; eauto;
         unfold block_prop in *;
-      repeat match goal with
-             | H: Mem.nextblock ?m = _ |- Mem.valid_block ?m ?b => red; rewrite H; eauto
-             | H: Ple (Mem.nextblock ?m) (Mem.nextblock ?m'),
-                  H': Mem.valid_block ?m ?b |- Mem.valid_block ?m' ?b => unfold Mem.valid_block in *; xomega
-             | H: Mem.nextblock ?m = _ |- context [Mem.nextblock ?m] => rewrite H; eauto
-             | H: Mem.stack_adt ?m = _ |- ~ Mem.is_stack_top ?m ?b =>
-               rewrite (Mem.stack_adt_eq_is_stack_top _ _ _ H); auto
-             | H: Mem.stack_adt ?m = _ |- context [Mem.get_frame_info ?m ?b] =>
-               rewrite (Mem.stack_adt_eq_get_frame_info _ _ _ H); auto
-             | |- match init_sp with _ => _ end => (destruct init_sp eqn:?; auto); [idtac]
-             | |- init_sp_has_stackinfo ?m => unfold init_sp_has_stackinfo in *; destruct init_sp; auto 
-             end.
+     rewtac.
   - constructor; auto.
-  - rewrite H3.
-    erewrite (Mem.stack_adt_eq_get_frame_info); eauto.
-    erewrite (Mem.stack_adt_eq_is_stack_top); eauto.
+  - rewrite H3; rewtac. 
   - xomega.
-  - rewrite H2.
-    erewrite (Mem.stack_adt_eq_get_frame_info); eauto.
-    erewrite (Mem.stack_adt_eq_is_stack_top); eauto.
+  - rewrite H2; rewtac.
   - red in ISP'VALID. xomega.
-  - unfold Mem.is_stack_top, Mem.get_stack_top_blocks. rewrite H1.
+  - unfold is_stack_top.
     simpl. intuition. subst b.
     eapply Mem.fresh_block_alloc; eauto.
-  - unfold Mem.get_frame_info. rewrite H1.
-    simpl. destruct eq_block; eauto.
+  - simpl. destruct eq_block; eauto.
     subst.
     exfalso; eapply Mem.fresh_block_alloc; eauto.
-    rewrite H15, H12.
-    erewrite Mem.alloc_no_abstract; eauto.
   - xomega.
   - intros. intro. subst.
     eapply Mem.fresh_block_alloc; eauto.
   - xomega.
   - clearbody step. revert Heqv; inv CSC; inv NI.
     destruct CallStackConsistency as (l1 & l2 & A & B). inv B.
-    unfold Mem.is_stack_top, Mem.get_stack_top_blocks.
+    unfold is_stack_top, get_stack_top_blocks.
     inv CFD. rewrite FINDF in H1. destruct b1. simpl in *. subst.
     destruct (Mem.stack_adt m) eqn:?. simpl; easy. destruct p; simpl in *.
     inv A. simpl.
@@ -3114,16 +3109,12 @@ Qed.
 
 Lemma external_call_is_stack_top:
   forall (ef : external_function) (ge : Senv.t) (vargs : list val) (m1 : mem) (t : trace) (vres : val) (m2 : mem) (b : block),
-    external_call ef ge vargs m1 t vres m2 -> (Mem.is_stack_top m1 b <-> Mem.is_stack_top m2 b).
+    external_call ef ge vargs m1 t vres m2 -> (is_stack_top (Mem.stack_adt m1) b <-> is_stack_top (Mem.stack_adt m2) b).
 Proof.
   intros.
   eapply external_call_stack_blocks in H.
-  rewrite ! Mem.is_stack_top_stack_blocks. rewrite H. tauto.
+  rewrite ! is_stack_top_stack_blocks. rewrite H. tauto.
 Qed.
-
-
-
-
 
 Lemma le_add_pos:
   forall a b,
@@ -3132,7 +3123,6 @@ Lemma le_add_pos:
 Proof.
   intros; omega.
 Qed.
-
 
 Lemma fe_ofs_link_fe_size:
   forall b,
@@ -3152,8 +3142,6 @@ Proof.
   omega.  omega.
 Qed.
 
-
-
 Lemma fe_ofs_retaddr_fe_size:
   forall b,
     fe_ofs_retaddr (make_env b) <= fe_size (make_env b).
@@ -3162,7 +3150,6 @@ Proof.
   apply le_add_pos. 
   destruct Archi.ptr64; omega.
 Qed.
-
 
 Lemma fe_ofs_link_pos:
   forall b,
@@ -3195,7 +3182,6 @@ Proof.
   etransitivity. 2: apply align_le; try now (destruct Archi.ptr64; omega).
   omega.
 Qed.
-
 
 Lemma external_call_step_correct:
   forall s ef res rs1 m t m' sz
@@ -3294,7 +3280,7 @@ Proof.
         unfold load_stack in *; simpl in *.
         eapply Mem.load_unchanged_on; eauto.
         eapply external_call_unchanged_on. apply A.
-        intros. simpl. unfold Mem.strong_non_private_stack_access.
+        intros. simpl. unfold strong_non_private_stack_access.
         intro NPSA.
         unfold init_sp_has_stackinfo in MSISHS.
         rewrite Heqv0 in *.
@@ -3327,7 +3313,6 @@ Proof.
        eapply footprint_impl.
        simpl. auto. auto.
 Qed.
-
 
 Lemma fe_ofs_local_pos:
   forall b,
@@ -3457,9 +3442,9 @@ Proof.
       apply agree_locs_set_reg; auto.
       
   - (* Lsetstack *)
-    assert (Mem.is_stack_top m' sp') as IST.
+    assert (is_stack_top (Mem.stack_adt m') sp') as IST.
     {
-      unfold Mem.is_stack_top, Mem.get_stack_top_blocks.
+      unfold is_stack_top, get_stack_top_blocks.
       inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
       destruct (Mem.stack_adt m') eqn:EQADT'. inv FORALL. simpl in EQADT. congruence.
       destruct p; simpl in *.
@@ -3486,7 +3471,7 @@ Proof.
       red; red.
       inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
       inv FORALL. destruct b1. simpl in H1. subst.
-      unfold Mem.get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
+      unfold get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
       rewrite pred_dec_true.
       rewrite FIND in FIND0. inv FIND0.
       rewrite (unfold_transf_function _ _ TRANSL).  Opaque frame_link frame_retaddr. simpl.
@@ -3499,7 +3484,7 @@ Proof.
       red; red.
       inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
       inv FORALL. destruct b1. simpl in H1. subst.
-      unfold Mem.get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
+      unfold get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
       rewrite pred_dec_true.
       rewrite FIND in FIND0. inv FIND0.
       rewrite (unfold_transf_function _ _ TRANSL).  Opaque frame_link frame_retaddr. simpl.
@@ -3630,7 +3615,7 @@ Proof.
          red in  MSISHS.
          rewrite Heqv0 in MSISHS. simpl in MSISHS.
          destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
-         unfold Mem.strong_non_private_stack_access in C3. rewrite MSI1 in C3.
+         unfold strong_non_private_stack_access in C3. rewrite MSI1 in C3.
          destruct C3 as [C3 | C3]; try congruence.
          simpl in ISP'NST. exfalso; apply ISP'NST. apply C3.
          destruct (match_stacks_is_init_sg _ _ _ _ _ STACKS).
@@ -4266,7 +4251,7 @@ Lemma stacking_frame_correct:
     match_prog p tp ->
     forall (fb : Values.block) (f : Mach.function),
       Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) fb = Some (Internal f) ->
-      Memtype.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f /\
+      StackADT.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f /\
       Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) /\
       Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))).
 Proof.

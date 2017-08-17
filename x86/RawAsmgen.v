@@ -121,7 +121,7 @@ Section WITHMEMORYMODEL.
 
   Lemma size_stack_pos:
     forall {A} (l: list (A*Z)),
-      0 <= Memtype.size_stack l.
+      0 <= StackADT.size_stack l.
   Proof.
     induction l; simpl; intros; eauto. omega.
     destruct a.
@@ -137,7 +137,7 @@ Section WITHMEMORYMODEL.
   Definition agree_sp m1 rs2:=
     forall ostack,
       rs2 # RSP = Vptr bstack ostack ->
-      Ptrofs.unsigned ostack = Mem.stack_limit - Memtype.size_stack (Mem.stack_adt m1).
+      Ptrofs.unsigned ostack = Mem.stack_limit - StackADT.size_stack (Mem.stack_adt m1).
 
   Definition perm_bstack m2:=
     forall (ofs : Z) (k : perm_kind) (p : permission),
@@ -161,7 +161,7 @@ Section WITHMEMORYMODEL.
       inject_stack j nil
   | inject_stack_cons j l b fi:
       inject_stack j l ->
-      j b = Some (bstack, Mem.stack_limit - Memtype.size_stack l - align (Z.max 0 (frame_size fi)) 8) ->
+      j b = Some (bstack, Mem.stack_limit - StackADT.size_stack l - align (Z.max 0 (frame_size fi)) 8) ->
       inject_stack j ((Some (frame_with_info b (Some fi)),frame_size fi)::l).
 
   Variable init_sp: val.
@@ -188,7 +188,7 @@ Section WITHMEMORYMODEL.
 
   Definition inject_padding (j: meminj) (m: mem) : Prop :=
     forall b fi delta,
-      Mem.get_frame_info m b = Some fi ->
+      get_frame_info (Mem.stack_adt m) b = Some fi ->
       j b = Some (bstack, delta) ->
       forall b' o delta' k p,
         j b' = Some (bstack, delta') ->
@@ -476,10 +476,10 @@ Section WITHMEMORYMODEL.
     destruct SA as [[IST NONLINK]|[NIST DATA]].
     apply NONLINK in RNG.
     red in RNG.
-    unfold Mem.get_frame_info in RNG. rewrite Heqo in RNG.
+    unfold get_frame_info in RNG. rewrite Heqo in RNG.
     intuition congruence.
     red in DATA.
-    unfold Mem.get_frame_info in DATA. rewrite Heqo in DATA.
+    unfold get_frame_info in DATA. rewrite Heqo in DATA.
     eapply frame_disjoints. eauto.
     right. right. right. right. left. apply DATA. auto.
   Qed.
@@ -488,7 +488,7 @@ Section WITHMEMORYMODEL.
     forall f i rs1 m1 rs1' m1',
       is_unchanged i = true ->
       Asm.exec_instr ge f i rs1 m1 = Next rs1' m1' ->
-      Mem.unchanged_on (fun b o => match Mem.get_frame_info m1 b with
+      Mem.unchanged_on (fun b o => match get_frame_info (Mem.stack_adt m1) b with
                                   Some fi => in_segment o (frame_link fi)
                                 | _ => False
                                 end) m1 m1'.
@@ -526,7 +526,7 @@ Section WITHMEMORYMODEL.
         get_assoc l b = Some fi ->
         exists l1 l2,
           l = l1 ++ l2 /\
-          j b = Some (bstack, Mem.stack_limit - Memtype.size_stack l2).
+          j b = Some (bstack, Mem.stack_limit - StackADT.size_stack l2).
   Proof.
     induction 1; simpl; intros; eauto.
     congruence.
@@ -547,7 +547,7 @@ Section WITHMEMORYMODEL.
 
   Lemma size_stack_app:
     forall {A} (l1 l2: list (A * Z)),
-      Memtype.size_stack (l1 ++ l2) = Memtype.size_stack l1 + Memtype.size_stack l2.
+      StackADT.size_stack (l1 ++ l2) = StackADT.size_stack l1 + StackADT.size_stack l2.
   Proof.
     induction l1; simpl; intros; eauto.
     destruct a.
@@ -906,7 +906,7 @@ Section WITHMEMORYMODEL.
       rewrite H.
       rewrite AGSP. omega. auto. rewrite EQRSP, NIL. simpl; omega.
     - intros b0 fi0 delta GFI FB0 b' o delta' k p FB1 P1.
-      unfold Mem.get_frame_info in GFI.
+      unfold get_frame_info in GFI.
       revert GFI. repeat rewrite_stack_blocks. intro GFI.
       simpl in GFI.
       repeat rewrite_perms_bw P1.
@@ -939,8 +939,8 @@ Section WITHMEMORYMODEL.
           rewrite Z.max_r in * by omega.
           unfold offset_after_alloc.
           rewrite Z.max_r by omega.
-          cut (Memtype.size_stack (Mem.stack_adt m1) 
-               >= Memtype.size_stack l2).
+          cut (StackADT.size_stack (Mem.stack_adt m1) 
+               >= StackADT.size_stack l2).
           generalize (align_le (frame_size fi) 8). omega.
           rewrite EQADT.
           rewrite size_stack_app.
@@ -1054,7 +1054,7 @@ Section WITHMEMORYMODEL.
   Qed.
 
   Lemma size_stack_divides {A} (l: list (A*Z)):
-    (8 | Memtype.size_stack l).
+    (8 | StackADT.size_stack l).
   Proof.
     induction l; simpl; intros; eauto.
     exists 0; omega.
@@ -1152,7 +1152,7 @@ Section WITHMEMORYMODEL.
         eapply NIB. auto. rewrite <- H4. eauto.
       + edestruct AINS. eauto. apply EI. rewrite H. eapply inject_stack_incr; eauto.
       + edestruct AINS. eauto. apply EI.
-        red. unfold Mem.get_frame_info.
+        red. unfold get_frame_info.
         rewrite H.
         intros b fi delta GFI JB b' o delta' k p JB' PERM RNG.
         eapply IP. eauto. eauto. eauto. rewrite <- H0; eauto.
@@ -1228,7 +1228,7 @@ Section WITHMEMORYMODEL.
         generalize (Mem.unrecord_stack_adt _ _ Heqo2).
         erewrite Mem.free_stack_blocks. 2: eauto. rewrite Heql. intros (bb0 & EQ).
         inv EQ.
-        assert (0 <= Mem.stack_limit - Memtype.size_stack (Mem.stack_adt m1') <= Ptrofs.max_unsigned) as RNGnewofs. 
+        assert (0 <= Mem.stack_limit - StackADT.size_stack (Mem.stack_adt m1') <= Ptrofs.max_unsigned) as RNGnewofs. 
         {
           generalize (Mem.size_stack_below m1').
           generalize (size_stack_pos (Mem.stack_adt m1')).
@@ -1349,7 +1349,7 @@ Section WITHMEMORYMODEL.
                 }
                 destruct EX as (o2 & RNG & EQ').
                 eapply IP. 4: apply PERM.  3: eauto. 2: apply H3.
-                unfold Mem.get_frame_info; rewrite Heql.
+                unfold get_frame_info; rewrite Heql.
                 simpl. rewrite pred_dec_true; auto.
                 rewrite Z.max_r. omega. omega.
         * 
@@ -1365,11 +1365,11 @@ Section WITHMEMORYMODEL.
           eapply Mem.unrecord_stack_block_perm in H5. 2: eauto.
           eapply Mem.perm_free_3 in H5. 2: eauto.
           eapply IP; eauto.
-          unfold Mem.get_frame_info. rewrite Heql.
+          unfold get_frame_info. rewrite Heql.
           simpl.
           destruct peq; auto.
           subst.
-          unfold Mem.get_frame_info in H0.
+          unfold get_frame_info in H0.
           erewrite inject_stack_only_once in H0.
           congruence.
           eauto. simpl; auto.
@@ -1656,6 +1656,28 @@ Section WITHMEMORYMODEL.
     eexists; split; econstructor; eauto.
   Qed.
 
+  Lemma set_pair_no_rsp:
+    forall p res rs,
+      no_rsp_pair p ->
+      set_pair p res rs RSP = rs RSP.
+  Proof.
+    destruct p; simpl; intros; rewrite ! Pregmap.gso; intuition. 
+  Qed.
+
+  Lemma val_inject_set_pair:
+    forall j p res1 res2 rs1 rs2,
+      (forall r, Val.inject j (rs1 r) (rs2 r)) ->
+      Val.inject j res1 res2 ->
+      forall r,
+        Val.inject j (set_pair p res1 rs1 r) (set_pair p res2 rs2 r).
+  Proof.
+    destruct p; simpl; intros; eauto.
+    apply val_inject_set; auto.
+    repeat (intros; apply val_inject_set; auto).
+    apply Val.hiword_inject; auto.
+    apply Val.loword_inject; auto.
+  Qed.
+
   Theorem step_simulation:
     forall S1 t S2,
       Asm.step ge S1 t S2 ->
@@ -1677,7 +1699,6 @@ Section WITHMEMORYMODEL.
         eapply prog_no_rsp. eauto.
         eapply Asmgenproof0.find_instr_in; eauto.
       }
-      
       destruct (exec_instr_inject' _ _ _ _ _ _ _ _ _ _ MS H4 (asmgen_no_change_stack i) H2)
         as ( j' & ostack' & rs2' & m2' & EI' & MS' & INCR).
       do 3 eexists; split.
@@ -1703,7 +1724,6 @@ Section WITHMEMORYMODEL.
         eapply GLOBFUN_INJ. eauto.
       }
       rewrite JB in H9; inv H9. 
-      
       do 3 eexists; split.
       eapply exec_step_builtin.
       eauto.
@@ -1790,10 +1810,9 @@ Section WITHMEMORYMODEL.
         eapply inject_stack_incr; eauto.
       + 
         red.
-        unfold Mem.get_frame_info.
+        unfold get_frame_info.
         erewrite <- external_call_stack_blocks. 2: eauto.
         intros.
-
         exploit inj_incr_sep_same. eauto. eauto. apply H7. auto.
         exploit inj_incr_sep_same. eauto. eauto. apply H9. auto.
         intros.
@@ -1810,11 +1829,10 @@ Section WITHMEMORYMODEL.
         eapply load_rsp_inv'. eauto.
         eapply Mem.unchanged_on_implies.
         eapply external_call_unchanged_on. eauto.
-        unfold Mem.strong_non_private_stack_access.
-        unfold Mem.get_frame_info.
+        unfold strong_non_private_stack_access.
+        unfold get_frame_info.
         intros b ofs0 ; generalize (Mem.stack_adt m). clear.
         induction l; simpl; intros; eauto.
-
         destruct a.
         simpl in *.
         red in H.
@@ -1846,16 +1864,13 @@ Section WITHMEMORYMODEL.
         eauto.
         exploit SEP; eauto. intros (NV1 & NV2).
         simpl; unfold Genv.block_is_volatile.
-        
         rewrite ! find_var_info_none_ge.
         auto.
         unfold Mem.valid_block in NV1. xomega.
         unfold Mem.valid_block in NV2. xomega.
       + etransitivity. apply GlobLe. eapply external_call_nextblock; eauto.
       + etransitivity. apply GlobLeT. eapply external_call_nextblock; eauto.
-      
     -
-
       edestruct (extcall_arguments_inject) as (vargs' & Hargs & Hargsinj).
       eauto.
       eauto. eauto. 
@@ -1871,7 +1886,6 @@ Section WITHMEMORYMODEL.
         eapply GLOBFUN_INJ. eauto.
       }
       rewrite JB in H8; inv H8. 
-      
       do 3 eexists; split.
       eapply exec_step_external.
       eauto.
@@ -1894,14 +1908,6 @@ Section WITHMEMORYMODEL.
       econstructor.
       + eauto.
       +
-
-        Lemma set_pair_no_rsp:
-          forall p res rs,
-            no_rsp_pair p ->
-            set_pair p res rs RSP = rs RSP.
-        Proof.
-          destruct p; simpl; intros; rewrite ! Pregmap.gso; intuition. 
-        Qed.
         repeat rewrite Pregmap.gso by (congruence). 
         rewrite set_pair_no_rsp.
         rewrite Asmgenproof0.undef_regs_other.
@@ -1914,20 +1920,6 @@ Section WITHMEMORYMODEL.
         auto.
       + intros; apply val_inject_set.
         intros; apply val_inject_set.
-
-        Lemma val_inject_set_pair:
-          forall j p res1 res2 rs1 rs2,
-            (forall r, Val.inject j (rs1 r) (rs2 r)) ->
-            Val.inject j res1 res2 ->
-            forall r,
-              Val.inject j (set_pair p res1 rs1 r) (set_pair p res2 rs2 r).
-        Proof.
-          destruct p; simpl; intros; eauto.
-          apply val_inject_set; auto.
-          repeat (intros; apply val_inject_set; auto).
-          apply Val.hiword_inject; auto.
-          apply Val.loword_inject; auto.
-        Qed.
         intros; apply val_inject_set_pair; auto.
         apply val_inject_undef_regs; auto.
         apply val_inject_undef_regs; auto.
@@ -2007,10 +1999,9 @@ Section WITHMEMORYMODEL.
         eapply inject_stack_incr; eauto.
       + 
         red.
-        unfold Mem.get_frame_info.
+        unfold get_frame_info.
         erewrite <- external_call_stack_blocks. 2: eauto.
         intros.
-
         exploit inj_incr_sep_same. eauto. eauto. apply H6. auto.
         exploit inj_incr_sep_same. eauto. eauto. apply H8. auto.
         intros.
@@ -2026,11 +2017,10 @@ Section WITHMEMORYMODEL.
         eapply load_rsp_inv'. eauto.
         eapply Mem.unchanged_on_implies.
         eapply external_call_unchanged_on. eauto.
-        unfold Mem.strong_non_private_stack_access.
-        unfold Mem.get_frame_info.
+        unfold strong_non_private_stack_access.
+        unfold get_frame_info.
         intros b ofs0 ; generalize (Mem.stack_adt m). clear.
         induction l; simpl; intros; eauto.
-
         destruct a.
         simpl in *.
         red in H.
@@ -2062,7 +2052,6 @@ Section WITHMEMORYMODEL.
         eauto.
         exploit SEP; eauto. intros (NV1 & NV2).
         simpl; unfold Genv.block_is_volatile.
-        
         rewrite ! find_var_info_none_ge.
         auto.
         unfold Mem.valid_block in NV1. xomega.
@@ -2161,7 +2150,7 @@ End PRESERVATION.
     -
       erewrite Genv.init_mem_stack_adt; eauto.
       constructor.
-    - red. unfold Mem.get_frame_info.
+    - red. 
       erewrite Genv.init_mem_stack_adt; eauto.
       simpl. congruence.
     - erewrite Genv.init_mem_stack_adt; eauto. constructor.

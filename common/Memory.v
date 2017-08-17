@@ -38,6 +38,8 @@ Require Import Floats.
 Require Import Values.
 Require Export Memdata.
 Require Export Memtype.
+Require Export MemPerm.
+Require Export StackADT.
 
 (* To avoid useless definitions of inductors in extracted code. *)
 Local Unset Elimination Schemes.

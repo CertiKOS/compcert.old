@@ -361,7 +361,7 @@ Definition fn_stack_requirements (tp: Asm.program) (id: ident) : Z :=
   match Globalenvs.Genv.find_symbol (Globalenvs.Genv.globalenv tp) id with
   | Some b =>
     match Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) b with
-    | Some (Internal f) => Memtype.frame_size (Asm.fn_frame f)
+    | Some (Internal f) => StackADT.frame_size (Asm.fn_frame f)
     | _ => 0
     end
   | None => 0

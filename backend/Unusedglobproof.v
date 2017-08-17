@@ -50,7 +50,7 @@ Class MemoryModelX (mem: Type) `{memory_model_prf: MemoryModel mem}: Prop :=
        exists v2,
          loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
          memval_inject f v1 v2) ->
-  list_forall2 (option_frame_inject f m1) (stack_adt m1) (stack_adt m2) ->
+  list_forall2 (option_frame_inject f (perm m1)) (stack_adt m1) (stack_adt m2) ->
   list_forall2
     (fun x y : option frame_adt * BinNums.Z =>
      forall (b b' : Values.block) (delta : BinNums.Z),

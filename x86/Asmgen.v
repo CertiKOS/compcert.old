@@ -675,10 +675,10 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       OK (Pcall_s symb sig :: k)
   | Mtailcall sig (inl reg) =>
       do r <- ireg_of reg;
-      OK (Pfreeframe (Memtype.frame_size (f.(Mach.fn_frame))) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
+      OK (Pfreeframe (StackADT.frame_size (f.(Mach.fn_frame))) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
           Pjmp_r r sig :: k)
   | Mtailcall sig (inr symb) =>
-      OK (Pfreeframe (Memtype.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
+      OK (Pfreeframe (StackADT.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
           Pjmp_s symb sig :: k)
   | Mlabel lbl =>
       OK(Plabel lbl :: k)
@@ -689,7 +689,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
   | Mjumptable arg tbl =>
       do r <- ireg_of arg; OK (Pjmptbl r tbl :: k)
   | Mreturn =>
-      OK (Pfreeframe (Memtype.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
+      OK (Pfreeframe (StackADT.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
           Pret :: k)
   | Mbuiltin ef args res =>
       OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) args) (map_builtin_res preg_of res) :: k)

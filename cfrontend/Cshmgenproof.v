@@ -975,7 +975,7 @@ Lemma make_memcpy_correct:
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  forall (STACK_TOP_NO_INFO: forall b, Mem.is_stack_top m b -> Mem.get_frame_info m b = None),
+  forall (STACK_TOP_NO_INFO: forall b, is_stack_top (Mem.stack_adt m) b -> get_frame_info (Mem.stack_adt m) b = None),
   (step fn_stack_requirements) ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
@@ -1006,7 +1006,7 @@ Lemma make_store_correct:
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
-  forall (STACK_TOP_NO_INFO: forall b, Mem.is_stack_top m b -> Mem.get_frame_info m b = None),
+  forall (STACK_TOP_NO_INFO: forall b, is_stack_top (Mem.stack_adt m) b -> get_frame_info (Mem.stack_adt m) b = None),
   (step fn_stack_requirements) ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
@@ -1648,7 +1648,7 @@ Proof.
   apply genv_next_preserved.
   eapply transl_lvalue_correct; eauto. eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
-  unfold Mem.is_stack_top, Mem.get_stack_top_blocks, Mem.get_frame_info. simpl in TOPNOINFO.
+  simpl in TOPNOINFO.
   destruct (Mem.stack_adt m) eqn:?; try intuition congruence. simpl in *. 
   destruct p. simpl in *. destruct TOPNOINFO. destruct o; try intuition congruence.
   destruct f0; try intuition congruence.

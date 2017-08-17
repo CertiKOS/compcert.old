@@ -498,7 +498,7 @@ Qed.
 Lemma store_rule:
   forall chunk m b ofs v (spec1 spec: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
   spec (Val.load_result chunk v) ->
   exists m',
   Mem.store chunk m b ofs v = Some m' /\ m' |= contains chunk b ofs spec ** P.
@@ -529,7 +529,7 @@ Qed.
 Lemma storev_rule:
   forall chunk m b ofs v (spec1 spec: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
   spec (Val.load_result chunk v) ->
   exists m',
   Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= contains chunk b ofs spec ** P.
@@ -542,7 +542,7 @@ Lemma range_contains:
   forall chunk b ofs P m,
   m |= range b ofs (ofs + size_chunk chunk) ** P ->
   (align_chunk chunk | ofs) ->
-  Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+  non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
   m |= contains chunk b ofs (fun v => True) ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & F).
@@ -579,7 +579,7 @@ Definition hasvalue (chunk: memory_chunk) (b: block) (ofs: Z) (v: val) : massert
 Lemma store_rule':
   forall chunk m b ofs v (spec1: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
     exists m',
   Mem.store chunk m b ofs v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
 Proof.
@@ -589,7 +589,7 @@ Qed.
 Lemma storev_rule':
   forall chunk m b ofs v (spec1: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    Mem.non_private_stack_access m b ofs (ofs + size_chunk chunk) ->
+    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
     exists m',
       Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
 Proof.

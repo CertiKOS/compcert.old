@@ -222,8 +222,8 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block
       do w' <- nextworld_vstore w chunk id ofs ev;
       Some(w', Event_vstore chunk id ofs ev :: nil, m)
   | Some false =>
-    check (Mem.strong_non_private_stack_access_dec
-             m b (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + size_chunk chunk));
+    check (strong_non_private_stack_access_dec
+             (Mem.stack_adt m) b (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + size_chunk chunk));
     do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v;
       Some(w, E0, m')
   | None => None
@@ -275,7 +275,7 @@ Proof.
   rewrite (eventval_of_val_complete _ _ _ H3).
   inv H0. inv H8. inv H6. rewrite H9. auto.
   rewrite H1. rewrite H2. inv H0.
-  destruct (Mem.strong_non_private_stack_access_dec m b (Ptrofs.unsigned ofs)
+  destruct (strong_non_private_stack_access_dec (Mem.stack_adt m) b (Ptrofs.unsigned ofs)
            (Ptrofs.unsigned ofs + size_chunk chunk)); intuition congruence.
 Qed.
 
@@ -525,7 +525,7 @@ Definition do_ef_memcpy (sz al: Z)
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
         do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz;
           do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes;
-          check Mem.strong_non_private_stack_access_dec m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + Z.of_nat (length bytes));
+          check strong_non_private_stack_access_dec (Mem.stack_adt m) bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + Z.of_nat (length bytes));
           Some(w, E0, Vundef, m')
       else None
   | _ => None
@@ -651,8 +651,8 @@ Proof.
 (* EF_memcpy *)
   inv H; unfold do_ef_memcpy.
   inv H0. rewrite Decidable_complete. rewrite H7; rewrite H8; auto.
-  destruct (Mem.strong_non_private_stack_access_dec
-              m bdst
+  destruct (strong_non_private_stack_access_dec
+              (Mem.stack_adt m) bdst
               (Ptrofs.unsigned odst)
               (Ptrofs.unsigned odst + Z.of_nat (Datatypes.length bytes))); intuition try congruence.
   red. tauto.

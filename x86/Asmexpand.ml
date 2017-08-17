@@ -481,7 +481,7 @@ let set_al sg =
 let expand_instruction instr =
   match instr with
   | Pallocframe (f, ofs_ra, ofs_link) ->
-let sz = Memtype.frame_size f in
+let sz = StackADT.frame_size f in
      if Archi.ptr64 then begin
        let (sz, save_regs) = sp_adjustment_64 sz in
        (* Allocate frame *)

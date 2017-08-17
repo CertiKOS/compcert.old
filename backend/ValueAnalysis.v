@@ -921,10 +921,10 @@ Theorem external_call_match' :
          (external_call_readonly:
             Mem.unchanged_on (loc_not_writable m) m m')
          (external_call_max_perm: forall (b : block) (ofs : Z)
-                                         (p : Memtype.permission),
+                                         (p : MemPerm.permission),
                                     Mem.valid_block m b ->
-                                    Mem.perm m' b ofs Memtype.Max p ->
-                                    Mem.perm m b ofs Memtype.Max p)
+                                    Mem.perm m' b ofs MemPerm.Max p ->
+                                    Mem.perm m b ofs MemPerm.Max p)
          (external_call_nextblock:
             Ple (Mem.nextblock m) (Mem.nextblock m')),
   genv_match bc ge ->
