@@ -6915,14 +6915,13 @@ Proof.
   intros.
   destr_in RSB.
   exploit add_adt_mem_inj; eauto. inversion INJ; eauto.
-  red. simpl. unfold frame_inject in FI. simpl in *. split; auto.
-  repeat destr_in FI.
-  simpl. 
+  {
+    red. simpl. unfold frame_inject in FI. simpl in *. split; auto.
+  } 
   intros (m2' & ADT & INJ').
-  simpl. rewrite ADT.
   eexists; split; eauto.
-  edestruct (add_adt_mem_unchanged _ _ _ _ H0) as (NB1 & PERM1 & _) ;
-  edestruct (add_adt_mem_unchanged _ _ _ _ ADT) as (NB & PERM & _); simpl in *.
+  edestruct (add_adt_mem_unchanged _ _ _ _ H0) as (NB1 & PERM1 & U1 & C1) ;
+    edestruct (add_adt_mem_unchanged _ _ _ _ ADT) as (NB & PERM & U & C); simpl in *.
   inversion INJ; econstructor; simpl; intros; eauto.
   + eapply mi_freeblocks0; eauto.
     unfold valid_block in H; rewrite NB1 in H; eauto.
@@ -6951,8 +6950,6 @@ Proof.
   eapply record_stack_block_inject'; eauto. simpl; auto.
   simpl; auto.
   red; simpl; intros. subst. eapply valid_block_inject_2; eauto.
-  Unshelve.
-  eauto.
 Qed.
 
 Lemma record_stack_blocks_inject_into_one:
@@ -6974,8 +6971,6 @@ Proof.
   }
   rewrite Forall_forall in FORALL. eapply FORALL. rewrite FOR. reflexivity. eauto. eauto.
   red; simpl. intros ? ->. auto.
-  Unshelve.
-  eauto.
 Qed.
 
 Lemma record_stack_blocks_inject:
@@ -6997,7 +6992,6 @@ Proof.
   rewrite <- ! H0; eauto.
   cut (~ In b0 bl); intuition.
   exploit H2; eauto.
-  Unshelve. eauto.
 Qed.
 
 Lemma add_adt_none_mem_inj:
@@ -7421,7 +7415,6 @@ Proof.
   intros; eapply drop_perm_no_abstract; eauto.
   {
     simpl. intros. eapply record_stack_block_inject'; simpl in *; eauto.
-    destruct fi1, fi2; eauto.
   }
   { intros; eapply record_stack_blocks_extends; eauto. }
   intros; eapply record_stack_block_mem_unchanged; eauto.
@@ -7447,7 +7440,6 @@ Proof.
   simpl. vm_compute. intuition congruence.
   simpl. unfold stack_limit. exists 512; omega.
   intros. simpl. eapply stack_below_limit. 
-  Unshelve. eauto.
 Qed.
 
 
