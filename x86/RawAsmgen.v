@@ -474,14 +474,15 @@ Section WITHMEMORYMODEL.
     intros i0 RNG LO.
     red in LO. destr_in LO.
     destruct SA as [[IST NONLINK]|[NIST DATA]].
-    apply NONLINK in RNG.
-    red in RNG.
-    unfold get_frame_info in RNG. rewrite Heqo in RNG.
-    intuition congruence.
-    red in DATA.
-    unfold get_frame_info in DATA. rewrite Heqo in DATA.
-    eapply frame_disjoints. eauto.
-    right. right. right. right. left. apply DATA. auto.
+    - apply NONLINK in RNG.
+      red in RNG.
+      unfold get_frame_info in RNG. rewrite Heqo in RNG.
+      apply RNG.
+      apply frame_link_readonly. auto.
+    - red in DATA.
+      unfold get_frame_info in DATA. rewrite Heqo in DATA.
+      apply frame_link_readonly in LO.
+      apply DATA in RNG. red in RNG. congruence.
   Qed.
 
   Lemma exec_instr_unchanged_on:
@@ -670,14 +671,16 @@ Section WITHMEMORYMODEL.
 
 
   Lemma alloc_inject:
-    forall j ostack m1 (rs1 rs1': regset) fi b m1' m2 m3 m4 m5,
+    forall j ostack m1 (rs1 rs1': regset) fi b m1' m2 m3 m4 m5 ofs_ra,
       match_states j (Ptrofs.unsigned ostack) (State rs1 m1) (State rs1' m1') ->
       Mem.alloc m1 0 (frame_size fi) = (m2, b) ->
       Mem.store Mptr m2 b (seg_ofs (frame_link fi)) rs1#RSP = Some m3 ->
-      Mem.store Mptr m3 b (seg_ofs (frame_retaddr fi)) rs1#RA = Some m4 ->
+      Mem.store Mptr m3 b ofs_ra rs1#RA = Some m4 ->
       Mem.record_stack_blocks m4 (Some (frame_with_info b (Some fi))) (frame_size fi) = Some m5 ->
       0 <= seg_ofs (frame_link fi) <= Ptrofs.max_unsigned ->
-      0 <= seg_ofs (frame_retaddr fi) <= Ptrofs.max_unsigned ->
+      0 <= ofs_ra <= Ptrofs.max_unsigned ->
+      (forall o, seg_ofs (frame_link fi) <= o < seg_ofs (frame_link fi) + size_chunk Mptr ->
+            ofs_ra <= o < ofs_ra + size_chunk Mptr -> False) ->
       let curofs := current_offset (rs1' # RSP) in
       let newostack := offset_after_alloc curofs fi in
       let rs2 := nextinstr ( rs1 #RAX <- (rs1#RSP)  #RSP <- (Vptr b Ptrofs.zero)) in
@@ -689,11 +692,13 @@ Section WITHMEMORYMODEL.
             Mem.storev Mptr m1' (Val.offset_ptr (Vptr bstack (Ptrofs.repr newostack)) (Ptrofs.repr (seg_ofs (frame_link fi)))) rs1'#RSP = Some m3'
             /\
             exists m4',
-              Mem.storev Mptr m3' (Val.offset_ptr (Vptr bstack (Ptrofs.repr newostack)) (Ptrofs.repr (seg_ofs (frame_retaddr fi)))) rs1'#RA = Some m4'
+              Mem.storev Mptr m3' (Val.offset_ptr (Vptr bstack (Ptrofs.repr newostack)) (Ptrofs.repr ofs_ra)) rs1'#RA = Some m4'
               /\ exists m5', Mem.record_stack_blocks m4' None (frame_size fi) = Some m5'
                        /\ match_states j' newostack (State rs2 m5) (State rs2' m5').
   Proof.
-    intros j ostack m1 rs1 rs1' fi b m1' m2 m3 m4 m5 MS ALLOC STORE_PARENT STORE_RETADDR RSB REPRlink REPRretaddr curofs newostack rs2 rs2'.
+    intros j ostack m1 rs1 rs1' fi b m1' m2 m3 m4 m5 ofs_ra
+           MS ALLOC STORE_PARENT STORE_RETADDR RSB REPRlink REPRretaddr
+           DISJ curofs newostack rs2 rs2'.
     inv MS.
     assert (RSPDEC: (rs1' RSP = Vptr bstack ostack0 /\ curofs = Ptrofs.unsigned ostack0)
                     \/ (~ is_ptr (rs1' RSP) /\ curofs = Mem.stack_limit /\ Mem.stack_adt m1 = nil)).
@@ -810,8 +815,8 @@ Section WITHMEMORYMODEL.
     (* store return address *)
     exploit Mem.store_mapped_inject. apply MINJ2. simpl in *; eauto. eauto. 
     eapply val_inject_incr; eauto. intros (m4' & STORE' & MINJ3).
-    assert (Ptrofs.unsigned (Ptrofs.add (Ptrofs.repr newostack) (Ptrofs.repr (seg_ofs (frame_retaddr fi)))) =
-            seg_ofs (frame_retaddr fi) + newostack) as EQ'.
+    assert (Ptrofs.unsigned (Ptrofs.add (Ptrofs.repr newostack) (Ptrofs.repr ofs_ra)) =
+            ofs_ra + newostack) as EQ'.
     2: rewrite EQ', STORE'.
     rewrite Ptrofs.add_commut.
     erewrite Mem.address_inject; eauto.
@@ -1000,15 +1005,15 @@ Section WITHMEMORYMODEL.
       destruct ptr64; auto. 
       eauto.
       right. 
-      assert (DISJ: forall o, in_segment o (frame_link fi) -> in_segment o (frame_retaddr fi) -> False).
-      generalize (frame_disjoints fi).
-      intros (A & B).
-      intros. eapply B in H0; eauto. apply H0; left; auto.
-      unfold in_segment in DISJ. rewrite frame_retaddr_size, frame_link_size in DISJ.
-      destruct (zle (seg_ofs (frame_link fi) + size_chunk Mptr) (seg_ofs (frame_retaddr fi))); auto.
-      destruct (zle (seg_ofs (frame_retaddr fi) + size_chunk Mptr) (seg_ofs (frame_link fi))); auto.
+      (* assert (DISJ: forall o, in_segment o (frame_link fi) -> in_segment o (frame_retaddr fi) -> False). *)
+      (* generalize (frame_disjoints fi). *)
+      (* intros (A & B). *)
+      (* intros. eapply B in H0; eauto. apply H0; left; auto. *)
+      unfold in_segment in DISJ. 
+      destruct (zle (seg_ofs (frame_link fi) + size_chunk Mptr) ofs_ra); auto.
+      destruct (zle (ofs_ra + size_chunk Mptr) (seg_ofs (frame_link fi))); auto.
       exfalso.
-      specialize (DISJ (Z.max (seg_ofs (frame_link fi)) (seg_ofs (frame_retaddr fi)))).
+      specialize (DISJ (Z.max (seg_ofs (frame_link fi)) ofs_ra)).
       trim DISJ. split. apply Z.le_max_l.
       rewrite Zmax_spec. destr. omega. omega. 
       trim DISJ. split. apply Z.le_max_r.
@@ -1172,21 +1177,21 @@ Section WITHMEMORYMODEL.
       + (* allocframe *)
         repeat destr_in EI.
         unfold check_alloc_frame in Heqb0.
-        repeat rewrite andb_true_iff in Heqb0.
-        destruct Heqb0 as (EQ1 & EQ2).
-        apply ZEQ in EQ1.
-        apply ZEQ in EQ2.
+        apply andb_true_iff in Heqb0.
+        destruct Heqb0 as (EQofslink & DISJ).
+        destruct zeq;  inv EQofslink.
         inversion MS; subst.
         rewrite Ptrofs.add_zero_l in *.
-        rewrite EQ1, EQ2 in *.
+        rewrite e in *.
         edestruct alloc_inject as (j' & JSPEC & INCR & m3' & STORE1 & m4' & STORE2 & m5' & RSB' & MS') ; eauto.
-        rewrite <- EQ1. apply Ptrofs.unsigned_range_2.
-        rewrite <- EQ2. apply Ptrofs.unsigned_range_2.
+        rewrite <- e. apply Ptrofs.unsigned_range_2.
+        apply Ptrofs.unsigned_range_2.
+        apply disjointb_disjoint. auto.
         simpl in *.
         set (newostack := offset_after_alloc (current_offset (rs2 RSP)) frame).
         fold newostack in STORE1, STORE2, JSPEC, MS'.
-        rewrite <- EQ1 in STORE1. rewrite Ptrofs.repr_unsigned in STORE1.
-        rewrite <- EQ2 in STORE2. rewrite Ptrofs.repr_unsigned in STORE2.
+        rewrite <- e in STORE1. rewrite Ptrofs.repr_unsigned in STORE1.
+        rewrite Ptrofs.repr_unsigned in STORE2.
         rewrite STORE1, STORE2, RSB'.
         exists j',  newostack; eexists; eexists; split; eauto.
 
@@ -1201,9 +1206,10 @@ Section WITHMEMORYMODEL.
         unfold check_top_frame in Heqb0.
         repeat (destr_in Heqb0; [idtac]).
         repeat rewrite andb_true_iff in Heqb1.
-        destruct Heqb1 as ((((A & B) & C) & D) & E).
+        destruct Heqb1 as ((((((A & B) & C) & D) & E) & F) & G).
         destruct (peq b0 b); try congruence. subst.
-        apply ZEQ in B. apply ZEQ in C. apply ZEQ in D. apply ZEQ in E. subst.
+        apply ZEQ in B. apply ZEQ in C.
+        subst.
         set (newostack := Ptrofs.unsigned ostack0 + align (Z.max 0 (frame_size f1)) 8).
         edestruct free_inject as (m2' & USB & INJ); eauto. rewrite USB.
         exists j, newostack; eexists; eexists; split; [|split]; eauto.
@@ -1220,8 +1226,9 @@ Section WITHMEMORYMODEL.
         {
           move Heqo0 at bottom.
           simpl in Heqo0. rewrite Ptrofs.add_zero_l in Heqo0.
-          rewrite D in Heqo0.
-          inv LRSP; congruence.
+          destruct zeq; try discriminate.
+          rewrite e in Heqo0.
+          inv LRSP; congruence. 
         }
         subst.
         specialize (SPAL _ H2).
@@ -1439,17 +1446,6 @@ Section WITHMEMORYMODEL.
     destruct p. eapply H in JB; eauto.
     congruence.
     exploit H0; eauto. intuition congruence.
-  Qed.
-
-  Lemma in_link_not_in_data:
-    forall f o,
-      in_segment o (frame_link f)
-      -> ~ in_stack_data o (o + 1) f.
-  Proof.
-    clear. intros f o IS ISD.
-    eapply frame_disjoints in IS.
-    apply IS. do 4 right; left.
-    apply ISD. omega.
   Qed.
 
   Lemma set_res_no_rsp:
@@ -1678,6 +1674,27 @@ Section WITHMEMORYMODEL.
     apply Val.loword_inject; auto.
   Qed.
 
+  Lemma link_offsets_not_public_stack_range:
+    forall b ofs0 l m ,
+      link_offsets l b ofs0 ->
+      Mem.valid_block m b -> ~ match get_assoc l b with
+                              | Some fi => public_stack_range ofs0 (ofs0 + 1) fi
+                              | None => True
+                              end.
+  Proof.
+    unfold public_stack_access.
+    unfold get_frame_info.
+    induction l; simpl; intros; eauto.
+    destruct a.
+    simpl in *.
+    red in H.
+    simpl in H.
+    destr_in H.
+    apply frame_link_readonly in H. unfold public_stack_range. intro PUB.
+    rewrite PUB in H. congruence. omega.
+  Qed.
+
+
   Theorem step_simulation:
     forall S1 t S2,
       Asm.step ge S1 t S2 ->
@@ -1829,27 +1846,7 @@ Section WITHMEMORYMODEL.
         eapply load_rsp_inv'. eauto.
         eapply Mem.unchanged_on_implies.
         eapply external_call_unchanged_on. eauto.
-        unfold strong_non_private_stack_access.
-        unfold get_frame_info.
-        intros b ofs0 ; generalize (Mem.stack_adt m). clear.
-        induction l; simpl; intros; eauto.
-        destruct a.
-        simpl in *.
-        red in H.
-        simpl in H.
-        destruct o.
-        destruct f.
-        destruct peq. subst.
-        destruct o.
-        eapply in_link_not_in_data; eauto.
-        easy.
-        destr_in H.
-        eapply in_link_not_in_data; eauto.
-        destruct in_dec. easy.
-        destr_in H.
-        eapply in_link_not_in_data; eauto.
-        destr_in H.
-        eapply in_link_not_in_data; eauto.
+        intros; eapply link_offsets_not_public_stack_range; eauto.
       + intros.
         eapply INCR; eauto.
       + intros.
@@ -2017,27 +2014,7 @@ Section WITHMEMORYMODEL.
         eapply load_rsp_inv'. eauto.
         eapply Mem.unchanged_on_implies.
         eapply external_call_unchanged_on. eauto.
-        unfold strong_non_private_stack_access.
-        unfold get_frame_info.
-        intros b ofs0 ; generalize (Mem.stack_adt m). clear.
-        induction l; simpl; intros; eauto.
-        destruct a.
-        simpl in *.
-        red in H.
-        simpl in H.
-        destruct o.
-        destruct f.
-        destruct peq. subst.
-        destruct o.
-        eapply in_link_not_in_data; eauto.
-        easy.
-        destr_in H.
-        eapply in_link_not_in_data; eauto.
-        destruct in_dec. easy.
-        destr_in H.
-        eapply in_link_not_in_data; eauto.
-        destr_in H.
-        eapply in_link_not_in_data; eauto.
+        intros; eapply link_offsets_not_public_stack_range; eauto.
       + intros.
         eapply INCR; eauto.
       + intros.

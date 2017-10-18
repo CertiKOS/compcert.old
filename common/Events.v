@@ -582,7 +582,7 @@ Inductive volatile_store (ge: Senv.t):
   | volatile_store_nonvol: forall chunk m b ofs v m',
       Senv.block_is_volatile ge b = Some false ->
       Mem.store chunk m b (Ptrofs.unsigned ofs) v = Some m' ->
-      strong_non_private_stack_access (Mem.stack_adt m) b (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + size_chunk chunk) ->
+      public_stack_access (Mem.stack_adt m) b (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + size_chunk chunk) ->
       volatile_store ge chunk m b ofs v E0 m'.
 
 End WITHMEMORYMODELOPS.
@@ -765,7 +765,7 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     forall ge vargs m1 t vres m2,
       sem ge vargs m1 t vres m2 ->
       Mem.unchanged_on
-        (fun b o => ~ strong_non_private_stack_access (Mem.stack_adt m1) b o (o+1))
+        (fun b o => ~ public_stack_access (Mem.stack_adt m1) b o (o+1))
         m1 m2;
 
   ec_perm_frames:
@@ -959,7 +959,7 @@ Proof.
   - exploit Mem.store_within_extends; eauto. intros [m2' [A B]].
     exists m2'; repeat (split; auto).
     + econstructor; eauto.
-      eapply Mem.strong_non_private_stack_access_extends; eauto.
+      eapply Mem.public_stack_access_extends; eauto.
       eapply Mem.store_valid_access_3; eauto.
     + eapply Mem.store_unchanged_on; eauto.
       unfold loc_out_of_bounds; intros.
@@ -1002,7 +1002,7 @@ Proof.
     rewrite EQ.
     replace (Ptrofs.unsigned ofs + delta + size_chunk chunk)
     with ((Ptrofs.unsigned ofs  + size_chunk chunk) + delta) by omega.
-    eapply Mem.strong_non_private_stack_access_inject; eauto.
+    eapply Mem.public_stack_access_inject; eauto.
     eapply Mem.store_valid_access_3; eauto.
   + eapply Mem.store_unchanged_on; eauto.
     unfold loc_unmapped; intros. inv AI; congruence.
@@ -1063,7 +1063,7 @@ Proof.
 - inv H. inv H0. apply Mem.unchanged_on_refl.
   eapply Mem.store_unchanged_on. eauto.
   intros. intro A; apply A. 
-  eapply strong_non_private_stack_access_inside; eauto; omega.
+  eapply public_stack_access_inside; eauto; omega.
 - inv H.  inv H1. tauto.
   split; intros. eapply Mem.perm_store_2; eauto. eapply Mem.perm_store_1; eauto.
 - inv H. inv H2. tauto.
@@ -1159,8 +1159,8 @@ Proof.
   eapply Mem.unchanged_on_trans. eapply Mem.alloc_unchanged_on. eauto.
   eapply Mem.store_unchanged_on. eauto. intros.
   intro A; apply A.
-  exploit Mem.invalid_block_non_private_stack_access. eapply Mem.fresh_block_alloc; eauto.
-  unfold non_private_stack_access.
+  exploit Mem.invalid_block_stack_access. eapply Mem.fresh_block_alloc; eauto.
+  unfold stack_access.
   intros [[B C]|[B C]]. eapply Mem.stack_top_valid in B. eapply Mem.fresh_block_alloc in B; eauto. easy.
   eassumption.
 - inv H.  
@@ -1301,7 +1301,7 @@ Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
                    \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
       Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz = Some bytes ->
       Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes = Some m' ->
-      strong_non_private_stack_access (Mem.stack_adt m) bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + Z.of_nat (length bytes)) ->
+      public_stack_access (Mem.stack_adt m) bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + Z.of_nat (length bytes)) ->
       extcall_memcpy_sem sz al ge (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
 
@@ -1332,7 +1332,7 @@ Proof.
   exists Vundef; exists m2'.
   split. econstructor; eauto.
   erewrite <- list_forall2_length.
-  eapply Mem.strong_non_private_stack_access_extends; eauto.
+  eapply Mem.public_stack_access_extends; eauto.
   eapply Mem.storebytes_range_perm; eauto.
   eauto.
   split. constructor.
@@ -1355,14 +1355,14 @@ Proof.
   destruct (Mem.range_perm_storebytes m1' b2 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil)
   as [m2' SB].
   simpl. red; intros; omegaContradiction.
-  apply lo_ge_hi_non_private_stack_access. simpl; omega.
+  apply lo_ge_hi_stack_access. simpl; omega.
   exists f, Vundef, m2'.
   split. econstructor; eauto.
   intros; omegaContradiction.
   intros; omegaContradiction.
   right; omega.
   apply Mem.loadbytes_empty. omega.
-  eapply lo_ge_hi_strong_non_private_stack_access. simpl; omega.
+  eapply lo_ge_hi_public_stack_access. simpl; omega.
   split. constructor.
   split. eapply Mem.storebytes_empty_inject; eauto.
   split. eapply Mem.storebytes_unchanged_on; eauto. unfold loc_unmapped; intros.
@@ -1394,8 +1394,8 @@ Proof.
   eapply Mem.disjoint_or_equal_inject with (m := m1); eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto. omega.
-  eapply strong_non_private_stack_access_inside.
-  eapply Mem.strong_non_private_stack_access_inject. 4: eauto. all: eauto. rewrite LEN. rewrite nat_of_Z_eq. eauto. omega.
+  eapply public_stack_access_inside.
+  eapply Mem.public_stack_access_inject. 4: eauto. all: eauto. rewrite LEN. rewrite nat_of_Z_eq. eauto. omega.
   omega.
   rewrite (list_forall2_length B); omega.
   split. constructor.
@@ -1421,7 +1421,7 @@ Proof.
 - intros. inv H.
   eapply Mem.storebytes_unchanged_on; eauto.
   simpl; intros. intro A; apply A.
-  eapply strong_non_private_stack_access_inside; eauto. omega. omega.
+  eapply public_stack_access_inside; eauto. omega. omega.
 - intros. inv H.
   split; first [ now (eapply Mem.perm_storebytes_1; eauto) | now (eapply Mem.perm_storebytes_2; eauto)].
 - intros. inv H.

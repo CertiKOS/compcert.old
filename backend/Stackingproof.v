@@ -97,6 +97,11 @@ Section WITHINITSP.
 Variables init_sp init_ra: val.
 Let step := Mach.step init_sp init_ra return_address_offset.
 
+Opaque bound_outgoing bound_local bound_stack_data Z.mul Z.add.
+
+
+Transparent bound_outgoing bound_local bound_stack_data Z.mul Z.add.
+
 Section FRAME_PROPERTIES.
 
 Variable f: Linear.function.
@@ -145,6 +150,8 @@ Proof.
   unfold b, function_bounds, bound_stack_data. apply Zmax1.
 Qed.
 
+
+
 (** * Memory assertions used to describe the contents of stack frames *)
 
 Local Opaque Z.add Z.mul Z.divide.
@@ -173,7 +180,7 @@ Qed.
 Lemma contains_set_stack:
   forall (spec: val -> Prop) v spec1 m ty sp ofs P,
   m |= contains (chunk_of_type ty) sp ofs spec1 ** P ->
-  non_private_stack_access (Mem.stack_adt m) sp ofs (ofs + size_chunk (chunk_of_type ty)) ->
+  stack_access (Mem.stack_adt m) sp ofs (ofs + size_chunk (chunk_of_type ty)) ->
   spec (Val.load_result (chunk_of_type ty) v) ->
   exists m',
       store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) v = Some m'
@@ -198,7 +205,7 @@ Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl
   m_pred := fun m =>
     (8 | pos) /\ 0 <= pos /\ pos + 4 * bound <= Ptrofs.modulus /\
     Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable /\
-    (* Mem.non_private_stack_access m sp pos (pos + 4 * bound) /\ *)
+    (* Mem.stack_access m sp pos (pos + 4 * bound) /\ *)
     forall ofs ty, 0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
     exists v, Mem.load (chunk_of_type ty) m sp (pos + 4 * ofs) = Some v
            /\ Val.inject j (ls (S sl ofs ty)) v;
@@ -211,7 +218,7 @@ Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl
 Next Obligation.
   intuition auto. 
   - red; intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
-  (* - eapply Mem.unchanged_on_non_private_stack_access; eauto. simpl; auto. *)
+  (* - eapply Mem.unchanged_on_stack_access; eauto. simpl; auto. *)
   - exploit H5; eauto. intros (v & A & B). exists v; split; auto.
     eapply Mem.load_unchanged_on; eauto.
     simpl; intros. rewrite size_type_chunk, typesize_typesize in H9. 
@@ -225,7 +232,7 @@ Remark valid_access_location:
   forall m sp pos bound ofs ty p,
   (8 | pos) ->
   Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable ->
-  (perm_order p Writable -> non_private_stack_access (Mem.stack_adt m) sp pos (pos + 4 * bound)) ->
+  (perm_order p Writable -> stack_access (Mem.stack_adt m) sp pos (pos + 4 * bound)) ->
   0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
   Mem.valid_access m (chunk_of_type ty) sp (pos + 4 * ofs) p.
 Proof.
@@ -237,7 +244,7 @@ Proof.
   exists (8 / (4 * typealign ty)); destruct ty; reflexivity.
   apply Z.mul_divide_mono_l. auto.
 - intros.
-  eapply non_private_stack_access_inside; eauto. omega.
+  eapply stack_access_inside; eauto. omega.
   rewrite size_type_chunk. rewrite typesize_typesize. omega.
 Qed.
 
@@ -258,7 +265,7 @@ Qed.
 Lemma set_location:
   forall m j sp pos bound sl ls P ofs ty v v',
   m |= contains_locations j sp pos bound sl ls ** P ->
-  non_private_stack_access (Mem.stack_adt m) sp pos (pos + 4 * bound) ->
+  stack_access (Mem.stack_adt m) sp pos (pos + 4 * bound) ->
   0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
   Val.inject j v v' ->
   exists m',
@@ -289,7 +296,7 @@ Proof.
         destruct (Mem.valid_access_load m' (chunk_of_type ty0) sp (pos + 4 * ofs0)) as [v'' LOAD].
         apply Mem.valid_access_implies with Writable; auto with mem. 
         eapply valid_access_location; eauto. 
-        intros; eapply Mem.store_non_private_stack_access; eauto.
+        intros; eapply Mem.store_stack_access; eauto.
         exists v''; auto.
     + apply (m_invar P) with m; auto. 
       cut (Mem.strong_unchanged_on (m_footprint P) m m').
@@ -494,17 +501,17 @@ Qed.
 
 (** Assigning a [Local] or [Outgoing] stack slot. *)
 
-Lemma store_stack_non_private_stack_access:
+Lemma store_stack_stack_access:
   forall m sp ty o v m',
     store_stack m sp ty o v = Some m' ->
     forall b lo hi,
-      non_private_stack_access (Mem.stack_adt m') b lo hi <->
-      non_private_stack_access (Mem.stack_adt m) b lo hi.
+      stack_access (Mem.stack_adt m') b lo hi <->
+      stack_access (Mem.stack_adt m) b lo hi.
 Proof.
   unfold store_stack, Mem.storev.
   intros.
   destruct (Val.offset_ptr sp o); try discriminate.
-  eapply Mem.store_non_private_stack_access; eauto.
+  eapply Mem.store_stack_access; eauto.
 Qed.
 
 Lemma frame_set_local:
@@ -512,7 +519,7 @@ Lemma frame_set_local:
   m |= frame_contents j sp ls ls0 parent retaddr ** P ->
   slot_within_bounds b Local ofs ty -> slot_valid f Local ofs ty = true ->
   Val.inject j v v' ->
-  non_private_stack_access (Mem.stack_adt m) sp (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b) ->
+  stack_access (Mem.stack_adt m) sp (fe_ofs_local fe) (fe_ofs_local fe + 4 * bound_local b) ->
   exists m',
      store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_local fe ofs)) v' = Some m'
   /\ m' |= frame_contents j sp (Locmap.set (S Local ofs ty) v ls) ls0 parent retaddr ** P.
@@ -539,7 +546,7 @@ Lemma frame_set_outgoing:
     m |= frame_contents j sp ls ls0 parent retaddr ** P ->
     slot_within_bounds b Outgoing ofs ty -> slot_valid f Outgoing ofs ty = true ->
     Val.inject j v v' ->
-    non_private_stack_access (Mem.stack_adt m) sp fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b) ->
+    stack_access (Mem.stack_adt m) sp fe_ofs_arg (fe_ofs_arg + 4 * bound_outgoing b) ->
   exists m',
      store_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_arg ofs)) v' = Some m'
   /\ m' |= frame_contents j sp (Locmap.set (S Outgoing ofs ty) v ls) ls0 parent retaddr ** P.
@@ -677,6 +684,8 @@ Lemma agree_reg:
 Proof.
   intros. auto.
 Qed.
+
+
 
 Lemma agree_reglist:
   forall j ls rs rl,
@@ -1037,6 +1046,8 @@ Proof.
   intros; erewrite store_stack_no_abstract; eauto.
 Qed.
 
+
+
 (** The following lemmas show the correctness of the register saving
   code generated by [save_callee_save]: after this code has executed,
   the register save areas of the current frame do contain the
@@ -1064,7 +1075,7 @@ Lemma save_callee_save_rec_correct:
   (forall fi,
       get_frame_info (Mem.stack_adt m) sp = Some fi ->
       forall o, pos <= o < size_callee_save_area_rec l pos ->
-           ~ in_segment o (frame_link fi) /\ ~ in_segment o (frame_retaddr fi)
+           ~ frame_readonly fi o
   ) ->
   exists rs', exists m',
      star step tge
@@ -1176,6 +1187,58 @@ Proof.
   destruct (Loc.diff_dec (R a) l); auto. red; auto.
 Qed.
 
+
+
+Lemma callee_save_retaddr_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_callee_save fe <= o < size_callee_save_area_rec (used_callee_save b) (fe_ofs_callee_save fe) ->
+      fe_ofs_retaddr fe <= o < fe_ofs_retaddr fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  unfold Mptr in *.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans. apply H9.
+  etransitivity. 2: apply H5.
+  etransitivity. 2: apply align_le.
+  etransitivity. 2: apply le_add_pos.
+  etransitivity. 2: apply align_le.
+  etransitivity. 2: apply le_add_pos.
+  etransitivity. 2: apply align_le.
+  unfold size_callee_save_area. omega.
+  all: try destr; try omega.
+  generalize (bound_local_pos b); omega.
+  generalize (bound_stack_data_pos b); omega.
+Qed.
+
+Lemma callee_save_link_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_callee_save fe <= o < size_callee_save_area_rec (used_callee_save b) (fe_ofs_callee_save fe) ->
+      fe_ofs_link fe <= o < fe_ofs_link fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  unfold Mptr in *.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans. apply H10.
+  etransitivity. 2: apply H8.
+  destr.
+Qed.
+
+
+
+
+Opaque fe_ofs_retaddr fe_ofs_link fe_ofs_local fe_ofs_arg fe_ofs_callee_save
+       bound_local bound_outgoing size_callee_save_area_rec used_callee_save.
+
 Lemma save_callee_save_correct:
   forall j ls ls0 rs sp cs fb k m P,
   m |= range sp fe.(fe_ofs_callee_save) (size_callee_save_area b fe.(fe_ofs_callee_save)) ** P ->
@@ -1207,13 +1270,17 @@ Proof.
 - instantiate (1 := rs1). apply agree_regs_undef_regs. apply agree_regs_call_regs. auto.
 - auto.
 - rewrite GFI. inversion 1; subst.
-  intros. split; intro A.
-  eapply frame_disjoints in A.
-  apply A. right. right. right. left. Opaque fe_ofs_callee_save. unfold in_segment; simpl.
-  fold fe. unfold size_callee_save_area. omega.
-  eapply frame_disjoints in A.
-  apply A. right. right. left. unfold in_segment; simpl.
-  fold fe. unfold size_callee_save_area. omega.
+  intros.
+  unfold frame_of_frame_env.
+  unfold frame_readonly.
+  generalize (callee_save_link_sep b _ H0).
+  generalize (callee_save_retaddr_sep b _ H0). intros.
+  fold fe.
+  unfold size_callee_save_area.
+  simpl.
+  rewrite ! and_sumbool.
+  repeat destr.
+  
 - clear SEP. intros (rs' & m' & EXEC & SEP & PERMS & ST & GFI' & AG' & VALID & UNCH).
   exists rs', m'. 
   split. eexact EXEC.
@@ -1247,6 +1314,7 @@ Lemma m_invar_stack_sepconj:
 Proof.
   reflexivity.
 Qed.
+
 
 Lemma function_prologue_correct:
   forall j ls ls0 ls1 rs rs1 m1 m1' m2 m2' sp parent ra cs fb k P,
@@ -1376,8 +1444,23 @@ Proof.
     intros.
     eapply Mem.perm_alloc_3 in H; eauto.
     Transparent fe. fold fe.
+    unfold frame_of_frame_env.
+    red. simpl.
+    assert (fe_stack_data fe <= ofs + fe_stack_data fe < fe_stack_data fe + bound_stack_data b).
     generalize bound_stack_data_stacksize.
     omega.
+    clear H.
+    revert H0.
+    generalize (ofs+fe_stack_data fe) as o. intros.
+    generalize (stkdata_local_sep _ _ H0).
+    generalize (stkdata_retaddr_sep _ _ H0).
+    generalize (stkdata_link_sep _ _ H0).
+    generalize (stkdata_callee_save_sep _ _ H0).
+    generalize (stkdata_arg_sep _ _ H0).
+    fold fe.
+    intros.
+    rewrite ! and_sumbool.
+    repeat destr.
   }
   {
     intros.
@@ -2406,12 +2489,8 @@ Definition init_sp_has_stackinfo (m: mem) : Prop :=
     exists fi, get_frame_info (Mem.stack_adt m) b = Some fi
           /\ (forall o,
                 Ptrofs.unsigned i1 + fe_ofs_arg <= o < Ptrofs.unsigned i1 + 4 * size_arguments init_sg ->
-                in_segment o (frame_outgoings fi)
+                frame_private fi o
             )
-          /\ (forall o,
-                in_segment o (frame_outgoings fi) ->
-                in_segment o (frame_data fi) ->
-                False)
           /\ (forall o, fe_ofs_arg <= o < 4 * size_arguments init_sg ->
                   Ptrofs.unsigned (Ptrofs.add i1 (Ptrofs.repr (fe_ofs_arg + o))) =
                   Ptrofs.unsigned i1 + (fe_ofs_arg + o))
@@ -3280,16 +3359,15 @@ Proof.
         unfold load_stack in *; simpl in *.
         eapply Mem.load_unchanged_on; eauto.
         eapply external_call_unchanged_on. apply A.
-        intros. simpl. unfold strong_non_private_stack_access.
+        intros. simpl. unfold public_stack_access.
         intro NPSA.
         unfold init_sp_has_stackinfo in MSISHS.
         rewrite Heqv0 in *.
-        destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
+        destruct MSISHS as (fi & MSI1 & MSI2 & MSI4).
         rewrite MSI1 in NPSA.
         specialize (NPSA i0).
         trim (NPSA). omega.
-        eapply MSI3; eauto.
-        eapply MSI2; eauto.
+        red in NPSA. erewrite MSI2 in NPSA; eauto. congruence.
         simpl in MSI4. rewrite MSI4 in H1.
         split. etransitivity. 2: apply H1.
         exploit loc_arguments_acceptable_2. apply H. simpl.
@@ -3343,6 +3421,8 @@ Proof.
   destruct Archi.ptr64; omega.
   destruct Archi.ptr64; omega.
 Qed.
+
+Transparent fe_ofs_arg.
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step fn_stack_requirements init_ls ge s1 t s2 ->
@@ -3474,12 +3554,15 @@ Proof.
       unfold get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
       rewrite pred_dec_true.
       rewrite FIND in FIND0. inv FIND0.
-      rewrite (unfold_transf_function _ _ TRANSL).  Opaque frame_link frame_retaddr. simpl.
-      intros. split; intro A.
-      eapply frame_disjoints in A.
-      apply A. right. left. unfold in_segment; simpl. omega.
-      eapply frame_disjoints in A.
-      apply A. left. unfold in_segment; simpl. omega. auto.
+      rewrite (unfold_transf_function _ _ TRANSL).  simpl.
+      intros. unfold frame_readonly.
+      Opaque fe_ofs_retaddr fe_ofs_link fe_ofs_local fe_ofs_arg fe_ofs_callee_save
+             bound_local bound_outgoing size_callee_save_area_rec used_callee_save.
+      simpl.
+      generalize (local_retaddr_sep _ _ H) (local_link_sep _ _ H).
+      rewrite ! and_sumbool.
+      repeat destr.
+      auto.
       eapply frame_set_outgoing; eauto. left; split; auto.
       red; red.
       inv CSC. destruct CallStackConsistency as (l1 & rr & EQADT & FORALL).
@@ -3487,10 +3570,13 @@ Proof.
       unfold get_frame_info. rewrite EQADT. Opaque fe_ofs_local. simpl.
       rewrite pred_dec_true.
       rewrite FIND in FIND0. inv FIND0.
-      rewrite (unfold_transf_function _ _ TRANSL).  Opaque frame_link frame_retaddr. simpl.
-      intros. split; intro A; eapply frame_disjoints in A; apply A.
-      right. right. left. unfold in_segment; simpl. omega.
-      right. left. unfold in_segment; simpl. omega. auto.
+      rewrite (unfold_transf_function _ _ TRANSL).
+      intros. simpl.
+      unfold frame_readonly.
+      simpl.
+      generalize (arg_retaddr_sep _ _ H) (arg_link_sep _ _ H).
+      rewrite ! and_sumbool. repeat destr.
+      auto.
     }
     clear SEP; destruct A as (m'' & STORE & SEP).
     econstructor; split.
@@ -3614,8 +3700,8 @@ Proof.
          inv MACH.
          red in  MSISHS.
          rewrite Heqv0 in MSISHS. simpl in MSISHS.
-         destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4).
-         unfold strong_non_private_stack_access in C3. rewrite MSI1 in C3.
+         destruct MSISHS as (fi & MSI1 & MSI2 & MSI4).
+         unfold public_stack_access in C3. rewrite MSI1 in C3.
          destruct C3 as [C3 | C3]; try congruence.
          simpl in ISP'NST. exfalso; apply ISP'NST. apply C3.
          destruct (match_stacks_is_init_sg _ _ _ _ _ STACKS).
@@ -3635,13 +3721,15 @@ Proof.
          red in C3'. red in C3'.
          specialize (C3' o). 
          specialize (C3' RNG1).
-         eapply MSI3.
-         apply MSI2. 2: apply C3'.
+         red in MSI2.
+         rewrite MSI2 in C3'. congruence.
          split. etransitivity. 2: apply RNG2.
          exploit loc_arguments_acceptable_2. apply IN'. simpl.
          generalize (loc_arguments_bounded _ _ _ IN').
          generalize (match_stacks_size_args' _ _ _ _ _ STACKS). 
-         intros. simpl. unfold fe_ofs_arg. omega.
+         intros. simpl.
+         Transparent fe_ofs_arg.
+         unfold fe_ofs_arg. omega.
          eapply Z.lt_le_trans. apply RNG2.
          generalize (loc_arguments_bounded _ _ _ IN').
          generalize (typesize_pos ty).
@@ -3650,10 +3738,12 @@ Proof.
          omega.
          simpl.
          exists (Z.max (Ptrofs.unsigned i) (Ptrofs.unsigned (Ptrofs.add i1 (Ptrofs.repr (4*of))))).
+         unfold fe_ofs_arg in MSI4. simpl in MSI4.
          repeat split.
          apply Zmax_bound_l. omega.
          rewrite Zmax_spec. destruct (zlt _ _). generalize (size_chunk_pos chunk); omega. omega.
-         apply Zmax_bound_r. rewrite MSI4. omega. eapply in_stack_slot_bounds; eauto. 
+         apply Zmax_bound_r. 
+         rewrite MSI4. omega. eapply in_stack_slot_bounds; eauto.
          rewrite Zmax_spec. destruct (zlt _ _).
          rewrite MSI4 in g. omega.
          eapply in_stack_slot_bounds; eauto.
@@ -3866,11 +3956,10 @@ Proof.
          inv MACH.
          unfold init_sp_has_stackinfo in MSISHS.
          rewrite Heqv0 in *.
-         destruct MSISHS as (fi & MSI1 & MSI2 & MSI3 & MSI4). rewrite MSI1 in NPSA.
+         destruct MSISHS as (fi & MSI1 & MSI2 &  MSI4). rewrite MSI1 in NPSA.
          specialize (NPSA i0).
          trim (NPSA). omega.
-         eapply MSI3; eauto.
-         eapply MSI2; eauto.
+         red in NPSA. erewrite MSI2 in NPSA. congruence.
          simpl in MSI4. rewrite MSI4 in H3.
          split. etransitivity. 2: apply H3.
          exploit loc_arguments_acceptable_2. apply H2. simpl.
@@ -4014,8 +4103,15 @@ Proof.
       }
       rewrite Ptrofs.unsigned_repr.
       rewrite Ptrofs.unsigned_repr.
-      rewrite ! andb_true_iff. split. 
-      apply H1. apply H1.
+      unfold frame_readonly. simpl.
+      split.
+      intros; rewrite ! and_sumbool.
+      repeat destr.
+      split; auto.
+      apply disjoint_disjointb. simpl.
+      intros. eapply retaddr_link_sep; eauto.
+      generalize (size_chunk_pos Mptr); omega.
+      generalize (size_chunk_pos Mptr); omega.
       split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size. eapply size_no_overflow; eauto.
       split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size. eapply size_no_overflow; eauto.
     }
@@ -4252,8 +4348,8 @@ Lemma stacking_frame_correct:
     forall (fb : Values.block) (f : Mach.function),
       Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) fb = Some (Internal f) ->
       StackADT.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f /\
-      Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) /\
-      Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))).
+      Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) (* /\ *)
+      (* Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))) *).
 Proof.
   intros p tp MP fb f FFP.
   red in MP.
@@ -4266,12 +4362,12 @@ Proof.
   monadInv H6.
   rewrite (unfold_transf_function _ _ EQ). 
   split. reflexivity.
-  split. Opaque fe_ofs_link. simpl. apply Ptrofs.unsigned_repr.
+  Opaque fe_ofs_link. simpl. apply Ptrofs.unsigned_repr.
   split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size.
   eapply size_no_overflow; eauto.
-  Opaque fe_ofs_retaddr. simpl. apply Ptrofs.unsigned_repr.
-  split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size.
-  eapply size_no_overflow; eauto.
+  (* Opaque fe_ofs_retaddr. simpl. apply Ptrofs.unsigned_repr. *)
+  (* split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size. *)
+  (* eapply size_no_overflow; eauto. *)
 Qed.
 
 Theorem transf_program_correct:

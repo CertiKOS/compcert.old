@@ -229,7 +229,7 @@ Definition valid_frame f m :=
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
   /\ (align_chunk chunk | ofs)
-  /\ (perm_order p Writable -> non_private_stack_access (stack_adt m) b ofs (ofs + size_chunk chunk)).
+  /\ (perm_order p Writable -> stack_access (stack_adt m) b ofs (ofs + size_chunk chunk)).
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
@@ -599,14 +599,14 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
  range_perm_storebytes' :
   forall m1 b ofs bytes,
     range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
-    non_private_stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
+    stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
   exists m2 : mem, storebytes m1 b ofs bytes = Some m2;
  storebytes_range_perm:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
                        range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable;
- storebytes_non_private_stack_access:
+ storebytes_stack_access:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-     non_private_stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ;
+     stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ;
  perm_storebytes_1:
   forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
   forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p;
@@ -1735,26 +1735,26 @@ for [unchanged_on]. *)
 
  (* Other properties *)
 
- strong_non_private_stack_access_extends {injperm: InjectPerm}:
+ public_stack_access_extends {injperm: InjectPerm}:
    forall m1 m2 b lo hi p,
      extends m1 m2 ->
      range_perm m1 b lo hi Cur p ->
-     strong_non_private_stack_access (stack_adt m1) b lo hi ->
-     strong_non_private_stack_access (stack_adt m2) b lo hi;
+     public_stack_access (stack_adt m1) b lo hi ->
+     public_stack_access (stack_adt m2) b lo hi;
 
- strong_non_private_stack_access_inject {injperm: InjectPerm}:
+ public_stack_access_inject {injperm: InjectPerm}:
    forall f m1 m2 b b' delta lo hi p,
      f b = Some (b', delta) ->
      inject f m1 m2 ->
      range_perm m1 b lo hi Cur p ->
-     strong_non_private_stack_access (stack_adt m1) b lo hi ->
-     strong_non_private_stack_access (stack_adt m2) b' (lo + delta) (hi + delta);
+     public_stack_access (stack_adt m1) b lo hi ->
+     public_stack_access (stack_adt m2) b' (lo + delta) (hi + delta);
 
- strong_non_private_stack_access_magree {injperm: InjectPerm}: forall P (m1 m2 : mem) (b : block) (lo hi : Z) p,
+ public_stack_access_magree {injperm: InjectPerm}: forall P (m1 m2 : mem) (b : block) (lo hi : Z) p,
      magree m1 m2 P ->
      range_perm m1 b lo hi Cur p ->
-     strong_non_private_stack_access (stack_adt m1) b lo hi ->
-     strong_non_private_stack_access (stack_adt m2) b lo hi;
+     public_stack_access (stack_adt m1) b lo hi ->
+     public_stack_access (stack_adt m2) b lo hi;
 
 
  not_in_frames_extends {injperm: InjectPerm}:
@@ -1815,10 +1815,10 @@ Proof.
   intros. eapply in_frames_valid. eapply get_frame_info_in_frames; eauto.
 Qed.
 
-Lemma invalid_block_non_private_stack_access:
+Lemma invalid_block_stack_access:
   forall m b lo hi,
     ~ valid_block m b ->
-    non_private_stack_access (stack_adt m) b lo hi.
+    stack_access (stack_adt m) b lo hi.
 Proof.
   right. split.
   intro ISP. apply stack_top_valid in ISP. auto.
@@ -2056,7 +2056,7 @@ Defined.
 Lemma range_perm_storebytes:
   forall m1 b ofs bytes,
     range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
-    non_private_stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
+    stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
   { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
 Proof.
   intros m1 b ofs bytes H NPSA.
@@ -2182,11 +2182,11 @@ Proof.
   tauto.
 Qed.
 
-Lemma store_non_private_stack_access:
+Lemma store_stack_access:
   forall chunk m b o v m1 ,
     store chunk m b o v = Some m1 ->
     forall b' lo hi,
-      non_private_stack_access (stack_adt m1) b' lo hi <-> non_private_stack_access (stack_adt m) b' lo hi.
+      stack_access (stack_adt m1) b' lo hi <-> stack_access (stack_adt m) b' lo hi.
 Proof.
   intros; erewrite store_no_abstract; eauto. tauto.
 Qed.

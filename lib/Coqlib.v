@@ -1476,3 +1476,12 @@ Ltac trim H :=
   match type of H with
     ?a -> ?b => let x := fresh in assert a as x; [ clear H | specialize (H x); clear x]
   end.
+
+Lemma and_sumbool:
+  forall {A B C D E} (b1: sumbool A B) (b2: sumbool C D) (x y: E),
+    (if b1 && b2 then x else y) = if b1 then if b2 then x else y else y.
+Proof.
+  intros. destr.
+  rewrite andb_true_iff in Heqb. destruct Heqb. repeat destr. inv H0. inv H.
+  repeat destr. simpl in Heqb. congruence.
+Qed.

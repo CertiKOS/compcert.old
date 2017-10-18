@@ -63,7 +63,7 @@ Definition perm_order'' (po1 po2: option permission) :=
   | None, Some _ => False
  end.
 
-Let stack_limit: Z := 4096.
+Definition stack_limit: Z := 4096.
 
 Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
@@ -237,7 +237,7 @@ Defined.
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
   /\ (align_chunk chunk | ofs)
-  /\ (perm_order p Writable -> non_private_stack_access (stack_adt m) b ofs (ofs + size_chunk chunk)).
+  /\ (perm_order p Writable -> stack_access (stack_adt m) b ofs (ofs + size_chunk chunk)).
 
 Theorem valid_access_implies:
   forall m chunk b ofs p1 p2,
@@ -295,12 +295,12 @@ Proof.
 Qed.
 
 Lemma non_writable_private_stack_access_dec : forall p m b ofs chunk,
-  {(perm_order p Writable -> non_private_stack_access m b ofs (ofs + size_chunk chunk))}
-  + {~ (perm_order p Writable -> non_private_stack_access m b ofs (ofs + size_chunk chunk))}.
+  {(perm_order p Writable -> stack_access m b ofs (ofs + size_chunk chunk))}
+  + {~ (perm_order p Writable -> stack_access m b ofs (ofs + size_chunk chunk))}.
 Proof.
   intros.
   destruct (perm_order_dec p Writable);
-  destruct (non_private_stack_access_dec m b ofs (ofs + size_chunk chunk)); auto.
+  destruct (stack_access_dec m b ofs (ofs + size_chunk chunk)); auto.
   left. intros. congruence.
 Qed.
 
@@ -626,7 +626,7 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
 
 Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) : option mem :=
   if range_perm_dec m b ofs (ofs + Z_of_nat (length bytes)) Cur Writable then
-    if non_private_stack_access_dec (stack_adt m) b ofs (ofs + Z_of_nat (length bytes)) then
+    if stack_access_dec (stack_adt m) b ofs (ofs + Z_of_nat (length bytes)) then
     Some (mkmem
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
              m.(mem_access)
@@ -1390,23 +1390,23 @@ Qed.
 
 Local Hint Resolve store_valid_block_1 store_valid_block_2: mem.
 
-Theorem store_non_private_stack_access_1: forall b lo hi,
-  non_private_stack_access (stack_adt m1) b lo hi -> non_private_stack_access (stack_adt m2) b lo hi.
+Theorem store_stack_access_1: forall b lo hi,
+  stack_access (stack_adt m1) b lo hi -> stack_access (stack_adt m2) b lo hi.
 Proof.
   intros.
   unfold store in STORE. destruct ( valid_access_dec m1 chunk b ofs Writable); inv STORE.
   auto.
 Qed.
 
-Theorem store_non_private_stack_access_2: forall b lo hi,
-  non_private_stack_access (stack_adt m2) b lo hi -> non_private_stack_access (stack_adt m1) b lo hi.
+Theorem store_stack_access_2: forall b lo hi,
+  stack_access (stack_adt m2) b lo hi -> stack_access (stack_adt m1) b lo hi.
 Proof.
   intros.
   unfold store in STORE. destruct ( valid_access_dec m1 chunk b ofs Writable); inv STORE.
   auto.
 Qed.
 
-Local Hint Resolve store_non_private_stack_access_1 store_non_private_stack_access_2 : mem.
+Local Hint Resolve store_stack_access_1 store_stack_access_2 : mem.
 
 Theorem store_valid_access_1:
   forall chunk' b' ofs' p,
@@ -1786,12 +1786,12 @@ Qed.
 Theorem range_perm_storebytes':
   forall m1 b ofs bytes,
     range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
-    non_private_stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
+    stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
   exists m2, storebytes m1 b ofs bytes = Some m2.
 Proof.
   intros. unfold storebytes.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable).
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes))).
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes))).
   econstructor; reflexivity.
   contradiction. contradiction.
 Qed.
@@ -1799,7 +1799,7 @@ Qed.
 Theorem range_perm_storebytes:
   forall m1 b ofs bytes,
   range_perm m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable ->
-  non_private_stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
+  stack_access (stack_adt m1) b ofs (ofs + Z_of_nat (length bytes)) ->
   { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
 Proof.
   intros m1 b ofs bytes H H0.
@@ -1819,11 +1819,11 @@ Proof.
   unfold storebytes, store. intros.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable); inv H.
   destruct (valid_access_dec m1 chunk b ofs Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs 
+  destruct (stack_access_dec (stack_adt m1) b ofs 
               (ofs + Z.of_nat (length (encode_val chunk v)))).
   - f_equal. apply mkmem_ext; auto.
   - inversion H2.
-  - elim n. rewrite encode_val_length in r, n0. constructor; try rewrite size_chunk_conv; auto.
+  - elim n. rewrite encode_val_length in r, s. constructor; try rewrite size_chunk_conv; auto.
   - auto.
 Qed.
 
@@ -1835,7 +1835,7 @@ Proof.
   unfold storebytes, store. intros.
   destruct (valid_access_dec m1 chunk b ofs Writable); inv H.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length (encode_val chunk v))) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs
+  destruct (stack_access_dec (stack_adt m1) b ofs
               (ofs + Z.of_nat (length (encode_val chunk v))));
   try now (destruct v0; destruct H0; elim n;
            rewrite encode_val_length; rewrite <- size_chunk_conv; auto).
@@ -1856,7 +1856,7 @@ Lemma storebytes_access: mem_access m2 = mem_access m1.
 Proof.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
@@ -1866,7 +1866,7 @@ Lemma storebytes_mem_contents:
 Proof.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
@@ -1885,41 +1885,41 @@ Qed.
 
 Local Hint Resolve perm_storebytes_1 perm_storebytes_2: mem.
 
-Theorem storebytes_non_private_stack_access_1: forall b lo hi,
-  non_private_stack_access (stack_adt m1) b lo hi -> non_private_stack_access (stack_adt m2) b lo hi.
+Theorem storebytes_stack_access_1: forall b lo hi,
+  stack_access (stack_adt m1) b lo hi -> stack_access (stack_adt m2) b lo hi.
 Proof.
   intros.
   unfold storebytes in STORE. 
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
 
-Theorem storebytes_non_private_stack_access_2: forall b lo hi,
-  non_private_stack_access (stack_adt m2) b lo hi -> non_private_stack_access (stack_adt m1) b lo hi.
+Theorem storebytes_stack_access_2: forall b lo hi,
+  stack_access (stack_adt m2) b lo hi -> stack_access (stack_adt m1) b lo hi.
 Proof.
   intros.
   unfold storebytes in STORE. 
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
 
-Theorem storebytes_non_private_stack_access_3:
-  non_private_stack_access (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)).
+Theorem storebytes_stack_access_3:
+  stack_access (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)).
 Proof.
   unfold storebytes in STORE. 
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
 
-Local Hint Resolve storebytes_non_private_stack_access_1
-      storebytes_non_private_stack_access_2
-      storebytes_non_private_stack_access_3: mem.
+Local Hint Resolve storebytes_stack_access_1
+      storebytes_stack_access_2
+      storebytes_stack_access_3: mem.
 
 Theorem storebytes_valid_access_1:
   forall chunk' b' ofs' p,
@@ -1947,7 +1947,7 @@ Proof.
   intros.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
@@ -1972,7 +1972,7 @@ Proof.
   intros.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   inv STORE.
   auto.
 Qed.
@@ -1982,7 +1982,7 @@ Theorem loadbytes_storebytes_same:
 Proof.
   intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes. 
   destruct (range_perm_dec m1 b ofs (ofs + Z_of_nat (length bytes)) Cur Writable);
-  destruct (non_private_stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
+  destruct (stack_access_dec (stack_adt m1) b ofs (ofs + Z.of_nat (length bytes)));
   try discriminate.
   rewrite pred_dec_true.
   decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite nat_of_Z_of_nat.
@@ -2061,30 +2061,30 @@ Qed.
 (*   omega. *)
 (* Qed. *)
 
-Lemma in_stack_data_concat : forall lo mid hi f,
-  in_stack_data lo mid f ->
-  in_stack_data mid hi f ->
-  in_stack_data lo hi f.
+Lemma public_stack_range_concat : forall lo mid hi f,
+  public_stack_range lo mid f ->
+  public_stack_range mid hi f ->
+  public_stack_range lo hi f.
 Proof.
-  intros. unfold in_stack_data.
-  unfold in_stack_data in H,H0.
+  intros. unfold public_stack_range.
+  unfold public_stack_range in H,H0.
   intros.
   destruct (zlt ofs mid).
   apply H. omega.
   apply H0. omega.
 Qed.
 
-Lemma non_private_stack_access_concat : forall m b lo hi mid,
-  non_private_stack_access m b lo mid ->
-  non_private_stack_access m b mid hi ->
-  non_private_stack_access m b lo hi.
+Lemma stack_access_concat : forall m b lo hi mid,
+  stack_access m b lo mid ->
+  stack_access m b mid hi ->
+  stack_access m b lo hi.
 Proof.
-  intros. unfold non_private_stack_access, strong_non_private_stack_access in *.
+  intros. unfold stack_access, public_stack_access in *.
   destruct H, H0; try intuition congruence.
   left. intuition. red; intros.
   destruct (zlt o mid); eauto. apply H2. omega. apply H3. omega.
   destr. right; intuition.
-  eapply in_stack_data_concat; eauto.
+  eapply public_stack_range_concat; eauto.
 Qed.
 
 Theorem storebytes_concat:
@@ -2097,20 +2097,20 @@ Proof.
   unfold storebytes; unfold storebytes in ST1; unfold storebytes in ST2.
   destruct (range_perm_dec m b ofs (ofs + Z_of_nat(length bytes1)) Cur Writable); try congruence.
   destruct (range_perm_dec m1 b (ofs + Z_of_nat(length bytes1)) (ofs + Z_of_nat(length bytes1) + Z_of_nat(length bytes2)) Cur Writable); try congruence.
-  destruct (non_private_stack_access_dec (stack_adt m) b ofs (ofs + Z.of_nat (length bytes1))); try congruence.
-  destruct (non_private_stack_access_dec (stack_adt m1) b (ofs + Z.of_nat (length bytes1))
+  destruct (stack_access_dec (stack_adt m) b ofs (ofs + Z.of_nat (length bytes1))); try congruence.
+  destruct (stack_access_dec (stack_adt m1) b (ofs + Z.of_nat (length bytes1))
             (ofs + Z.of_nat (length bytes1) + Z.of_nat (length bytes2))); try congruence.
   destruct (range_perm_dec m b ofs (ofs + Z_of_nat (length (bytes1 ++ bytes2))) Cur Writable).
-  destruct (non_private_stack_access_dec (stack_adt m) b ofs (ofs + Z.of_nat (length (bytes1 ++ bytes2)))).
+  destruct (stack_access_dec (stack_adt m) b ofs (ofs + Z.of_nat (length (bytes1 ++ bytes2)))).
   inv ST1; inv ST2; simpl. decEq. apply mkmem_ext; auto.
   rewrite PMap.gss.  rewrite setN_concat. symmetry. apply PMap.set2.
-  (* Impossible case: non_private_stack_access *)
-  elim n1.
+  (* Impossible case: stack_access *)
+  elim n.
   rewrite app_length. rewrite inj_plus. rewrite Zplus_assoc.
-  eapply non_private_stack_access_concat; eauto.
-  apply storebytes_non_private_stack_access_2 with b ofs bytes1 m1; assumption.
+  eapply stack_access_concat; eauto.
+  apply storebytes_stack_access_2 with b ofs bytes1 m1; assumption.
   (* Impossible case: range_perm *)
-  elim n1.
+  elim n.
   rewrite app_length. rewrite inj_plus. red; intros.
   destruct (zlt ofs0 (ofs + Z_of_nat(length bytes1))).
   apply r. omega.
@@ -2125,7 +2125,7 @@ Proof.
   unfold storebytes.
   intros.
   destruct (range_perm_dec m1 b o (o + Z.of_nat (length v)) Cur Writable),
-  (non_private_stack_access_dec (stack_adt m1) b o (o + Z.of_nat (length v))); try discriminate. inv H.
+  (stack_access_dec (stack_adt m1) b o (o + Z.of_nat (length v))); try discriminate. inv H.
   unfold get_frame_info. reflexivity. 
 Qed.
 
@@ -2137,7 +2137,7 @@ Proof.
   unfold storebytes.
   intros.
   destruct (range_perm_dec m1 b o (o + Z.of_nat (length v)) Cur Writable),
-  (non_private_stack_access_dec (stack_adt m1) b o (o + Z.of_nat (length v))); try discriminate. inv H.
+  (stack_access_dec (stack_adt m1) b o (o + Z.of_nat (length v))); try discriminate. inv H.
   unfold is_stack_top, get_stack_top_blocks. simpl. tauto.
 Qed.
 
@@ -2149,7 +2149,7 @@ Proof.
   unfold storebytes.
   intros.
   destruct (range_perm_dec m1 b o (o + Z.of_nat (length v)) Cur Writable),
-  (non_private_stack_access_dec (stack_adt m1) b o (o + Z.of_nat (length v))); try discriminate. inv H.
+  (stack_access_dec (stack_adt m1) b o (o + Z.of_nat (length v))); try discriminate. inv H.
   unfold is_stack_top, get_stack_top_blocks. simpl. tauto.
 Qed.
 
@@ -2165,17 +2165,17 @@ Proof.
   destruct (range_perm_storebytes' m b ofs bytes1) as [m1 ST1].
   red; intros. exploit storebytes_range_perm; eauto. rewrite app_length.
   rewrite inj_plus. omega.
-  exploit storebytes_non_private_stack_access_3; eauto. rewrite app_length.
+  exploit storebytes_stack_access_3; eauto. rewrite app_length.
   rewrite inj_plus.
   intros.
-  intros; exploit non_private_stack_access_inside. eauto. 3: apply id. omega. omega.
+  intros; exploit stack_access_inside. eauto. 3: apply id. omega. omega.
   (* Prove storebytes m1 b (ofs + Z.of_nat (length bytes1)) bytes2 = Some m2 *)
   destruct (range_perm_storebytes' m1 b (ofs + Z_of_nat (length bytes1)) bytes2) as [m2' ST2].
   red; intros. eapply perm_storebytes_1; eauto. exploit storebytes_range_perm.
   eexact H. instantiate (1 := ofs0). rewrite app_length. rewrite inj_plus. omega. auto.
-  eapply storebytes_non_private_stack_access_1. eauto.
-  exploit non_private_stack_access_inside. 4: exact id.
-  eapply storebytes_non_private_stack_access_3. apply H.
+  eapply storebytes_stack_access_1. eauto.
+  exploit stack_access_inside. 4: exact id.
+  eapply storebytes_stack_access_3. apply H.
   omega.  rewrite app_length.
   rewrite inj_plus.
   omega.
@@ -2335,23 +2335,23 @@ Proof.
   unfold alloc in ALLOC; inv ALLOC. reflexivity.
 Qed.
 
-Lemma alloc_not_retaddr_or_link_ofs:
+Lemma alloc_not_readonly_ofs:
   forall b o,
-    not_retaddr_or_link_ofs (stack_adt m1) b o <->
-    not_retaddr_or_link_ofs (stack_adt m2) b o.
+    not_readonly_ofs (stack_adt m1) b o <->
+    not_readonly_ofs (stack_adt m2) b o.
 Proof.
-  unfold not_retaddr_or_link_ofs.
+  unfold not_readonly_ofs.
   intros; rewrite alloc_get_frame_info.
   tauto.
 Qed.
 
-Lemma alloc_range_not_retaddr_or_link_ofs:
+Lemma alloc_range_not_readonly_ofs:
   forall b lo hi,
-    range_not_retaddr_or_link_ofs (stack_adt m1) b lo hi <->
-    range_not_retaddr_or_link_ofs (stack_adt m2) b lo hi.
+    range_not_readonly_ofs (stack_adt m1) b lo hi <->
+    range_not_readonly_ofs (stack_adt m2) b lo hi.
 Proof.
-  unfold range_not_retaddr_or_link_ofs. intros.
-  split; intros; eapply alloc_not_retaddr_or_link_ofs; eauto.
+  unfold range_not_readonly_ofs. intros.
+  split; intros; eapply alloc_not_readonly_ofs; eauto.
 Qed.
 
 Theorem valid_access_alloc_other:
@@ -2361,10 +2361,10 @@ Theorem valid_access_alloc_other:
 Proof.
   intros chunk b' ofs p [A [B C]]; split; [|split]; try now (red; auto with mem).
   intro; trim C; auto.
-  unfold non_private_stack_access, strong_non_private_stack_access in *; intros.
+  unfold stack_access, public_stack_access in *; intros.
   rewrite alloc_get_frame_info.
   rewrite alloc_is_stack_top.
-  rewrite <- alloc_range_not_retaddr_or_link_ofs; auto.
+  rewrite <- alloc_range_not_readonly_ofs; auto.
 Qed.
 
 Lemma alloc_get_frame_info_new:
@@ -2424,10 +2424,10 @@ Proof.
   exploit perm_alloc_inv. apply A. eauto. rewrite dec_eq_false; auto.
   split; auto.
   intros. specialize (C H0).
-  unfold non_private_stack_access, strong_non_private_stack_access in *; intros.
+  unfold stack_access, public_stack_access in *; intros.
   rewrite <- alloc_get_frame_info.
   rewrite <- alloc_is_stack_top.
-  rewrite alloc_range_not_retaddr_or_link_ofs.
+  rewrite alloc_range_not_readonly_ofs.
   auto. 
 Qed.
 
@@ -2654,42 +2654,42 @@ Proof.
   tauto.
 Qed.
 
-Lemma free_strong_non_private_stack_access: forall b lo hi,
-  strong_non_private_stack_access (stack_adt m1) b lo hi <->
-  strong_non_private_stack_access (stack_adt m2) b lo hi.
+Lemma free_public_stack_access: forall b lo hi,
+  public_stack_access (stack_adt m1) b lo hi <->
+  public_stack_access (stack_adt m2) b lo hi.
 Proof.
-  unfold strong_non_private_stack_access.
+  unfold public_stack_access.
   intros. rewrite <- get_frame_info_free.
   tauto.
 Qed.
 
-Lemma free_not_retaddr_or_link_ofs: forall b o,
-  not_retaddr_or_link_ofs (stack_adt m1) b o <->
-  not_retaddr_or_link_ofs (stack_adt m2) b o.
+Lemma free_not_readonly_ofs: forall b o,
+  not_readonly_ofs (stack_adt m1) b o <->
+  not_readonly_ofs (stack_adt m2) b o.
 Proof.
-  unfold not_retaddr_or_link_ofs.
+  unfold not_readonly_ofs.
   intros. rewrite <- get_frame_info_free.
   tauto.
 Qed.
 
-Lemma free_range_not_retaddr_or_link_ofs: forall b lo hi,
-  range_not_retaddr_or_link_ofs (stack_adt m1) b lo hi <->
-  range_not_retaddr_or_link_ofs (stack_adt m2) b lo hi.
+Lemma free_range_not_readonly_ofs: forall b lo hi,
+  range_not_readonly_ofs (stack_adt m1) b lo hi <->
+  range_not_readonly_ofs (stack_adt m2) b lo hi.
 Proof.
-  unfold range_not_retaddr_or_link_ofs.
+  unfold range_not_readonly_ofs.
   intros.
-  split; intros; apply free_not_retaddr_or_link_ofs; eauto.
+  split; intros; apply free_not_readonly_ofs; eauto.
 Qed.
 
-Lemma free_non_private_stack_access: forall b lo hi,
-  non_private_stack_access (stack_adt m1) b lo hi <->
-  non_private_stack_access (stack_adt m2) b lo hi.
+Lemma free_stack_access: forall b lo hi,
+  stack_access (stack_adt m1) b lo hi <->
+  stack_access (stack_adt m2) b lo hi.
 Proof.
-  unfold non_private_stack_access.
+  unfold stack_access.
   intros.
   rewrite free_is_stack_top.
-  rewrite free_strong_non_private_stack_access.
-  rewrite free_range_not_retaddr_or_link_ofs.
+  rewrite free_public_stack_access.
+  rewrite free_range_not_readonly_ofs.
   tauto.
 Qed.
 
@@ -2704,7 +2704,7 @@ Proof.
   destruct (zlt lo hi). intuition. right. omega.
   split; auto.
   intros. 
-  apply free_non_private_stack_access. auto.
+  apply free_stack_access. auto.
 Qed.
 
 Theorem valid_access_free_2:
@@ -2734,7 +2734,7 @@ Proof.
   destruct (zlt ofs0 hi); simpl.
   tauto. auto. auto. auto.
   destruct H0. split; try assumption.
-  intros. apply free_non_private_stack_access. auto.
+  intros. apply free_stack_access. auto.
 Qed.
 
 Theorem valid_access_free_inv_2:
@@ -2933,41 +2933,41 @@ Proof.
   tauto.
 Qed.
 
-Lemma drop_perm_strong_non_private_stack_access: forall b lo hi,
-  strong_non_private_stack_access (stack_adt m) b lo hi <->
-  strong_non_private_stack_access (stack_adt m') b lo hi.
+Lemma drop_perm_public_stack_access: forall b lo hi,
+  public_stack_access (stack_adt m) b lo hi <->
+  public_stack_access (stack_adt m') b lo hi.
 Proof.
-  unfold strong_non_private_stack_access.
+  unfold public_stack_access.
   intros. rewrite <- get_frame_info_drop.
   tauto. 
 Qed.
 
-Lemma drop_perm_not_retaddr_or_link_ofs: forall b o,
-  not_retaddr_or_link_ofs (stack_adt m) b o <->
-  not_retaddr_or_link_ofs (stack_adt m') b o.
+Lemma drop_perm_not_readonly_ofs: forall b o,
+  not_readonly_ofs (stack_adt m) b o <->
+  not_readonly_ofs (stack_adt m') b o.
 Proof.
-  unfold not_retaddr_or_link_ofs.
+  unfold not_readonly_ofs.
   intros. rewrite <- get_frame_info_drop.
   tauto. 
 Qed.
 
-Lemma drop_perm_range_not_retaddr_or_link_ofs: forall b lo hi,
-  range_not_retaddr_or_link_ofs (stack_adt m) b lo hi <->
-  range_not_retaddr_or_link_ofs (stack_adt m') b lo hi.
+Lemma drop_perm_range_not_readonly_ofs: forall b lo hi,
+  range_not_readonly_ofs (stack_adt m) b lo hi <->
+  range_not_readonly_ofs (stack_adt m') b lo hi.
 Proof.
-  unfold range_not_retaddr_or_link_ofs.
-  split; intros; apply drop_perm_not_retaddr_or_link_ofs; eauto.
+  unfold range_not_readonly_ofs.
+  split; intros; apply drop_perm_not_readonly_ofs; eauto.
 Qed.
 
-Lemma drop_perm_non_private_stack_access: forall b lo hi,
-  non_private_stack_access (stack_adt m) b lo hi <->
-  non_private_stack_access (stack_adt m') b lo hi.
+Lemma drop_perm_stack_access: forall b lo hi,
+  stack_access (stack_adt m) b lo hi <->
+  stack_access (stack_adt m') b lo hi.
 Proof.
-  unfold non_private_stack_access.
+  unfold stack_access.
   intros.
   rewrite drop_perm_is_stack_top,
-  drop_perm_strong_non_private_stack_access,
-  drop_perm_range_not_retaddr_or_link_ofs; tauto.
+  drop_perm_public_stack_access,
+  drop_perm_range_not_readonly_ofs; tauto.
 Qed.
 
 Lemma valid_access_drop_1:
@@ -2984,7 +2984,7 @@ Proof.
   generalize (size_chunk_pos chunk); intros. intuition.
   eapply perm_drop_3; eauto.
   destruct H1. split; try assumption.
-  intros. apply drop_perm_non_private_stack_access. auto.
+  intros. apply drop_perm_stack_access. auto.
 Qed.
 
 Lemma valid_access_drop_2:
@@ -2994,7 +2994,7 @@ Proof.
   intros. destruct H; split; auto.
   red; intros. eapply perm_drop_4; eauto.
   destruct H0. split; try assumption.
-  intros. apply drop_perm_non_private_stack_access. auto.
+  intros. apply drop_perm_stack_access. auto.
 Qed.
 
 Theorem load_drop:
@@ -3131,7 +3131,7 @@ Lemma get_frame_info_inj:
                  forall ofs k p,
                    perm m1 b1 ofs k p ->
                    inject_perm_condition p ->
-                   in_segment (ofs + delta) (frame_data fi))
+                   frame_public fi (ofs + delta))
               delta
               (get_frame_info (stack_adt m1) b1)
               (get_frame_info (stack_adt m2) b2).
@@ -3217,30 +3217,30 @@ Proof.
     symmetry; rewrite INJ; eauto.
 Qed.
 
-Lemma in_stack_data_not_ret_or_link:
+Lemma public_stack_range_not_ret_or_link:
   forall m b lo hi f,
     get_frame_info m b = Some f ->
-    in_stack_data lo hi f ->
-    range_not_retaddr_or_link_ofs m b lo hi.
+    public_stack_range lo hi f ->
+    range_not_readonly_ofs m b lo hi.
 Proof.
   intros m b lo hi f GFI ISD.
   red in ISD.
   red; red. rewrite GFI.
   intros.
   apply ISD in H.
-  split; intro A; eapply frame_disjoints in A; simpl in A; intuition.
+  congruence. 
 Qed.
 
-Lemma non_private_stack_access_inj:
+Lemma stack_access_inj:
   forall f m1 m2 b1 b2 delta lo hi p
     (MINJ : mem_inj f m1 m2)
     (FB : f b1 = Some (b2, delta))
     (RP: range_perm m1 b1 lo hi Cur p)
     (IPC: inject_perm_condition p)
-    (NPSA: non_private_stack_access (stack_adt m1) b1 lo hi),
-    non_private_stack_access (stack_adt m2) b2 (lo + delta) (hi + delta).
+    (NPSA: stack_access (stack_adt m1) b1 lo hi),
+    stack_access (stack_adt m2) b2 (lo + delta) (hi + delta).
 Proof.
-  unfold non_private_stack_access, strong_non_private_stack_access.
+  unfold stack_access, public_stack_access.
   intros f m1 m2 b1 b2 delta lo hi p MINJ FB RP IPC.
   destruct (in_frames_dec (stack_adt m2) b2).
   generalize (get_frame_info_inj _ _ _ _ _ _ MINJ FB i).
@@ -3272,14 +3272,14 @@ Proof.
       eapply not_in_stack_top_inj in i0; eauto. 
       intuition. right; split; intuition. 
   - intros.
-    assert (in_stack_data (lo + delta) (hi+delta) a).
+    assert (public_stack_range (lo + delta) (hi+delta) a).
     red.  intros.
     replace ofs with ((ofs - delta) + delta) by omega.
     eapply H3.
     apply RP. omega.
     auto.
     destruct (is_stack_top_dec (stack_adt m2) b2);[left|right]; split; auto.
-    eapply in_stack_data_not_ret_or_link; eauto.
+    eapply public_stack_range_not_ret_or_link; eauto.
   - intros; setoid_rewrite not_in_frames_get_assoc; auto.
     unfold is_stack_top, get_stack_top_blocks.
     repeat destr; simpl. right. split; auto. simpl in *. intuition.
@@ -3303,7 +3303,7 @@ Proof.
   rewrite <- Z.add_assoc.
   rewrite (Z.add_comm delta).
   rewrite Z.add_assoc.
-  eapply non_private_stack_access_inj; eauto.
+  eapply stack_access_inj; eauto.
 Qed.
 
 (** Preservation of loads. *)
@@ -3556,14 +3556,14 @@ Proof.
     eapply inject_perm_condition_writable; constructor.
     rewrite (list_forall2_length H3). omega.
   }
-  assert (non_private_stack_access (stack_adt m2) b2 (ofs + delta) (ofs + delta + Z_of_nat (length bytes2))).
+  assert (stack_access (stack_adt m2) b2 (ofs + delta) (ofs + delta + Z_of_nat (length bytes2))).
   {
     replace (ofs + delta + Z_of_nat (length bytes2))
       with ((ofs + Z_of_nat (length bytes1)) + delta).
-    eapply non_private_stack_access_inj; eauto with mem.
+    eapply stack_access_inj; eauto with mem.
     eapply storebytes_range_perm; eauto.
     eapply inject_perm_condition_writable; constructor.
-    eapply storebytes_non_private_stack_access_3; eauto.
+    eapply storebytes_stack_access_3; eauto.
     rewrite (list_forall2_length H3). omega.
   }
   destruct (range_perm_storebytes' _ _ _ _ H4 H5) as [n2 STORE]. 
@@ -4437,7 +4437,7 @@ Lemma get_frame_info_magree:
                  forall ofs k p,
                    perm m1 b ofs k p ->
                    inject_perm_condition p ->
-                   in_segment (ofs) (frame_data fi))
+                   frame_public fi ofs)
               0
               (get_frame_info (stack_adt m1) b)
               (get_frame_info (stack_adt m2) b).
@@ -4529,14 +4529,14 @@ Proof.
     reflexivity.
 Qed.
 
-Lemma non_private_stack_access_magree:
+Lemma stack_access_magree:
   forall P m1 m2 b lo hi p
     (MINJ : magree m1 m2 P)
     (RP: range_perm m1 b lo hi Cur p)
-    (NPSA: non_private_stack_access (stack_adt m1) b lo hi),
-    non_private_stack_access (stack_adt m2) b lo hi.
+    (NPSA: stack_access (stack_adt m1) b lo hi),
+    stack_access (stack_adt m2) b lo hi.
 Proof.
-  unfold non_private_stack_access, strong_non_private_stack_access.
+  unfold stack_access, public_stack_access.
   intros f m1 m2 b lo hi p MINJ RP.
   destruct (in_frames_dec (stack_adt m2) b).
   generalize (get_frame_info_magree _ _ _ _ MINJ i).
@@ -4567,7 +4567,7 @@ Proof.
     + destruct (is_stack_top_dec (stack_adt m2) b); auto.
       eapply not_in_stack_top_magree in i0; eauto. 
       intuition. right; split; intuition. 
-  - assert (in_stack_data lo hi a).
+  - assert (public_stack_range lo hi a).
     red.  intros.
     eapply H3.
     eapply perm_implies with (p2:= Nonempty).
@@ -4575,7 +4575,7 @@ Proof.
     constructor.
     eapply inject_perm_condition_writable; constructor.
     destruct (is_stack_top_dec (stack_adt m2) b);[left|right]; split; auto.
-    eapply in_stack_data_not_ret_or_link; eauto.
+    eapply public_stack_range_not_ret_or_link; eauto.
   - intros; setoid_rewrite not_in_frames_get_assoc; auto.
     unfold is_stack_top, get_stack_top_blocks.
     repeat destr; simpl. right. split; auto. simpl in *. intuition.
@@ -4615,9 +4615,9 @@ Proof.
     eapply inject_perm_condition_writable; constructor.
   }
   { erewrite <- list_forall2_length by eauto.
-    eapply non_private_stack_access_magree. eauto.
+    eapply stack_access_magree. eauto.
     eapply storebytes_range_perm; eauto.
-    eapply storebytes_non_private_stack_access_3; eauto.
+    eapply storebytes_stack_access_3; eauto.
   }
   exists m2'; split; auto.
   constructor; intros.
@@ -4740,7 +4740,7 @@ Proof.
   intros. destruct H0 as (A & B & C); split; [|split]; auto.
   red; intros. eapply ma_perm; eauto.
   intros. specialize (C H0).
-  eapply non_private_stack_access_magree; eauto.
+  eapply stack_access_magree; eauto.
 Qed.
 
 
@@ -6527,15 +6527,15 @@ Proof.
 Qed.
 
 
-Lemma strong_non_private_stack_access_inj:
+Lemma public_stack_access_inj:
   forall f m1 m2 b1 b2 delta lo hi p
     (MINJ : mem_inj f m1 m2)
     (FB : f b1 = Some (b2, delta))
     (RP: range_perm m1 b1 lo hi Cur p)
-    (NPSA: strong_non_private_stack_access (stack_adt m1) b1 lo hi),
-    strong_non_private_stack_access (stack_adt m2) b2 (lo + delta) (hi + delta).
+    (NPSA: public_stack_access (stack_adt m1) b1 lo hi),
+    public_stack_access (stack_adt m2) b2 (lo + delta) (hi + delta).
 Proof.
-  unfold strong_non_private_stack_access.
+  unfold public_stack_access.
   intros f m1 m2 b1 b2 delta lo hi p MINJ FB RP.
   destruct (in_frames_dec (stack_adt m2) b2).
   generalize (get_frame_info_inj _ _ _ _ _ _ MINJ FB i).
@@ -6554,29 +6554,29 @@ Proof.
   - intros. unfold get_frame_info. rewrite not_in_frames_get_assoc; eauto.
 Qed.
 
-Lemma strong_non_private_stack_access_extends:
+Lemma public_stack_access_extends:
    forall m1 m2 b lo hi p,
      extends m1 m2 ->
      range_perm m1 b lo hi Cur p ->
-     strong_non_private_stack_access (stack_adt m1) b lo hi ->
-     strong_non_private_stack_access (stack_adt m2) b lo hi.
+     public_stack_access (stack_adt m1) b lo hi ->
+     public_stack_access (stack_adt m2) b lo hi.
 Proof.
   intros.
   destruct H.
-  eapply strong_non_private_stack_access_inj in H1; eauto.
+  eapply public_stack_access_inj in H1; eauto.
   2: unfold inject_id; reflexivity.
   rewrite ! Z.add_0_r in H1. auto.
 Qed.
 
-Lemma strong_non_private_stack_access_inject:
+Lemma public_stack_access_inject:
    forall f m1 m2 b b' delta lo hi p,
      f b = Some (b', delta) ->
      inject f m1 m2 ->
-     strong_non_private_stack_access (stack_adt m1) b lo hi ->
+     public_stack_access (stack_adt m1) b lo hi ->
      range_perm m1 b lo hi Cur p ->
-     strong_non_private_stack_access (stack_adt m2) b' (lo + delta) (hi + delta).
+     public_stack_access (stack_adt m2) b' (lo + delta) (hi + delta).
 Proof.
-  intros; eapply strong_non_private_stack_access_inj; eauto. inv H0; auto.
+  intros; eapply public_stack_access_inj; eauto. inv H0; auto.
 Qed.
 
 
@@ -7066,14 +7066,14 @@ Proof.
   rewrite PERM, ! PERM1 in *. eauto.
 Qed.
 
-Lemma strong_non_private_stack_access_magree: forall P (m1 m2 : mem) (b : block) (lo hi : Z) p,
+Lemma public_stack_access_magree: forall P (m1 m2 : mem) (b : block) (lo hi : Z) p,
     magree m1 m2 P ->
     range_perm m1 b lo hi Cur p ->
-    strong_non_private_stack_access (stack_adt m1) b lo hi ->
-    strong_non_private_stack_access (stack_adt m2) b lo hi.
+    public_stack_access (stack_adt m1) b lo hi ->
+    public_stack_access (stack_adt m2) b lo hi.
 Proof.
   inversion 1. 
-  unfold strong_non_private_stack_access.
+  unfold public_stack_access.
   intros.
   destruct (in_frames_dec (stack_adt m2) b).
   generalize (get_frame_info_magree _ _ _ b H i); eauto. inversion 1; subst.
@@ -7242,7 +7242,7 @@ Proof.
   exact storev_int64_split.
   exact range_perm_storebytes'.
   exact storebytes_range_perm.
-  exact storebytes_non_private_stack_access_3.
+  exact storebytes_stack_access_3.
   exact perm_storebytes_1.
   exact perm_storebytes_2.
   exact storebytes_valid_access_1.
@@ -7429,9 +7429,9 @@ Proof.
   intros; eapply unrecord_stack_adt; eauto.
   intros; eapply unrecord_stack_block_succeeds; eauto.
   intros; eapply unrecord_stack_block_inject_neutral; eauto.
-  intros; eapply strong_non_private_stack_access_extends; eauto.
-  intros; eapply strong_non_private_stack_access_inject; eauto.
-  intros; eapply strong_non_private_stack_access_magree; eauto.
+  intros; eapply public_stack_access_extends; eauto.
+  intros; eapply public_stack_access_inject; eauto.
+  intros; eapply public_stack_access_magree; eauto.
   intros; eapply not_in_frames_extends; eauto.
   intros; eapply not_in_frames_inject; eauto.
   intros; eapply in_frames_valid; eauto.

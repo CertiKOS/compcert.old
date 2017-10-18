@@ -297,8 +297,12 @@ Variable return_address_offset: function -> code -> ptrofs -> Prop.
 Variable ge: genv.
 
 Definition check_alloc_frame (f: frame_info) (fn: function) :=
-  zeq (Ptrofs.unsigned (fn_link_ofs fn)) (seg_ofs (frame_link f)) &&
-      zeq (Ptrofs.unsigned (fn_retaddr_ofs fn)) (seg_ofs (frame_retaddr f)).
+  (forall o,
+      Ptrofs.unsigned (fn_link_ofs fn) <= o < Ptrofs.unsigned (fn_link_ofs fn) + size_chunk Mptr \/
+      Ptrofs.unsigned (fn_retaddr_ofs fn) <= o < Ptrofs.unsigned (fn_retaddr_ofs fn) + size_chunk Mptr ->
+      frame_readonly f o) /\
+  disjointb  (Ptrofs.unsigned (fn_link_ofs fn)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs fn)) (size_chunk Mptr) = true /\
+  Ptrofs.unsigned (fn_link_ofs fn) = seg_ofs (frame_link f).
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -411,7 +415,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_internal:
       forall s fb rs m f m1 m1_ m2 m3 stk rs',
         Genv.find_funct_ptr ge fb = Some (Internal f) ->
-        check_alloc_frame (fn_frame f) f = true ->
+        check_alloc_frame (fn_frame f) f  ->
       Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->

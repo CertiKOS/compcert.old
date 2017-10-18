@@ -378,8 +378,13 @@ Section WITHINITSPRA.
       stk = sp /\ n = frame_size fi /\
       forall f, Genv.find_funct_ptr ge fn = Some (Internal f) ->
            frame_size fi = Mach.fn_stacksize f /\
-           seg_ofs (frame_link fi) = Ptrofs.unsigned (fn_link_ofs f) /\
-           seg_ofs (frame_retaddr fi) = Ptrofs.unsigned (fn_retaddr_ofs f)
+           range_eqb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr)
+           (fun o => frame_readonly_dec fi o) = true /\
+           range_eqb (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr)
+                     (fun o => frame_readonly_dec fi o) = true /\
+           zeq (Ptrofs.unsigned (fn_link_ofs f)) (seg_ofs (frame_link fi)) &&
+               disjointb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) = true
+
     | _, _ => False
     end.
 
@@ -529,8 +534,8 @@ Hypothesis frame_size_correct:
   forall fb f,
     Genv.find_funct_ptr ge fb = Some (Internal f) ->
     frame_size (Mach.fn_frame f) = fn_stacksize f /\
-    Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) /\
-    Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))).
+    Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f)))(*  /\ *)
+    (* Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))) *).
 
 Lemma agree_undef_regs_parallel:
   forall l sp rs rs0,
@@ -683,10 +688,10 @@ Inductive asm_no_none: state -> Prop :=
     inv H0.
     generalize (INJ _ _ eq_refl). intros; subst.
     specialize (H3 _ FIND).
-    destruct H3 as (SEQ & LEQ & REQ).
-    rewrite SEQ, LEQ, REQ.
-    rewrite <- ! andb_assoc.
-    rewrite if_peq, ! if_zeq, if_zeq'.
+    destruct H3 as (SEQ & LEQ & REQ & OTHER).
+    rewrite SEQ, LEQ , REQ.
+    rewrite <- ! andb_assoc. rewrite OTHER.
+    rewrite if_peq, ? if_zeq, ? if_zeq'. simpl.
     inv H4; inv H6. inv LPrec. simpl. destruct (init_sp) eqn:?; auto.
     edestruct PNIL; eauto.
     destruct b1; simpl in *.
@@ -919,7 +924,7 @@ Opaque loadind.
   (*            let x:=fresh "x" in *)
   (*            cut (a);[intro x; specialize (H' x); clear x| clear H'] *)
   (*          end. *)
-  generalize (frame_size_correct _ _ FIND). intros (SEQ & LEQ & REQ).
+  generalize (frame_size_correct _ _ FIND). intros (SEQ & LEQ ).
   rewrite SEQ.
   rewrite E. rewrite G. 
   erewrite check_top_frame_ok; eauto.
@@ -945,7 +950,7 @@ Opaque loadind.
   simpl. replace (chunk_of_type Tptr) with Mptr in * by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
   rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
   rewrite Ptrofs.unsigned_zero in E. simpl in E.
-  generalize (frame_size_correct _ _ FIND). intros (SEQ & LEQ & REQ).
+  generalize (frame_size_correct _ _ FIND). intros (SEQ & LEQ).
   rewrite SEQ.
   rewrite E. rewrite G.
   erewrite check_top_frame_ok; eauto.
@@ -1123,7 +1128,7 @@ Transparent destroyed_by_jumptable.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. rewrite C. rewrite A. rewrite <- (sp_val _ _ _ AG).
   rewrite Ptrofs.unsigned_zero in E; simpl in E.
-  generalize (frame_size_correct _ _ FIND). intros (SEQ & LEQ & REQ).
+  generalize (frame_size_correct _ _ FIND). intros (SEQ & LEQ ).
   rewrite SEQ.
   rewrite  E, G; eauto.
   erewrite check_top_frame_ok; eauto.
@@ -1166,19 +1171,19 @@ Transparent destroyed_by_jumptable.
   apply plus_one. econstructor; eauto.
   simpl. rewrite Ptrofs.unsigned_zero. simpl. eauto.
   simpl.
-  generalize (frame_size_correct _ _ H). intros (SEQ & LEQ & REQ).
+  generalize (frame_size_correct _ _ H). intros (SEQ & LEQ).
   rewrite SEQ.
   rewrite C. simpl in F, P.
   replace (chunk_of_type Tptr) with Mptr in F, P by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
   rewrite (sp_val _ _ _ AG) in F. rewrite F.
   rewrite ATLR. rewrite P.
-  assert (check_alloc_frame (Mach.fn_frame f) (fn_link_ofs f) (fn_retaddr_ofs f) = true).
-  {
-    unfold check_alloc_frame. simpl.
-    revert H0.
-    unfold Mach.check_alloc_frame. simpl. auto.
-  }
-  rewrite H5.
+  unfold check_alloc_frame. rewrite LEQ.
+  move H0 at bottom.
+  unfold Mach.check_alloc_frame in H0.
+  destruct H0 as (LRRO & LRDISJ & EQlink).
+  rewrite if_zeq.
+  rewrite LEQ in LRDISJ.
+  rewrite LRDISJ. 
   rewrite CC.
   eauto.
   econstructor; eauto.
@@ -1200,10 +1205,23 @@ Transparent destroyed_at_function_entry.
   erewrite Mem.store_stack_blocks. 2: simpl in *; eauto.
   erewrite Mem.alloc_stack_blocks. 2: eauto.
   auto.
-  generalize (frame_size_correct _ _ H). intros (SEQ & LEQ & REQ).
+  generalize (frame_size_correct _ _ H). intros (SEQ & LEQ).
   constructor; auto.
   split; auto.
-  rewrite H. inversion 1. subst. eauto.
+  rewrite H. inversion 1. subst.
+  unfold Mach.check_alloc_frame in H0.
+  move H0 at bottom.
+  split; auto. rewrite <- and_assoc. split.
+  apply range_eqb_and.
+  generalize (size_chunk_pos Mptr); omega.
+  generalize (size_chunk_pos Mptr); omega.
+  intros.
+  apply H0 in H5.
+  destruct (frame_readonly_dec (Mach.fn_frame f0) o); auto.
+  apply andb_true_iff. split.
+  rewrite LEQ. destruct zeq; auto.
+  destruct H0. destruct H5. auto.
+
 
 - (* external function *)
   exploit functions_translated; eauto.
@@ -1300,8 +1318,8 @@ Hypothesis frame_correct:
   forall (fb : block) (f : Mach.function),
     Genv.find_funct_ptr ge fb = Some (Internal f) ->
     frame_size (Mach.fn_frame f) = fn_stacksize f /\
-    Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) /\
-    Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))).
+    Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) (* /\ *)
+    (* Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))) *).
 
 Lemma star_preserves {G S} g (sstep: G -> S -> trace -> S -> Prop) (P: S -> Prop):
   (forall s t s', sstep g s t s' -> P s -> P s') ->

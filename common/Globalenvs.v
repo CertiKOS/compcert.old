@@ -1890,14 +1890,14 @@ Variable ge: t F V.
 Lemma store_zeros_exists:
   forall m b p n,
     Mem.range_perm m b p (p + n) Cur Writable ->
-    non_private_stack_access (Mem.stack_adt m) b p (p + n) ->
+    stack_access (Mem.stack_adt m) b p (p + n) ->
     ~ is_stack_top (Mem.stack_adt m) b ->
   exists m', store_zeros m b p n = Some m'.
 Proof.
   intros until n. functional induction (store_zeros m b p n); intros PERM NPSA NIST.
 - exists m; auto.
 - apply IHo. red; intros. eapply Mem.perm_store_1; eauto. apply PERM. omega.
-  unfold non_private_stack_access, strong_non_private_stack_access in *; intros. 
+  unfold stack_access, public_stack_access in *; intros. 
   erewrite Mem.store_get_frame_info by eauto.
   erewrite Mem.store_is_stack_top; eauto.
   destruct NPSA. intuition. right; split; auto.
@@ -1908,14 +1908,14 @@ Proof.
 - destruct (Mem.valid_access_store m Mint8unsigned b p Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. omega. 
   split. simpl. apply Z.divide_1_l.
-  simpl. intros. eapply non_private_stack_access_inside; eauto; try omega.
+  simpl. intros. eapply stack_access_inside; eauto; try omega.
   congruence.
 Qed.
 
 Lemma store_init_data_exists:
   forall m b p i,
     Mem.range_perm m b p (p + init_data_size i) Cur Writable ->
-    non_private_stack_access (Mem.stack_adt m) b p (p + init_data_size i)  ->
+    stack_access (Mem.stack_adt m) b p (p + init_data_size i)  ->
     (init_data_alignment i | p) ->
     (forall id ofs, i = Init_addrof id ofs -> exists b, find_symbol ge id = Some b) ->
     exists m', store_init_data ge m b p i = Some m'.
@@ -1936,35 +1936,35 @@ Proof.
   unfold init_data_alignment, Mptr. destruct Archi.ptr64; auto.
 Qed.
 
-Lemma store_init_data_non_private_stack_access:
+Lemma store_init_data_stack_access:
   forall m b p i1 m1,
     store_init_data ge m b p i1 = Some m1 ->
     forall b' lo hi,
-      non_private_stack_access (Mem.stack_adt m1) b' lo hi <-> non_private_stack_access (Mem.stack_adt m) b' lo hi.
+      stack_access (Mem.stack_adt m1) b' lo hi <-> stack_access (Mem.stack_adt m) b' lo hi.
 Proof.
   unfold store_init_data.
-  destruct i1; intros; try now (eapply Mem.store_non_private_stack_access ; eauto).
+  destruct i1; intros; try now (eapply Mem.store_stack_access ; eauto).
   inv H; tauto.
   destruct (find_symbol ge i); try discriminate.
-  eapply Mem.store_non_private_stack_access ; eauto.         
+  eapply Mem.store_stack_access ; eauto.         
 Qed.
 
-Lemma store_zeros_non_private_stack_access:
+Lemma store_zeros_stack_access:
   forall m b lo hi m1,
     store_zeros m b lo hi = Some m1 ->
     forall b' lo hi,
-      non_private_stack_access (Mem.stack_adt m1) b' lo hi <-> non_private_stack_access (Mem.stack_adt m) b' lo hi.
+      stack_access (Mem.stack_adt m1) b' lo hi <-> stack_access (Mem.stack_adt m) b' lo hi.
 Proof.
   intros m b lo hi; functional induction (store_zeros m b lo hi).
   - intros m1; inversion 1; subst. tauto.
-  - intros. erewrite <- (Mem.store_non_private_stack_access _ _ _ _ _ _ e0). auto.
+  - intros. erewrite <- (Mem.store_stack_access _ _ _ _ _ _ e0). auto.
   - intros m1; inversion 1.
 Qed.
 
 Lemma store_init_data_list_exists:
   forall b il m p,
   Mem.range_perm m b p (p + init_data_list_size il) Cur Writable ->
-  non_private_stack_access (Mem.stack_adt m) b p (p + init_data_list_size il) ->
+  stack_access (Mem.stack_adt m) b p (p + init_data_list_size il) ->
   init_data_list_aligned p il ->
   (forall id ofs, In (Init_addrof id ofs) il -> exists b, find_symbol ge id = Some b) ->
   exists m', store_init_data_list ge m b p il = Some m'.
@@ -1974,13 +1974,13 @@ Proof.
 - destruct H1. 
   destruct (@store_init_data_exists m b p i1) as (m1 & S1); eauto.
   red; intros. apply H. generalize (init_data_list_size_pos il); omega.
-  eapply non_private_stack_access_inside; eauto; try omega.
+  eapply stack_access_inside; eauto; try omega.
   generalize (init_data_list_size_pos il); omega.
   rewrite S1.
   apply IHil; eauto. 
   red; intros. erewrite <- store_init_data_perm by eauto. apply H. generalize (init_data_size_pos i1); omega.
-  eapply non_private_stack_access_inside; eauto.
-  eapply store_init_data_non_private_stack_access; eauto.
+  eapply stack_access_inside; eauto.
+  eapply store_init_data_stack_access; eauto.
   generalize (init_data_size_pos i1); omega. omega.  
 Qed.
 
@@ -2012,7 +2012,7 @@ Proof.
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  + unfold non_private_stack_access, strong_non_private_stack_access.
+  + unfold stack_access, public_stack_access.
     rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC).
     right; split; auto.
   + auto. 
@@ -2021,8 +2021,8 @@ Proof.
     { red; intros. erewrite <- store_zeros_perm by eauto. eauto. }
     destruct (@store_init_data_list_exists b (gvar_init v) m2 0) as [m3 STORE]; auto.
     red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-    rewrite (store_zeros_non_private_stack_access _ _ _ _ ZEROS).
-    unfold non_private_stack_access, strong_non_private_stack_access.
+    rewrite (store_zeros_stack_access _ _ _ _ ZEROS).
+    unfold stack_access, public_stack_access.
     rewrite (Mem.alloc_get_frame_info_fresh _ _ _ _ _ ALLOC). right; split; auto.
     rewrite STORE.
     assert (P3: Mem.range_perm m3 b 0 sz Cur Freeable).

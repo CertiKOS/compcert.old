@@ -498,7 +498,7 @@ Qed.
 Lemma store_rule:
   forall chunk m b ofs v (spec1 spec: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
+    stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
   spec (Val.load_result chunk v) ->
   exists m',
   Mem.store chunk m b ofs v = Some m' /\ m' |= contains chunk b ofs spec ** P.
@@ -529,7 +529,7 @@ Qed.
 Lemma storev_rule:
   forall chunk m b ofs v (spec1 spec: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
+    stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
   spec (Val.load_result chunk v) ->
   exists m',
   Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= contains chunk b ofs spec ** P.
@@ -542,7 +542,7 @@ Lemma range_contains:
   forall chunk b ofs P m,
   m |= range b ofs (ofs + size_chunk chunk) ** P ->
   (align_chunk chunk | ofs) ->
-  non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
+  stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
   m |= contains chunk b ofs (fun v => True) ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & F).
@@ -579,7 +579,7 @@ Definition hasvalue (chunk: memory_chunk) (b: block) (ofs: Z) (v: val) : massert
 Lemma store_rule':
   forall chunk m b ofs v (spec1: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
+    stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
     exists m',
   Mem.store chunk m b ofs v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
 Proof.
@@ -589,7 +589,7 @@ Qed.
 Lemma storev_rule':
   forall chunk m b ofs v (spec1: val -> Prop) P,
     m |= contains chunk b ofs spec1 ** P ->
-    non_private_stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
+    stack_access (Mem.stack_adt m) b ofs (ofs + size_chunk chunk) ->
     exists m',
       Mem.storev chunk m (Vptr b (Ptrofs.repr ofs)) v = Some m' /\ m' |= hasvalue chunk b ofs (Val.load_result chunk v) ** P.
 Proof.
@@ -1032,7 +1032,7 @@ Lemma record_stack_block_parallel_rule:
     forall (NIN: ~ in_frames (Mem.stack_adt m1) b /\ ~ in_frames (Mem.stack_adt m2) b'),
     Mem.record_stack_blocks m1 (Some (frame_with_info b None)) n = Some m1' ->
     (forall (ofs : Z) (k : perm_kind) (p : permission),
-        Mem.perm m1 b ofs k p -> in_segment (ofs + delta) (frame_data fi)) ->
+        Mem.perm m1 b ofs k p -> frame_public fi (ofs + delta)) ->
     (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
     exists m2',
       Mem.record_stack_blocks m2 (Some (frame_with_info b' (Some fi))) n = Some m2' /\
@@ -1085,8 +1085,7 @@ Lemma push_frame_parallel_rule
     0 <= frame_size fi <= Ptrofs.max_unsigned ->
     0 <= delta ->
     hi <= frame_size fi ->
-    seg_ofs (frame_data fi) = delta ->
-    seg_size (frame_data fi) = Z.max 0 sz1 ->
+    (forall ofs, 0 <= ofs < sz1 -> frame_public fi (ofs + delta)) ->
     n = frame_size fi ->
     exists j' m2_1' b2 m2',
       Mem.alloc m2 0 (frame_size fi) = (m2_1', b2) 
@@ -1096,7 +1095,7 @@ Lemma push_frame_parallel_rule
       /\ j' b1 = Some (b2, delta)
       /\ inject_separated j j' m1 m2.
 Proof.
-  intros until delta; intros n INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 SEG1 SEG2 EQ. subst n.
+  intros until delta; intros n INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ. subst n.
   destruct (Mem.alloc m2 0 (frame_size fi)) as (m2_ & sp) eqn:ALLOC2.
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
@@ -1110,8 +1109,7 @@ Proof.
   }
   {
     intros.
-    exploit Mem.perm_alloc_3. 2: eauto. eauto. intro RNG.
-    red. rewrite SEG1, SEG2. rewrite Zmax_spec. destruct (zlt sz1 0); omega.
+    exploit Mem.perm_alloc_3. 2: eauto. eauto. apply PUB.
   }
   {
     intros.

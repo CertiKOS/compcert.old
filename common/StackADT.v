@@ -42,24 +42,45 @@ assert the disjointness of all the segments and fix the size of the special
 segments for the return address and the link to the parent frame, which are
 known to be the size of a pointer. *)
 
+Inductive stack_permission: Type :=
+  Public
+| Private
+| Readonly.
+
+Definition stack_perm_eq: forall (p1 p2: stack_permission), {p1=p2} + {p1 <> p2}.
+Proof.
+  decide equality.
+Qed.
+
 Record frame_info :=
   {
     frame_size: Z;
     frame_link: segment;
-    frame_retaddr: segment;
-    frame_locals: segment;
-    frame_outgoings: segment;
-    frame_callee_saves: segment;
-    frame_data: segment;
-    frame_disjoints:
-      segments_disjoint
-        (frame_link :: frame_retaddr :: frame_locals :: frame_outgoings
-                    :: frame_callee_saves :: frame_data :: nil);
-    frame_retaddr_size:
-      seg_size frame_retaddr = size_chunk Mptr;
+    frame_perm: Z -> stack_permission;
     frame_link_size:
       seg_size frame_link = size_chunk Mptr;
+    frame_link_readonly:
+      forall i, in_segment i frame_link -> frame_perm i = Readonly;
   }.
+
+Definition frame_public f o := frame_perm f o = Public.
+Definition frame_private f o := frame_perm f o = Private.
+Definition frame_readonly f o := frame_perm f o = Readonly.
+
+Definition frame_public_dec: forall f o, {frame_public f o} + {~ frame_public f o}.
+Proof.
+  unfold frame_public; intros; apply stack_perm_eq.
+Qed.
+
+Definition frame_private_dec: forall f o, {frame_private f o} + {~ frame_private f o}.
+Proof.
+  unfold frame_private; intros; apply stack_perm_eq.
+Qed.
+
+Definition frame_readonly_dec: forall f o, {frame_readonly f o} + {~ frame_readonly f o}.
+Proof.
+  unfold frame_readonly; intros; apply stack_perm_eq.
+Qed.
 
 (** We define empty segments and frames for the sole purpose of being able to
 provide a dummy frame for initialization purposes in backend/Asmexpand.ml. These
@@ -75,16 +96,120 @@ Program Definition empty_frame   : frame_info :=
   {|
     frame_size := 0;
     frame_link:= {| seg_ofs := 0; seg_size := size_chunk Mptr |};
-    frame_retaddr:= {| seg_ofs := size_chunk Mptr; seg_size := size_chunk Mptr |};
-    frame_locals := empty_segment;
-    frame_outgoings := empty_segment;
-    frame_callee_saves := empty_segment;
-    frame_data := empty_segment;
+    frame_perm o := Readonly;
   |}.
-Next Obligation.
-  unfold in_segment; simpl.
-  intuition omega.
+
+
+Fixpoint range_Z (o: Z) (n: nat) : list Z :=
+  match n with
+    O => nil
+  | Datatypes.S m => o :: range_Z (o+1) m
+  end.
+
+Definition range_eqb (o size: Z) (f: Z -> bool) : bool:=
+  forallb f (range_Z o (Z.to_nat size)).
+
+
+Lemma in_range_Z:
+  forall n s o,
+    In o (range_Z s n) ->
+    s <= o < s + Z.of_nat n.
+Proof.
+  induction n; intros. easy.
+  destruct H. subst. simpl. generalize (Pos2Z.is_pos (Pos.of_succ_nat n)). omega.
+  apply IHn in H. split. omega. rewrite Nat2Z.inj_succ. omega.
 Qed.
+
+Lemma range_eqb_forall:
+  forall lo s f,
+    (forall o, lo <= o < lo + s -> f o = true) ->
+    0 <= s ->
+    range_eqb lo s f = true.
+Proof.
+  unfold range_eqb. intros lo s f H POS.
+  rewrite forallb_forall. intros.
+  apply in_range_Z in H0.
+  apply H. rewrite Z2Nat.id in H0. omega.  auto.
+Qed.
+
+Lemma range_eqb_and:
+  forall lo1 lo2 s1 s2 f,
+    0 <= s1 -> 0 <= s2 ->
+    (forall o, lo1 <= o < lo1 + s1 \/ lo2 <= o < lo2 + s2 -> f o = true) ->
+    range_eqb lo1 s1 f = true /\
+    range_eqb lo2 s2 f = true.
+Proof.
+  intros.
+  rewrite ! range_eqb_forall; auto.
+Qed.
+
+Definition disjointb lo1 n1 lo2 n2 : bool :=
+  range_eqb lo1 n1 (fun o1 => range_eqb lo2 n2 (fun o2 => negb (Z.eqb o1 o2))).
+
+Lemma in_range_Z':
+  forall n s o,
+    s <= o < s + Z.of_nat n ->
+    In o (range_Z s n).
+Proof.
+  induction n; intros. simpl in H. omega.
+  simpl in *.
+  destruct (zeq s o); auto.
+  right. apply IHn. split. omega.
+  rewrite Zpos_P_of_succ_nat in H. omega.
+Qed.
+
+Lemma range_eqb_forall':
+  forall lo s f,
+    0 <= s ->
+    range_eqb lo s f = true ->
+    (forall o, lo <= o < lo + s -> f o = true).
+Proof.
+  unfold range_eqb. intros lo s f POS RE.
+  rewrite forallb_forall in RE. intros.
+  apply RE.
+  apply in_range_Z'.
+  rewrite Z2Nat.id. omega.  auto.
+Qed.
+
+Lemma disjointb_disjoint:
+  forall lo1 n1 lo2 n2,
+    disjointb lo1 n1 lo2 n2 = true ->
+    forall o,
+      lo1 <= o < lo1 + n1 ->
+      lo2 <= o < lo2 + n2 ->
+      False.
+Proof.
+  intros lo1 n1 lo2 n2 DISJ o IN1 IN2.
+  unfold disjointb in DISJ.
+  eapply range_eqb_forall' in DISJ; eauto.
+  2: omega.
+  eapply range_eqb_forall' in DISJ; eauto.
+  2: omega.
+  apply negb_true_iff in DISJ.
+  apply Z.eqb_neq in DISJ. congruence.
+Qed.
+
+Lemma disjoint_disjointb:
+  forall lo1 n1 lo2 n2,
+  (forall o,
+      lo1 <= o < lo1 + n1 ->
+      lo2 <= o < lo2 + n2 ->
+      False) ->
+  0 <= n1 ->
+  0 <= n2 ->
+  disjointb lo1 n1 lo2 n2 = true .
+Proof.
+  intros lo1 n1 lo2 n2 DISJ P1 P2.
+  unfold disjointb.
+  eapply range_eqb_forall; eauto.
+  intros.
+  eapply range_eqb_forall; eauto.
+  intros.
+  apply negb_true_iff.
+  apply Z.eqb_neq. intro; subst. eapply DISJ; eauto.
+Qed.
+
+
 
 (** * Frame ADT  *)
 
@@ -230,7 +355,7 @@ predicate that represents the permissions for the source memory [m1] in which
                forall ofs k p,
                  P b1 ofs k p ->
                  inject_perm_condition p ->
-                 in_segment (ofs + delta) (frame_data fi))
+                 frame_public fi (ofs + delta))
         (INJlist: forall b b' delta, f b = Some (b', delta) -> (In b bl <-> b' = b2)),
         frame_inject' f P (frame_without_info bl) (frame_with_info b2 ofi)
   | frame_with_info_add_info:
@@ -241,7 +366,7 @@ predicate that represents the permissions for the source memory [m1] in which
             forall ofs k p,
               P b1 ofs k p ->
               inject_perm_condition p ->
-              in_segment (ofs + delta) (frame_data fi))
+              frame_public fi (ofs + delta))
         (INJ: forall b1' b2' delta, f b1' = Some (b2', delta) -> (b1' = b1 <-> b2' = b2)),
         frame_inject' f P (frame_with_info b1 None) (frame_with_info b2 (Some fi)).
 
@@ -256,8 +381,8 @@ predicate that represents the permissions for the source memory [m1] in which
     - destruct (in_dec eq_block b l0); intuition.
   Qed.
 
-  Definition in_stack_data (lo hi: Z) (fi: frame_info) : Prop :=
-    forall ofs, lo <= ofs < hi -> in_segment ofs (frame_data fi).
+  Definition public_stack_range (lo hi: Z) (fi: frame_info) : Prop :=
+    forall ofs, lo <= ofs < hi -> frame_public fi ofs.
 
   Fixpoint size_stack {A} (l: list (A * Z)) : Z :=
     match l with
@@ -480,35 +605,34 @@ predicate that represents the permissions for the source memory [m1] in which
   Definition get_frame_info l : block -> option frame_info :=
     get_assoc l.
 
-  Definition strong_non_private_stack_access l (b: block) (lo hi: Z) : Prop :=
+  Definition public_stack_access l (b: block) (lo hi: Z) : Prop :=
     match get_frame_info l b with
-      Some fi => in_stack_data lo hi fi
+      Some fi => public_stack_range lo hi fi
     | None => True
     end.
 
-  Definition not_retaddr_or_link_ofs l (b: block) (o: Z) : Prop :=
+  Definition not_readonly_ofs l (b: block) (o: Z) : Prop :=
     match get_frame_info l b with
-      Some fi => ~ in_segment o (frame_link fi)
-                /\ ~ in_segment o (frame_retaddr fi)
+      Some fi => ~ frame_readonly fi o
     | None => True
     end.
 
-  Definition range_not_retaddr_or_link_ofs l (b: block) (lo hi: Z) : Prop :=
-    forall o, lo <= o < hi -> not_retaddr_or_link_ofs l b o.
+  Definition range_not_readonly_ofs l (b: block) (lo hi: Z) : Prop :=
+    forall o, lo <= o < hi -> not_readonly_ofs l b o.
 
-  Lemma lo_ge_hi_strong_non_private_stack_access:
+  Lemma lo_ge_hi_public_stack_access:
     forall m b lo hi,
       lo >= hi ->
-      strong_non_private_stack_access m b lo hi.
+      public_stack_access m b lo hi.
   Proof.
     red. intros.
     destruct (get_frame_info m b); try tauto.
     red; intros. omega.
   Qed.
 
-  Definition non_private_stack_access m (b: block) (lo hi: Z) : Prop :=
-    (is_stack_top m b /\ range_not_retaddr_or_link_ofs m b lo hi) \/
-    (~ is_stack_top m b /\ strong_non_private_stack_access m b lo hi).
+  Definition stack_access m (b: block) (lo hi: Z) : Prop :=
+    (is_stack_top m b /\ range_not_readonly_ofs m b lo hi) \/
+    (~ is_stack_top m b /\ public_stack_access m b lo hi).
 
   Lemma is_stack_top_dec : forall m b,
       {is_stack_top m b} + {~is_stack_top m b}.
@@ -517,24 +641,24 @@ predicate that represents the permissions for the source memory [m1] in which
     apply eq_block.
   Qed.
 
-  Lemma lo_ge_hi_non_private_stack_access:
+  Lemma lo_ge_hi_stack_access:
     forall m b lo hi,
       lo >= hi ->
-      non_private_stack_access m b lo hi.
+      stack_access m b lo hi.
   Proof.
-    unfold non_private_stack_access.
+    unfold stack_access.
     intros.
     destruct (is_stack_top_dec m b);[left|right].
     split; auto; red; intros. omega.
-    split; auto. eapply lo_ge_hi_strong_non_private_stack_access. auto.
+    split; auto. eapply lo_ge_hi_public_stack_access. auto.
   Qed.
 
   Lemma lo_ge_hi_not_retaddr:
     forall m b lo hi,
       lo >= hi ->
-      range_not_retaddr_or_link_ofs m b lo hi.
+      range_not_readonly_ofs m b lo hi.
   Proof.
-    unfold range_not_retaddr_or_link_ofs.
+    unfold range_not_readonly_ofs.
     intros; omega. 
   Qed.
 
@@ -569,43 +693,43 @@ predicate that represents the permissions for the source memory [m1] in which
 
   Lemma in_stack_data_inside:
     forall fi lo hi lo' hi',
-      in_stack_data lo hi fi ->
+      public_stack_range lo hi fi ->
       lo <= lo' ->
       hi' <= hi ->
-      in_stack_data lo' hi' fi.
+      public_stack_range lo' hi' fi.
   Proof.
     intros fi lo hi lo' hi' NPSA LO HI.
     do 2 red in NPSA |- *.
     intros; apply NPSA. omega.
   Qed.
 
-  Lemma strong_non_private_stack_access_inside:
+  Lemma public_stack_access_inside:
     forall m b lo hi lo' hi',
-      strong_non_private_stack_access m b lo hi ->
+      public_stack_access m b lo hi ->
       lo <= lo' ->
       hi' <= hi ->
-      strong_non_private_stack_access m b lo' hi'.
+      public_stack_access m b lo' hi'.
   Proof.
     intros m b lo hi lo' hi' NPSA LO HI.
-    unfold strong_non_private_stack_access in *.
+    unfold public_stack_access in *.
     destruct (get_frame_info m b); auto.
     eapply in_stack_data_inside in NPSA; eauto.
   Qed.
 
-  Lemma non_private_stack_access_inside:
+  Lemma stack_access_inside:
     forall m b lo hi lo' hi',
-      non_private_stack_access m b lo hi ->
+      stack_access m b lo hi ->
       lo <= lo' ->
       hi' <= hi ->
-      non_private_stack_access m b lo' hi'.
+      stack_access m b lo' hi'.
   Proof.
     intros m b lo hi lo' hi' NPSA LO HI.
-    unfold non_private_stack_access in *.
+    unfold stack_access in *.
     destruct NPSA as [[IST RNROLO]|NPSA]; auto.
     left; split; auto.
     red; intros. apply RNROLO. omega.
     destruct NPSA. right. split; auto.
-    eapply strong_non_private_stack_access_inside; eauto.
+    eapply public_stack_access_inside; eauto.
   Qed.
 
   Lemma in_segment_dec : forall ofs seg,
@@ -619,53 +743,50 @@ predicate that represents the permissions for the source memory [m1] in which
     - right. omega.
   Qed.    
 
-  Lemma in_stack_data_dec : forall lo hi f,
-      {in_stack_data lo hi f} + {~in_stack_data lo hi f}.
+  Lemma public_stack_range_dec : forall lo hi f,
+      {public_stack_range lo hi f} + {~public_stack_range lo hi f}.
   Proof.
-    unfold in_stack_data. intros. 
-    edestruct (Intv.forall_rec (fun ofs => in_segment ofs (frame_data f))
-                               (fun ofs => ~ in_segment ofs (frame_data f))) with (lo:=lo) (hi:=hi).
-    - simpl. intros. apply in_segment_dec.
+    unfold public_stack_range. intros. 
+    edestruct (Intv.forall_rec (frame_public f) (fun ofs => ~ frame_public f ofs)) with (lo:=lo) (hi:=hi).
+    - apply frame_public_dec. 
     - auto.
     - right. intro A.
       destruct e as (x & IN & NIN).
       apply NIN. apply A. auto.
   Qed.
 
-
-  Lemma strong_non_private_stack_access_dec : forall m b lo hi,
-      {strong_non_private_stack_access m b lo hi} + 
-      {~strong_non_private_stack_access m b lo hi}.
+  Lemma public_stack_access_dec : forall m b lo hi,
+      {public_stack_access m b lo hi} + 
+      {~public_stack_access m b lo hi}.
   Proof.
-    unfold strong_non_private_stack_access.
+    unfold public_stack_access.
     intros.
     destruct (get_frame_info m b); auto.
-    apply in_stack_data_dec.
+    apply public_stack_range_dec.
   Qed.
 
-
-  Lemma not_retaddr_or_link_ofs_dec : forall m b o,
-      {not_retaddr_or_link_ofs m b o} + 
-      {~not_retaddr_or_link_ofs m b o}.
+  Lemma not_readonly_ofs_dec : forall m b o,
+      {not_readonly_ofs m b o} + 
+      {~not_readonly_ofs m b o}.
   Proof.
-    unfold not_retaddr_or_link_ofs.
+    unfold not_readonly_ofs.
     intros. destr.
-    destruct (in_segment_dec o (frame_link f)), (in_segment_dec o (frame_retaddr f)); intuition.  
+    destruct (frame_readonly_dec f o); intuition.
   Qed.
 
-  Lemma range_not_retaddr_or_link_ofs_dec : forall m b lo hi,
-      {range_not_retaddr_or_link_ofs m b lo hi} + 
-      {~range_not_retaddr_or_link_ofs m b lo hi}.
+  Lemma range_not_readonly_ofs_dec : forall m b lo hi,
+      {range_not_readonly_ofs m b lo hi} + 
+      {~range_not_readonly_ofs m b lo hi}.
   Proof.
-    unfold range_not_retaddr_or_link_ofs.
+    unfold range_not_readonly_ofs.
     intros.
-    edestruct (Intv.forall_rec (fun ofs => lo <= ofs < hi -> not_retaddr_or_link_ofs m b ofs)
-                               (fun ofs => ~ (lo <= ofs < hi -> not_retaddr_or_link_ofs m b ofs))
+    edestruct (Intv.forall_rec (fun ofs => lo <= ofs < hi -> not_readonly_ofs m b ofs)
+                               (fun ofs => ~ (lo <= ofs < hi -> not_readonly_ofs m b ofs))
               ) with (lo0:=lo) (hi0:=hi).
     - simpl. intros.
       destruct (zle lo x).
       destruct (zlt x hi).
-      destruct (not_retaddr_or_link_ofs_dec m b x); intuition.
+      destruct (not_readonly_ofs_dec m b x); intuition.
       left; intro; omega.
       left; intro; omega.
     - left; auto.
@@ -674,17 +795,17 @@ predicate that represents the permissions for the source memory [m1] in which
       apply NO. intros. eauto.
   Qed.
 
-  Lemma non_private_stack_access_dec : forall m b lo hi,
-      {non_private_stack_access m b lo hi} + 
-      {~non_private_stack_access m b lo hi}.
+  Lemma stack_access_dec : forall m b lo hi,
+      {stack_access m b lo hi} + 
+      {~stack_access m b lo hi}.
   Proof.
-    intros. unfold non_private_stack_access.
+    intros. unfold stack_access.
     destruct (is_stack_top_dec m b); auto.
-    destruct (range_not_retaddr_or_link_ofs_dec m b lo hi); auto.
-    destruct (strong_non_private_stack_access_dec m b lo hi); auto.
+    destruct (range_not_readonly_ofs_dec m b lo hi); auto.
+    destruct (public_stack_access_dec m b lo hi); auto.
     right; intuition.
     right. intro A. destruct A. intuition. intuition.
-    destruct (strong_non_private_stack_access_dec m b lo hi); auto.
+    destruct (public_stack_access_dec m b lo hi); auto.
     right. intuition. 
   Qed.
 

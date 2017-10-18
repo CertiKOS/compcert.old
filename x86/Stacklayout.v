@@ -199,162 +199,319 @@ Qed.
 Opaque bound_local bound_outgoing  size_callee_save_area bound_stack_data.
 
 
+
+
 Program Definition frame_of_frame_env (b: bounds) : frame_info :=
   let fe := make_env b in
   {|
     frame_size := fe_size fe;
     frame_link := {| seg_ofs := (fe_ofs_link fe); seg_size := size_chunk Mptr |};
-    frame_retaddr := {| seg_ofs := (fe_ofs_retaddr fe); seg_size := size_chunk Mptr |};
-    frame_locals := {| seg_ofs := (fe_ofs_local fe);
-                      seg_size := 4 * bound_local b |};
-    frame_outgoings := {| seg_ofs := fe_ofs_arg;
-                        seg_size := 4 * bound_outgoing b |};
-    frame_callee_saves := {| seg_ofs := (fe_ofs_callee_save fe);
-                             seg_size := size_callee_save_area b (fe_ofs_callee_save fe) - fe_ofs_callee_save fe|};
-    frame_data := {| seg_ofs := fe_stack_data fe;
-                     seg_size := bound_stack_data b |};
+    frame_perm := fun o =>
+                    if zle (fe_ofs_retaddr fe) o && zlt o (fe_ofs_retaddr fe + size_chunk Mptr)
+                    then Readonly
+                    else
+                      if zle (fe_ofs_link fe) o && zlt o (fe_ofs_link fe + size_chunk Mptr)
+                      then Readonly
+                      else
+                        if zle (fe_ofs_local fe) o && zlt o (fe_ofs_local fe + 4 * bound_local b)
+                        then Private
+                        else
+                          if zle (fe_ofs_arg) o && zlt o (fe_ofs_arg + 4 * bound_outgoing b)
+                          then Private
+                          else
+                            if zle (fe_ofs_callee_save fe) o && zlt o (size_callee_save_area b (fe_ofs_callee_save fe))
+                            then Private
+                            else Public
   |}.
 Next Obligation.
-  generalize (frame_env_separated' b).
-  simpl.
-  intros A.
-  repeat match goal with
-           H : _ /\ _ |- _ => destruct H
-         end.
-  unfold in_segment; simpl.
-  repeat split; try easy.
-  - intros. intro A. destruct A; auto.
-    cut (o < o). omega.
-    eapply Z.lt_le_trans. apply H6.
-    etransitivity. 2: apply H7.
-    etransitivity. 2: apply align_le; omega.
-    etransitivity. 2: apply le_add_pos.
-    etransitivity. 2: apply align_le; omega.
-    omega.
-    generalize (bound_local_pos b); omega.
-  - intros. intro A. destruct A; auto.
-    + cut (o < o). omega. 
-      eapply Z.lt_le_trans. apply H6.
-      etransitivity. 2: apply H7.
-      change fe_ofs_arg with 0. rewrite Z.add_0_l.
-      etransitivity. 2: apply le_add_pos.
-      apply align_le. destruct Archi.ptr64; omega.
-      destruct Archi.ptr64; omega.
-    + destruct H7; auto.
-      cut (o < o). omega.
-      eapply Z.lt_le_trans. apply H6.
-      etransitivity. 2: apply H7.
-      change fe_ofs_arg with 0. rewrite Z.add_0_l.
-      etransitivity. 2: apply align_le; omega.
-      etransitivity. 2: apply le_add_pos.
-      etransitivity. 2: apply align_le; omega.
-      etransitivity. 2: apply size_callee_save_area_incr.
-      etransitivity. 2: apply le_add_pos.
-      etransitivity. 2: apply align_le. omega.
-      destruct Archi.ptr64; omega.
-      destruct Archi.ptr64; omega.
-      generalize (bound_local_pos b); omega.
-  - intros. intro A. destruct A; auto.
-    + cut (o < o). omega.
-      eapply Z.lt_le_trans. apply H7.
-      etransitivity. 2: apply H6.
-      change fe_ofs_arg with 0. rewrite Z.add_0_l.
-      etransitivity. 2: apply align_le; omega.
-      etransitivity. 2: apply size_callee_save_area_incr.
-      etransitivity. 2: apply le_add_pos.
-      etransitivity. 2: apply align_le. omega.
-      destruct Archi.ptr64; omega.
-      destruct Archi.ptr64; omega.
-    + destruct H7; auto.
-      * cut (o < o). omega.
-        eapply Z.lt_le_trans. apply H7.
-        etransitivity. 2: apply H6. omega.
-      * destruct H7; auto.
-        cut (o < o). omega.
-        eapply Z.lt_le_trans. apply H6.
-        etransitivity. 2: apply H7. omega.
-  - intros. intro A. destruct A; auto.
-    + cut (o < o). omega.
-      eapply Z.lt_le_trans. apply H7.
-      etransitivity. 2: apply H6. 
-      etransitivity. 2: apply align_le.
-      etransitivity. 2: apply le_add_pos.
-      apply align_le. omega.
-      generalize (bound_stack_data_pos b); omega.
-      destruct Archi.ptr64; omega.
-    + destruct H7; auto.
-      * cut (o < o). omega.
-        eapply Z.lt_le_trans. apply H7.
-        etransitivity. 2: apply H6.
-        change fe_ofs_arg with 0. rewrite Z.add_0_l.
-        etransitivity. 2: apply align_le.
-        etransitivity. 2: apply le_add_pos.
-        etransitivity. 2: apply align_le.
-        etransitivity. 2: apply le_add_pos.
-        etransitivity. 2: apply align_le.
-        etransitivity. 2: apply size_callee_save_area_incr.
-        etransitivity. 2: apply le_add_pos.
-        apply align_le.
-        destruct Archi.ptr64; omega.
-        destruct Archi.ptr64; omega. omega.
-        generalize (bound_local_pos b); omega.
-        omega.
-        generalize (bound_stack_data_pos b); omega.
-        destruct Archi.ptr64; omega.
-      * destruct H7; auto.
-        -- cut (o < o). omega.
-           eapply Z.lt_le_trans. apply H7.
-           etransitivity. 2: apply H6.
-           assert (forall x y, x + (y - x) = y) by (intros; omega).
-           rewrite H8.
-           etransitivity. 2: apply align_le.
-           etransitivity. 2: apply le_add_pos.
-           etransitivity. 2: apply align_le.
-           etransitivity. 2: apply le_add_pos.
-           apply align_le. omega.
-           generalize (bound_local_pos b); omega.
-           omega.
-           generalize (bound_stack_data_pos b); omega.
-           destruct Archi.ptr64; omega.
-        -- destruct H7; auto. 
-           cut (o < o). omega.
-           eapply Z.lt_le_trans. apply H7.
-           etransitivity. 2: apply H6.
-           apply align_le.
-           destruct Archi.ptr64; omega.
-  - intros. intro A.
-    cut (o < o). omega.
-    repeat match goal with
-             H: _ \/ _ |- _ => destruct H; auto
-           end.
-    + eapply Z.lt_le_trans. apply H6.
-      etransitivity. 2: apply H7.
+  red in H. simpl in *.
+  rewrite ! and_sumbool.
+  repeat destr.
+Qed.
 
-      Ltac t := repeat match goal with
-             | |- ?x <= ?y + ?z => etransitivity; [| apply le_add_pos]
-             | |- ?x <= align ?x ?z => apply align_le
-             | |- ?x <= align ?y ?z => etransitivity; [| apply align_le]
-             | |- 8 > 0 => omega
-             | |- 0 <= 4 * bound_local ?b => generalize (bound_local_pos b); omega
-             | |- 0 <= bound_stack_data ?b => generalize (bound_stack_data_pos b); omega
-             | |- (if ?x then _ else _) > 0 => destruct x; omega
-             | |- context [if Archi.ptr64 then 8 else 4] => rewrite <- size_chunk_Mptr
-             | |- ?x <= size_callee_save_area _ ?x => apply size_callee_save_area_incr
-             end.
-      t. 
-    + eapply Z.lt_le_trans. apply H6.
-      etransitivity. 2: apply H7.
-      t.
-    + eapply Z.lt_le_trans. apply H7.
-      etransitivity. 2: apply H6.
-      change fe_ofs_arg with 0. rewrite Z.add_0_l.
-      t.
-    + eapply Z.lt_le_trans. apply H6.
-      etransitivity. 2: apply H7. rewrite <- size_chunk_Mptr; omega.
-    + eapply Z.lt_le_trans. apply H6.
-      etransitivity. 2: apply H7.
-      t.
-    + easy.
+Lemma stkdata_retaddr_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_stack_data fe <= o < fe_stack_data fe + bound_stack_data b ->
+      fe_ofs_retaddr fe <= o < fe_ofs_retaddr fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+Qed.
+
+Lemma arg_retaddr_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_arg <= o < fe_ofs_arg + 4 * bound_outgoing b ->
+      fe_ofs_retaddr fe <= o < fe_ofs_retaddr fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o<o). omega.
+  eapply Z.lt_le_trans. apply H9.
+  etransitivity. 2: apply H5.
+  etransitivity. 2: apply align_le; try (destr; omega).
+  etransitivity. 2: apply le_add_pos; try (generalize (bound_stack_data_pos b); omega).
+  etransitivity. 2: apply align_le; try (omega).
+  etransitivity. 2: apply le_add_pos; try (generalize (bound_local_pos b); omega).
+  etransitivity. 2: apply align_le; try (omega).
+  etransitivity. 2: apply size_callee_save_area_incr.
+  etransitivity. 2: apply le_add_pos; try (destr; omega).
+  change fe_ofs_arg with 0.
+  rewrite Z.add_0_l.
+  apply align_le. destr; omega.
+Qed.
+
+
+Lemma arg_link_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_arg <= o < fe_ofs_arg + 4 * bound_outgoing b ->
+      fe_ofs_link fe <= o < fe_ofs_link fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o<o). omega.
+  eapply Z.lt_le_trans. apply H9.
+  etransitivity. 2: apply H5.
+  change fe_ofs_arg with 0.
+  rewrite Z.add_0_l.
+  apply align_le. destr; omega.
+Qed.
+
+Lemma arg_local_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_arg <= o < fe_ofs_arg + 4 * bound_outgoing b ->
+      fe_ofs_local fe <= o < fe_ofs_local fe + 4 * bound_local b ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o<o). omega.
+  eapply Z.lt_le_trans. apply H9.
+  etransitivity. 2: apply H5.
+  etransitivity. 2: apply align_le; try (omega).
+  etransitivity. 2: apply size_callee_save_area_incr.
+  etransitivity. 2: apply le_add_pos; try (destr; omega).
+  change fe_ofs_arg with 0.
+  rewrite Z.add_0_l.
+  apply align_le. destr; omega.
+Qed.
+
+
+Lemma arg_callee_save_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_arg <= o < fe_ofs_arg + 4 * bound_outgoing b ->
+      fe_ofs_callee_save fe <= o < size_callee_save_area b (fe_ofs_callee_save fe) ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o<o). omega.
+  eapply Z.lt_le_trans. apply H9.
+  etransitivity. 2: apply H5.
+  etransitivity. 2: apply le_add_pos; try (destr; omega).
+  change fe_ofs_arg with 0.
+  rewrite Z.add_0_l.
+  apply align_le. destr; omega.
+Qed.
+
+
+Lemma local_retaddr_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_local fe <= o < fe_ofs_local fe + 4 * bound_local b ->
+      fe_ofs_retaddr fe <= o < fe_ofs_retaddr fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans. apply H9.
+  etransitivity. 2: apply H5.
+  etransitivity. 2: apply align_le; try (destr; omega).
+  etransitivity. 2: apply le_add_pos; try (generalize (bound_stack_data_pos b); omega).
+  apply align_le; try (omega).
+Qed.
+
+Lemma local_link_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_local fe <= o < fe_ofs_local fe + 4 * bound_local b ->
+      fe_ofs_link fe <= o < fe_ofs_link fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans. apply H10.
+  etransitivity. 2: apply H8.
+  etransitivity. 2: apply align_le; try (omega).
+  etransitivity. 2:   apply size_callee_save_area_incr.
+  unfold Mptr. destr.
+Qed.
+
+Lemma stkdata_link_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_stack_data fe <= o < fe_stack_data fe + bound_stack_data b ->
+      fe_ofs_link fe <= o < fe_ofs_link fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans.
+  apply H10. etransitivity.
+  2: apply H8.
+  etransitivity. 2: apply align_le ; try omega.
+  etransitivity. 2: apply le_add_pos; [ generalize (bound_local_pos b); omega].
+  etransitivity. 2: apply align_le; try omega.
+  apply size_callee_save_area_incr.
+Qed.
+
+
+Lemma local_callee_save_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_local fe <= o < fe_ofs_local fe + 4 * bound_local b ->
+      fe_ofs_callee_save fe <= o < size_callee_save_area b (fe_ofs_callee_save fe) ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+Qed.
+
+Lemma stkdata_callee_save_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_stack_data fe <= o < fe_stack_data fe + bound_stack_data b ->
+      fe_ofs_callee_save fe <= o < size_callee_save_area b (fe_ofs_callee_save fe) ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans.
+  apply H10. etransitivity.
+  2: apply H8.
+  etransitivity. 2: apply align_le ; try omega.
+  etransitivity. 2: apply le_add_pos; [ generalize (bound_local_pos b); omega].
+  apply align_le. omega.
+Qed.
+
+
+Lemma local_arg_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_local fe <= o < fe_ofs_local fe + 4 * bound_local b ->
+      fe_ofs_arg <= o < fe_ofs_arg + 4 * bound_outgoing b ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+    cut (o < o). omega.
+  eapply Z.lt_le_trans.
+  apply H10. etransitivity.
+  2: apply H8.
+  etransitivity. 2: apply align_le ; try omega.
+  etransitivity. 2: apply size_callee_save_area_incr.
+  etransitivity. 2: apply le_add_pos; [ destr; omega].
+  change fe_ofs_arg with 0.
+  rewrite Z.add_0_l.
+  apply align_le. destr; omega.
+Qed.
+
+
+Lemma stkdata_arg_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_stack_data fe <= o < fe_stack_data fe + bound_stack_data b ->
+      fe_ofs_arg <= o < fe_ofs_arg + 4 * bound_outgoing b ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans.
+  apply H10. etransitivity.
+  2: apply H8.
+  etransitivity. 2: apply align_le ; try omega.
+  etransitivity. 2: apply le_add_pos; [ generalize (bound_local_pos b); omega].
+  etransitivity. 2: apply align_le ; try omega.
+  etransitivity. 2: apply size_callee_save_area_incr.
+  etransitivity. 2: apply le_add_pos; [ destr; omega].
+  change fe_ofs_arg with 0.
+  rewrite Z.add_0_l.
+  apply align_le. destr; omega.
+Qed.
+
+
+Lemma stkdata_local_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_stack_data fe <= o < fe_stack_data fe + bound_stack_data b ->
+      fe_ofs_local fe <= o < fe_ofs_local fe + 4 * bound_local b ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+Qed.
+
+
+
+Lemma retaddr_link_sep:
+  forall b,
+    let fe := make_env b in
+    forall o,
+      fe_ofs_retaddr fe <= o < fe_ofs_retaddr fe + size_chunk Mptr ->
+      fe_ofs_link fe <= o < fe_ofs_link fe + size_chunk Mptr ->
+      False.
+Proof.
+  clear. intros b fe.
+  generalize (frame_env_separated' b).
+  simpl. intuition.
+  cut (o < o). omega.
+  eapply Z.lt_le_trans.
+  apply H10. etransitivity.
+  2: apply H8.
+  etransitivity. 2: apply align_le ; try (destr; omega).
+  etransitivity. 2: apply le_add_pos; [ generalize (bound_stack_data_pos b); omega].
+  etransitivity. 2: apply align_le; try omega.
+  etransitivity. 2: apply le_add_pos; [ generalize (bound_local_pos b); omega].
+  etransitivity. 2: apply align_le; try omega.
+  apply size_callee_save_area_incr.
 Qed.
 
 End WITHMEM.

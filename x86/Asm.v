@@ -663,13 +663,24 @@ End MEM_ACCESSORS_DEFAULT.
     but we do not need to model this precisely.
 *)
 
+
+Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
+  zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link f)) &&
+      disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr).
+
+
 Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link ofs_ra :=
   match Mem.stack_adt m with
   | (Some (frame_with_info b (Some fi)), n)::r =>
     if peq b stk && zeq sz (frame_size fi) && zeq n sz
+           &&
+           range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr)
+           (fun o => frame_readonly_dec fi o)
+           &&
+           range_eqb (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
+           (fun o => frame_readonly_dec fi o)
            && zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link fi)) &&
-           zeq (Ptrofs.unsigned ofs_ra) (seg_ofs (frame_retaddr fi))
- 
+           disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
     then
       match oldsp with
         Vptr bsp o =>
@@ -684,10 +695,6 @@ Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link o
     else false
   | _ => false
   end.
-
-Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
-  zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link f)) &&
-  zeq (Ptrofs.unsigned ofs_ra) (seg_ofs (frame_retaddr f)).
 
 Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_store} {F V} (ge: Genv.t F V) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
