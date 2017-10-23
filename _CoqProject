@@ -1,0 +1,11 @@
+-R common compcert.common
+-R cfrontend compcert.cfrontend
+-R lib compcert.lib
+-R backend compcert.backend
+-R cparser compcert.cparser
+-R flocq compcert.flocq
+-R driver compcert.driver
+-R x86_32 compcert.x86_32
+-R x86 compcert.x86
+-R cpu_models/shared Shared
+-R cpu_models/x86model/Model X86Model

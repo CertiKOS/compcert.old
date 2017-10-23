@@ -149,6 +149,7 @@ endif
 ifeq ($(CLIGHTGEN),true)
 	$(MAKE) clightgen
 endif
+	$(MAKE) -C cpu_models/x86model
 
 
 proof: $(FILES:.v=.vo)
@@ -275,6 +276,7 @@ clean:
 	$(MAKE) -f Makefile.extr clean
 	$(MAKE) -C runtime clean
 	$(MAKE) -C test clean
+	$(MAKE) -C cpu_models/x86model clean
 
 distclean:
 	$(MAKE) clean

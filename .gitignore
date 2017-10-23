@@ -1,4 +1,5 @@
 # Object files, in general
+*.v.d
 *.vo
 *.glob
 *.o
