@@ -93,7 +93,7 @@ let fac_code =
     MOV  (true, eax, imm 4);
     MOV  (true, addr_reg_ofs esp 0, eax);
     CALL (true, false, imm (-0x4C), None);
-    MOV  (true, offset 0x080490d8, eax);
+    MOV  (true, offset 0x080490d7, eax);
     ADD  (true, esp, imm 12);
     RET  (true, None)
   ]
@@ -104,7 +104,7 @@ let fac_dump_file = "fac_rs"
 let () = write_ecd_instrs fac_dump_file true fac_bytes
 
 (* elf header *)
-let fac_elf_header = create_386_exec_elf_header 0x80480c9 52 240 2 4 3
+let fac_elf_header = create_386_exec_elf_header 0x80480c9 52 244 2 4 3
 
 (* .text segment *)
 let fac_text_seg =
@@ -119,14 +119,14 @@ let fac_text_seg =
     p_align    = 0x1000
   }
 
-(* .bss segment *)
-let fac_bss_seg =
+(* .data segment *)
+let fac_data_seg =
   {
     p_type     = PT_LOAD;
-    p_offset   = 0xd8;
-    p_vaddr    = 0x080490d8;
-    p_paddr    = 0x080490d8;
-    p_filesz   = 0;
+    p_offset   = 0xd7;
+    p_vaddr    = 0x080490d7;
+    p_paddr    = 0x080490d7;
+    p_filesz   = 4;
     p_memsz    = 4;
     p_flags    = [PF_WRITE; PF_READ];
     p_align    = 0x1000
@@ -143,12 +143,12 @@ let fac_text_sec = {
     sh_addralign  = 1;
   }
 
-let fac_bss_sec = {
+let fac_data_sec = {
     sh_name       = 0x11;
-    sh_type       = SHT_NOBITS;
+    sh_type       = SHT_PROGBITS;
     sh_flags      = [SHF_ALLOC; SHF_WRITE];
-    sh_addr       = 0x080490d8;
-    sh_offset     = 0xD8;
+    sh_addr       = 0x080490d7;
+    sh_offset     = 0xD7;
     sh_size       = 0x4;
     sh_addralign  = 4;
   }
@@ -158,8 +158,8 @@ let fac_shstrtab_sec = {
     sh_type       = SHT_STRTAB;
     sh_flags      = [];
     sh_addr       = 0;
-    sh_offset     = 0xD7;
-    sh_size       = 0x16;
+    sh_offset     = 0xDB;
+    sh_size       = 0x17;
     sh_addralign  = 1;
   }
 
@@ -177,10 +177,10 @@ let startstub_bytes =
 let fac_elf = {
     ef_header       = fac_elf_header;
     ef_text_sec     = fac_text_sec;
-    ef_bss_sec      = fac_bss_sec;
+    ef_data_sec      = fac_data_sec;
     ef_shstrtab_sec = fac_shstrtab_sec;
     ef_text_seg     = fac_text_seg;
-    ef_bss_seg      = fac_bss_seg;
+    ef_data_seg      = fac_data_seg;
     ef_text         = (List.concat fac_bytes) @ startstub_bytes;
   }
 

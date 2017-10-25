@@ -153,11 +153,11 @@ let null_section_header = {
   }
 
 (* String table *)
-(** The default strtab is ' .shstrtab .text .bss' *)
+(** The default strtab is ' .shstrtab .text .data' *)
 let default_strtab = 
  ['\x00'; '.'; 's'; 'h'; 's'; 't'; 'r'; 't'; 'a'; 'b';
   '\x00'; '.'; 't'; 'e'; 'x'; 't';
-  '\x00'; '.'; 'b'; 's'; 's']
+  '\x00'; '.'; 'd'; 'a'; 't'; 'a']
 let default_strtab_bytes =
   List.map Char.code default_strtab
 
@@ -209,9 +209,9 @@ let prog_header_to_bytes ph little_endian =
 (** The simple elf file we have only has three sections:
 
     1. The .text section holding the program text (executable instructions)
-    2. The .bss  section holding uninitialized global data
+    2. The .data  section holding initialized global data
     3. The .shstrtab section holding the string table
-    
+
     Correspondently, we have two program segments:
 
     1. The segment containing executable instruction
@@ -223,10 +223,10 @@ let prog_header_to_bytes ph little_endian =
 type elf_file = {
     ef_header       : elf_header;           (* ELF header *)
     ef_text_sec     : section_header;       (* section headers *)
-    ef_bss_sec      : section_header;
+    ef_data_sec     : section_header;
     ef_shstrtab_sec : section_header;
     ef_text_seg     : program_header;       (* program headers *)
-    ef_bss_seg      : program_header;       
+    ef_data_seg     : program_header;       
     ef_text         : int list;             (* bytes of the sections *)
   }
 
@@ -267,13 +267,13 @@ let elf_header_to_bytes eh little_endian =
 
 let elf_program_headers_to_bytes ef little_endian =
   let bytes = (prog_header_to_bytes ef.ef_text_seg little_endian) @
-              (prog_header_to_bytes ef.ef_bss_seg little_endian) in
+              (prog_header_to_bytes ef.ef_data_seg little_endian) in
   Array.of_list bytes
 
 let elf_section_headers_to_bytes ef little_endian =
   let bytes = (sec_header_to_bytes null_section_header little_endian) @
               (sec_header_to_bytes ef.ef_text_sec little_endian) @
-              (sec_header_to_bytes ef.ef_bss_sec little_endian) @
+              (sec_header_to_bytes ef.ef_data_sec little_endian) @
               (sec_header_to_bytes ef.ef_shstrtab_sec little_endian) in
   Array.of_list bytes
 
