@@ -93,7 +93,7 @@ let fac_code =
     MOV  (true, eax, imm 4);
     MOV  (true, addr_reg_ofs esp 0, eax);
     CALL (true, false, imm (-0x4C), None);
-    MOV  (true, offset 0x080490d7, eax);
+    MOV  (true, addr_glob 0x080490d8, eax);
     ADD  (true, esp, imm 12);
     RET  (true, None)
   ]
@@ -104,7 +104,7 @@ let fac_dump_file = "fac_rs"
 let () = write_ecd_instrs fac_dump_file true fac_bytes
 
 (* elf header *)
-let fac_elf_header = create_386_exec_elf_header 0x80480c9 52 244 2 4 3
+let fac_elf_header = create_386_exec_elf_header 0x80480ca 52 244 2 4 3
 
 (* .text segment *)
 let fac_text_seg =
@@ -113,8 +113,8 @@ let fac_text_seg =
     p_offset   = 0;
     p_vaddr    = 0x08048000;
     p_paddr    = 0x08048000;
-    p_filesz   = 0xd7;
-    p_memsz    = 0xd7;
+    p_filesz   = 0xd8;
+    p_memsz    = 0xd8;
     p_flags    = [PF_EXEC; PF_READ];
     p_align    = 0x1000
   }
@@ -123,9 +123,9 @@ let fac_text_seg =
 let fac_data_seg =
   {
     p_type     = PT_LOAD;
-    p_offset   = 0xd7;
-    p_vaddr    = 0x080490d7;
-    p_paddr    = 0x080490d7;
+    p_offset   = 0xd8;
+    p_vaddr    = 0x080490d8;
+    p_paddr    = 0x080490d8;
     p_filesz   = 4;
     p_memsz    = 4;
     p_flags    = [PF_WRITE; PF_READ];
@@ -139,7 +139,7 @@ let fac_text_sec = {
     sh_flags      = [SHF_ALLOC; SHF_EXECINSTR];
     sh_addr       = 0x08048074;
     sh_offset     = 0x74;
-    sh_size       = 0x63;
+    sh_size       = 0x64;
     sh_addralign  = 1;
   }
 
@@ -147,8 +147,8 @@ let fac_data_sec = {
     sh_name       = 0x11;
     sh_type       = SHT_PROGBITS;
     sh_flags      = [SHF_ALLOC; SHF_WRITE];
-    sh_addr       = 0x080490d7;
-    sh_offset     = 0xD7;
+    sh_addr       = 0x080490d8;
+    sh_offset     = 0xD8;
     sh_size       = 0x4;
     sh_addralign  = 4;
   }
@@ -158,20 +158,21 @@ let fac_shstrtab_sec = {
     sh_type       = SHT_STRTAB;
     sh_flags      = [];
     sh_addr       = 0;
-    sh_offset     = 0xDB;
+    sh_offset     = 0xDC;
     sh_size       = 0x17;
     sh_addralign  = 1;
   }
 
 
 (* Elf file *)
+let call_main = CALL (true, false, imm (-0x27), None)
+let call_main_bytes = encode call_main
 let startstub = 
- ['\xe8'; '\xda'; '\xff'; '\xff'; '\xff';      (* call   0x80480a8 *)
-  '\x89'; '\xc3';                              (* mov    %eax,%ebx *)
+ ['\x89'; '\xc3';                              (* mov    %eax,%ebx *)
   '\xb8'; '\x01'; '\x00'; '\x00'; '\x00';      (* mov    $0x1,%eax *)
   '\xcd'; '\x80']                              (* int    $0x80 *)
 let startstub_bytes = 
-  List.map Char.code startstub
+  call_main_bytes @ (List.map Char.code startstub)
 
 
 let fac_elf = {
