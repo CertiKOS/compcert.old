@@ -73,6 +73,8 @@ Require RawAsmgen.
 (** Command-line flags. *)
 Require Import Compopts.
 
+Require AsmExpand.
+
 (** Pretty-printers (defined in Caml). *)
 Parameter print_Clight: Clight.program -> unit.
 Parameter print_Cminor: Cminor.program -> unit.
@@ -167,6 +169,13 @@ Definition transf_c_program (p: Csyntax.program) : res Asm.program :=
   OK p
   @@@ time "Clight generation" SimplExpr.transl_program
   @@@ transf_clight_program.
+
+Definition transf_c_program_ex (p: Csyntax.program) : res Asm.program :=
+  OK p
+  @@@ time "Clight generation" SimplExpr.transl_program
+  @@@ transf_clight_program
+  @@ time "Asm Expand" AsmExpand.transf_program.
+
 
 (** The following lemmas help reason over compositions of passes. *)
 
