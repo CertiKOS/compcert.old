@@ -1457,12 +1457,12 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
  inject_stack_adt {injperm: InjectPerm}:
    forall f m1 m2,
      inject f m1 m2 ->
-     stack_inject f (perm m1) ( (stack_adt m1)) ( (stack_adt m2));
+     stack_injection f (perm m1) ( (stack_adt m1)) ( (stack_adt m2));
 
  extends_stack_adt {injperm: InjectPerm}:
    forall m1 m2,
      extends m1 m2 ->
-     stack_inject inject_id (perm m1) (stack_adt m1) (stack_adt m2);
+     stack_injection inject_id (perm m1) (stack_adt m1) (stack_adt m2);
 
 (* Needed by Stackingproof, with Linear2 to Mach,
    to compose extends (in Linear2) and inject. *)
