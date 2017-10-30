@@ -1,0 +1,8 @@
+### Starting build.
+# Target: Elf.ml.depends, tags: { bin_annot, extension:ml, file:Elf.ml, ocaml, ocamldep, quiet }
+ocamlfind ocamldep -modules Elf.ml > Elf.ml.depends # cached
+# Target: Elf.cmo, tags: { bin_annot, byte, compile, extension:cmo, extension:ml, file:Elf.cmo, file:Elf.ml, implem, ocaml, quiet }
+ocamlfind ocamlc -c -bin-annot -o Elf.cmo Elf.ml # cached
+# Target: Elf.cma, tags: { bin_annot, byte, dont_link_with, extension:cma, file:Elf.cma, library, link, ocaml, quiet }
+ocamlfind ocamlc -a nums.cma Elf.cmo -o Elf.cma # cached
+# Compilation successful.

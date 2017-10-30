@@ -1,3 +1,8 @@
+(* An example of generating machine code from 
+   a hand-written factorial assembly program in Rocksalt *)
+(* Author        : Yuting Wang *)
+(* Date Created  : 10-23-2017 *)
+
 open Printf
 open Encode
 open X86Syntax

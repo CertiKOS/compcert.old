@@ -97,7 +97,7 @@ BACKEND=\
   EraseArgs.v \
   Bounds.v Stacklayout.v Stacking.v Stackingproof.v \
   Asm.v Asmgen.v Asmgenproof0.v Asmgenproof1.v Asmgenproof.v \
-	AsmFacts.v RawAsmgen.v
+	AsmFacts.v RawAsmgen.v RockSaltAsm.v RockSaltAsmGen.v
 
 #  Tailcall.v Tailcallproof.v \
 #  Inlining.v Inliningspec.v Inliningproof.v \
@@ -139,6 +139,7 @@ GENERATED=\
   cparser/Parser.v
 
 all:
+	$(MAKE) -C cpu_models/x86model
 	@test -f .depend || $(MAKE) depend
 	$(MAKE) proof
 	$(MAKE) extraction
@@ -149,7 +150,7 @@ endif
 ifeq ($(CLIGHTGEN),true)
 	$(MAKE) clightgen
 endif
-	$(MAKE) -C cpu_models/x86model
+
 
 
 proof: $(FILES:.v=.vo)
@@ -205,6 +206,19 @@ tools/modorder: tools/modorder.ml
 latexdoc:
 	cd doc; $(COQDOC) --latex -o doc/doc.tex -g $(FILES)
 
+# Rule for compiling rocksalt assembly
+# We put it before the ordinary rules so that it will be used first
+COQINCLUDES_RS=$(COQINCLUDES) \
+	-R cpu_models/shared Shared \
+	-R cpu_models/x86model/Model X86Model
+COQC_RS="$(COQBIN)coqc" -q $(COQINCLUDES_RS) $(COQCOPTS)
+
+RockSalt%.vo: RockSalt%.v
+	@rm -f doc/RockSalt$(*F).glob
+	@echo "COQC_RS $<"
+	@$(COQC_RS) -dump-glob doc/RockSalt$(*F).glob $<
+
+# Rules for compiling ordinary .vo files
 %.vo: %.v
 	@rm -f doc/$(*F).glob
 	@echo "COQC $*.v"

@@ -1,0 +1,29 @@
+Stack frame size: 20
+Frame link offset: 4
+Return addr offset: 16
+fac() {
+	stack(8, any32) = EBX
+	EBX = param(0, int)
+	if (EBX ==s 0) goto 3
+	EAX = EBX + -1 (int)
+	stack(0, int) = EAX
+	call "fac"
+	EBX = EBX * EAX
+	goto 2
+    3:	EBX = 1
+    2:	EAX = EBX
+	EBX = stack(8, any32)
+	return
+}
+
+Stack frame size: 12
+Frame link offset: 4
+Return addr offset: 8
+main() {
+	EAX = 4
+	stack(0, int) = EAX
+	call "fac"
+	int32[gv + 0] = EAX
+	return
+}
+
