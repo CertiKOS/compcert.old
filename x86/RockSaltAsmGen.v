@@ -55,6 +55,18 @@ Definition no_prefix : prefix := mkPrefix None None false false.
 
 Definition encode ins := x86_encode no_prefix ins.
 
+Fixpoint encode_instr_list (il: list instr) : res (list int8) :=
+  match il with
+  | nil => OK nil
+  | i::il' => 
+    match (encode i) with
+    | None => Error (msg "Encoding instruction list fails")
+    | Some el => 
+      do eil <- encode_instr_list il';
+      OK (el ++ eil)
+    end
+  end.
+
 
 (** Translate integer registers *)
 Definition transl_ireg (r: ireg) : res register :=
@@ -300,10 +312,7 @@ Fixpoint transf_globfuns (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
     match fn with
     | Internal f => 
       do r <- transl_function fmap lmap id f.(fn_code) ofs iaccum;
-      let il := fst (fst (fst r)) in
-      let fmap' := snd (fst (fst r)) in
-      let lmap' := snd (fst r) in
-      let ofs'  := snd r in
+      let '(il, fmap', lmap', ofs') := r in
       let f' := mkFun ofs (Word.sub ofs' ofs) in
       transf_globfuns fmap' lmap' gdefs' ofs'
                       (il ++ iaccum)
@@ -331,16 +340,13 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
   do r <- transf_globfuns data_addr dmap
              default_fmap default_lmap 
              p.(AST.prog_defs) Word.zero [] [];
-  let fmap := snd (fst (fst r)) in
-  let lmap := snd (fst r) in
+  let '(_,_,fmap,lmap,_) := r in
   (* The second pass of functions finishes
      the translation using those mappings *)
   do r <- transf_globfuns data_addr dmap
              fmap lmap
              p.(AST.prog_defs) Word.zero [] [];
-  let instrs := fst (fst (fst (fst r))) in
-  let gfuns  := snd (fst (fst (fst r))) in
-  let code_seg_size := snd r in
+  let '(instrs,gfuns,_,_,code_seg_size) := r in
   (* Compose the results to form the RockSalt program *)
   let gvars_defs :=
       List.map (fun (e: ident * option (globvar gv_info)) =>
@@ -358,13 +364,16 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
                        | Some fn => Some (Gfun fn)
                        end))
                gfuns in
+  let tinstrs := List.rev instrs in
+  do mach_code <- encode_instr_list tinstrs;
   OK {|
-    prog_defs := gvars_defs ++ gfuns_defs;
-    prog_public := p.(AST.prog_public);
-    prog_main := p.(AST.prog_main);
-    text_seg := mkSegment (Word.add data_addr data_seg_size) code_seg_size;
-    text_instrs := List.rev instrs;
-    data_seg := mkSegment data_addr data_seg_size;
+    prog_defs       := gvars_defs ++ gfuns_defs;
+    prog_public     := p.(AST.prog_public);
+    prog_main       := p.(AST.prog_main);
+    text_seg        := mkSegment (Word.add data_addr data_seg_size) code_seg_size;
+    text_instrs     := tinstrs;
+    machine_code    := mach_code;
+    data_seg        := mkSegment data_addr data_seg_size;
   |}.
 
   

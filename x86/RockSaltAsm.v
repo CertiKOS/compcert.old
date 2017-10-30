@@ -32,6 +32,7 @@ Record program := mkProg {
   (* text segment *)
   text_seg : segment;
   text_instrs : list instr;
+  machine_code : list int8;
   data_seg : segment;
 }.
 
