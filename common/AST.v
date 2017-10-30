@@ -422,13 +422,13 @@ Qed.
   and associated operations. *)
 
 Inductive external_function : Type :=
-  | EF_external (name: string) (sg: signature)
+  | EF_external (name: ident) (sg: signature)
      (** A system call or library function.  Produces an event
          in the trace. *)
-  | EF_builtin (name: string) (sg: signature)
+  | EF_builtin (name: ident) (sg: signature)
      (** A compiler built-in function.  Behaves like an external, but
          can be inlined by the compiler. *)
-  | EF_runtime (name: string) (sg: signature)
+  | EF_runtime (name: ident) (sg: signature)
      (** A function from the run-time library.  Behaves like an
          external, but must not be redefined. *)
   | EF_vload (chunk: memory_chunk)
