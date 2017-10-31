@@ -67,7 +67,7 @@ Inductive event: Type :=
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_annot: string -> list eventval -> event
-  | Event_extcall: ident -> query -> reply -> event.
+  | Event_extcall: ident -> signature -> query -> reply -> event.
 
 (** The dynamic semantics for programs collect traces of events.
   Traces are of two kinds: finite (type [trace]) or infinite (type [traceinf]). *)
@@ -518,13 +518,13 @@ Inductive match_events_query: trace -> trace -> Prop :=
       match_events_query
         (Event_annot id args :: nil)
         (Event_annot id args :: nil)
-  | match_events_query_extcall f q1 q2 r1 r2:
-      extcall_valid q1 r1 ->
-      extcall_valid q2 r2 ->
-      match_query w q1 q2 ->
+  | match_events_query_extcall id sg q1 q2 r1 r2:
+      extcall_valid sg q1 r1 ->
+      extcall_valid sg q2 r2 ->
+      match_query cc w q1 q2 ->
       match_events_query
-        (Event_extcall f q1 r1 :: nil)
-        (Event_extcall f q2 r2 :: nil).
+        (Event_extcall id sg q1 r1 :: nil)
+        (Event_extcall id sg q2 r2 :: nil).
 
 Inductive match_events: trace -> trace -> Prop :=
   | match_events_E0:
@@ -547,14 +547,14 @@ Inductive match_events: trace -> trace -> Prop :=
       match_events
         (Event_annot id args :: nil)
         (Event_annot id args :: nil)
-  | match_events_extcall f q1 q2 r1 r2:
-      extcall_valid q1 r1 ->
-      extcall_valid q2 r2 ->
-      match_query w q1 q2 ->
-      match_reply w r1 r2 ->
+  | match_events_extcall id sg q1 q2 r1 r2:
+      extcall_valid sg q1 r1 ->
+      extcall_valid sg q2 r2 ->
+      match_query cc w q1 q2 ->
+      match_reply cc w q1 q2 r1 r2 ->
       match_events
-        (Event_extcall f q1 r1 :: nil)
-        (Event_extcall f q2 r2 :: nil).
+        (Event_extcall id sg q1 r1 :: nil)
+        (Event_extcall id sg q2 r2 :: nil).
 
 Lemma match_events_subrel_query t1 t2:
   match_events t1 t2 ->
@@ -570,7 +570,7 @@ Definition stable_event t :=
     | nil => True
     | Event_syscall _ _ res :: nil => eventval_valid ge res
     | Event_vload _ _ _ res :: nil => eventval_valid ge res
-    | Event_extcall _ _ _ :: nil => False
+    | Event_extcall _ _ _ _ :: nil => False
     | _ :: nil => True
     | _ => False
   end.
@@ -592,10 +592,12 @@ Inductive match_traces: trace -> trace -> Prop :=
       match_traces (Event_vstore chunk id ofs arg :: nil) (Event_vstore chunk id ofs arg :: nil)
   | match_traces_annot: forall id args,
       match_traces (Event_annot id args :: nil) (Event_annot id args :: nil)
-  | match_traces_extcall: forall id q r1 r2,
-      extcall_valid q r1 ->
-      extcall_valid q r2 ->
-      match_traces (Event_extcall id q r1 :: nil) (Event_extcall id q r2 :: nil).
+  | match_traces_extcall: forall id sg q r1 r2,
+      extcall_valid sg q r1 ->
+      extcall_valid sg q r2 ->
+      match_traces
+        (Event_extcall id sg q r1 :: nil)
+        (Event_extcall id sg q r2 :: nil).
 
 Lemma match_traces_match_events_query t1 t2:
   stable_event t1 ->
@@ -643,7 +645,9 @@ Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
 
 Lemma match_traces_preserved:
-  forall t1 t2, match_events_query ge1 w t1 t2 -> match_events_query ge2 w t1 t2.
+  forall t1 t2,
+    match_events_query ge1 cc w t1 t2 ->
+    match_events_query ge2 cc w t1 t2.
 Proof.
   induction 1; econstructor; eauto using eventval_valid_preserved.
 Qed.
@@ -659,7 +663,7 @@ Definition output_event (ev: event) : Prop :=
   | Event_vload _ _ _ _ => False
   | Event_vstore _ _ _ _ => True
   | Event_annot _ _ => True
-  | Event_extcall _ _ _ => False
+  | Event_extcall _ _ _ _ => False
   end.
 
 Fixpoint output_trace (t: trace) : Prop :=
@@ -721,54 +725,51 @@ Definition extcall_sem : Type :=
   target environments have related behaviors (per [match_event]),
   then the system needs to transition to related states. *)
 
-Record extcall_relational_properties cc (sem: extcall_sem) (sg: signature) :=
-  {
-    ec_query ge1 ge2 w vargs1 m1 t1 vres1 m1' vargs2 m2:
-      sem ge1 vargs1 m1 t1 vres1 m1' ->
-      match_senv w ge1 ge2 ->
-      match_query (cc:=cc) w (sg, vargs1, m1) (sg, vargs2, m2) ->
-      exists t2 vres2 m2',
-        sem ge2 vargs2 m2 t2 vres2 m2' /\
-        match_events_query ge1 w t1 t2;
-    ec_reply ge1 ge2 w vargs1 m1 t1 vres1 m1' vargs2 m2 t2:
-      sem ge1 vargs1 m1 t1 vres1 m1' ->
-      match_senv w ge1 ge2 ->
-      match_query w (sg, vargs1, m1) (sg, vargs2, m2) ->
-      match_events ge1 (cc:=cc) w t1 t2 ->
-      exists vres2 m2',
-        sem ge2 vargs2 m2 t2 vres2 m2' /\
-        match_reply w (vres1, m1') (vres2, m2');
-  }.
+Definition extcall_relational_properties cc (sem: extcall_sem) (sg: signature) :=
+  forall ge1 ge2 w vargs1 m1 t1 vres1 m1' vargs2 m2,
+    sem ge1 vargs1 m1 t1 vres1 m1' ->
+    match_senv cc w ge1 ge2 ->
+    match_query cc w (vargs1, m1) (vargs2, m2) ->
+    exists t2 vres2 m2',
+      sem ge2 vargs2 m2 t2 vres2 m2' /\
+      match_events_query ge1 cc w t1 t2 /\
+      forall t2',
+        match_traces ge1 t2 t2' ->
+        match_events ge1 cc w t1 t2' ->
+        exists vres2' m2'',
+          sem ge2 vargs2 m2 t2' vres2' m2'' /\
+          match_reply cc w (vargs1, m1) (vargs2, m2) (vres1, m1') (vres2', m2'').
 
 (** For calls which generate stable events, [match_event] reduces to
-  equality, so that the two properties above collapse into one. *)
+  equality, so that the two steps above collapse into one. *)
 
 Lemma extcall_stable_event_relational_properties cc (sem: extcall_sem) sg:
   (forall ge1 ge2 w vargs m1 t vres m2 vargs' m1',
-    match_senv w ge1 ge2 ->
+    match_senv cc w ge1 ge2 ->
     sem ge1 vargs m1 t vres m2 ->
-    match_query (cc:=cc) w (sg, vargs, m1) (sg, vargs', m1') ->
+    match_query cc w (vargs, m1) (vargs', m1') ->
     exists vres' m2',
       sem ge2 vargs' m1' t vres' m2' /\ 
       stable_event ge1 t /\
-      match_reply w (vres, m2) (vres', m2')) ->
+      match_reply cc w (vargs, m1) (vargs', m1') (vres, m2) (vres', m2')) ->
   extcall_relational_properties cc sem sg.
 Proof.
   intros H.
+  red.
+  intros until m2.
+  intros Hstep Hge Hq.
+  edestruct H as (vres2 & m2' & Hstep2 & Ht & Hr); eauto.
+  exists t1, vres2, m2'.
+  split; eauto.
   split.
-  - intros until m2.
-    intros Hstep Hge Hq.
-    edestruct H as (vres2 & m2' & Hstep2 & Ht & Hr); eauto.
-    exists t1, vres2, m2'.
-    split; eauto.
+  {
     eapply match_events_subrel_query.
     eapply match_stable_event_refl; eauto.
-  - intros until t2.
-    intros Hstep1 Hge Hq Ht.
-    edestruct H as (vres2 & m2' & Hstep2 & Ht' & Hr); eauto.
-    assert (t1 = t2) by eauto using match_stable_event_corefl; subst t2.
-    exists vres2, m2'.
-    split; eauto.
+  }
+  intros t2' Ht2' Ht'.
+  assert (t1 = t2') by eauto using match_stable_event_corefl; subst t2'.
+  exists vres2, m2'.
+  eauto.
 Qed.
 
 (** When proving [ec_mem_extends] or [ec_mem_inject] below, this can
@@ -782,9 +783,8 @@ Ltac extcall_relational_properties_compat :=
   intro;
   let Hq := fresh in
   intros Hq **;
-  (eapply match_query_extends in Hq; destruct Hq as (? & ? & ?)) ||
-  (eapply match_query_inject in Hq; destruct Hq as (f & ? & ?& ?));
-  subst w;
+  (eapply match_query_extends in Hq; destruct Hq as (? & ?)) ||
+  (eapply match_query_inject in Hq; destruct Hq as (? & ?));
   simpl in *.
 
 (** We now specify the expected properties of this predicate. *)
@@ -1559,33 +1559,37 @@ Qed.
 Inductive external_functions_sem id (sg: signature): extcall_sem :=
   external_funcions_sem_intro ge vargs m vres m':
     extcall_step_valid sg vargs m vres m' ->
-    external_functions_sem id sg ge vargs m (Event_extcall id (sg, vargs, m) (vres, m') :: E0) vres m'.
+    external_functions_sem id sg ge vargs m (Event_extcall id sg (vargs, m) (vres, m') :: E0) vres m'.
 
 Lemma external_functions_sem_relational_properties cc id sg:
   extcall_relational_properties cc (external_functions_sem id sg) sg.
 Proof.
-  split.
-  - intros.
-    destruct H.
-    assert (Hvalid2: extcall_step_valid sg vargs2 m2 Vundef m2).
-    {
-      split; eauto.
-      + constructor.
-      + apply Mem.unchanged_on_refl.
-    }
-    eexists.
-    exists Vundef, m2.
-    split.
-    + econstructor; eauto.
-    + econstructor; eauto.
-  - intros.
-    destruct H.
-    inv H2.
-    assert (q2 = (sg, vargs2, m2)) by eauto using match_query_injective; subst.
-    destruct r2 as [vres2 m2'].
-    exists vres2, m2'.
+  red.
+  intros.
+  destruct H.
+  assert (Hvalid2: extcall_step_valid sg vargs2 m2 Vundef m2).
+  {
     split; eauto.
-    constructor; eauto.
+    + constructor.
+    + apply Mem.unchanged_on_refl.
+  }
+  eexists.
+  exists Vundef, m2.
+  split.
+  {
+    econstructor; eauto.
+  }
+  split.
+  {
+    econstructor; eauto.
+  }
+  intros t2' Ht2' Ht'.
+  inv Ht2'.
+  inv Ht'.
+  destruct r2 as [vres2 m2'].
+  exists vres2, m2'.
+  split; eauto.
+  constructor; eauto.
 Qed.
 
 Lemma external_functions_properties:
