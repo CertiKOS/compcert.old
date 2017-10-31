@@ -1743,7 +1743,7 @@ Qed.
 
 (** Relating execution states *)
 
-Inductive match_states: state -> state -> Prop :=
+Inductive match_states: meminj -> state -> state -> Prop :=
   | match_regular_states:
       forall f s k e le m tf ts tk te tle tm j lo hi tlo thi
         (TRF: transf_function f = OK tf)
@@ -1754,8 +1754,8 @@ Inductive match_states: state -> state -> Prop :=
         (COMPAT: compat_cenv (addr_taken_stmt s) (cenv_for f))
         (BOUND: Ple hi (Mem.nextblock m))
         (TBOUND: Ple thi (Mem.nextblock tm)),
-      match_states (State f s k e le m)
-                   (State tf ts tk te tle tm)
+      match_states j (State f s k e le m)
+                     (State tf ts tk te tle tm)
   | match_call_state:
       forall fd vargs k m tfd tvargs tk tm j targs tres cconv
         (TRFD: transf_fundef fd = OK tfd)
@@ -1764,15 +1764,15 @@ Inductive match_states: state -> state -> Prop :=
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
         (ANORM: val_casted_list vargs targs),
-      match_states (Callstate fd vargs k m)
-                   (Callstate tfd tvargs tk tm)
+      match_states j (Callstate fd vargs k m)
+                     (Callstate tfd tvargs tk tm)
   | match_return_state:
       forall v k m tv tk tm j
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (RINJ: Val.inject j v tv),
-      match_states (Returnstate v k m)
-                   (Returnstate tv tk tm).
+      match_states j (Returnstate v k m)
+                     (Returnstate tv tk tm).
 
 (** The simulation diagrams *)
 
@@ -2001,9 +2001,22 @@ End FIND_LABEL.
 
 Lemma step_simulation:
   forall S1 t S2, step1 ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'), exists S2', plus step2 tge S1' t S2' /\ match_states S2 S2'.
+  forall j S1' (MS: match_states j S1 S1'),
+  (exists t' S2',
+    star step2 tge S1' t' S2' /\
+    match_events_query ge cc_inject j t t' /\
+    forall t'',
+      match_traces ge t' t'' ->
+      match_events ge cc_inject j t t'' ->
+      exists j' S2'',
+        plus step2 tge S1' t'' S2'' /\
+        match_states j' S2 S2'') \/
+  (stable_event ge t /\
+   exists j' S2',
+     plus step2 tge S1' t S2' /\ match_states j' S2 S2').
 Proof.
-  induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS).
+  induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS);
+    try (right; split; [constructor | ]).
 
 (* assign *)
   generalize (is_liftable_var_charact (cenv_for f) a1); destruct (is_liftable_var (cenv_for f) a1) as [id|]; monadInv TRS.
@@ -2014,7 +2027,7 @@ Proof.
   exploit me_vars; eauto. instantiate (1 := id). intros MV.
   inv H.
   (* local variable *)
-  econstructor; split.
+  eexists; econstructor; split.
   eapply step_Sset_debug. eauto. rewrite typeof_simpl_expr. eauto.
   econstructor; eauto with compat.
   eapply match_envs_assign_lifted; eauto. eapply cast_val_is_casted; eauto.
@@ -2030,7 +2043,7 @@ Proof.
   exploit eval_simpl_expr; eauto with compat. intros [tv2 [A B]].
   exploit sem_cast_inject; eauto. intros [tv [C D]].
   exploit assign_loc_inject; eauto. intros [tm' [X [Y Z]]].
-  econstructor; split.
+  eexists; econstructor; split.
   apply plus_one. econstructor. eexact E. eexact A. repeat rewrite typeof_simpl_expr. eexact C.
   rewrite typeof_simpl_expr; auto. eexact X.
   econstructor; eauto with compat.
@@ -2041,7 +2054,7 @@ Proof.
 
 (* set temporary *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
-  econstructor; split.
+  eexists; econstructor; split.
   apply plus_one. econstructor. eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_temp; eauto.
@@ -2050,7 +2063,7 @@ Proof.
   exploit eval_simpl_expr; eauto with compat. intros [tvf [A B]].
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit match_cont_find_funct; eauto. intros [tfd [P Q]].
-  econstructor; split.
+  eexists; econstructor; split.
   apply plus_one. eapply step_call with (fd := tfd).
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
@@ -2059,11 +2072,30 @@ Proof.
   intros. econstructor; eauto.
 
 (* builtin *)
+  left.
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
-  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
-  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
-  econstructor; split.
-  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  edestruct external_call_mem_inject
+    as (t' & vres' & m2' & Hstep' & Ht' & H''); eauto.
+  {
+    apply match_globalenvs_preserves_globals; eauto with compat.
+  }
+  exists t'; eexists.
+  intuition.
+  {
+    apply star_one.
+    econstructor; eauto with compat.
+    eapply external_call_symbols_preserved; eauto.
+    apply senv_preserved.
+  }
+  edestruct H'' as (f' & vres'' & m2'' & Hstep'' & A & B & X & Y & E & F); eauto.
+  exists f'; eexists.
+  intuition.
+  {
+    apply plus_one.
+    econstructor; eauto with compat.
+    eapply external_call_symbols_preserved; eauto.
+    apply senv_preserved.
+  }
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
@@ -2073,48 +2105,48 @@ Proof.
   eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
 
 (* sequence *)
-  econstructor; split. apply plus_one. econstructor.
+  eexists; econstructor; split. apply plus_one. econstructor.
   econstructor; eauto with compat. econstructor; eauto with compat.
 
 (* skip sequence *)
-  inv MCONT. econstructor; split. apply plus_one. econstructor. econstructor; eauto.
+  inv MCONT. eexists; econstructor; split. apply plus_one. econstructor. econstructor; eauto.
 
 (* continue sequence *)
-  inv MCONT. econstructor; split. apply plus_one. econstructor. econstructor; eauto.
+  inv MCONT. eexists; econstructor; split. apply plus_one. econstructor. econstructor; eauto.
 
 (* break sequence *)
-  inv MCONT. econstructor; split. apply plus_one. econstructor. econstructor; eauto.
+  inv MCONT. eexists; econstructor; split. apply plus_one. econstructor. econstructor; eauto.
 
 (* ifthenelse *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
-  econstructor; split.
+  eexists; econstructor; split.
   apply plus_one. apply step_ifthenelse with (v1 := tv) (b := b). auto.
   rewrite typeof_simpl_expr. eapply bool_val_inject; eauto.
   destruct b; econstructor; eauto with compat.
 
 (* loop *)
-  econstructor; split. apply plus_one. econstructor. econstructor; eauto with compat. econstructor; eauto with compat.
+  eexists; econstructor; split. apply plus_one. econstructor. econstructor; eauto with compat. econstructor; eauto with compat.
 
 (* skip-or-continue loop *)
-  inv MCONT. econstructor; split.
+  inv MCONT. eexists; econstructor; split.
   apply plus_one. econstructor. destruct H; subst x; simpl in *; intuition congruence.
   econstructor; eauto with compat. econstructor; eauto with compat.
 
 (* break loop1 *)
-  inv MCONT. econstructor; split. apply plus_one. eapply step_break_loop1.
+  inv MCONT. eexists; econstructor; split. apply plus_one. eapply step_break_loop1.
   econstructor; eauto.
 
 (* skip loop2 *)
-  inv MCONT. econstructor; split. apply plus_one. eapply step_skip_loop2.
+  inv MCONT. eexists; econstructor; split. apply plus_one. eapply step_skip_loop2.
   econstructor; eauto with compat. simpl; rewrite H2; rewrite H4; auto.
 
 (* break loop2 *)
-  inv MCONT. econstructor; split. apply plus_one. eapply step_break_loop2.
+  inv MCONT. eexists; econstructor; split. apply plus_one. eapply step_break_loop2.
   econstructor; eauto.
 
 (* return none *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  econstructor; split. apply plus_one. econstructor; eauto.
+  eexists; econstructor; split. apply plus_one. econstructor; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
 
@@ -2122,14 +2154,14 @@ Proof.
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   exploit sem_cast_inject; eauto. intros [tv' [C D]].
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  econstructor; split. apply plus_one. econstructor; eauto.
+  eexists; econstructor; split. apply plus_one. econstructor; eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
 
 (* skip call *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  econstructor; split. apply plus_one. econstructor; eauto.
+  eexists; econstructor; split. apply plus_one. econstructor; eauto.
   eapply match_cont_is_call_cont; eauto.
   monadInv TRF; auto.
   econstructor; eauto.
@@ -2137,7 +2169,7 @@ Proof.
 
 (* switch *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
-  econstructor; split. apply plus_one. econstructor; eauto.
+  eexists; econstructor; split. apply plus_one. econstructor; eauto.
   rewrite typeof_simpl_expr. instantiate (1 := n).
   unfold sem_switch_arg in *;
   destruct (classify_switch (typeof a)); try discriminate;
@@ -2149,17 +2181,17 @@ Proof.
   apply compat_cenv_select_switch. eauto with compat.
 
 (* skip-break switch *)
-  inv MCONT. econstructor; split.
+  inv MCONT. eexists; econstructor; split.
   apply plus_one. eapply step_skip_break_switch. destruct H; subst x; simpl in *; intuition congruence.
   econstructor; eauto with compat.
 
 (* continue switch *)
-  inv MCONT. econstructor; split.
+  inv MCONT. eexists; econstructor; split.
   apply plus_one. eapply step_continue_switch.
   econstructor; eauto with compat.
 
 (* label *)
-  econstructor; split. apply plus_one. econstructor. econstructor; eauto.
+  eexists; econstructor; split. apply plus_one. econstructor. econstructor; eauto.
 
 (* goto *)
   generalize TRF; intros TRF'. monadInv TRF'.
@@ -2167,7 +2199,7 @@ Proof.
     eauto. eapply match_cont_call_cont. eauto.
     apply compat_cenv_for.
   rewrite H. intros [ts' [tk' [A [B [C D]]]]].
-  econstructor; split.
+  eexists; econstructor; split.
   apply plus_one. econstructor; eauto. simpl.
   rewrite find_label_add_debug_params. rewrite find_label_store_params. rewrite find_label_add_debug_vars. eexact A.
   econstructor; eauto.
@@ -2198,7 +2230,7 @@ Proof.
     with (cenv_for f) in *.
   generalize (vars_and_temps_properties (cenv_for f) (fn_params f) (fn_vars f) (fn_temps f)).
   intros [X [Y Z]]. auto. auto.
-  econstructor; split.
+  eexists; econstructor; split.
   eapply plus_left. econstructor.
   econstructor. exact Y. exact X. exact Z. simpl. eexact A. simpl. eexact Q.
   simpl. eapply star_trans. eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
@@ -2219,13 +2251,32 @@ Proof.
   rewrite T; xomega.
 
 (* external function *)
+  left.
   monadInv TRFD. inv FUNTY.
-  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
-  eapply match_cont_globalenv. eexact (MCONT VSet.empty).
-  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
-  econstructor; split.
-  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto.
+  edestruct external_call_mem_inject
+    as (t' & vres' & m2' & Hstep' & Ht' & H''); eauto.
+  {
+    apply match_globalenvs_preserves_globals.
+    eapply match_cont_globalenv. eexact (MCONT VSet.empty).
+  }
+  exists t'; eexists.
+  intuition.
+  {
+    apply star_one.
+    constructor.
+    eapply external_call_symbols_preserved; eauto.
+    apply senv_preserved.
+  }
+  edestruct H'' as (f' & vres'' & m2'' & Hstep'' & A & B & C & D & E & F); eauto.
+  exists f'; eexists.
+  intuition.
+  {
+    apply plus_one.
+    constructor.
+    eapply external_call_symbols_preserved; eauto.
+    apply senv_preserved.
+  }
+  constructor; eauto.
   intros. apply match_cont_incr_bounds with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_cont_extcall; eauto. xomega. xomega.
   eapply external_call_nextblock; eauto.
@@ -2233,7 +2284,7 @@ Proof.
 
 (* return *)
   specialize (MCONT (cenv_for f)). inv MCONT.
-  econstructor; split.
+  eexists; econstructor; split.
   apply plus_one. econstructor.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
@@ -2241,10 +2292,11 @@ Qed.
 
 Lemma initial_states_simulation:
   forall S, initial_state prog S ->
-  exists R, initial_state tprog R /\ match_states S R.
+  exists j R, initial_state tprog R /\ match_states j S R.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
+  eexists.
   econstructor; split.
   econstructor.
   eapply (Genv.init_mem_transf_partial (proj1 TRANSF)). eauto.
@@ -2268,8 +2320,8 @@ Proof.
 Qed.
 
 Lemma final_states_simulation:
-  forall S R r,
-  match_states S R -> final_state S r -> final_state R r.
+  forall j S R r,
+  match_states j S R -> final_state S r -> final_state R r.
 Proof.
   intros. inv H0. inv H.
   specialize (MCONT VSet.empty). inv MCONT.
@@ -2277,7 +2329,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics1 prog) (semantics2 tprog).
+  forward_simulation cc_inject (semantics1 prog) (semantics2 tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

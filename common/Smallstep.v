@@ -802,25 +802,63 @@ Qed.
 
 End SIMULATION_STAR.
 
-(*
-
 (** Simulation when one transition in the first program corresponds
     to one or several transitions in the second program. *)
 
 Section SIMULATION_PLUS.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  exists s2', Plus L2 s2 t s2' /\ match_states s1' s2'.
+  forall s1 t1 s1', Step L1 s1 t1 s1' ->
+  forall w s2, match_states w s1 s2 ->
+  (exists t2 s2',
+    Star L2 s2 t2 s2' /\
+    match_events_query (symbolenv L1) cc w t1 t2 /\
+    forall t2',
+      match_traces (symbolenv L1) t2 t2' ->
+      match_events (symbolenv L1) cc w t1 t2' ->
+      exists w' s2'',
+        Plus L2 s2 t2' s2'' /\
+        match_states w' s1' s2'') \/
+  (stable_event (symbolenv L1) t1 /\
+   exists w' s2',
+     Plus L2 s2 t1 s2' /\ match_states w' s1' s2').
 
-Lemma forward_simulation_plus: forward_simulation L1 L2.
+Lemma stable_step_plus s1 t s1' w s2:
+  stable_event (symbolenv L1) t ->
+  Step L1 s1 t s1' ->
+  match_states w s1 s2 ->
+  (exists w' s2', Plus L2 s2 t s2' /\ match_states w' s1' s2') ->
+  (exists t2 s2',
+    Star L2 s2 t2 s2' /\
+    match_events_query (symbolenv L1) cc w t t2 /\
+    forall t2',
+      match_traces (symbolenv L1) t2 t2' ->
+      match_events (symbolenv L1) cc w t t2' ->
+      exists w' s2'',
+        Plus L2 s2 t2' s2'' /\
+        match_states w' s1' s2'').
+Proof.
+  intros Ht Hstep Hs (w' & s2' & Hstep2 & Hs').
+  exists t, s2'.
+  intuition; eauto using plus_star.
+  - eapply match_events_subrel_query.
+    eapply match_stable_event_refl; eauto.
+  - assert (t = t2') by (eapply match_stable_event_corefl; eauto); subst t2'.
+    eauto.
+Qed.
+
+Lemma forward_simulation_plus: forward_simulation cc L1 L2.
 Proof.
   apply forward_simulation_star with (measure := fun _ => O).
-  intros. exploit simulation; eauto.
+  intros.
+  left.
+  edestruct simulation as [Hsim | [Ht Hsim]]; eauto.
+  eapply stable_step_plus; eauto.
 Qed.
 
 End SIMULATION_PLUS.
+
+(*
 
 (** Lock-step simulation: each transition in the first semantics
     corresponds to exactly one transition in the second semantics. *)
