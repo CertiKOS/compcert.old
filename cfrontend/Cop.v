@@ -1626,10 +1626,10 @@ End GENERIC_INJECTION.
 Context  {injperm: InjectPerm}.
 
 Lemma sem_cast_inject:
-  forall f v1 ty1 ty m v tv1 tm,
+  forall f g v1 ty1 ty m v tv1 tm,
   sem_cast v1 ty1 ty m = Some v ->
   Val.inject f v1 tv1 ->
-  Mem.inject f m tm ->
+  Mem.inject f g m tm ->
   exists tv, sem_cast tv1 ty1 ty tm = Some tv /\ Val.inject f v tv.
 Proof.
   intros. eapply sem_cast_inj; eauto.
@@ -1637,10 +1637,10 @@ Proof.
 Qed.
 
 Lemma sem_unary_operation_inject:
-  forall f m m' op v1 ty1 v tv1,
+  forall f g m m' op v1 ty1 v tv1,
   sem_unary_operation op v1 ty1 m = Some v ->
   Val.inject f v1 tv1 ->
-  Mem.inject f m m' ->
+  Mem.inject f g m m' ->
   exists tv, sem_unary_operation op tv1 ty1 m' = Some tv /\ Val.inject f v tv.
 Proof.
   intros. eapply sem_unary_operation_inj; eauto.
@@ -1648,10 +1648,10 @@ Proof.
 Qed.
 
 Lemma sem_binary_operation_inject:
-  forall f m m' cenv op v1 ty1 v2 ty2 v tv1 tv2,
+  forall f g m m' cenv op v1 ty1 v2 ty2 v tv1 tv2,
   sem_binary_operation cenv op v1 ty1 v2 ty2 m = Some v ->
   Val.inject f v1 tv1 -> Val.inject f v2 tv2 ->
-  Mem.inject f m m' ->
+  Mem.inject f g m m' ->
   exists tv, sem_binary_operation cenv op tv1 ty1 tv2 ty2 m' = Some tv /\ Val.inject f v tv.
 Proof.
   intros. eapply sem_binary_operation_inj; eauto.
@@ -1662,10 +1662,10 @@ Proof.
 Qed.
 
 Lemma bool_val_inject:
-  forall f m m' v ty b tv,
+  forall f g m m' v ty b tv,
   bool_val v ty m = Some b ->
   Val.inject f v tv ->
-  Mem.inject f m m' ->
+  Mem.inject f g m m' ->
   bool_val tv ty m' = Some b.
 Proof.
   intros. eapply bool_val_inj; eauto.

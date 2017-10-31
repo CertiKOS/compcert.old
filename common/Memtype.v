@@ -1635,7 +1635,15 @@ for [unchanged_on]. *)
 
  (* Properties of record_stack_block *)
 
- record_stack_blocks_inject {injperm: InjectPerm}:
+ record_stack_blocks_inject_left {injperm: InjectPerm}:
+   forall m1 m1' m2 j g f1 f2
+     (INJ: inject j g m1 m2)
+     (FAP: frame_at_pos (stack_adt m2) 0 f2)
+     (FI: frame_inject' j (perm m1) f1 f2)
+     (RSB: record_stack_blocks m1 f1 m1'),
+     inject j (fun n : nat => if Nat.eq_dec n 0 then Some O else g (Init.Nat.pred n)) m1' m2;
+
+ record_stack_blocks_inject_parallel {injperm: InjectPerm}:
    forall m1 m1' m2 j g fi1 fi2,
      inject j g m1 m2 ->
      frame_inject _ j m1 fi1 fi2 ->
@@ -1649,6 +1657,7 @@ for [unchanged_on]. *)
      exists m2',
        record_stack_blocks m2 fi2 m2' /\
        inject j (fun n => if Nat.eq_dec n 0 then Some O else option_map S (g (pred n))) m1' m2';
+
 
  record_stack_blocks_extends {injperm: InjectPerm}:
     forall m1 m2 m1' fi,

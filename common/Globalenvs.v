@@ -1781,7 +1781,7 @@ End INITMEM_INJ.
 Theorem initmem_inject:
   forall p m,
   init_mem p = Some m ->
-  Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m.
+  Mem.inject (Mem.flat_inj (Mem.nextblock m)) (flat_frameinj (length (Mem.stack_adt m))) m m.
 Proof.
   unfold init_mem; intros.
   apply Mem.neutral_inject.

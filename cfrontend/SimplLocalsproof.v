@@ -639,12 +639,12 @@ Qed.
 Lemma match_alloc_variables:
   forall cenv e m vars e' m',
   alloc_variables ge e m vars e' m' ->
-  forall j tm te,
+  forall j g tm te,
   list_norepet (var_names vars) ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   exists j', exists te', exists tm',
       alloc_variables tge te tm (remove_lifted cenv vars) te' tm'
-  /\ Mem.inject j' m' tm'
+  /\ Mem.inject j' g m' tm'
   /\ inject_incr j j'
   /\ (forall b, Mem.valid_block m b -> j' b = j b)
   /\ (forall b b' delta, j' b = Some(b', delta) -> Mem.valid_block tm b' -> j' b = j b)
@@ -909,10 +909,10 @@ Proof.
 Qed.
 
 Theorem match_envs_alloc_variables:
-  forall cenv m vars e m' temps j tm,
+  forall cenv m vars e m' temps j g tm,
   alloc_variables ge empty_env m vars e m' ->
   list_norepet (var_names vars) ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   (forall id ty, In (id, ty) vars -> VSet.mem id cenv = true ->
                      exists chunk, access_mode ty = By_value chunk) ->
   (forall id, VSet.mem id cenv = true -> In id (var_names vars)) ->
@@ -920,7 +920,7 @@ Theorem match_envs_alloc_variables:
      alloc_variables tge empty_env tm (remove_lifted cenv vars) te tm'
   /\ match_envs j' cenv e (create_undef_temps temps) m' (Mem.nextblock m) (Mem.nextblock m')
                         te (create_undef_temps (add_lifted cenv vars temps)) (Mem.nextblock tm) (Mem.nextblock tm')
-  /\ Mem.inject j' m' tm'
+  /\ Mem.inject j' g m' tm'
   /\ inject_incr j j'
   /\ (forall b, Mem.valid_block m b -> j' b = j b)
   /\ (forall b b' delta, j' b = Some(b', delta) -> Mem.valid_block tm b' -> j' b = j b)
@@ -1010,14 +1010,14 @@ Proof.
 Qed.
 
 Lemma assign_loc_inject:
-  forall f ty m loc ofs v m' tm loc' ofs' v',
+  forall f g ty m loc ofs v m' tm loc' ofs' v',
   assign_loc ge ty m loc ofs v m' ->
   Val.inject f (Vptr loc ofs) (Vptr loc' ofs') ->
   Val.inject f v v' ->
-  Mem.inject f m tm ->
+  Mem.inject f g m tm ->
   exists tm',
      assign_loc tge ty tm loc' ofs' v' tm'
-  /\ Mem.inject f m' tm'
+  /\ Mem.inject f g m' tm'
   /\ (forall b chunk v,
       f b = None -> Mem.load chunk m b 0 = Some v -> Mem.load chunk m' b 0 = Some v).
 Proof.
@@ -1097,21 +1097,21 @@ Proof.
 Qed.
 
 Theorem store_params_correct:
-  forall j f k cenv le lo hi te tlo thi e m params args m',
+  forall j g f k cenv le lo hi te tlo thi e m params args m',
   bind_parameters ge e m params args m' ->
   forall s tm tle1 tle2 targs,
   list_norepet (var_names params) ->
   list_forall2 val_casted args (map snd params) ->
   Val.inject_list j args targs ->
   match_envs j cenv e le m lo hi te tle1 tlo thi ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
   star (step2 fn_stack_requirements) tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
-  /\ Mem.inject j m' tm'
+  /\ Mem.inject j g m' tm'
   /\ match_envs j cenv e le m' lo hi te tle tlo thi
   /\ Mem.nextblock tm' = Mem.nextblock tm.
 Proof.
@@ -1256,9 +1256,9 @@ Proof.
 Qed.
 
 Lemma blocks_of_env_no_overlap:
-  forall (ge: genv) j cenv e le m lo hi te tle tlo thi tm,
+  forall (ge: genv) j g cenv e le m lo hi te tle tlo thi tm,
   match_envs j cenv e le m lo hi te tle tlo thi ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   (forall id b ty,
    e!id = Some(b, ty) -> Mem.range_perm m b 0 (sizeof ge ty) Cur Freeable) ->
   forall l,
@@ -1291,13 +1291,13 @@ Proof.
 Qed.
 
 Lemma free_list_right_inject:
-  forall j m1 l m2 m2',
-  Mem.inject j m1 m2 ->
+  forall j g m1 l m2 m2',
+  Mem.inject j g m1 m2 ->
   Mem.free_list m2 l = Some m2' ->
   (forall b1 b2 delta lo hi ofs k p,
      j b1 = Some(b2, delta) -> In (b2, lo, hi) l ->
      Mem.perm m1 b1 ofs k p -> lo <= ofs + delta < hi -> False) ->
-  Mem.inject j m1 m2'.
+  Mem.inject j g m1 m2'.
 Proof.
   induction l; simpl; intros.
   congruence.
@@ -1314,13 +1314,13 @@ Proof.
 Qed.
 
 Theorem match_envs_free_blocks:
-  forall j cenv e le m lo hi te tle tlo thi m' tm,
+  forall j g cenv e le m lo hi te tle tlo thi m' tm,
   match_envs j cenv e le m lo hi te tle tlo thi ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   Mem.free_list m (blocks_of_env ge e) = Some m' ->
   exists tm',
      Mem.free_list tm (blocks_of_env tge te) = Some tm'
-  /\ Mem.inject j m' tm'.
+  /\ Mem.inject j g m' tm'.
 Proof.
   intros.
 Local Opaque ge tge.
@@ -1381,10 +1381,11 @@ Variables e te: env.
 Variables le tle: temp_env.
 Variables m tm: mem.
 Variable f: meminj.
+Variable g: frameinj.
 Variable cenv: compilenv.
 Variables lo hi tlo thi: block.
 Hypothesis MATCH: match_envs f cenv e le m lo hi te tle tlo thi.
-Hypothesis MEMINJ: Mem.inject f m tm.
+Hypothesis MEMINJ: Mem.inject f g m tm.
 Hypothesis GLOB: exists bound, match_globalenvs f bound.
 
 Lemma typeof_simpl_expr:
@@ -1778,31 +1779,31 @@ Qed.
 
 Inductive match_states: state -> state -> Prop :=
   | match_regular_states:
-      forall f s k e le m tf ts tk te tle tm j lo hi tlo thi
+      forall f s k e le m tf ts tk te tle tm j g lo hi tlo thi
         (TRF: transf_function f = OK tf)
         (TRS: simpl_stmt (cenv_for f) s = OK ts)
         (MENV: match_envs j (cenv_for f) e le m lo hi te tle tlo thi)
         (MCONT: match_cont j (cenv_for f) k tk m lo tlo)
-        (MINJ: Mem.inject j m tm)
+        (MINJ: Mem.inject j g m tm)
         (COMPAT: compat_cenv (addr_taken_stmt s) (cenv_for f))
         (BOUND: Ple hi (Mem.nextblock m))
         (TBOUND: Ple thi (Mem.nextblock tm)),
       match_states (State f s k e le m)
                    (State tf ts tk te tle tm)
   | match_call_state:
-      forall fd vargs k m tfd tvargs tk tm j targs tres cconv sz
+      forall fd vargs k m tfd tvargs tk tm j g targs tres cconv sz
         (TRFD: transf_fundef fd = OK tfd)
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
-        (MINJ: Mem.inject j m tm)
+        (MINJ: Mem.inject j g m tm)
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
         (ANORM: val_casted_list vargs targs),
       match_states (Callstate fd vargs k m sz)
                    (Callstate tfd tvargs tk tm sz)
   | match_return_state:
-      forall v k m tv tk tm j
+      forall v k m tv tk tm j g
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
-        (MINJ: Mem.inject j m tm)
+        (MINJ: Mem.inject j g m tm)
         (RINJ: Val.inject j v tv),
       match_states (Returnstate v k m)
                    (Returnstate tv tk tm).
@@ -2165,7 +2166,7 @@ Proof.
 
 (* return none *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject; eauto. intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel; eauto. intros (tm'' & R & S).
   econstructor; split. apply plus_one. econstructor; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.

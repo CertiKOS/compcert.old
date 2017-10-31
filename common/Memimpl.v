@@ -73,9 +73,6 @@ Definition perm_order'' (po1 po2: option permission) :=
 
 Definition stack_limit: Z := 4096.
 
-Definition in_bounds o p :=
-  fst p <= o < snd p.
-
 Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   mem_access: PMap.t (Z -> perm_kind -> option permission);
@@ -87,8 +84,6 @@ Record mem' : Type := mkmem {
     forall b ofs k, ~(Plt b nextblock) -> mem_access#b ofs k = None;
   contents_default:
     forall b, fst mem_contents#b = Undef;
-  block_bounds: PMap.t (Z * Z);
-  perm_bounds: forall b o k p, perm_order' ((mem_access#b) o k) p -> in_bounds o (block_bounds#b);
   stack_adt:
     list frame_adt;
   stack_valid:
@@ -104,10 +99,10 @@ Record mem' : Type := mkmem {
 Definition mem := mem'.
 
 Lemma mkmem_ext:
-  forall cont1 cont2 acc1 acc2 next1 next2 bounds1 bounds2
-    a1 a2 b1 b2 c1 c2 d1 d2 adt1 adt2 sv1 sv2 sssl1 sssl2 stk1 stk2 stkperm1 stkperm2,
-  cont1=cont2 -> acc1=acc2 -> next1=next2 -> adt1 = adt2 -> bounds1 = bounds2 ->
-  mkmem cont1 acc1 next1 a1 b1 c1 bounds1 d1 adt1 sv1 sssl1 stk1 stkperm1 = mkmem cont2 acc2 next2 a2 b2 c2 bounds2 d2 adt2 sv2 sssl2 stk2 stkperm2.
+  forall cont1 cont2 acc1 acc2 next1 next2
+    a1 a2 b1 b2 c1 c2 adt1 adt2 sv1 sv2 sssl1 sssl2 stk1 stk2 stkperm1 stkperm2,
+  cont1=cont2 -> acc1=acc2 -> next1=next2 -> adt1 = adt2 -> 
+  mkmem cont1 acc1 next1 a1 b1 c1 adt1 sv1 sssl1 stk1 stkperm1 = mkmem cont2 acc2 next2 a2 b2 c2 adt2 sv2 sssl2 stk2 stkperm2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -399,7 +394,7 @@ Hint Resolve stack_norepet stack_perm.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        1%positive _ _ _ (PMap.init (0,0)) _ nil _ _ _ _.
+        1%positive _ _ _ nil _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
 Qed.
@@ -408,9 +403,6 @@ Next Obligation.
 Qed.
 Next Obligation.
   rewrite PMap.gi. auto.
-Qed.
-Next Obligation.
-  rewrite PMap.gi in H. inv H.
 Qed.
 Next Obligation.
   easy.
@@ -435,7 +427,7 @@ Program Definition alloc (m: mem) (lo hi: Z) : (mem * block) :=
                    (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
                    m.(mem_access))
          (Psucc m.(nextblock))
-         _ _ _ (PMap.set m.(nextblock) (lo,hi) m.(block_bounds)) _
+         _ _ _ 
          (stack_adt m) _ _ _ _,
    m.(nextblock)).
 Next Obligation.
@@ -451,14 +443,6 @@ Next Obligation.
 Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b (nextblock m)). auto. apply contents_default.
-Qed.
-Next Obligation.
-  rewrite PMap.gsspec in H. destr_in H. subst.
-  rewrite PMap.gss.
-  destr_in H.
-  red. simpl. destruct (zle lo o), (zlt o hi); simpl in *; try congruence; try omega.
-  inv H.
-  rewrite PMap.gso; destruct m; eauto.
 Qed.
 Next Obligation.
   apply stack_valid in H. xomega.
@@ -488,7 +472,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
-        m.(nextblock) _ _ _ (block_bounds m) _ (stack_adt m) _ _ _ _.
+        m.(nextblock) _ _ _ (stack_adt m) _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
   destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
@@ -501,11 +485,6 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
-Qed.
-Next Obligation.
-  rewrite PMap.gsspec in H.
-  destr_in H; subst. 2: destruct m; eauto.
-  destr_in H. 2: destruct m; eauto. inv H.
 Qed.
 Next Obligation.
   apply stack_valid; auto.
@@ -663,7 +642,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
                           m.(mem_contents))
                 m.(mem_access)
                 m.(nextblock)
-                _ _ _ (block_bounds m) _ (stack_adt m) _ _ _ _)
+                _ _ _ (stack_adt m) _ _ _ _)
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -675,10 +654,7 @@ Next Obligation.
 Qed.
 Next Obligation.
   destruct m; eauto.
-Qed.
-Next Obligation.
-  apply stack_valid; auto.
-Qed.
+Qed. 
 Next Obligation.
   destruct m; auto. 
 Qed.
@@ -706,7 +682,7 @@ Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) 
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
              m.(mem_access)
              m.(nextblock)
-                 _ _ _ (block_bounds m) _ (stack_adt m) _ _ _ _)
+                 _ _ _ (stack_adt m) _ _ _ _)
     else None
   else
     None.
@@ -716,9 +692,6 @@ Next Obligation.
   rewrite PMap.gsspec. destruct (peq b0 b).
   rewrite setN_default. apply contents_default.
   apply contents_default.
-Qed.
-Next Obligation.
-  destruct m; eauto.
 Qed.
 Next Obligation.
   apply stack_valid; auto.
@@ -741,7 +714,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
-                m.(nextblock) _ _ _ (block_bounds m) _ (stack_adt m) _ _ _ _)
+                m.(nextblock) _ _ _ (stack_adt m) _ _ _ _)
   else None.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
@@ -758,15 +731,6 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
-Qed.
-Next Obligation.
-  rewrite PMap.gsspec in H0.
-  destr_in H0; subst.
-  2: destruct m; eauto.
-  destr_in H0; subst.
-  2: destruct m; eauto.
-  eapply perm_bounds; eauto.
-  eapply H. eapply zle_zlt; auto.
 Qed.
 Next Obligation.
   apply stack_valid; auto.
@@ -1072,8 +1036,6 @@ Inductive record_stack_blocks (m: mem) (f: frame_adt): mem -> Prop :=
                          (access_max m)
                          (nextblock_noaccess m)
                          (contents_default m)
-                         (block_bounds m)
-                         (perm_bounds m)
                          (f :: stack_adt m)
                          (valid_frames_add _ _ _ (stack_valid m) VF)
                          (nodup_add _ _ (stack_norepet m) NOTIN)
@@ -1172,8 +1134,6 @@ Definition unrecord_stack_block (m: mem) : option mem :=
                    (access_max m)
                    (nextblock_noaccess m)
                    (contents_default m)
-                   (block_bounds m)
-                   (perm_bounds m)
                    (tl (stack_adt m))
                    (fun b pf => stack_valid m b (in_frames_tl _ _ pf))
                    (nodup_tl _ (stack_norepet m))
@@ -7889,9 +7849,8 @@ Proof.
   intros; eapply free_no_abstract; eauto.
   intros; eapply freelist_no_abstract; eauto.
   intros; eapply drop_perm_no_abstract; eauto.
-  {
-    simpl. intros. eapply record_stack_block_inject; simpl in *; eauto.
-  }
+  simpl. intros. eapply record_stack_block_inject_left; simpl in *; eauto.
+  simpl. intros. eapply record_stack_block_inject; simpl in *; eauto.
   { intros; eapply record_stack_blocks_extends; eauto. }
   intros; eapply record_stack_blocks_mem_unchanged; eauto.
   {
