@@ -2,12 +2,13 @@
 (* Author        : Yuting Wang *)
 (* Date Created  : 10-23-2017 *)
 
-Require Import Integers AST.
+Require Import Integers AST Floats.
 Require Import Asm.
 Require Import X86Model.Encode.
 Require Import X86Model.X86Syntax.
 Require Import Errors.
 Require Import RockSaltAsm.
+Require Import Lists.List.
 Import ListNotations.
 
 Local Open Scope error_monad_scope.
@@ -23,18 +24,22 @@ Definition DMAP_TYPE := ident -> int32.
 
 Definition default_dmap (d:ident) : int32 := Word.zero.
 
-Fixpoint transf_globvars (gdefs : list (ident * option (globdef Asm.fundef unit))) (ofs:int32) (accum: list (ident * option (globvar gv_info))) : int32 * list (ident * option (globvar gv_info)) :=
+
+(** Get the size and offset information of the global variables *)
+Fixpoint transf_globvars (gdefs : list (ident * option (globdef Asm.fundef unit))) (ofs:int32) 
+  (daccum: list (ident * option (globvar gv_info))) 
+  : int32 * list (ident * option (globvar gv_info)) :=
   match gdefs with
-  | nil =>  (ofs, accum)
+  | nil =>  (ofs, daccum)
   | ((id, None) :: gdefs') =>
-    transf_globvars gdefs' ofs ((id, None) :: accum)
+    transf_globvars gdefs' ofs ((id, None) :: daccum)
   | ((_, Some (Gfun _)) :: gdefs') =>
-    transf_globvars gdefs' ofs accum
+    transf_globvars gdefs' ofs daccum
   | ((id, Some (Gvar v)) :: gdefs') =>
     let sz := Word.repr (init_data_list_size (gvar_init v)) in
     let info := mkInfo ofs sz in
     let v' := mkglobvar info v.(gvar_init) v.(gvar_readonly) v.(gvar_volatile) in
-    transf_globvars gdefs' (Word.add ofs sz) ((id, Some v')::accum)
+    transf_globvars gdefs' (Word.add ofs sz) ((id, Some v')::daccum)
   end.
 
 Definition update_dmap (dmap: DMAP_TYPE) (d:ident)  (ofs:int32) : DMAP_TYPE :=
@@ -47,6 +52,70 @@ Fixpoint gvars_to_dmap (l: list (ident * option (globvar gv_info))) : DMAP_TYPE 
   | (id, None) :: l' => (gvars_to_dmap l')
   | (id, Some v)::l' => 
     update_dmap (gvars_to_dmap l') id v.(gvar_info).(gv_offset)
+  end.
+
+
+(** Transform the initial data **)
+
+
+(* Translation of compcert integers to bits *)
+Fixpoint nth_byte (v:int) (n:nat) : int :=
+  match n with
+  | O =>
+    Int.and v (Int.repr 255)
+  | S n' =>
+    nth_byte (Int.divu v (Int.repr 256)) n'
+  end.
+
+Fixpoint nth_byte_64 (v:Integers.int64) (n:nat) : Integers.int64 :=
+  match n with
+  | O =>
+    Int64.and v (Int64.repr 255)
+  | S n' =>
+    nth_byte_64 (Int64.divu v (Int64.repr 256)) n'
+  end.
+  
+Definition int32_to_bytes (i32:int) :=
+  [nth_byte i32 0; nth_byte i32 1; nth_byte i32 2; nth_byte i32 3].
+
+Definition int16_to_bytes (i16:int) :=
+  [nth_byte i16 0; nth_byte i16 1].
+
+Definition int64_to_bytes (i64:Integers.int64) :=
+  [nth_byte_64 i64 0; nth_byte_64 i64 1; nth_byte_64 i64 2; nth_byte_64 i64 3;
+   nth_byte_64 i64 4; nth_byte_64 i64 5; nth_byte_64 i64 6; nth_byte_64 i64 7].
+
+Definition n_zeros (n:nat) : list int8 :=
+  List.map (fun _ => Word.zero) (seq 1 n).
+
+Definition transl_init_data (data_addr:int32) (dmap: DMAP_TYPE) (idata: AST.init_data) : list int8 :=
+  match idata with
+  | Init_int8 i => [Word.repr (Int.unsigned i)]
+  | Init_int16 i => List.map (fun i => Word.repr (Int.unsigned i)) (int16_to_bytes i)
+  | Init_int32 i => List.map (fun i => Word.repr (Int.unsigned i)) (int32_to_bytes i)
+  | Init_int64 i => List.map (fun i => Word.repr (Int64.unsigned i)) (int64_to_bytes i)
+  | Init_float32 f => List.map (fun i => Word.repr (Int64.unsigned i)) 
+                              (int64_to_bytes (Float.to_bits (Float.of_single f)))
+  | Init_float64 f => List.map (fun i => Word.repr (Int64.unsigned i)) 
+                              (int64_to_bytes (Float.to_bits f))
+  | Init_space n => n_zeros (compcert.lib.Coqlib.nat_of_Z n)
+  | Init_addrof id ofs =>
+    let i32 := Word.add data_addr (Word.add (dmap id) (Word.repr (Ptrofs.unsigned ofs))) in
+    let i32' := Int.repr (Word.unsigned i32) in
+    List.map (fun i => Word.repr (Int.unsigned i)) (int32_to_bytes i32')
+  end.
+
+Fixpoint collect_init_data (data_addr:int32) (dmap: DMAP_TYPE) (gvars: list (ident * option (globvar gv_info))) : list int8 :=
+  match gvars with
+  | nil => nil
+  | (_,v)::gvars' =>
+    let l' := collect_init_data data_addr dmap gvars' in
+    match v with
+    | None => l'
+    | Some v => 
+      let init_bytes := List.flat_map (transl_init_data data_addr dmap) v.(gvar_init) in
+      init_bytes ++ l'
+    end
   end.
 
 
@@ -84,10 +153,10 @@ Definition transl_ireg (r: ireg) : res register :=
 
 (* Translate integers to bit vectors *)
 Definition int_to_bits (i:Int.int) : int32 :=
-  (Word.repr (Int.signed i)).
+  (Word.repr (Int.unsigned i)).
 
 Definition ptrofs_to_bits (i:Ptrofs.int) : int32 :=
-  (Word.repr (Ptrofs.signed i)).
+  (Word.repr (Ptrofs.unsigned i)).
 
 (* Translate the types of test conditions *)
 
@@ -335,11 +404,13 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
   (* Calculate information of the data segment *)
   let data_addr := Word.repr 4096 in
   let dmap := gvars_to_dmap gvars in
+  let init_data := collect_init_data data_addr dmap gvars in
   (* The first pass of functions gives
      the mapping for functions and labels *)
   do r <- transf_globfuns data_addr dmap
              default_fmap default_lmap 
              p.(AST.prog_defs) Word.zero [] [];
+  
   let '(_,_,fmap,lmap,_) := r in
   (* The second pass of functions finishes
      the translation using those mappings *)
@@ -374,6 +445,5 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
     text_instrs     := tinstrs;
     machine_code    := mach_code;
     data_seg        := mkSegment data_addr data_seg_size;
+    init_data       := init_data;
   |}.
-
-  

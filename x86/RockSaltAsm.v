@@ -34,6 +34,7 @@ Record program := mkProg {
   text_instrs : list instr;
   machine_code : list int8;
   data_seg : segment;
+  init_data : list int8;
 }.
 
 Definition program_of_program (p: program) : AST.program fundef gv_info :=
