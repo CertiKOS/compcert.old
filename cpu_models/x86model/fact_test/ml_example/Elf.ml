@@ -231,7 +231,8 @@ type elf_file = {
     ef_shstrtab_sec : section_header;
     ef_text_seg     : program_header;       (* program headers *)
     ef_data_seg     : program_header;       
-    ef_text         : int list;             (* bytes of the sections *)
+    ef_text         : int list;             (* bytes of the text section *)
+    ef_data         : int list;             (* bytes of the data section *)
   }
 
 let elf_file_size ef =
@@ -303,6 +304,8 @@ let elf_to_bytes ef =
   array_overwrite strtabimg fimg ef.ef_shstrtab_sec.sh_offset;
   (* Write the instructions *)
   array_overwrite (Array.of_list ef.ef_text) fimg ef.ef_text_sec.sh_offset;
+  (* Write the data *)
+  array_overwrite (Array.of_list ef.ef_data) fimg ef.ef_data_sec.sh_offset;
   fimg 
   
 (* Write the file image into a binary file *)
@@ -313,7 +316,7 @@ let write_elf fname ef =
   close_out dump_channel
 
 
-let create_386_exec_elf_header entry phoff shoff phnum shnum shstrndx =
+let create_386_exec_elf_header entry phoff shoff =
   {
     e_encoding  = ELFDATA2LSB;
     e_class     = ELFCLASS32;
@@ -325,10 +328,10 @@ let create_386_exec_elf_header entry phoff shoff phnum shnum shstrndx =
     e_flags     = 0;
     e_ehsize    = 52;
     e_phentsize = 32;
-    e_phnum     = phnum;
+    e_phnum     = 2;
     e_shentsize = 40;
-    e_shnum     = shnum;
-    e_shstrndx  = shstrndx;
+    e_shnum     = 4;
+    e_shstrndx  = 3;
   }
 
   

@@ -109,7 +109,7 @@ let fac_dump_file = "fac_rs"
 let () = write_ecd_instrs fac_dump_file true fac_bytes
 
 (* elf header *)
-let fac_elf_header = create_386_exec_elf_header 0x80480ca 52 244 2 4 3
+let fac_elf_header = create_386_exec_elf_header 0x80480ca 52 244
 
 (* .text segment *)
 let fac_text_seg =
@@ -181,13 +181,14 @@ let startstub_bytes =
 
 
 let fac_elf = {
-    ef_header       = fac_elf_header;
-    ef_text_sec     = fac_text_sec;
+    ef_header        = fac_elf_header;
+    ef_text_sec      = fac_text_sec;
     ef_data_sec      = fac_data_sec;
-    ef_shstrtab_sec = fac_shstrtab_sec;
-    ef_text_seg     = fac_text_seg;
+    ef_shstrtab_sec  = fac_shstrtab_sec;
+    ef_text_seg      = fac_text_seg;
     ef_data_seg      = fac_data_seg;
-    ef_text         = (List.concat fac_bytes) @ startstub_bytes;
+    ef_text          = (List.concat fac_bytes) @ startstub_bytes;
+    ef_data          = [0; 0; 0; 0];
   }
 
 let () = write_elf "elf_tst" fac_elf
