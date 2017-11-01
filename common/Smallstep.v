@@ -909,6 +909,65 @@ End SIMULATION_OPT.
 
 End FORWARD_SIMU_DIAGRAMS.
 
+Section FORWARD_SIMU_EQ_DIAGRAMS.
+
+Variable L1: semantics.
+Variable L2: semantics.
+Variable cc: callconv.
+
+Hypothesis public_preserved:
+  forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+
+Variable match_states: state L1 -> state L2 -> Prop.
+
+Hypothesis match_initial_states:
+  forall s1, initial_state L1 s1 ->
+  exists s2, initial_state L2 s2 /\ match_states s1 s2.
+
+Hypothesis match_final_states:
+  forall s1 s2 r,
+  match_states s1 s2 ->
+  final_state L1 s1 r ->
+  final_state L2 s2 r.
+
+Section FORWARD_SIMULATION_PLUS_EQ.
+
+Hypothesis simulation:
+  forall s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states s1 s2 ->
+  (match_events_query (symbolenv L1) cc_id tt t t \/
+   stable_event (symbolenv L1) t) /\
+  (exists s2', Plus L2 s2 t s2' /\ match_states s1' s2').
+
+Lemma forward_simulation_plus_eq: forward_simulation cc_id L1 L2.
+Proof.
+  eapply forward_simulation_plus with (match_states := fun _ => match_states).
+  - assumption.
+  - intros; edestruct match_initial_states; eauto.
+    exists tt; eauto.
+  - eauto.
+  - left.
+    edestruct simulation as (Ht & s2' & Hstep2 & Hs'); eauto.
+    assert (match_events_query (symbolenv L1) cc_id tt t1 t1).
+    {
+      destruct Ht; eauto.
+      eapply match_events_subrel_query.
+      eapply match_stable_event_refl; eauto.
+    }
+    clear Ht.
+    exists t1, s2'; intuition.
+    + eauto using plus_star.
+    + destruct w.
+      assumption.
+    + exists tt, s2'; intuition.
+      assert (t1 = t2') by eauto using match_events_id_corefl; subst t2'.
+      assumption.
+Qed.
+
+End FORWARD_SIMULATION_PLUS_EQ.
+
+End FORWARD_SIMU_EQ_DIAGRAMS.
+
 (*
 
 (** ** Forward simulation of transition sequences *)

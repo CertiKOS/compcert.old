@@ -633,6 +633,16 @@ Qed.
 
 End MATCH_TRACES.
 
+(** Properties specific to certain calling conventions. *)
+
+Lemma match_events_id_corefl ge w t1 t2:
+  match_events ge cc_id w t1 t2 ->
+  t1 = t2.
+Proof.
+  destruct 1;
+  congruence.
+Qed.
+
 (** Invariance by change of global environment *)
 
 Section MATCH_TRACES_INV.
@@ -1775,6 +1785,16 @@ Lemma external_call_deterministic:
   vres1 = vres2 /\ m1 = m2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. intuition.
+Qed.
+
+Lemma external_call_valid_query ef ge vargs m t vres m' w:
+  external_call ef ge vargs m t vres m' ->
+  match_events_query ge cc_id w t t.
+Proof.
+  intros.
+  edestruct external_call_determ as [Hmt _]; eauto.
+  destruct Hmt; constructor; eauto.
+  constructor.
 Qed.
 
 (** * Evaluation of builtin arguments *)

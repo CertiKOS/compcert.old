@@ -1525,9 +1525,10 @@ Qed.
 Lemma transl_step:
   forall S1 t S2, Clight.step2 ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
+  (match_events_query ge cc_id tt t t \/ stable_event ge t) /\
   exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
 Proof.
-  induction 1; intros T1 MST; inv MST.
+  induction 1; intros T1 MST; inv MST; try (split; [right; constructor | ]).
 
 - (* assign *)
   monadInv TR.
@@ -1564,6 +1565,7 @@ Proof.
   simpl. auto.
 
 - (* builtin *)
+  split; eauto using external_call_valid_query.
   monadInv TR. inv MTR.
   econstructor; split.
   apply plus_one. econstructor.
@@ -1740,6 +1742,7 @@ Proof.
   constructor.
 
 - (* external function *)
+  split; eauto using external_call_valid_query.
   inv TR.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   econstructor; split.
@@ -1777,9 +1780,9 @@ Proof.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).
+  forward_simulation cc_id (Clight.semantics2 prog) (Csharpminor.semantics tprog).
 Proof.
-  eapply forward_simulation_plus.
+  eapply forward_simulation_plus_eq.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
