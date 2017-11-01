@@ -12,7 +12,7 @@
 
 (** Abstract syntax and semantics for IA32 assembly language *)
 
-Require Import Coqlib Maps.
+Require Import Coqlib Maps String.
 Require Import AST Integers Floats Values Memory Events Globalenvs Smallstep.
 Require Import Locations Stacklayout Conventions EraseArgs.
 
@@ -1341,3 +1341,193 @@ Definition data_preg (r: preg) : bool :=
   | RA => false
   end.
 
+
+(* Intructions to string *)
+Definition instr_to_string (i:instruction) : string :=
+  match i with 
+  (** Moves *)
+  | Pmov_rr rd r1 => "Pmov_rr"
+  | Pmovl_ri rd n => "Pmovl_ri"
+  | Pmovq_ri rd n => "Pmovq_ri"
+  | Pmov_rs rd id => "Pmov_rs"
+  | Pmovl_rm rd a => "Pmovl_rm"
+  | Pmovq_rm rd a => "Pmovq_rm"
+  | Pmovl_mr a rs => "Pmovl_mr"
+  | Pmovq_mr a rs => "Pmovq_mr"
+  | Pmovsd_ff rd r1 => "Pmovsd_ff"     (**r [movsd] (single 64-bit float) *)
+  | Pmovsd_fi rd n => "Pmovsd_fi"    (**r (pseudo-instruction) *)
+  | Pmovsd_fm rd a => "Pmovsd_fm"
+  | Pmovsd_mf a r1 => "Pmovsd_mf"
+  | Pmovss_fi rd n => "Pmovss_fi"  (**r [movss] (single 32-bit float) *)
+  | Pmovss_fm rd a => "Pmovss_fm"
+  | Pmovss_mf a r1 => "Pmovss_mf"
+  | Pfldl_m a  => "Pfldl_m"               (**r [fld] double precision *)
+  | Pfstpl_m a => "Pfstpl_m"             (**r [fstp] double precision *)
+  | Pflds_m a => "Pflds_m"               (**r [fld] simple precision *)
+  | Pfstps_m a => "Pfstps_m"             (**r [fstp] simple precision *)
+  | Pxchg_rr r1 r2 => "Pxchg_rr"      (**r register-register exchange *)
+  (** Moves with conversion *)
+  | Pmovb_mr a rs => "Pmovb_mr" (**r [mov] (8-bit int) *)
+  | Pmovw_mr a rs => "Pmovw_mr"  (**r [mov] (16-bit int) *)
+  | Pmovzb_rr rd rs => "Pmovzb_rr"    (**r [movzb] (8-bit zero-extension) *)
+  | Pmovzb_rm rd a  => "Pmovzb_rm"
+  | Pmovsb_rr rd rs => "Pmovsb_rr"    (**r [movsb] (8-bit sign-extension) *)
+  | Pmovsb_rm rd a  => "Pmovsb_rm"
+  | Pmovzw_rr rd rs => "Pmovzw_rr"    (**r [movzw] (16-bit zero-extension) *)
+  | Pmovzw_rm rd a  => "Pmovzw_rm"
+  | Pmovsw_rr rd rs => "Pmovsw_rr"    (**r [movsw] (16-bit sign-extension) *)
+  | Pmovsw_rm rd a  => "Pmovsw_rm"
+  | Pmovzl_rr rd rs => "Pmovzl_rr"    (**r [movzl] (32-bit zero-extension) *)
+  | Pmovsl_rr rd rs => "Pmovsl_rr"    (**r [movsl] (32-bit sign-extension) *)
+  | Pmovls_rr rd    => "Pmovls_rr"            (** 64 to 32 bit conversion (pseudo) *)
+  | Pcvtsd2ss_ff rd r1  => "Pcvtsd2ss_ff" (**r conversion to single float *)
+  | Pcvtss2sd_ff rd r1  => "Pcvtss2sd_ff" (**r conversion to double float *)
+  | Pcvttsd2si_rf rd r1 => "Pcvttsd2si_rf" (**r double to signed int *)
+  | Pcvtsi2sd_fr rd r1  => "Pcvtsi2sd_fr" (**r signed int to double *)
+  | Pcvttss2si_rf rd r1 => "Pcvttss2si_rf" (**r single to signed int *)
+  | Pcvtsi2ss_fr rd r1  => "Pcvtsi2ss_fr" (**r signed int to single *)
+  | Pcvttsd2sl_rf rd r1 => "Pcvttsd2sl_rf" (**r double to signed long *)
+  | Pcvtsl2sd_fr rd r1  => "Pcvtsl2sd_fr" (**r signed long to double *)
+  | Pcvttss2sl_rf rd r1 => "Pcvttss2sl_rf" (**r single to signed long *)
+  | Pcvtsl2ss_fr rd r1  => "Pcvtsl2ss_fr" (**r signed long to single *)
+  (* (** Integer arithmetic *) *)
+  | Pleal rd a => "Pleal"
+  | Pleaq rd a => "Pleaq"
+  | Pnegl rd   => "Pnegl"
+  | Pnegq rd   => "Pnegq"
+  | Paddl_ri rd n    => "Paddl_ri"
+  | Paddq_ri rd n    => "Paddq_ri"
+  | Psubl_rr rd r1   => "Psubl_rr"
+  | Psubq_rr rd r1   => "Psubq_rr"
+  | Pimull_rr rd r1  => "Pimull_rr"
+  | Pimulq_rr rd r1  => "Pimulq_rr"
+  | Pimull_ri rd n   => "Pimull_ri"
+  | Pimulq_ri rd n   => "Pimulq_ri"
+  | Pimull_r r1 => "Pimull_r"
+  | Pimulq_r r1 => "Pimulq_r"
+  | Pmull_r r1  => "Pmull_r"
+  | Pmulq_r r1  => "Pmulq_r"
+  | Pcltd => "Pcltd"
+  | Pcqto => "Pcqto"
+  | Pdivl r1  => "Pdivl"
+  | Pdivq r1  => "Pdivq"
+  | Pidivl r1 => "Pidivl"
+  | Pidivq r1 => "Pidivq"
+  | Pandl_rr rd r1 => "Pandl_rr"
+  | Pandq_rr rd r1 => "Pandq_rr"
+  | Pandl_ri rd n => "Pandl_ri"
+  | Pandq_ri rd n => "Pandq_ri"
+  | Porl_rr rd r1 => "Porl_rr"
+  | Porq_rr rd r1 => "Porq_rr"
+  | Porl_ri rd n  => "Porl_ri"
+  | Porq_ri rd n  => "Porq_ri"
+  | Pxorl_r rd    => "Pxorl_r"                (**r [xor] with self = set to zero *)
+  | Pxorq_r rd    => "Pxorq_r"
+  | Pxorl_rr rd r1 => "Pxorl_rr"
+  | Pxorq_rr rd r1 => "Pxorq_rr"
+  | Pxorl_ri rd n  => "Pxorl_ri"
+  | Pxorq_ri rd n  => "Pxorq_ri"
+  | Pnotl rd => "Pnotl"
+  | Pnotq rd => "Pnotq"
+  | Psall_rcl rd       => "Psall_rcl"
+  | Psalq_rcl rd       => "Psalq_rcl"
+  | Psall_ri  rd n     => "Psall_ri"
+  | Psalq_ri  rd n     => "Psalq_ri"
+  | Pshrl_rcl rd       => "Pshrl_rcl"
+  | Pshrq_rcl rd       => "Pshrq_rcl"
+  | Pshrl_ri  rd n     => "Pshrl_ri"
+  | Pshrq_ri  rd n     => "Pshrq_ri"
+  | Psarl_rcl rd       => "Psarl_rcl"
+  | Psarq_rcl rd       => "Psarq_rcl"
+  | Psarl_ri  rd n     => "Psarl_ri"
+  | Psarq_ri  rd n     => "Psarq_ri"
+  | Pshld_ri  rd r1 n  => "Pshld_ri"
+  | Prorl_ri  rd n     => "Prorl_ri" 
+  | Prorq_ri  rd n     => "Prorq_ri" 
+  | Pcmpl_rr  r1 r2    => "Pcmpl_rr" 
+  | Pcmpq_rr  r1 r2    => "Pcmpq_rr" 
+  | Pcmpl_ri  r1 n     => "Pcmpl_ri"
+  | Pcmpq_ri  r1 n     => "Pcmpq_ri" 
+  | Ptestl_rr r1 r2    => "Ptestl_rr"
+  | Ptestq_rr r1 r2    => "Ptestq_rr"
+  | Ptestl_ri r1 n     => "Ptestl_ri"
+  | Ptestq_ri r1 n     => "Ptestq_ri"
+  | Pcmov     c rd r1  => "Pcmov"
+  | Psetcc    c rd     => "Psetcc"      
+  (* (** Floating-point arithmetic *) *)
+  | Paddd_ff   rd r1  => "Paddd_ff"
+  | Psubd_ff   rd r1  => "Psubd_ff"
+  | Pmuld_ff   rd r1  => "Pmuld_ff"
+  | Pdivd_ff   rd r1  => "Pdivd_ff"
+  | Pnegd rd          => "Pnegd rd"
+  | Pabsd rd          => "Pabsd rd"
+  | Pcomisd_ff r1 r2  => "Pcomisd_ff"
+  | Pxorpd_f   rd     => "Pxorpd_f"       (**r [xor] with self = set to zero *)
+  | Padds_ff   rd r1  => "Padds_ff"
+  | Psubs_ff   rd r1  => "Psubs_ff"
+  | Pmuls_ff   rd r1  => "Pmuls_ff"
+  | Pdivs_ff   rd r1  => "Pdivs_ff"
+  | Pnegs rd          => "Pnegs rd"
+  | Pabss rd          => "Pabss rd"
+  | Pcomiss_ff r1 r2  => "Pcomiss_ff"
+  | Pxorps_f   rd     => "Pxorps_f"      (**r [xor] with self = set to zero *)
+  (* (** Branches and calls *) *)
+  | Pjmp_l l  => "Pjmp_l"
+  | Pjmp_s symb sg => "Pjmp_s"
+  | Pjmp_r r sg  => "Pjmp_r"
+  | Pjcc c l => "Pjcc"
+  | Pjcc2 c1 c2 l => "Pjcc2"  (**r pseudo *)
+  | Pjmptbl r tbl => "Pjmptbl"  (**r pseudo *)
+  | Pcall_s symb sg => "Pcall_s"
+  | Pcall_r r sg  => "Pcall_r"
+  | Pret => "Pret"
+  (* (** Saving and restoring registers *) *)
+  | Pmov_rm_a rd a   => "Pmov_rm_a"  (**r like [Pmov_rm], using [Many64] chunk *)
+  | Pmov_mr_a a rs   => "Pmov_mr_a"  (**r like [Pmov_mr], using [Many64] chunk *)
+  | Pmovsd_fm_a rd a => "Pmovsd_fm_a" (**r like [Pmovsd_fm], using [Many64] chunk *)
+  | Pmovsd_mf_a a r1 => "Pmovsd_mf_a" (**r like [Pmovsd_mf], using [Many64] chunk *)
+  (* (** Pseudo-instructions *) *)
+  | Plabel l => "Plabel"
+  | Pallocframe frame ofs_ra ofs_link => "Pallocframe"
+  | Pfreeframe sz ofs_ra ofs_link => "Pfreeframe"
+  | Pbuiltin ef args res => "Pbuiltin"
+  (* (** Instructions not generated by [Asmgen] -- TO CHECK *) *)
+  (* | Padcl_ri rd (n: int) *)
+  (* | Padcl_rr rd r2 *)
+  (* | Paddl_mi a (n: int) *)
+  (* | Paddl_rr rd r2 *)
+  (* | Pbsfl rd r1 *)
+  (* | Pbsfq rd r1 *)
+  (* | Pbsrl rd r1 *)
+  (* | Pbsrq rd r1 *)
+  (* | Pbswap64 rd *)
+  (* | Pbswap32 rd *)
+  (* | Pbswap16 rd *)
+  (* | Pcfi_adjust (n: int) *)
+  (* | Pfmadd132 rd (r2: freg) (r3: freg) *)
+  (* | Pfmadd213 rd (r2: freg) (r3: freg) *)
+  (* | Pfmadd231 rd (r2: freg) (r3: freg) *)
+  (* | Pfmsub132 rd (r2: freg) (r3: freg) *)
+  (* | Pfmsub213 rd (r2: freg) (r3: freg) *)
+  (* | Pfmsub231 rd (r2: freg) (r3: freg) *)
+  (* | Pfnmadd132 rd (r2: freg) (r3: freg) *)
+  (* | Pfnmadd213 rd (r2: freg) (r3: freg) *)
+  (* | Pfnmadd231 rd (r2: freg) (r3: freg) *)
+  (* | Pfnmsub132 rd (r2: freg) (r3: freg) *)
+  (* | Pfnmsub213 rd (r2: freg) (r3: freg) *)
+  (* | Pfnmsub231 rd (r2: freg) (r3: freg) *)
+  (* | Pmaxsd rd (r2: freg) *)
+  (* | Pminsd rd (r2: freg) *)
+  (* | Pmovb_rm rd a *)
+  (* | Pmovsq_mr  a (rs: freg) *)
+  (* | Pmovsq_rm rd a *)
+  (* | Pmovsb *)
+  (* | Pmovsw *)
+  (* | Pmovw_rm rd (ad: addrmode) *)
+  (* | Prep_movsl *)
+  (* | Psbbl_rr rd r2 *)
+  (* | Psqrtsd rd r1 *)
+  (* | Psubl_ri rd (n: int) *)
+  (* | Psubq_ri rd n. *)
+  | _ => "Unknown instruction"
+  end.

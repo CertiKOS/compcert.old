@@ -18,8 +18,8 @@ open Driveraux
 open Frontend
 open Assembler
 open Linker
-open AsmExpand
 open RSAsmToElf
+open Elf
 
 
 let dump_options = ref false
@@ -52,7 +52,7 @@ let compile_c_ast sourcename csyntax ofile =
   set_dest Regalloc.destination_alloctrace option_dalloctrace ".alloctrace";
   set_dest PrintLTL.destination option_dltl ".ltl";
   set_dest PrintMach.destination option_dmach ".mach";
-  (* Convert to Asm *)
+  (* Convert to RockSaltAsm *)
   let asm =
     match (Compiler.transf_c_program_ex csyntax) with
     | Errors.OK asm ->
@@ -60,32 +60,37 @@ let compile_c_ast sourcename csyntax ofile =
     | Errors.Error msg ->
         eprintf "%s: %a" sourcename print_error msg;
         exit 2 in
-  (* Dump Asm in binary and JSON format *)
-  if !option_sdump then begin
-    let sf = output_filename sourcename ".c" !sdump_suffix in
-    let csf = Filename.concat !sdump_folder sf in
-    dump_jasm asm sourcename csf
-  end;
-  (* Print Asm in text form *)
-  let oc = open_out ofile in
-  PrintAsm.print_program oc asm;
-  close_out oc
+  (* Create an ELF file from the RockSalt Asm program *)
+  let elf_file = gen_elf asm in
+  (* Write the ELF file *)
+  write_elf ofile elf_file
+
+  (* (\* Convert to Asm *\) *)
+  (* let asm = *)
+  (*   match Compiler.apply_partial *)
+  (*              (Compiler.transf_c_program csyntax) *)
+  (*              Asmexpand.expand_program with *)
+  (*   | Errors.OK asm -> *)
+  (*       asm *)
+  (*   | Errors.Error msg -> *)
+  (*       eprintf "%s: %a" sourcename print_error msg; *)
+  (*       exit 2 in *)
+  (* (\* Dump Asm in binary and JSON format *\) *)
+  (* if !option_sdump then begin *)
+  (*   let sf = output_filename sourcename ".c" !sdump_suffix in *)
+  (*   let csf = Filename.concat !sdump_folder sf in *)
+  (*   dump_jasm asm sourcename csf *)
+  (* end; *)
+  (* (\* Print Asm in text form *\) *)
+  (* let oc = open_out ofile in *)
+  (* PrintAsm.print_program oc asm; *)
+  (* close_out oc *)
 
 (* From C source to asm *)
 
 let compile_c_file sourcename ifile ofile =
   let ast = parse_c_file sourcename ifile in
   compile_c_ast sourcename ast ofile
-
-(* From C source to Elf *)
-(* let compile_c_file_to_elf sourcename ifile ofile efile = *)
-(*   let asm = compile_c_file sourcename ifile ofile in *)
-(*   match (RockSaltAsmGen.transf_program asm) with *)
-(*   | Error msg ->  *)
-(*      eprintf "Generation of ELF file failed: %s" msg; exit 2 *)
-(*   | OK rasm ->  *)
-     
-
 
 (* From Cminor to asm *)
 
@@ -116,7 +121,7 @@ let compile_cminor_file ifile ofile =
            eprintf "File %s, type-checking error:\n%s"
                    ifile msg;
            exit 2 in
-  (* Convert to Asm *)
+  (* Convert to RockSaltAsm *)
   let asm =
     match (Compiler.transf_cminor_program_ex cm) with
     | Errors.OK asm ->
@@ -124,10 +129,25 @@ let compile_cminor_file ifile ofile =
     | Errors.Error msg ->
         eprintf "%s: %a" ifile print_error msg;
         exit 2 in
-  (* Print Asm in text form *)
-  let oc = open_out ofile in
-  PrintAsm.print_program oc asm;
-  close_out oc
+  (* Create an ELF file from the RockSalt Asm program *)
+  let elf_file = gen_elf asm in
+  (* Write the ELF file *)
+  write_elf ofile elf_file
+
+  (* (\* Convert to Asm *\) *)
+  (* let asm = *)
+  (*   match Compiler.apply_partial *)
+  (*              (Compiler.transf_cminor_program cm) *)
+  (*              Asmexpand.expand_program with *)
+  (*   | Errors.OK asm -> *)
+  (*       asm *)
+  (*   | Errors.Error msg -> *)
+  (*       eprintf "%s: %a" ifile print_error msg; *)
+  (*       exit 2 in *)
+  (* (\* Print Asm in text form *\) *)
+  (* let oc = open_out ofile in *)
+  (* PrintAsm.print_program oc asm; *)
+  (* close_out oc *)
 
 (* Processing of a .c file *)
 
@@ -161,12 +181,12 @@ let process_c_file sourcename =
           if !option_dasm
           then output_filename sourcename ".c" ".s"
           else Filename.temp_file "compcert" ".s" in
+        (* compile_c_file sourcename preproname asmname; *)
+        (* if not !option_dprepro then *)
+        (*   safe_remove preproname; *)
         let objname = output_filename ~final: !option_c sourcename ".c" ".o" in
-        compile_c_file sourcename preproname asmname;
-        if not !option_dprepro then
-          safe_remove preproname;
-        let objname = output_filename ~final: !option_c sourcename ".c" ".o" in
-        assemble asmname objname;
+        compile_c_file sourcename preproname objname;
+        (* assemble asmname objname; *)
         if not !option_dasm then safe_remove asmname;
         objname
       end in

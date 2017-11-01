@@ -247,7 +247,7 @@ Definition transl_addr_mode (m: addrmode) : res address :=
 
 Definition instr_size (i:instr) : res int32 :=
   match (encode i) with
-  | None => Error (msg "Instruction has no encoding")
+  | None => Error (msg "instruction has no encoding")
   | Some l => OK (Word.repr (Z.of_nat (length l)))
   end.
 
@@ -307,7 +307,15 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
     do a' <- transl_addr_mode a;
     do rs' <- transl_ireg rs;
     OK ([MOV true (Address_op a') (Reg_op rs')],lmap)
+  | Pmov_mr_a a rs =>
+    do a' <- transl_addr_mode a;
+    do rs' <- transl_ireg rs;
+    OK ([MOV true (Address_op a') (Reg_op rs')],lmap)
   | Pmovl_rm rd a =>
+    do rd' <- transl_ireg rd;
+    do a' <- transl_addr_mode a;
+    OK ([MOV true (Reg_op rd') (Address_op a')],lmap)
+  | Pmov_rm_a rd a =>
     do rd' <- transl_ireg rd;
     do a' <- transl_addr_mode a;
     OK ([MOV true (Reg_op rd') (Address_op a')],lmap)
@@ -345,7 +353,7 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
   | Plabel l =>
     OK ([], update_lmap lmap f l ofs)
   | _ => 
-    Error (msg "Instruction not supported")
+    Error (MSG (Asm.instr_to_string i) :: MSG " not supported" :: nil)
   end.
 
 Fixpoint transl_instr_list (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)

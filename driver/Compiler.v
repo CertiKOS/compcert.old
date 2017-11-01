@@ -74,6 +74,7 @@ Require RawAsmgen.
 Require Import Compopts.
 
 Require AsmExpand.
+Require RockSaltAsmGen.
 
 (** Pretty-printers (defined in Caml). *)
 Parameter print_Clight: Clight.program -> unit.
@@ -170,16 +171,17 @@ Definition transf_c_program (p: Csyntax.program) : res Asm.program :=
   @@@ time "Clight generation" SimplExpr.transl_program
   @@@ transf_clight_program.
 
-
-Definition transf_cminor_program_ex (p: Cminor.program) : res Asm.program :=
+Definition transf_cminor_program_ex (p: Cminor.program) : res RockSaltAsm.program :=
   OK p
   @@@ transf_cminor_program
-  @@ time "Asm Expand" AsmExpand.transf_program.
+  @@ time "Asm Expand" AsmExpand.transf_program
+  @@@ time "RockSaltAsm generation" RockSaltAsmGen.transf_program.
 
-Definition transf_c_program_ex (p: Csyntax.program) : res Asm.program :=
+Definition transf_c_program_ex (p: Csyntax.program) : res RockSaltAsm.program :=
   OK p
   @@@ transf_c_program
-  @@ time "Asm Expand" AsmExpand.transf_program.
+  @@ time "Asm Expand" AsmExpand.transf_program
+  @@@ time "RockSaltAsm generation" RockSaltAsmGen.transf_program.
 
 
 (** The following lemmas help reason over compositions of passes. *)
