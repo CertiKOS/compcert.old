@@ -798,7 +798,7 @@ Lemma compose_forward_simulations:
   forall L1 L2 L3, forward_simulation (RETVAL := RETVAL) L1 L2 -> forward_simulation L2 L3 -> forward_simulation L1 L3.
 Proof.
   intro RETVAL.
-  intros L1 L2 L3 S12 S23. 
+  intros L1 L2 L3 S12 S23.
   destruct S12 as [index order match_states props].
   destruct S23 as [index' order' match_states' props'].
 
@@ -1757,7 +1757,7 @@ Theorem factor_backward_simulation:
   backward_simulation L1 (atomic L2).
 Proof.
   intro RETVAL.
-  intros L1 L2 BS L1single L2wb. 
+  intros L1 L2 BS L1single L2wb.
   destruct BS as [index order match_states sim].
   apply Backward_simulation with order (fbs_match L1 L2 match_states); constructor.
 - (* wf *)

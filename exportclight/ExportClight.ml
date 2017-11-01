@@ -124,6 +124,11 @@ let coqsingle p n =
 let coqN p n =
   fprintf p "%ld%%N" (N.to_int32 n)
 
+let coqZ p n =
+  if Z.ge n Z.zero
+  then fprintf p "%s" (Z.to_string n)
+  else fprintf p "(%s)" (Z.to_string n)
+
 (* Coq strings *)
 
 let coqstring p s =
@@ -364,10 +369,10 @@ let rec stmt p = function
 
 and lblstmts p = function
   | LSnil ->
-      ()
+      (fprintf p "LSnil")
   | LScons(lbl, s, ls) ->
-      fprintf p "@[<hv 2>(LScase %a@ %a@ %a)@]"
-              (print_option coqint) lbl stmt s lblstmts ls
+      fprintf p "@[<hv 2>(LScons %a@ %a@ %a)@]"
+              (print_option coqZ) lbl stmt s lblstmts ls
 
 let print_function p (id, f) =
   fprintf p "Definition f_%s := {|@ " (extern_atom id);
@@ -545,13 +550,14 @@ let print_program p prog =
   fprintf p "Definition composites : list composite_definition :=@ ";
   print_list print_composite_definition p prog.prog_types;
   fprintf p ".@ @ ";
-  fprintf p "Definition prog : Clight.program := {|@ ";
-  fprintf p "prog_defs :=@ %a;@ " (print_list print_ident_globdef) prog.Ctypes.prog_defs;
-  fprintf p "prog_public :=@ %a;@ " (print_list ident) prog.Ctypes.prog_public;
-  fprintf p "prog_main := %a;@ " ident prog.Ctypes.prog_main;
-  fprintf p "prog_types := composites;@ ";
-  fprintf p "prog_comp_env := make_composite_env composites;@ ";
-  fprintf p "prog_comp_env_eq := refl_equal _@ ";
-  fprintf p "|}.@ ";
+  fprintf p "Definition global_definitions :=@ ";
+  print_list print_ident_globdef p prog.Ctypes.prog_defs;
+  fprintf p ".@ @ ";
+  fprintf p "Definition public_idents :=@ ";
+  print_list ident p prog.Ctypes.prog_public;
+  fprintf p ".@ @ ";
+  fprintf p "Definition prog : Clight.program := @ ";
+  fprintf p "  mkprogram composites global_definitions public_idents %a Logic.I.@ @ "
+            ident prog.Ctypes.prog_main;
   print_assertions p;
   fprintf p "@]@."

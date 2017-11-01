@@ -212,13 +212,14 @@ let debug_scope ctx =
   debug_annot 6L (empty_string :: List.rev_map integer_const ctx)
 
 (* Add line number debug annotation if the line number changes.
-   Add scope debug annotation regardless. *)
+   Labels are ignored since the code before the label can become
+   unreachable. Add scope debug annotation regardless. *)
 
 
-let add_lineno ctx prev_loc this_loc s =
+let add_lineno ?(label=false) ctx prev_loc this_loc s =
   if !Clflags.option_g then
     sseq no_loc (debug_scope ctx)
-      (if this_loc <> prev_loc && this_loc <> no_loc
+      (if this_loc <> prev_loc && this_loc <> no_loc && not label
        then sseq no_loc (debug_lineno this_loc) s
        else s)
   else s
@@ -291,8 +292,12 @@ let rec unblock_stmt env ctx ploc s =
         {s with sdesc = Sswitch(expand_expr true env e,
                                 unblock_stmt env ctx s.sloc s1)}
   | Slabeled(lbl, s1) ->
-      add_lineno ctx ploc s.sloc
-        {s with sdesc = Slabeled(lbl, unblock_stmt env ctx s.sloc s1)}
+    let loc,label = if s.sloc <> s1.sloc then
+        s.sloc,false (* Label and code are on different lines *)
+      else
+        ploc,true in
+    add_lineno ~label:label ctx ploc s.sloc
+        {s with sdesc = Slabeled(lbl, unblock_stmt env ctx loc s1)}
   | Sgoto lbl ->
       add_lineno ctx ploc s.sloc s
   | Sreturn None ->

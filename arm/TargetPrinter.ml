@@ -81,6 +81,11 @@ struct
     | FR r -> freg oc r
     | _    -> assert false
 
+  let preg_annot = function
+    | IR r -> int_reg_name r
+    | FR r -> float_reg_name r
+    | _ -> assert false
+
   let condition_name = function
     | TCeq -> "eq"
     | TCne -> "ne"
@@ -534,23 +539,13 @@ struct
     | Psbc (r1,r2,sa) ->
       fprintf oc "	sbc	%a, %a, %a\n" ireg r1 ireg r2 shift_op sa; 1
     | Pstr(r1, r2, sa) | Pstr_a(r1, r2, sa) ->
-      fprintf oc "	str	%a, [%a, %a]\n" ireg r1 ireg r2 shift_op sa;
-      begin match r1, r2, sa with
-        | IR14, IR13, SOimm n -> cfi_rel_offset oc "lr" (camlint_of_coqint n)
-        | _ -> ()
-      end;
-      1
+      fprintf oc "	str	%a, [%a, %a]\n" ireg r1 ireg r2 shift_op sa; 1
     | Pstrb(r1, r2, sa) ->
       fprintf oc "	strb	%a, [%a, %a]\n" ireg r1 ireg r2 shift_op sa; 1
     | Pstrh(r1, r2, sa) ->
       fprintf oc "	strh	%a, [%a, %a]\n" ireg r1 ireg r2 shift_op sa; 1
     | Pstr_p(r1, r2, sa) ->
-      fprintf oc "	str	%a, [%a], %a\n" ireg r1 ireg r2 shift_op sa;
-      begin match r1, r2, sa with
-        | IR14, IR13, SOimm n -> cfi_rel_offset oc "lr" (camlint_of_coqint n)
-        | _ -> ()
-      end;
-      1
+      fprintf oc "	str	%a, [%a], %a\n" ireg r1 ireg r2 shift_op sa; 1
     | Pstrb_p(r1, r2, sa) ->
       fprintf oc "	strb	%a, [%a], %a\n" ireg r1 ireg r2 shift_op sa; 1
     | Pstrh_p(r1, r2, sa) ->
@@ -730,11 +725,11 @@ struct
     | Pbuiltin(ef, args, res) ->
       begin match ef with
         | EF_annot(txt, targs) ->
-          fprintf oc "%s annotation: " comment;
-          print_annot_text preg "sp" oc (camlstring_of_coqstring txt) args;
+          fprintf oc "%s annotation: %s\n" comment
+          (annot_text preg_annot "sp" (camlstring_of_coqstring txt) args);
           0
         | EF_debug(kind, txt, targs) ->
-          print_debug_info comment print_file_line preg "sp" oc
+          print_debug_info comment print_file_line preg_annot "sp" oc
             (P.to_int kind) (extern_atom txt) args;
           0
         | EF_inline_asm(txt, sg, clob) ->
@@ -746,6 +741,7 @@ struct
           assert false
       end
     | Pcfi_adjust sz -> cfi_adjust oc (camlint_of_coqint sz); 0
+    | Pcfi_rel_offset ofs -> cfi_rel_offset oc "lr" (camlint_of_coqint ofs); 0
 
   let no_fallthrough = function
     | Pb _ -> true
@@ -762,6 +758,9 @@ struct
         2 in
       (len + add) * 4
     | Pbuiltin (EF_inline_asm _,_,_) -> 1024 (* Better be safe than sorry  *)
+    | Pbreg _
+    | Pblsymb _
+    | Pblreg _ -> 72 (* 4 for branch, 4 for fixup result 4 * 16 for fixup args *)
     | _ -> 12
 
 

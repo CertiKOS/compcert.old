@@ -428,7 +428,7 @@ Proof.
             cmatch (Val.cmpu_bool valid c (Vptr b1 ofs1) (Vptr b2 ofs2))
                    (Maybe (Ptrofs.cmpu c ofs1 ofs2))).
   {
-    intros. subst b2. simpl. destruct Archi.ptr64. 
+    intros. subst b2. simpl. destruct Archi.ptr64.
     constructor.
     rewrite dec_eq_true.
     destruct ((valid b1 (Ptrofs.unsigned ofs1) || valid b1 (Ptrofs.unsigned ofs1 - 1)) &&
@@ -1495,7 +1495,7 @@ Proof.
 - apply vmatch_uns. red; intros. rewrite Int.bits_rol by auto.
   generalize (Int.unsigned_range n); intros.
   rewrite Zmod_small by omega.
-  apply H1. omega. omega. 
+  apply H1. omega. omega.
 - destruct (zlt n0 Int.zwordsize); auto with va.
   apply vmatch_sgn. red; intros. rewrite ! Int.bits_rol by omega.
   generalize (Int.unsigned_range n); intros.
@@ -1735,7 +1735,7 @@ Proof.
     destruct (Int.ltu i0 Int64.iwordsize'); constructor. }
   unfold shift_long. destruct y; auto.
   destruct (Int.ltu n Int64.iwordsize') eqn:LT; auto.
-  destruct x; auto. 
+  destruct x; auto.
   inv H; inv H0. rewrite LT. constructor.
 Qed.
 
@@ -1969,6 +1969,35 @@ Proof.
   rewrite LTU; auto with va.
 Qed.
 
+Definition rolml (x: aval) (amount: int) (mask: int64) :=
+  andl (roll x (I amount)) (L mask).
+
+Lemma rolml_sound:
+  forall v x amount mask,
+  vmatch v x -> vmatch (Val.rolml v amount mask) (rolml x amount mask).
+Proof.
+  intros.
+  replace (Val.rolml v amount mask) with (Val.andl (Val.roll v (Vint amount)) (Vlong mask)).
+  apply andl_sound. apply roll_sound. auto. constructor. constructor.
+  destruct v; auto.
+Qed.
+
+(** Pointer operations *)
+
+Definition offset_ptr (v: aval) (n: ptrofs) :=
+  match v with
+  | Ptr p => Ptr (padd p n)
+  | Ifptr p => Ifptr (padd p n)
+  | _ => ntop1 v
+  end.
+
+Lemma offset_ptr_sound:
+  forall v x n, vmatch v x -> vmatch (Val.offset_ptr v n) (offset_ptr x n).
+Proof.
+  intros. unfold Val.offset_ptr, offset_ptr.
+  inv H; constructor; apply padd_sound; assumption.
+Qed.
+
 (** Floating-point arithmetic operations *)
 
 Definition negf := unop_float Float.neg.
@@ -2088,7 +2117,7 @@ Proof.
   apply Z.min_case; auto with va.
 Qed.
 
-Definition longofint (v: aval) := 
+Definition longofint (v: aval) :=
   match v with
   | I i => L (Int64.repr (Int.signed i))
   | _ => ntop1 v
@@ -2100,7 +2129,7 @@ Proof.
   unfold Val.longofint, longofint; intros; inv H; auto with va.
 Qed.
 
-Definition longofintu (v: aval) := 
+Definition longofintu (v: aval) :=
   match v with
   | I i => L (Int64.repr (Int.unsigned i))
   | _ => ntop1 v
@@ -2624,7 +2653,7 @@ Proof.
   assert (IP: forall i b ofs,
     cmatch (Val.cmpu_bool valid c (Vint i) (Vptr b ofs)) (cmp_different_blocks c)).
   {
-    intros. simpl. destruct Archi.ptr64. 
+    intros. simpl. destruct Archi.ptr64.
     apply cmp_different_blocks_none.
     destruct (Int.eq i Int.zero && (valid b (Ptrofs.unsigned ofs) || valid b (Ptrofs.unsigned ofs - 1))).
     apply cmp_different_blocks_sound. apply cmp_different_blocks_none.
@@ -2632,7 +2661,7 @@ Proof.
   assert (PI: forall i b ofs,
     cmatch (Val.cmpu_bool valid c (Vptr b ofs) (Vint i)) (cmp_different_blocks c)).
   {
-    intros. simpl. destruct Archi.ptr64. 
+    intros. simpl. destruct Archi.ptr64.
     apply cmp_different_blocks_none.
     destruct (Int.eq i Int.zero && (valid b (Ptrofs.unsigned ofs) || valid b (Ptrofs.unsigned ofs - 1))).
     apply cmp_different_blocks_sound. apply cmp_different_blocks_none.
@@ -2929,7 +2958,7 @@ Proof with (auto using provenance_monotone with va).
 - destruct (zlt n2 16); constructor...
 - destruct ptr64...
 - destruct ptr64...
-- destruct ptr64... 
+- destruct ptr64...
 - destruct ptr64...
 - destruct ptr64...
 - destruct ptr64...
@@ -3498,7 +3527,7 @@ Proof.
 - unfold ablock_load_anywhere; intros; congruence.
 - assert (A: forall i, ZTree.get i (ab_contents ab1) = ZTree.get i (ab_contents ab2)).
   {
-    intros. exploit ZTree.beq_sound; eauto. instantiate (1 := i). 
+    intros. exploit ZTree.beq_sound; eauto. instantiate (1 := i).
     destruct (ab_contents ab1)##i, (ab_contents ab2)##i; intros; try contradiction.
     InvBooleans; subst; auto.
     auto. }
@@ -3556,7 +3585,7 @@ Proof.
   { exploit smatch_lub_l; eauto. instantiate (1 := ab_summary y).
     intros [SUMM _]. eapply vnormalize_cast; eauto. }
   exploit BM2; eauto.
-  unfold ablock_load; simpl. rewrite ZTree.gcombine by auto. 
+  unfold ablock_load; simpl. rewrite ZTree.gcombine by auto.
   unfold combine_acontents;
   destruct (ab_contents x)##ofs as [[chunkx avx]|], (ab_contents y)##ofs as [[chunky avy]|]; auto.
   destruct (chunk_eq chunkx chunky); auto. subst chunky.
@@ -3575,7 +3604,7 @@ Proof.
   { exploit smatch_lub_r; eauto. instantiate (1 := ab_summary x).
     intros [SUMM _]. eapply vnormalize_cast; eauto. }
   exploit BM2; eauto.
-  unfold ablock_load; simpl. rewrite ZTree.gcombine by auto. 
+  unfold ablock_load; simpl. rewrite ZTree.gcombine by auto.
   unfold combine_acontents;
   destruct (ab_contents x)##ofs as [[chunkx avx]|], (ab_contents y)##ofs as [[chunky avy]|]; auto.
   destruct (chunk_eq chunkx chunky); auto. subst chunky.
@@ -4559,6 +4588,7 @@ Hint Resolve cnot_sound symbol_address_sound
        negl_sound addl_sound subl_sound
        mull_sound mullhs_sound mullhu_sound
        divls_sound divlu_sound modls_sound modlu_sound shrxl_sound
+       offset_ptr_sound
        negf_sound absf_sound
        addf_sound subf_sound mulf_sound divf_sound
        negfs_sound absfs_sound

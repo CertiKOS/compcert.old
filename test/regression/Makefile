@@ -10,7 +10,7 @@ LIBS=$(LIBMATH)
 
 TESTS=int32 int64 floats floats-basics \
   expr1 expr6 funptr2 initializers initializers2 initializers3 \
-  volatile1 volatile2 volatile3 \
+  volatile1 volatile2 volatile3 volatile4 \
   funct3 expr5 struct7 struct8 struct11 struct12 casts1 casts2 char1 \
   sizeof1 sizeof2 binops bool for1 switch switch2 compound \
   decl1 interop1 bitfields9 ptrs3 \
@@ -71,15 +71,15 @@ clean:
 test:
 	@echo "----------- Compiled tests -------------"
 	@for i in $(TESTS) $(TESTS_COMP); do \
-	   ./Runtest $$i ./$$i.compcert; \
+	   SIMU='$(SIMU)' ./Runtest $$i ./$$i.compcert; \
          done
 	@echo "----------- Interpreted tests -------------"
 	@for i in $(TESTS); do \
-           ./Runtest $$i $(CCOMP) -fall -interp -quiet $$i.c; \
+           SIMU='' ./Runtest $$i $(CCOMP) -fall -interp -quiet $$i.c; \
          done
 	@for i in $(TESTS_DIFF); do \
            if $(CCOMP) -fall -interp -quiet $$i.c > _cinterp.log; then \
-             if ./$$i.compcert | cmp -s _cinterp.log -; \
+             if $(SIMU) ./$$i.compcert | cmp -s _cinterp.log -; \
              then echo "$$i: compiler and interpreter agree"; \
              else echo "$$i: compiler and interpreter DISAGREE"; \
              fi; \

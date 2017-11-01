@@ -116,7 +116,7 @@ Lemma eval_Olea_ptr:
   forall a el m,
   eval_operation ge sp (Olea_ptr a) el m = eval_addressing ge sp a el.
 Proof.
-  unfold Olea_ptr, eval_addressing; intros. destruct Archi.ptr64; auto. 
+  unfold Olea_ptr, eval_addressing; intros. destruct Archi.ptr64; auto.
 Qed.
 
 Theorem eval_addrsymbol:
@@ -163,7 +163,7 @@ Proof.
 + TrivialExists; simpl. rewrite Int.add_commut. auto.
 + inv H0. simpl in H6. TrivialExists. simpl.
   erewrite eval_offset_addressing_total_32 by eauto. rewrite Int.repr_signed; auto.
-+ TrivialExists. simpl. rewrite Int.repr_signed; auto. 
++ TrivialExists. simpl. rewrite Int.repr_signed; auto.
 Qed.
 
 Theorem eval_add: binary_constructor_sound add Val.add.
@@ -173,7 +173,7 @@ Proof.
   assert (B: forall id ofs n, Archi.ptr64 = false ->
              Genv.symbol_address ge id (Ptrofs.add ofs (Ptrofs.repr n)) =
              Val.add (Genv.symbol_address ge id ofs) (Vint (Int.repr n))).
-  { intros. replace (Ptrofs.repr n) with (Ptrofs.of_int (Int.repr n)) by auto with ptrofs. 
+  { intros. replace (Ptrofs.repr n) with (Ptrofs.of_int (Int.repr n)) by auto with ptrofs.
     apply Genv.shift_symbol_address_32; auto. }
   red; intros until y.
   unfold add; case (add_match a b); intros; InvEval.
@@ -194,7 +194,7 @@ Proof.
 - TrivialExists.
 - TrivialExists. simpl. repeat rewrite Val.add_assoc. decEq; decEq. apply Val.add_commut.
 - TrivialExists. simpl. rewrite Val.add_assoc; auto.
-- TrivialExists. simpl. 
+- TrivialExists. simpl.
   unfold Val.add; destruct Archi.ptr64, x, y; auto.
   + rewrite Int.add_zero; auto.
   + rewrite Int.add_zero; auto.
@@ -325,7 +325,7 @@ Proof.
   exploit (eval_shlimm j (x :: le) (Eletvar 0) x). constructor; auto. intros [v2 [A2 B2]].
   exploit eval_add. eexact A1. eexact A2. intros [v3 [A3 B3]].
   exists v3; split. econstructor; eauto.
-  rewrite D; simpl; rewrite Int.add_zero. 
+  rewrite D; simpl; rewrite Int.add_zero.
   replace (Vint (Int.add (Int.shl Int.one i) (Int.shl Int.one j)))
      with (Val.add (Val.shl Vone (Vint i)) (Val.shl Vone (Vint j))).
   rewrite Val.mul_add_distr_r.
@@ -364,6 +364,16 @@ Proof.
 - TrivialExists.
 Qed.
 
+Theorem eval_mulhs: binary_constructor_sound mulhs Val.mulhs.
+Proof.
+  unfold mulhs; red; intros; TrivialExists.
+Qed.
+  
+Theorem eval_mulhu: binary_constructor_sound mulhu Val.mulhu.
+Proof.
+  unfold mulhu; red; intros; TrivialExists.
+Qed.
+  
 Theorem eval_andimm:
   forall n, unary_constructor_sound (andimm n) (fun x => Val.and x (Vint n)).
 Proof.
@@ -927,16 +937,32 @@ Proof.
                      /\ eval_addressing ge sp (Aindexed 0) vl = Some v).
   { intros. exists (v :: nil); split. constructor; auto. constructor. auto. }
   unfold addressing; case (addressing_match a); intros.
-- destruct (negb Archi.ptr64 && addressing_valid addr) eqn:E. 
-+ inv H. InvBooleans. apply negb_true_iff in H. unfold eval_addressing; rewrite H. 
+- destruct (negb Archi.ptr64 && addressing_valid addr) eqn:E.
++ inv H. InvBooleans. apply negb_true_iff in H. unfold eval_addressing; rewrite H.
   exists vl; auto.
 + apply D; auto.
-- destruct (Archi.ptr64 && addressing_valid addr) eqn:E. 
-+ inv H. InvBooleans. unfold eval_addressing; rewrite H. 
+- destruct (Archi.ptr64 && addressing_valid addr) eqn:E.
++ inv H. InvBooleans. unfold eval_addressing; rewrite H.
   exists vl; auto.
 + apply D; auto.
 - apply D; auto.
 Qed.
+
+Theorem eval_builtin_arg_addr:
+  forall addr al vl v,
+  eval_exprlist ge sp e m nil al vl ->
+  Op.eval_addressing ge sp addr vl = Some v ->
+  CminorSel.eval_builtin_arg ge sp e m (builtin_arg_addr addr al) v.
+Proof.
+  intros until v. unfold builtin_arg_addr; case (builtin_arg_addr_match addr al); intros; InvEval.
+- set (v2 := if Archi.ptr64 then Vlong (Int64.repr n) else Vint (Int.repr n)).
+  assert (EQ: v = if Archi.ptr64 then Val.addl v1 v2 else Val.add v1 v2).
+  { unfold Op.eval_addressing in H0; unfold v2; destruct Archi.ptr64; simpl in H0; inv H0; auto. }
+  rewrite EQ. constructor. constructor; auto. unfold v2; destruct Archi.ptr64; constructor.
+- rewrite eval_addressing_Aglobal in H0. inv H0. constructor.
+- rewrite eval_addressing_Ainstack in H0. inv H0. constructor.
+- constructor. econstructor. eauto. rewrite eval_Olea_ptr. auto. 
+Qed. 
 
 Theorem eval_builtin_arg:
   forall a v,
@@ -946,10 +972,12 @@ Proof.
   intros until v. unfold builtin_arg; case (builtin_arg_match a); intros; InvEval.
 - constructor.
 - constructor.
-- constructor.
-- constructor.
-- constructor.
-- constructor.
+- destruct Archi.ptr64 eqn:SF. 
++ constructor; auto.
++ inv H. eapply eval_builtin_arg_addr. eauto. unfold Op.eval_addressing; rewrite SF; assumption.
+- destruct Archi.ptr64 eqn:SF. 
++ inv H. eapply eval_builtin_arg_addr. eauto. unfold Op.eval_addressing; rewrite SF; assumption.
++ constructor; auto.
 - simpl in H5. inv H5. constructor.
 - constructor; auto.
 - inv H. InvEval. rewrite eval_addressing_Aglobal in H6. inv H6. constructor; auto.

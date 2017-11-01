@@ -126,6 +126,20 @@ Function makeif (a: expr) (s1 s2: statement) : statement :=
   | None => Sifthenelse a s1 s2
   end.
 
+(** Smart constructors for [&] and [*].  They optimize away [&*] and [*&] sequences. *)
+
+Definition Ederef' (a: expr) (t: type) : expr :=
+  match a with
+  | Eaddrof a' t' => if type_eq t (typeof a') then a' else Ederef a t
+  | _ => Ederef a t
+  end.
+
+Definition Eaddrof' (a: expr) (t: type) : expr :=
+  match a with
+  | Ederef a' t' => if type_eq t (typeof a') then a' else Eaddrof a t
+  | _ => Eaddrof a t
+  end.
+
 (** Translation of pre/post-increment/decrement. *)
 
 Definition transl_incrdecr (id: incr_or_decr) (a: expr) (ty: type) : expr :=
@@ -225,7 +239,7 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
       ret (finish dst nil (Evar x ty))
   | Csyntax.Ederef r ty =>
       do (sl, a) <- transl_expr For_val r;
-      ret (finish dst sl (Ederef a ty))
+      ret (finish dst sl (Ederef' a ty))
   | Csyntax.Efield r f ty =>
       do (sl, a) <- transl_expr For_val r;
       ret (finish dst sl (Efield a f ty))
@@ -249,7 +263,7 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
       ret (finish dst (sl1 ++ sl2) a2)
   | Csyntax.Eaddrof l ty =>
       do (sl, a) <- transl_expr For_val l;
-      ret (finish dst sl (Eaddrof a ty))
+      ret (finish dst sl (Eaddrof' a ty))
   | Csyntax.Eunop op r1 ty =>
       do (sl1, a1) <- transl_expr For_val r1;
       ret (finish dst sl1 (Eunop op a1 ty))
@@ -441,7 +455,10 @@ Fixpoint transl_stmt (s: Csyntax.statement) : mon statement :=
       do ts1 <- transl_stmt s1;
       do ts2 <- transl_stmt s2;
       do (s', a) <- transl_expression e;
-      ret (Ssequence s' (Sifthenelse a ts1 ts2))
+      if is_Sskip s1 && is_Sskip s2 then
+        ret (Ssequence s' Sskip)
+      else
+        ret (Ssequence s' (Sifthenelse a ts1 ts2))
   | Csyntax.Swhile e s1 =>
       do s' <- transl_if e Sskip Sbreak;
       do ts1 <- transl_stmt s1;

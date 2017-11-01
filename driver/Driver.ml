@@ -18,8 +18,7 @@ open Driveraux
 open Frontend
 open Assembler
 open Linker
-
-let dump_options = ref false
+open Json
 
 (* Optional sdump suffix *)
 let sdump_suffix = ref ".json"
@@ -31,8 +30,29 @@ let jdump_magic_number = "CompCertJDUMP" ^ Version.version
 
 let dump_jasm asm sourcename destfile =
   let oc = open_out_bin destfile in
-  fprintf oc "{\n\"Version\":\"%s\",\n\"System\":\"%s\"\n,\"Compilation Unit\":\"%s\",\n\"Asm Ast\":%a}"
-    jdump_magic_number Configuration.system sourcename AsmToJSON.p_program asm;
+  let pp = Format.formatter_of_out_channel oc in
+  let get_args () =
+    let buf = Buffer.create 100 in
+    Buffer.add_string buf Sys.executable_name;
+    for i = 1 to (Array.length  !argv - 1) do
+      Buffer.add_string buf " ";
+      Buffer.add_string buf (Responsefile.gnu_quote  !argv.(i));
+    done;
+    Buffer.contents buf in
+  let dump_compile_info pp () =
+    pp_jobject_start pp;
+    pp_jmember ~first:true pp "directory" pp_jstring (Sys.getcwd ());
+    pp_jmember pp "command" pp_jstring (get_args ());
+    pp_jmember pp "file" pp_jstring sourcename;
+    pp_jobject_end pp in
+  pp_jobject_start pp;
+  pp_jmember ~first:true pp "Version" pp_jstring jdump_magic_number;
+  pp_jmember pp "System" pp_jstring Configuration.system;
+  pp_jmember pp "Compile Info" dump_compile_info ();
+  pp_jmember pp "Compilation Unit" pp_jstring sourcename;
+  pp_jmember pp "Asm Ast" AsmToJSON.pp_program asm;
+  pp_jobject_end pp;
+  Format.pp_print_flush pp ();
   close_out oc
 
 
@@ -76,49 +96,6 @@ let compile_c_file sourcename ifile ofile =
   let ast = parse_c_file sourcename ifile in
   compile_c_ast sourcename ast ofile
 
-(* From Cminor to asm *)
-
-let compile_cminor_file ifile ofile =
-  (* Prepare to dump RTL, Mach, etc, if requested *)
-  let set_dest dst opt ext =
-    dst := if !opt then Some (output_filename ifile ".cm" ext)
-                   else None in
-  set_dest PrintRTL.destination option_drtl ".rtl";
-  set_dest Regalloc.destination_alloctrace option_dalloctrace ".alloctrace";
-  set_dest PrintLTL.destination option_dltl ".ltl";
-  set_dest PrintMach.destination option_dmach ".mach";
-  Sections.initialize();
-  let ic = open_in ifile in
-  let lb = Lexing.from_channel ic in
-  (* Parse cminor *)
-  let cm =
-    try CMtypecheck.type_program (CMparser.prog CMlexer.token lb)
-    with Parsing.Parse_error ->
-           eprintf "File %s, character %d: Syntax error\n"
-                   ifile (Lexing.lexeme_start lb);
-           exit 2
-       | CMlexer.Error msg ->
-           eprintf "File %s, character %d: %s\n"
-                   ifile (Lexing.lexeme_start lb) msg;
-           exit 2
-       | CMtypecheck.Error msg ->
-           eprintf "File %s, type-checking error:\n%s"
-                   ifile msg;
-           exit 2 in
-  (* Convert to Asm *)
-  let asm =
-    match Compiler.apply_partial
-               (Compiler.transf_cminor_program cm)
-               Asmexpand.expand_program with
-    | Errors.OK asm ->
-        asm
-    | Errors.Error msg ->
-        eprintf "%s: %a" ifile print_error msg;
-        exit 2 in
-  (* Print Asm in text form *)
-  let oc = open_out ofile in
-  PrintAsm.print_program oc asm;
-  close_out oc
 
 (* Processing of a .c file *)
 
@@ -160,8 +137,6 @@ let process_c_file sourcename =
         if not !option_dasm then safe_remove asmname;
         objname
       end in
-    if !dump_options then
-      Optionsprinter.print (output_filename sourcename ".c" ".opt.json") !stdlib_path;
     name
   end
 
@@ -176,8 +151,6 @@ let process_i_file sourcename =
   end else if !option_S then begin
     compile_c_file sourcename sourcename
       (output_filename ~final:true sourcename ".c" ".s");
-    if !dump_options then
-      Optionsprinter.print (output_filename sourcename ".c" ".opt.json") !stdlib_path;
     ""
   end else begin
     let asmname =
@@ -188,32 +161,9 @@ let process_i_file sourcename =
     let objname = output_filename ~final: !option_c sourcename ".c" ".o" in
     assemble asmname objname;
     if not !option_dasm then safe_remove asmname;
-    if !dump_options then
-      Optionsprinter.print (output_filename sourcename ".c" ".opt.json") !stdlib_path;
     objname
   end
 
-(* Processing of a .cm file *)
-
-let process_cminor_file sourcename =
-  ensure_inputfile_exists sourcename;
-  if !option_S then begin
-    compile_cminor_file sourcename
-                        (output_filename ~final:true sourcename ".cm" ".s");
-    ""
-  end else begin
-    let asmname =
-      if !option_dasm
-      then output_filename sourcename ".cm" ".s"
-      else Filename.temp_file "compcert" ".s" in
-    compile_cminor_file sourcename asmname;
-    let objname = output_filename ~final: !option_c sourcename ".cm" ".o" in
-    assemble asmname objname;
-    if not !option_dasm then safe_remove asmname;
-    if !dump_options then
-      Optionsprinter.print (output_filename sourcename ".cm" ".opt.json") !stdlib_path;
-    objname
-  end
 
 (* Processing of .S and .s files *)
 
@@ -269,7 +219,6 @@ let usage_string =
 Recognized source files:
   .c             C source file
   .i or .p       C source file that should not be preprocessed
-  .cm            Cminor source file
   .s             Assembly file
   .S or .sx      Assembly file that must be preprocessed
   .o             Object file
@@ -329,7 +278,6 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
   -dasm          Save generated assembly in <file>.s
   -dall          Save all generated intermediate files in <file>.<ext>
   -sdump         Save info for post-linking validation in <file>.json
-  -doptions      Save the compiler configurations in <file>.opt.json
 General options:
   -stdlib <dir>  Set the path of the Compcert run-time library
   -v             Print external commands before invoking them
@@ -448,14 +396,13 @@ let cmdline_actions =
     option_dclight := true;
     option_dcminor := true;
     option_drtl := true;
+    option_dltl := true;
     option_dalloctrace := true;
     option_dmach := true;
-    option_dasm := true;
-    dump_options:=true);
+    option_dasm := true);
   Exact "-sdump", Set option_sdump;
   Exact "-sdump-suffix", String (fun s -> option_sdump := true; sdump_suffix:= s);
   Exact "-sdump-folder", String (fun s -> sdump_folder := s);
-  Exact "-doptions", Set dump_options;
 (* General options *)
   Exact "-v", Set option_v;
   Exact "-stdlib", String(fun s -> stdlib_path := s);
@@ -484,6 +431,7 @@ let cmdline_actions =
   @ f_opt "const-prop" option_fconstprop
   @ f_opt "cse" option_fcse
   @ f_opt "redundancy" option_fredundancy
+  @ f_opt "inline" option_finline
 (* Code generation options *)
   @ f_opt "fpu" option_ffpu
   @ f_opt "sse" option_ffpu (* backward compatibility *)
@@ -498,8 +446,6 @@ let cmdline_actions =
       push_action process_i_file s; incr num_source_files; incr num_input_files);
   Suffix ".p", Self (fun s ->
       push_action process_i_file s; incr num_source_files; incr num_input_files);
-  Suffix ".cm", Self (fun s ->
-      push_action process_cminor_file s; incr num_source_files; incr num_input_files);
   Suffix ".s", Self (fun s ->
       push_action process_s_file s; incr num_source_files; incr num_input_files);
   Suffix ".S", Self (fun s ->
@@ -537,6 +483,9 @@ let _ =
                        if Configuration.abi = "macosx"
                        then Machine.x86_32_macosx
                        else Machine.x86_32
+      | "riscV"   -> if Configuration.model = "64"
+                     then Machine.rv64
+                     else Machine.rv32
       | _         -> assert false
       end;
     Builtins.set C2C.builtins;

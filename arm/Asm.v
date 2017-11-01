@@ -199,15 +199,16 @@ Inductive instruction : Type :=
   | Pfsts: freg -> ireg -> int -> instruction       (**r float32 store *)
 
   (* Pseudo-instructions *)
-  | Pallocframe: Z -> ptrofs -> instruction      (**r allocate new stack frame *)
-  | Pfreeframe: Z -> ptrofs -> instruction       (**r deallocate stack frame and restore previous frame *)
-  | Plabel: label -> instruction                   (**r define a code label *)
+  | Pallocframe: Z -> ptrofs -> instruction         (**r allocate new stack frame *)
+  | Pfreeframe: Z -> ptrofs -> instruction          (**r deallocate stack frame and restore previous frame *)
+  | Plabel: label -> instruction                    (**r define a code label *)
   | Ploadsymbol: ireg -> ident -> ptrofs -> instruction (**r load the address of a symbol *)
   | Pmovite: testcond -> ireg -> shift_op -> shift_op -> instruction (**r integer conditional move *)
   | Pbtbl: ireg -> list label -> instruction       (**r N-way branch through a jump table *)
   | Pbuiltin: external_function -> list (builtin_arg preg) -> builtin_res preg -> instruction (**r built-in function (pseudo) *)
   | Padc: ireg -> ireg -> shift_op -> instruction     (**r add with carry *)
   | Pcfi_adjust: int -> instruction                   (**r .cfi_adjust debug directive *)
+  | Pcfi_rel_offset: int -> instruction               (**r .cfi_rel_offset debug directive *)
   | Pclz: ireg -> ireg -> instruction                 (**r count leading zeros. *)
   | Pfsqrt: freg -> freg -> instruction               (**r floating-point square root. *)
   | Prev: ireg -> ireg -> instruction                 (**r reverse bytes and reverse bits. *)
@@ -760,6 +761,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
           end
       | _ => Stuck
       end
+  | Pcfi_rel_offset ofs =>
+      Next (nextinstr rs) m
   | Pbuiltin ef args res => Stuck    (**r treated specially below *)
   (** The following instructions and directives are not generated directly by Asmgen,
       so we do not model them. *)
@@ -903,7 +906,7 @@ Proof.
   { intros. inv H; inv H0; congruence. }
   assert (B: forall p v1 v2,
              extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
-  { intros. inv H; inv H0. 
+  { intros. inv H; inv H0.
     eapply A; eauto.
     f_equal; eapply A; eauto. }
   assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m) ll vl1 ->

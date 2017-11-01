@@ -46,18 +46,22 @@ let expand_movimm dst n =
        (fun n -> emit (Porr (dst,dst, SOimm n))) tl
 
 let expand_subimm dst src n =
-  match Asmgen.decompose_int n with
-  | [] -> assert false
-  | hd::tl ->
-     emit (Psub(dst,src,SOimm hd));
-     List.iter (fun n -> emit (Psub (dst,dst,SOimm n))) tl
+  if dst <> src || n <> _0 then begin
+    match Asmgen.decompose_int n with
+    | [] -> assert false
+    | hd::tl ->
+       emit (Psub(dst,src,SOimm hd));
+       List.iter (fun n -> emit (Psub (dst,dst,SOimm n))) tl
+  end
 
 let expand_addimm dst src n =
-  match Asmgen.decompose_int n with
-  | [] -> assert false
-  | hd::tl ->
-     emit (Padd (dst,src,SOimm hd));
-     List.iter (fun n -> emit (Padd (dst,dst,SOimm n))) tl
+  if dst <> src || n <> _0 then begin
+    match Asmgen.decompose_int n with
+    | [] -> assert false
+    | hd::tl ->
+       emit (Padd (dst,src,SOimm hd));
+       List.iter (fun n -> emit (Padd (dst,dst,SOimm n))) tl
+  end
 
 let expand_int64_arith conflict rl fn =
   if conflict then
@@ -215,6 +219,13 @@ let expand_builtin_vload chunk args res =
   | [BA_addrglobal(id, ofs)] ->
       emit (Ploadsymbol (IR14,id,ofs));
       expand_builtin_vload_common chunk IR14 _0 res
+  | [BA_addptr(BA(IR addr), BA_int ofs)] ->
+      if offset_in_range (Int.add ofs (Memdata.size_chunk chunk)) then
+        expand_builtin_vload_common chunk addr ofs res
+      else begin
+        expand_addimm IR14 addr ofs;
+        expand_builtin_vload_common chunk IR14 _0 res
+      end
   | _ ->
       assert false
 
@@ -252,6 +263,13 @@ let expand_builtin_vstore chunk args =
   | [BA_addrglobal(id, ofs); src] ->
       emit (Ploadsymbol (IR14,id,ofs));
       expand_builtin_vstore_common chunk IR14 _0 src
+  | [BA_addptr(BA(IR addr), BA_int ofs); src] ->
+      if offset_in_range (Int.add ofs (Memdata.size_chunk chunk)) then
+        expand_builtin_vstore_common chunk addr ofs src
+      else begin
+        expand_addimm IR14 addr ofs;
+        expand_builtin_vstore_common chunk IR14 _0 src
+      end
   | _ ->
       assert false
 
@@ -396,12 +414,22 @@ let expand_instruction instr =
   | Pallocframe (sz, ofs) ->
      emit (Pmov (IR12,SOreg IR13));
      if (is_current_function_variadic ()) then begin
-	 emit (Ppush [IR0;IR1;IR2;IR3]);
-	 emit (Pcfi_adjust _16);
-       end;
-     expand_subimm IR13 IR13 sz;
-     emit (Pcfi_adjust sz);
-     emit (Pstr (IR12,IR13,SOimm ofs));
+       emit (Ppush [IR0;IR1;IR2;IR3]);
+       emit (Pcfi_adjust _16);
+     end;
+     let sz' = camlint_of_coqint sz in
+     let ofs' = camlint_of_coqint ofs in
+     if ofs' >= 4096l && sz' >= ofs' then begin
+       expand_subimm IR13 IR13 (coqint_of_camlint (Int32.sub sz' (Int32.add ofs' 4l)));
+       emit (Ppush [IR12]);
+       expand_subimm IR13 IR13 ofs;
+       emit (Pcfi_adjust sz);
+     end else begin
+        assert (ofs' < 4096l);
+        expand_subimm IR13 IR13 sz;
+        emit (Pcfi_adjust sz);
+        emit (Pstr (IR12,IR13,SOimm ofs));
+     end;
      PrintAsmaux.current_function_stacksize := camlint_of_coqint sz
   | Pfreeframe (sz, ofs) ->
      let sz =
@@ -410,7 +438,13 @@ let expand_instruction instr =
        else sz in
      if Asmgen.is_immed_arith sz
      then emit (Padd (IR13,IR13,SOimm sz))
-     else emit (Pldr (IR13,IR13,SOimm ofs))
+     else begin
+       if camlint_of_coqint ofs >= 4096l then begin
+         expand_addimm IR13 IR13 ofs;
+         emit (Pldr (IR13,IR13,SOimm _0))
+       end else
+         emit (Pldr (IR13,IR13,SOimm ofs));
+     end
   | Pbuiltin (ef,args,res) ->
      begin match ef with
 	   | EF_builtin (name,sg) ->

@@ -196,24 +196,29 @@ Defined.
 
 Global Opaque eq_condition eq_addressing eq_operation.
 
-(** In addressing modes, offsets are 32-bit signed integers, even in 64-bit mode.
-    The following function checks that an addressing mode is valid, i.e. that
-    the offsets are in range. *)
+(** In addressing modes, offsets are 32-bit signed integers, even in
+    64-bit mode.  The following function checks that an addressing
+    mode is valid, i.e. that the offsets are in range.
+    The check always succeeds in 32-bit mode because offsets are
+    always 32-bit integers and are normalized as 32-bit signed integers
+    during code generation (see [Asmgen.normalize_addrmode_32]). *)
 
 Definition offset_in_range (n: Z) : bool := zle Int.min_signed n && zle n Int.max_signed.
 
 Definition addressing_valid (a: addressing) : bool :=
-  match a with
-  | Aindexed n => offset_in_range n
-  | Aindexed2 n => offset_in_range n
-  | Ascaled sc ofs => offset_in_range ofs
-  | Aindexed2scaled sc ofs => offset_in_range ofs
-  | Aglobal s ofs => true
-  | Abased s ofs => true
-  | Abasedscaled sc s ofs => true
-  | Ainstack ofs => offset_in_range (Ptrofs.signed ofs)
-  end.
-
+  if Archi.ptr64 then
+    match a with
+    | Aindexed n => offset_in_range n
+    | Aindexed2 n => offset_in_range n
+    | Ascaled sc ofs => offset_in_range ofs
+    | Aindexed2scaled sc ofs => offset_in_range ofs
+    | Aglobal s ofs => true
+    | Abased s ofs => true
+    | Abasedscaled sc s ofs => true
+    | Ainstack ofs => offset_in_range (Ptrofs.signed ofs)
+    end
+  else true.
+  
 (** * Evaluation functions *)
 
 (** Evaluation of conditions, operators and addressing modes applied
@@ -396,14 +401,14 @@ Remark eval_addressing_Aglobal:
   forall (F V: Type) (genv: Genv.t F V) sp id ofs,
   eval_addressing genv sp (Aglobal id ofs) nil = Some (Genv.symbol_address genv id ofs).
 Proof.
-  intros. unfold eval_addressing, eval_addressing32, eval_addressing64; destruct Archi.ptr64; auto. 
+  intros. unfold eval_addressing, eval_addressing32, eval_addressing64; destruct Archi.ptr64; auto.
 Qed.
 
 Remark eval_addressing_Ainstack:
   forall (F V: Type) (genv: Genv.t F V) sp ofs,
   eval_addressing genv sp (Ainstack ofs) nil = Some (Val.offset_ptr sp ofs).
 Proof.
-  intros. unfold eval_addressing, eval_addressing32, eval_addressing64; destruct Archi.ptr64; auto. 
+  intros. unfold eval_addressing, eval_addressing32, eval_addressing64; destruct Archi.ptr64; auto.
 Qed.
 
 Remark eval_addressing_Ainstack_inv:
@@ -609,7 +614,7 @@ Corollary type_of_addressing_sound:
   eval_addressing genv sp addr vl = Some v ->
   Val.has_type v Tptr.
 Proof.
-  unfold eval_addressing, Tptr; intros. 
+  unfold eval_addressing, Tptr; intros.
   destruct Archi.ptr64; eauto using type_of_addressing64_sound, type_of_addressing32_sound.
 Qed.
 
@@ -820,7 +825,7 @@ Lemma eval_shift_stack_addressing32:
   eval_addressing32 ge (Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
   eval_addressing32 ge (Vptr sp (Ptrofs.repr delta)) addr vl.
 Proof.
-  intros. 
+  intros.
   assert (A: forall i, Ptrofs.add Ptrofs.zero (Ptrofs.add i (Ptrofs.repr delta)) = Ptrofs.add (Ptrofs.repr delta) i).
   { intros. rewrite Ptrofs.add_zero_l. apply Ptrofs.add_commut. }
   destruct addr; simpl; rewrite ?A; reflexivity.
@@ -831,7 +836,7 @@ Lemma eval_shift_stack_addressing64:
   eval_addressing64 ge (Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
   eval_addressing64 ge (Vptr sp (Ptrofs.repr delta)) addr vl.
 Proof.
-  intros. 
+  intros.
   assert (A: forall i, Ptrofs.add Ptrofs.zero (Ptrofs.add i (Ptrofs.repr delta)) = Ptrofs.add (Ptrofs.repr delta) i).
   { intros. rewrite Ptrofs.add_zero_l. apply Ptrofs.add_commut. }
   destruct addr; simpl; rewrite ?A; reflexivity.
@@ -842,7 +847,7 @@ Lemma eval_shift_stack_addressing:
   eval_addressing ge (Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
   eval_addressing ge (Vptr sp (Ptrofs.repr delta)) addr vl.
 Proof.
-  intros. unfold eval_addressing. 
+  intros. unfold eval_addressing.
   destruct Archi.ptr64; auto using eval_shift_stack_addressing32, eval_shift_stack_addressing64.
 Qed.
 
@@ -1243,7 +1248,7 @@ Proof.
   inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto.
   inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto.
   inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto.
-  inv H4; simpl in H1; try discriminate. simpl. destruct (Int.ltu n (Int.repr 63)); inv H1. TrivialExists. 
+  inv H4; simpl in H1; try discriminate. simpl. destruct (Int.ltu n (Int.repr 63)); inv H1. TrivialExists.
   inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto.
   inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto.
   inv H4; simpl; auto.
@@ -1437,7 +1442,7 @@ Proof.
   rewrite eval_shift_stack_addressing.
   eapply eval_addressing_inj with (sp1 := Vptr sp1 Ptrofs.zero); eauto.
   intros. apply symbol_address_inject.
-  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto. 
+  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
 Qed.
 
 Lemma eval_operation_inject:
@@ -1457,7 +1462,28 @@ Proof.
   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
   intros; eapply Mem.different_pointers_inject; eauto.
   intros. apply symbol_address_inject.
-  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto. 
+  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
 Qed.
 
 End EVAL_INJECT.
+
+(** * Handling of builtin arguments *)
+
+Definition builtin_arg_ok_1
+       (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
+  match c, ba with
+  | OK_all, _ => true
+  | OK_const, (BA_int _ | BA_long _ | BA_float _ | BA_single _) => true
+  | OK_addrstack, BA_addrstack _ => true
+  | OK_addressing, BA_addrstack _ => true
+  | OK_addressing, BA_addrglobal _ _ => true
+  | OK_addressing, BA_addptr (BA _) (BA_int _ | BA_long _) => true
+  | _, _ => false
+  end.
+
+Definition builtin_arg_ok
+       (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
+  match ba with
+  | (BA _ | BA_splitlong (BA _) (BA _)) => true
+  | _ => builtin_arg_ok_1 ba c
+  end.  

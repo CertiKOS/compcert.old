@@ -72,6 +72,7 @@ let elf_label oc lbl =
 
 let float64_literals : (int * int64) list ref = ref []
 let float32_literals : (int * int32) list ref = ref []
+let int64_literals : (int * int64) list ref = ref []
 let jumptables : (int * label list) list ref = ref []
 
 let reset_constants () =
@@ -91,8 +92,8 @@ let elf_symbol oc symb =
 
 let elf_symbol_offset oc (symb, ofs) =
   elf_symbol oc symb;
-  let ofs = camlint_of_coqint ofs in
-  if ofs <> 0l then fprintf oc " + %ld" ofs
+  let ofs = camlint64_of_ptrofs ofs in
+  if ofs <> 0L then fprintf oc " + %Ld" ofs
 
 (* Functions for fun and var info *)
 let elf_print_fun_info oc name =
@@ -142,62 +143,68 @@ let coqint oc n =
 let coqint64 oc n =
   fprintf oc "%Ld" (camlint64_of_coqint n)
 
+let ptrofs oc n =
+  fprintf oc "%Ld" (camlint64_of_ptrofs n)
+
 (** Programmer-supplied annotations (__builtin_annot). *)
 
 let re_annot_param = Str.regexp "%%\\|%[1-9][0-9]*"
 
-let rec print_annot print_preg sp_reg_name oc = function
-  | BA x -> print_preg oc x
-  | BA_int n -> fprintf oc "%ld" (camlint_of_coqint n)
-  | BA_long n -> fprintf oc "%Ld" (camlint64_of_coqint n)
-  | BA_float n -> fprintf oc "%.18g" (camlfloat_of_coqfloat n)
-  | BA_single n -> fprintf oc "%.18g" (camlfloat_of_coqfloat32 n)
+let rec annot_arg preg_string sp_reg_name = function
+  | BA x -> preg_string x
+  | BA_int n -> sprintf "%ld" (camlint_of_coqint n)
+  | BA_long n -> sprintf "%Ld" (camlint64_of_coqint n)
+  | BA_float n -> sprintf "%.18g" (camlfloat_of_coqfloat n)
+  | BA_single n -> sprintf "%.18g" (camlfloat_of_coqfloat32 n)
   | BA_loadstack(chunk, ofs) ->
-      fprintf oc "mem(%s + %ld, %ld)"
+      sprintf "mem(%s + %ld, %ld)"
          sp_reg_name
          (camlint_of_coqint ofs)
          (camlint_of_coqint (size_chunk chunk))
   | BA_addrstack ofs ->
-      fprintf oc "(%s + %ld)"
+      sprintf "(%s + %ld)"
          sp_reg_name
          (camlint_of_coqint ofs)
   | BA_loadglobal(chunk, id, ofs) ->
-      fprintf oc "mem(\"%s\" + %ld, %ld)"
+      sprintf "mem(\"%s\" + %ld, %ld)"
          (extern_atom id)
          (camlint_of_coqint ofs)
          (camlint_of_coqint (size_chunk chunk))
   | BA_addrglobal(id, ofs) ->
-      fprintf oc "(\"%s\" + %ld)"
+      sprintf "(\"%s\" + %ld)"
          (extern_atom id)
          (camlint_of_coqint ofs)
   | BA_splitlong(hi, lo) ->
-      fprintf oc "(%a * 0x100000000 + %a)"
-        (print_annot print_preg sp_reg_name) hi
-        (print_annot print_preg sp_reg_name) lo
+      sprintf "(%s * 0x100000000 + %s)"
+        (annot_arg preg_string sp_reg_name hi)
+         (annot_arg preg_string sp_reg_name lo)
+  | BA_addptr(a1, a2) ->
+      sprintf "(%s + %s)"
+        (annot_arg preg_string sp_reg_name a1)
+        (annot_arg preg_string sp_reg_name a2)
 
-let print_annot_text print_preg sp_reg_name oc txt args =
-  let print_fragment = function
+let annot_text preg_string sp_reg_name txt args =
+  let fragment = function
   | Str.Text s ->
-      output_string oc s
+      s
   | Str.Delim "%%" ->
-      output_char oc '%'
+      "%"
   | Str.Delim s ->
       let n = int_of_string (String.sub s 1 (String.length s - 1)) in
       try
-        print_annot print_preg sp_reg_name oc (List.nth args (n-1))
+        annot_arg preg_string sp_reg_name (List.nth args (n-1))
       with Failure _ ->
-        fprintf oc "<bad parameter %s>" s in
-  List.iter print_fragment (Str.full_split re_annot_param txt);
-  fprintf oc "\n"
+        sprintf "<bad parameter %s>" s in
+  String.concat "" (List.map fragment (Str.full_split re_annot_param txt))
 
 (* Printing of [EF_debug] info.  To be completed. *)
 
 let re_file_line = Str.regexp "#line:\\(.*\\):\\([1-9][0-9]*\\)$"
 
-let print_debug_info comment print_line print_preg sp_name oc kind txt args =
+let print_debug_info comment print_line preg_string sp_name oc kind txt args =
   let print_debug_args oc args =
     List.iter
-      (fun a -> fprintf oc " %a" (print_annot print_preg sp_name) a)
+      (fun a -> fprintf oc " %s" (annot_arg preg_string sp_name a))
       args in
   match kind with
   | 1 ->  (* line number *)

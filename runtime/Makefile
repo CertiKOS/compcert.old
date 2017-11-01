@@ -10,8 +10,18 @@ ARCH=x86_32
 endif
 endif
 
+ifeq ($(ARCH),powerpc)
+ifeq ($(MODEL),ppc64)
+ARCH=powerpc64
+else ifeq ($(MODEL),e5500)
+ARCH=powerpc64
+endif
+endif
+
 ifeq ($(ARCH),x86_64)
 OBJS=i64_dtou.o i64_utod.o i64_utof.o vararg.o
+else ifeq ($(ARCH),powerpc64)
+OBJS=i64_dtou.o i64_stof.o i64_utod.o i64_utof.o vararg.o
 else
 OBJS=i64_dtos.o i64_dtou.o i64_sar.o i64_sdiv.o i64_shl.o \
   i64_shr.o i64_smod.o i64_stod.o i64_stof.o \
@@ -27,14 +37,6 @@ INCLUDES=include/float.h include/stdarg.h include/stdbool.h \
   include/stdnoreturn.h
 
 VPATH=$(ARCH)
-
-ifeq ($(ARCH),powerpc)
-ifeq ($(MODEL),ppc64)
-VPATH=powerpc/ppc64 $(ARCH)
-else ifeq ($(MODEL),e5500)
-VPATH=powerpc/ppc64 $(ARCH)
-endif
-endif
 
 ifeq ($(strip $(HAS_RUNTIME_LIB)),true)
 all: $(LIB)
@@ -52,8 +54,19 @@ $(LIB): $(OBJS)
 %.o: %.S
 	$(CASMRUNTIME) -DMODEL_$(MODEL) -DABI_$(ABI) -DENDIANNESS_$(ENDIANNESS) -DSYS_$(SYSTEM) -o $@ $^
 
+# If no asm implementation available, compile the portable C implementation
+# with CompCert.  Since CompCert rejects the "__i64_" identifiers, the C
+# implementation uses "i64_" identifiers, and we rename them in the
+# generated assembly
+
+%.o: c/%.c c/i64.h ../ccomp
+	../ccomp -O2 -S -o $*.s -I./c c/$*.c
+	sed -i -e 's/i64_/__i64_/g' $*.s
+	$(CASMRUNTIME) -o $*.o $*.s
+	@rm -f $*.s
+
 clean::
-	rm -f *.o $(LIB)
+	rm -f *.o $(LIB) *.tmp?.s
 
 ifeq ($(strip $(HAS_RUNTIME_LIB)),true)
 install::

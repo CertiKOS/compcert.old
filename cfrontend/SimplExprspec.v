@@ -55,7 +55,7 @@ Inductive tr_expr: temp_env -> destination -> Csyntax.expr -> list statement -> 
   | tr_deref: forall le dst e1 ty sl1 a1 tmp,
       tr_expr le For_val e1 sl1 a1 tmp ->
       tr_expr le dst (Csyntax.Ederef e1 ty)
-              (sl1 ++ final dst (Ederef a1 ty)) (Ederef a1 ty) tmp
+              (sl1 ++ final dst (Ederef' a1 ty)) (Ederef' a1 ty) tmp
   | tr_field: forall le dst e1 f ty sl1 a1 tmp,
       tr_expr le For_val e1 sl1 a1 tmp ->
       tr_expr le dst (Csyntax.Efield e1 f ty)
@@ -96,8 +96,8 @@ Inductive tr_expr: temp_env -> destination -> Csyntax.expr -> list statement -> 
   | tr_addrof: forall le dst e1 ty tmp sl1 a1,
       tr_expr le For_val e1 sl1 a1 tmp ->
       tr_expr le dst (Csyntax.Eaddrof e1 ty)
-                   (sl1 ++ final dst (Eaddrof a1 ty))
-                   (Eaddrof a1 ty) tmp
+                   (sl1 ++ final dst (Eaddrof' a1 ty))
+                   (Eaddrof' a1 ty) tmp
   | tr_unop: forall le dst op e1 ty tmp sl1 a1,
       tr_expr le For_val e1 sl1 a1 tmp ->
       tr_expr le dst (Csyntax.Eunop op e1 ty)
@@ -417,6 +417,9 @@ Inductive tr_stmt: Csyntax.statement -> statement -> Prop :=
   | tr_seq: forall s1 s2 ts1 ts2,
       tr_stmt s1 ts1 -> tr_stmt s2 ts2 ->
       tr_stmt (Csyntax.Ssequence s1 s2) (Ssequence ts1 ts2)
+  | tr_ifthenelse_empty: forall r s' a,
+      tr_expression r s' a ->
+      tr_stmt (Csyntax.Sifthenelse r Csyntax.Sskip Csyntax.Sskip) (Ssequence s' Sskip)
   | tr_ifthenelse: forall r s1 s2 s' a ts1 ts2,
       tr_expression r s' a ->
       tr_stmt s1 ts1 -> tr_stmt s2 ts2 ->
@@ -1066,11 +1069,12 @@ Opaque transl_expression transl_expr_stmt.
   clear transl_stmt_meets_spec.
   induction s; simpl; intros until I; intros TR;
   try (monadInv TR); try (constructor; eauto).
+  destruct (is_Sskip s1); destruct (is_Sskip s2) eqn:?; monadInv EQ3; try (constructor; eauto).
+  eapply tr_ifthenelse_empty; eauto.
   destruct (is_Sskip s1); monadInv EQ4.
   apply tr_for_1; eauto.
   apply tr_for_2; eauto.
   destruct o; monadInv TR; constructor; eauto.
-
   clear transl_lblstmt_meets_spec.
   induction s; simpl; intros until I; intros TR;
   monadInv TR; constructor; eauto.
@@ -1116,4 +1120,3 @@ Proof.
 Qed.
 
 End SPEC.
-

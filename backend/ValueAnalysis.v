@@ -59,6 +59,10 @@ Fixpoint abuiltin_arg (ae: aenv) (am: amem) (rm: romem) (ba: builtin_arg reg) : 
   | BA_loadglobal chunk id ofs => loadv chunk rm am (Ptr (Gl id ofs))
   | BA_addrglobal id ofs => Ptr (Gl id ofs)
   | BA_splitlong hi lo => longofwords (abuiltin_arg ae am rm hi) (abuiltin_arg ae am rm lo)
+  | BA_addptr ba1 ba2 =>
+      let v1 := abuiltin_arg ae am rm ba1 in
+      let v2 := abuiltin_arg ae am rm ba2 in
+      if Archi.ptr64 then addl v1 v2 else add v1 v2
   end.
 
 Definition set_builtin_res (br: builtin_res reg) (av: aval) (ae: aenv) : aenv :=
@@ -358,6 +362,7 @@ Proof.
 - simpl. rewrite Ptrofs.add_zero_l. auto with va.
 - eapply loadv_sound; eauto. apply symbol_address_sound; auto.
 - apply symbol_address_sound; auto.
+- destruct Archi.ptr64; auto with va.
 Qed.
 
 Lemma abuiltin_args_sound:
@@ -1536,7 +1541,7 @@ End SOUNDNESS.
 
 (** ** Extension to separate compilation *)
 
-(** Following Kang et al, POPL 2016, we now extend the results above 
+(** Following Kang et al, POPL 2016, we now extend the results above
   to the case where only one compilation unit is analyzed, and not the
   whole program.  *)
 
@@ -1555,14 +1560,14 @@ Inductive sound_state: state -> Prop :=
 Theorem sound_step:
   forall st t st', RTL.step ge st t st' -> sound_state st -> sound_state st'.
 Proof.
-  intros. inv H0. constructor; intros. eapply sound_step_base; eauto. 
+  intros. inv H0. constructor; intros. eapply sound_step_base; eauto.
 Qed.
 
 Remark sound_state_inv:
   forall st cunit,
   sound_state st -> linkorder cunit prog -> sound_state_base cunit ge st.
 Proof.
-  intros. inv H. eauto. 
+  intros. inv H. eauto.
 Qed.
 
 End LINKING.
@@ -1770,7 +1775,7 @@ Proof.
   rewrite PTree.gsspec in H2. destruct (peq id id1).
   inv H2. rewrite PTree.gss in H3. discriminate.
   assert (Plt b (Genv.genv_next g)) by (eapply Genv.genv_symb_range; eauto).
-  rewrite PTree.gso in H3 by (apply Plt_ne; auto). 
+  rewrite PTree.gso in H3 by (apply Plt_ne; auto).
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
   assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; destruct external_calls_prf; eauto with mem).
   apply bmatch_inv with m.
@@ -1799,7 +1804,7 @@ Proof.
   intros. eapply Mem.loadbytes_drop; eauto.
   right; right; right. unfold Genv.perm_globvar. rewrite H4, H5. constructor.
 + assert (Plt b (Genv.genv_next g)) by (eapply Genv.genv_symb_range; eauto).
-  rewrite PTree.gso in H3 by (apply Plt_ne; auto). 
+  rewrite PTree.gso in H3 by (apply Plt_ne; auto).
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
   assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; destruct external_calls_prf; eauto with mem).
   apply bmatch_inv with m3.
@@ -1868,7 +1873,7 @@ Lemma alloc_global_consistent:
 Proof.
   intros; red; intros. destruct idg as [id1 [[f1 | v1] | ]]; simpl in *.
 - rewrite PTree.grspec in H0. destruct (PTree.elt_eq id id1); try discriminate.
-  rewrite PTree.gso by auto. apply H; auto. 
+  rewrite PTree.gso by auto. apply H; auto.
 - destruct (gvar_readonly v1 && negb (gvar_volatile v1) && definitive_initializer (gvar_init v1)) eqn:RO.
 + InvBooleans. rewrite negb_true_iff in H4.
   rewrite PTree.gsspec in *. destruct (peq id id1).
@@ -1904,7 +1909,7 @@ Proof.
   exploit (romem_for_consistent cunit); eauto. intros (v & DM & RO & VO & DEFN & AB).
   destruct (prog_defmap_linkorder _ _ _ _ H DM) as (gd & P & Q).
   assert (gd = Gvar v).
-  { inv Q. inv H2. simpl in *. f_equal. f_equal. 
+  { inv Q. inv H2. simpl in *. f_equal. f_equal.
     destruct info1, info2; auto.
     inv H3; auto; discriminate. }
   subst gd. exists v; auto.

@@ -167,6 +167,8 @@ let rec convert_builtin_arg tyenv = function
   | BA_addrglobal(id, ofs) -> BA_addrglobal(id, ofs)
   | BA_splitlong(hi, lo) ->
       BA_splitlong(convert_builtin_arg tyenv hi, convert_builtin_arg tyenv lo)
+  | BA_addptr(a1, a2) ->
+      BA_addptr(convert_builtin_arg tyenv a1, convert_builtin_arg tyenv a2)
 
 let convert_builtin_res tyenv = function
   | BR r ->
@@ -185,6 +187,10 @@ let rec constrain_builtin_arg a cl =
       let (hi', cl1) = constrain_builtin_arg hi cl in
       let (lo', cl2) = constrain_builtin_arg lo cl1 in
       (BA_splitlong(hi', lo'), cl2)
+  | BA_addptr(a1, a2), _ ->
+      let (a1', cl1) = constrain_builtin_arg a1 cl in
+      let (a2', cl2) = constrain_builtin_arg a2 cl1 in
+      (BA_addptr(a1', a2'), cl2)
   | _, _ -> (a, cl)
 
 let rec constrain_builtin_args al cl =
@@ -335,6 +341,7 @@ let rec vset_addarg a after =
   match a with
   | BA v -> VSet.add v after
   | BA_splitlong(hi, lo) -> vset_addarg hi (vset_addarg lo after)
+  | BA_addptr(a1, a2) -> vset_addarg a1 (vset_addarg a2 after)
   | _ -> after
 
 let vset_addargs al after = List.fold_right vset_addarg al after
@@ -432,8 +439,8 @@ let rec dce_parmove srcs dsts after =
 
 let rec keep_builtin_arg after = function
   | BA v -> VSet.mem v after
-  | BA_splitlong(hi, lo) ->
-      keep_builtin_arg after hi && keep_builtin_arg after lo
+  | BA_splitlong(a1, a2) | BA_addptr(a1, a2) ->
+      keep_builtin_arg after a1 && keep_builtin_arg after a2
   | _ -> true
 
 let dce_instr instr after k =
@@ -605,6 +612,17 @@ let add_interfs_destroyed g live mregs =
     (fun mr -> VSet.iter (IRC.add_interf g (L (R mr))) live)
     mregs
 
+let add_interfs_caller_save g live =
+  VSet.iter
+    (fun v ->
+       let tv = typeof v in
+       List.iter
+         (fun mr ->
+            if not (is_callee_save mr && subtype tv (callee_save_type mr))
+            then IRC.add_interf g (L (R mr)) v)
+         all_mregs)
+    live
+
 let add_interfs_live g live v =
   VSet.iter (fun v' -> IRC.add_interf g v v') live
 
@@ -622,7 +640,14 @@ let add_interfs_instr g instr live =
   match instr with
   | Xmove(src, dst) | Xspill(src, dst) | Xreload(src, dst) ->
       IRC.add_pref g src dst;
-      add_interfs_move g src dst live
+      add_interfs_move g src dst live;
+      (* Reloads from incoming slots can occur when some 64-bit
+         parameters are split and passed as two 32-bit stack locations. *)
+      begin match src with
+      | L(Locations.S(Incoming, _, _)) -> 
+          add_interfs_def g (vmreg temp_for_parent_frame) live
+      | _ -> ()
+      end
   | Xparmove(srcs, dsts, itmp, ftmp) ->
       List.iter2 (IRC.add_pref g) srcs dsts;
       (* Interferences with live across *)
@@ -636,20 +661,10 @@ let add_interfs_instr g instr live =
       add_interfs_list g ftmp srcs; add_interfs_list g ftmp dsts;
       (* Take into account destroyed reg when accessing Incoming param *)
       if List.exists (function (L(Locations.S(Incoming, _, _))) -> true | _ -> false) srcs
-      then add_interfs_list g (vmreg temp_for_parent_frame) dsts;
-      (* Take into account destroyed reg when initializing Outgoing
-         arguments of type Tsingle *)
-      if List.exists
-           (function (L(Locations.S(Outgoing, _, Tsingle))) -> true | _ -> false) dsts
-      then
-        List.iter
-          (fun mr ->
-            add_interfs_list g (vmreg mr) srcs;
-            IRC.add_interf g (vmreg mr) ftmp)
-          (destroyed_by_setstack Tsingle)
-  | Xop(Ofloatofsingle, arg1::_, res) when Configuration.arch = "powerpc" ->
-      add_interfs_def g res live;
-      IRC.add_pref g arg1 res
+      then begin
+         add_interfs_list g (vmreg temp_for_parent_frame) dsts;
+         add_interfs_live g across (vmreg temp_for_parent_frame)
+      end
   | Xop(op, args, res) ->
       begin match is_two_address op args with
       | None ->
@@ -672,7 +687,7 @@ let add_interfs_instr g instr live =
       begin match vos with
       | Coq_inl v ->  List.iter (fun r -> IRC.add_interf g (vmreg r) v) destroyed_at_indirect_call
       | _ -> () end;
-      add_interfs_destroyed g (vset_removelist res live) destroyed_at_call
+      add_interfs_caller_save g (vset_removelist res live)
   | Xtailcall(sg, Coq_inl v, args) ->
       List.iter (fun r -> IRC.add_interf g (vmreg r) v) (int_callee_save_regs @ destroyed_at_indirect_call)
   | Xtailcall(sg, Coq_inr id, args) ->
@@ -847,6 +862,10 @@ let rec reload_arg tospill eqs = function
       let (hi', c1, eqs1) = reload_arg tospill eqs hi in
       let (lo', c2, eqs2) = reload_arg tospill eqs1 lo in
       (BA_splitlong(hi', lo'), c1 @ c2, eqs2)
+  | BA_addptr(a1, a2) ->
+      let (a1', c1, eqs1) = reload_arg tospill eqs a1 in
+      let (a2', c2, eqs2) = reload_arg tospill eqs1 a2 in
+      (BA_addptr(a1', a2'), c1 @ c2, eqs2)
   | a -> (a, [], eqs)
 
 let rec reload_args tospill eqs = function
@@ -1167,7 +1186,7 @@ and success f alloc =
   let f' = transl_function f alloc in
   if !option_dalloctrace then begin
     fprintf !pp "-------------- Candidate allocation\n\n";
-    PrintLTL.print_function !pp P.one f'
+    PrintLTL.print_function !pp (intern_string "f") f'
   end;
   f'
 

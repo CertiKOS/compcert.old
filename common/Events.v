@@ -1039,7 +1039,7 @@ Proof.
   {
     intros.
     apply Mem.unchanged_on_implies with (fun b1 ofs1 => b1 <> b).
-    apply Mem.unchanged_on_trans with m'. 
+    apply Mem.unchanged_on_trans with m'.
     eapply Mem.alloc_unchanged_on; eauto.
     eapply Mem.store_unchanged_on; eauto.
     intros. eapply Mem.valid_not_valid_diff; eauto with mem.
@@ -1060,7 +1060,7 @@ Proof.
 (* mem extends *)
 - inv H. inv H1. inv H7.
   assert (SZ: v2 = Vptrofs sz).
-  { unfold Vptrofs in *. destruct Archi.ptr64; inv H5; auto. } 
+  { unfold Vptrofs in *. destruct Archi.ptr64; inv H5; auto. }
   subst v2.
   exploit Mem.alloc_extends; eauto. apply Zle_refl. apply Zle_refl.
   intros [m3' [A B]].
@@ -1072,7 +1072,7 @@ Proof.
 (* mem injects *)
 - inv H0. inv H2. inv H8.
   assert (SZ: v' = Vptrofs sz).
-  { unfold Vptrofs in *. destruct Archi.ptr64; inv H6; auto. } 
+  { unfold Vptrofs in *. destruct Archi.ptr64; inv H6; auto. }
   subst v'.
   exploit Mem.alloc_parallel_inject; eauto. apply Zle_refl. apply Zle_refl.
   intros [f' [m3' [b' [ALLOC [A [B [C D]]]]]]].
@@ -1099,7 +1099,7 @@ Proof.
     rewrite <- (Ptrofs.of_int64_to_int64 SF sz0), <- (Ptrofs.of_int64_to_int64 SF sz). congruence.
     rewrite <- (Ptrofs.of_int_to_int SF sz0), <- (Ptrofs.of_int_to_int SF sz). congruence.
   }
-  subst. 
+  subst.
   split. constructor. intuition congruence.
 Qed.
 
@@ -1161,7 +1161,7 @@ Proof.
     eapply Mem.free_range_perm; eauto.
   exploit Mem.address_inject; eauto.
     apply Mem.perm_implies with Freeable; auto with mem.
-    apply P. instantiate (1 := lo). 
+    apply P. instantiate (1 := lo).
     generalize (size_chunk_pos Mptr); omega.
   intro EQ.
   exploit Mem.free_parallel_inject; eauto. intros (m2' & C & D).
@@ -1688,7 +1688,11 @@ Inductive eval_builtin_arg: builtin_arg A -> val -> Prop :=
       eval_builtin_arg (BA_addrglobal id ofs) (Senv.symbol_address ge id ofs)
   | eval_BA_splitlong: forall hi lo vhi vlo,
       eval_builtin_arg hi vhi -> eval_builtin_arg lo vlo ->
-      eval_builtin_arg (BA_splitlong hi lo) (Val.longofwords vhi vlo).
+      eval_builtin_arg (BA_splitlong hi lo) (Val.longofwords vhi vlo)
+  | eval_BA_addptr: forall a1 a2 v1 v2,
+      eval_builtin_arg a1 v1 -> eval_builtin_arg a2 v2 ->
+      eval_builtin_arg (BA_addptr a1 a2)
+                       (if Archi.ptr64 then Val.addl v1 v2 else Val.add v1 v2).
 
 Definition eval_builtin_args (al: list (builtin_arg A)) (vl: list val) : Prop :=
   list_forall2 eval_builtin_arg al vl.
@@ -1698,6 +1702,7 @@ Lemma eval_builtin_arg_determ:
 Proof.
   induction 1; intros v' EV; inv EV; try congruence.
   f_equal; eauto.
+  apply IHeval_builtin_arg1 in H3. apply IHeval_builtin_arg2 in H5. subst; auto. 
 Qed.
 
 Lemma eval_builtin_args_determ:
@@ -1770,6 +1775,10 @@ Proof.
 - destruct IHeval_builtin_arg1 as (vhi' & P & Q).
   destruct IHeval_builtin_arg2 as (vlo' & R & S).
   econstructor; split; eauto with barg. apply Val.longofwords_lessdef; auto.
+- destruct IHeval_builtin_arg1 as (vhi' & P & Q).
+  destruct IHeval_builtin_arg2 as (vlo' & R & S).
+  econstructor; split; eauto with barg. 
+  destruct Archi.ptr64; auto using Val.add_lessdef, Val.addl_lessdef.
 Qed.
 
 Lemma eval_builtin_args_lessdef:
@@ -1812,6 +1821,7 @@ Section EVAL_BUILTIN_ARG_LESSDEF'.
     - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H3.
       2: rewrite H4. auto. intros (v2 & B & C). inv B. auto.
     - apply Val.longofwords_lessdef. eauto. eauto.
+    - destruct Archi.ptr64; auto using Val.add_lessdef, Val.addl_lessdef.
   Qed.
 
   Lemma eval_builtin_args_lessdef':
@@ -1859,6 +1869,10 @@ Section EVAL_BUILTIN_ARG_LESSDEF''.
       decompose [ex and] H3.
       eexists; split; [ constructor; eauto | eauto ].
       apply Val.longofwords_lessdef. eauto. eauto.
+    - edestruct IHarg1 as (vhi' & P & Q); eauto.
+      edestruct IHarg2 as (vlo' & R & S); eauto.
+      econstructor; split; eauto with barg. 
+      destruct Archi.ptr64; auto using Val.add_lessdef, Val.addl_lessdef.
   Qed.
 
   Lemma eval_builtin_args_lessdef'':

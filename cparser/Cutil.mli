@@ -210,6 +210,8 @@ val type_of_member : Env.t -> field -> typ
   (* Return the type of accessing the given field [fld].
      Normally it's [fld.fld_type] but there is a special case for
      small unsigned bitfields. *)
+val is_call_to_fun : exp -> string -> bool
+  (* Test whether the caller is the given function *)
 val is_debug_stmt : stmt -> bool
   (* Is the given statement a call to debug builtin? *)
 val is_literal_0 : exp -> bool
@@ -235,6 +237,8 @@ val field_of_dot_access: Env.t -> typ -> string -> field
   (* Return the field info for a [x.field] access *)
 val field_of_arrow_access: Env.t -> typ -> string -> field
   (* Return the field info for a [x->field] access *)
+val valid_array_size: Env.t -> typ -> int64 -> bool
+  (* Test whether the array size fits in half of the address space *)
 
 (* Constructors *)
 
@@ -285,8 +289,3 @@ val subst_expr: exp IdentMap.t -> exp -> exp
 val subst_init: exp IdentMap.t -> init -> init
 val subst_decl: exp IdentMap.t -> decl -> decl
 val subst_stmt: exp IdentMap.t -> stmt -> stmt
-
-(* Statement properties *)
-
-val contains_return: stmt -> bool
- (* Does the stmt contain a return. *)

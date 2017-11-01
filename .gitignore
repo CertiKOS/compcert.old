@@ -11,7 +11,6 @@
 .*.aux
 *.cmti
 *.cmt
-*.merlin
 # Emacs saves
 *~
 # Executables and configuration
@@ -23,6 +22,8 @@ clightgen.byte
 tools/ndfun
 tools/modorder
 Makefile.config
+.merlin
+_CoqProject
 # Generated files
 .depend
 .depend.extr
@@ -36,11 +37,11 @@ powerpc/SelectLong.v
 arm/ConstpropOp.v
 arm/SelectOp.v
 arm/SelectLong.v
+riscV/ConstpropOp.v
+riscV/SelectOp.v
+riscV/SelectLong.v
 backend/SelectDiv.v
 backend/SplitLong.v
-backend/CMlexer.ml
-backend/CMparser.ml
-backend/CMparser.mli
 cparser/Parser.v
 cparser/Lexer.ml
 cparser/pre_parser.ml
@@ -53,7 +54,6 @@ cparser/handcrafted.messages.raw
 cparser/deLexer
 cparser/tests/generated/*.c
 cparser/tests/generated/*.err
-backend/CMparser.automaton
 lib/Readconfig.ml
 lib/Tokenize.ml
 lib/Responsefile.ml

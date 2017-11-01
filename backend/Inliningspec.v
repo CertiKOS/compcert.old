@@ -63,9 +63,9 @@ Proof.
                               | None => PTree.remove (fst idg) x
                             end) l dm)
               (fold_left add_globdef l fenv)).
-  { induction l; simpl; intros. 
+  { induction l; simpl; intros.
   - auto.
-  - apply IHl. apply ADD; auto. 
+  - apply IHl. apply ADD; auto.
   }
   intros. apply REC. red; intros.  rewrite PTree.gempty in H; discriminate.
 Qed.
@@ -74,8 +74,8 @@ Lemma fenv_compat_linkorder:
   forall cunit prog fenv,
   linkorder cunit prog -> fenv_compat cunit fenv -> fenv_compat prog fenv.
 Proof.
-  intros; red; intros. apply H0 in H1. 
-  destruct (prog_defmap_linkorder _ _ _ _ H H1) as (gd' & P & Q). 
+  intros; red; intros. apply H0 in H1.
+  destruct (prog_defmap_linkorder _ _ _ _ H H1) as (gd' & P & Q).
   inv Q. inv H3. auto.
 Qed.
 
@@ -83,7 +83,7 @@ Qed.
 
 Lemma shiftpos_eq: forall x y, Zpos (shiftpos x y) = (Zpos x + Zpos y) - 1.
 Proof.
-  intros. unfold shiftpos. zify.  rewrite Pos2Z.inj_sub. auto.
+  intros. unfold shiftpos. zify.  try rewrite Pos2Z.inj_sub. auto.
   zify. omega.
 Qed.
 
@@ -713,7 +713,7 @@ Lemma tr_function_linkorder:
   tr_function cunit f f' ->
   tr_function prog f f'.
 Proof.
-  intros. inv H0. econstructor; eauto. eapply fenv_compat_linkorder; eauto. 
+  intros. inv H0. econstructor; eauto. eapply fenv_compat_linkorder; eauto.
 Qed.
 
 Lemma transf_function_spec:

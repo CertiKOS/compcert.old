@@ -98,6 +98,42 @@ Proof.
   intros. inv H; auto.
 Qed.
 
+(** Properties of smart constructors. *)
+
+Lemma eval_Ederef':
+  forall ge e le m a t l ofs,
+  eval_expr ge e le m a (Vptr l ofs) ->
+  eval_lvalue ge e le m (Ederef' a t) l ofs.
+Proof.
+  intros. unfold Ederef'; destruct a; auto using eval_Ederef.
+  destruct (type_eq t (typeof a)); auto using eval_Ederef.
+  inv H.
+- auto. 
+- inv H0.
+Qed.
+
+Lemma typeof_Ederef':
+  forall a t, typeof (Ederef' a t) = t.
+Proof.
+  unfold Ederef'; intros; destruct a; auto. destruct (type_eq t (typeof a)); auto. 
+Qed.
+
+Lemma eval_Eaddrof':
+  forall ge e le m a t l ofs,
+  eval_lvalue ge e le m a l ofs ->
+  eval_expr ge e le m (Eaddrof' a t) (Vptr l ofs).
+Proof.
+  intros. unfold Eaddrof'; destruct a; auto using eval_Eaddrof.
+  destruct (type_eq t (typeof a)); auto using eval_Eaddrof.
+  inv H; auto.
+Qed.
+
+Lemma typeof_Eaddrof':
+  forall a t, typeof (Eaddrof' a t) = t.
+Proof.
+  unfold Eaddrof'; intros; destruct a; auto. destruct (type_eq t (typeof a)); auto. 
+Qed.
+
 (** Translation of simple expressions. *)
 
 Lemma tr_simple_nil:
@@ -215,8 +251,9 @@ Opaque makeif.
 (* addrof *)
   exploit H0; eauto. intros [A [B C]].
   subst sl1; simpl.
-  assert (eval_expr tge e le m (Eaddrof a1 ty) (Vptr b ofs)). econstructor; eauto.
-  destruct dst; auto. simpl; econstructor; eauto.
+  assert (eval_expr tge e le m (Eaddrof' a1 ty) (Vptr b ofs)) by (apply eval_Eaddrof'; auto).
+  assert (typeof (Eaddrof' a1 ty) = ty) by (apply typeof_Eaddrof').
+  destruct dst; auto. simpl; econstructor; eauto.  
 (* unop *)
   exploit H0; eauto. intros [A [B C]].
   subst sl1; simpl.
@@ -252,7 +289,7 @@ Opaque makeif.
     rewrite symbols_preserved; auto.
 (* deref *)
   exploit H0; eauto. intros [A [B C]]. subst sl1.
-  split; auto. split; auto. constructor; auto.
+  split; auto. split. rewrite typeof_Ederef'; auto. apply eval_Ederef'; auto. 
 (* field struct *)
   rewrite <- comp_env_preserved in *.
   exploit H0; eauto. intros [A [B C]]. subst sl1.
@@ -938,6 +975,9 @@ with match_cont_exp : destination -> expr -> Csem.cont -> cont -> Prop :=
   | match_Kdo: forall k a tk,
       match_cont k tk ->
       match_cont_exp For_effects a (Csem.Kdo k) tk
+  | match_Kifthenelse_empty: forall a k tk,
+      match_cont k tk ->
+      match_cont_exp For_val a (Csem.Kifthenelse Csyntax.Sskip Csyntax.Sskip k) (Kseq Sskip tk)
   | match_Kifthenelse_1: forall a s1 s2 k ts1 ts2 tk,
       tr_stmt s1 ts1 -> tr_stmt s2 ts2 ->
       match_cont k tk ->
@@ -1223,7 +1263,11 @@ Proof.
   destruct (Csem.find_label lbl s1 (Csem.Kseq s2 k)) as [[s' k'] | ].
   intros [ts' [tk' [A [B C]]]]. rewrite A. exists ts'; exists tk'; auto.
   intro EQ. rewrite EQ. eapply IHs2; eauto.
-(* if *)
+(* if empty *)
+  rename s' into sr.
+  rewrite (tr_find_label_expression _ _ _ H3).
+  auto.
+(* if not empty *)
   rename s' into sr.
   rewrite (tr_find_label_expression _ _ _ H2).
   exploit (IHs1 k); eauto.
@@ -1984,21 +2028,33 @@ Proof.
   inv H6; inv H7. econstructor; split.
   left. apply plus_one; constructor.
   econstructor; eauto. constructor.
-
 (* ifthenelse *)
   inv H6.
+(* ifthenelse empty *)
+  inv H3. econstructor; split.
+  left. eapply plus_left. constructor. apply push_seq.
+  econstructor; eauto.
+  econstructor; eauto.
+  econstructor; eauto.
+(* ifthenelse non empty *)
   inv H2. econstructor; split.
   left. eapply plus_left. constructor. apply push_seq. traceEq.
   econstructor; eauto. econstructor; eauto.
-
 (* ifthenelse *)
   inv H8.
+(* ifthenelse empty *)
+  exploit tr_top_val_for_val_inv; eauto. intros [A [B C]]. subst.
+  econstructor; split; simpl.
+  right. destruct b; econstructor; eauto.
+  eapply star_left. apply step_skip_seq. econstructor. traceEq.
+  eapply star_left. apply step_skip_seq. econstructor. traceEq.
+  destruct b; econstructor; eauto. econstructor; eauto. econstructor; eauto.
+  (* ifthenelse non empty *)
   exploit tr_top_val_for_val_inv; eauto. intros [A [B C]]. subst.
   econstructor; split.
   left. eapply plus_two. constructor.
   apply step_ifthenelse with (v1 := v) (b0 := b); auto. traceEq.
   destruct b; econstructor; eauto.
-
 (* while *)
   inv H6. inv H1. econstructor; split.
   left. eapply plus_left. constructor.

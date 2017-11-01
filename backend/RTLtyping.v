@@ -77,6 +77,7 @@ Definition type_of_builtin_arg (a: builtin_arg reg) : typ :=
   | BA_loadglobal chunk id ofs => type_of_chunk chunk
   | BA_addrglobal id ofs => Tptr
   | BA_splitlong hi lo => Tlong
+  | BA_addptr a1 a2 => Tptr
   end.
 
 Definition type_of_builtin_res (r: builtin_res reg) : typ :=
@@ -249,6 +250,7 @@ Definition type_builtin_arg (e: S.typenv) (a: builtin_arg reg) (ty: typ) : res S
   | BA_loadglobal chunk id ofs => type_expect e ty (type_of_chunk chunk)
   | BA_addrglobal id ofs => type_expect e ty Tptr
   | BA_splitlong hi lo => type_expect e ty Tlong
+  | BA_addptr a1 a2 => type_expect e ty Tptr
   end.
 
 Fixpoint type_builtin_args (e: S.typenv) (al: list (builtin_arg reg)) (tyl: list typ) : res S.typenv :=
@@ -693,7 +695,7 @@ Proof.
   rewrite A; simpl; rewrite C; simpl.
   rewrite H2; rewrite dec_eq_true.
   replace (tailcall_is_possible sig) with true; auto.
-  symmetry. unfold tailcall_is_possible. apply forallb_forall. 
+  symmetry. unfold tailcall_is_possible. apply forallb_forall.
   intros. apply H3 in H4. destruct x; intuition auto.
 - (* builtin *)
   exploit type_builtin_args_complete; eauto. instantiate (1 := args). intros [e1 [A B]].

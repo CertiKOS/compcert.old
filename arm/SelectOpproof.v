@@ -339,6 +339,16 @@ Proof.
   TrivialExists.
 Qed.
 
+Theorem eval_mulhs: binary_constructor_sound mulhs Val.mulhs.
+Proof.
+  unfold mulhs; red; intros; TrivialExists.
+Qed.
+  
+Theorem eval_mulhu: binary_constructor_sound mulhu Val.mulhu.
+Proof.
+  unfold mulhu; red; intros; TrivialExists.
+Qed.
+  
 Theorem eval_andimm:
   forall n, unary_constructor_sound (andimm n) (fun x => Val.and x (Vint n)).
 Proof.
@@ -881,6 +891,7 @@ Proof.
 - inv H. InvEval. simpl in H6; inv H6. constructor; auto.
 - inv H. InvEval. simpl in H6. rewrite <- Genv.shift_symbol_address_32 in H6 by auto.
   inv H6. constructor; auto.
+- inv H. repeat constructor; auto.
 - constructor; auto.
 Qed.
 

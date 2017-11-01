@@ -58,7 +58,7 @@ Proof.
 Qed.
 
 Instance Decidable_eq_mreg : forall (x y: mreg), Decidable (eq x y) := Decidable_eq mreg_eq.
-  
+
 Instance Finite_mreg : Finite mreg := {
   Finite_elements := all_mregs;
   Finite_elements_spec := all_mregs_complete
@@ -151,7 +151,7 @@ Definition destroyed_by_store (chunk: memory_chunk) (addr: addressing): list mre
   match chunk with
   | Mint8signed | Mint8unsigned => if Archi.ptr64 then nil else AX :: CX :: nil
   | _ => nil
-  end. 
+  end.
 
 Definition destroyed_by_cond (cond: condition): list mreg :=
   nil.
@@ -358,9 +358,9 @@ Definition two_address_op (op: operation) : bool :=
 Definition builtin_constraints (ef: external_function) :
                                        list builtin_arg_constraint :=
   match ef with
-  | EF_vload _ => OK_addrany :: nil
-  | EF_vstore _ => OK_addrany :: OK_default :: nil
-  | EF_memcpy _ _ => OK_addrany :: OK_addrany :: nil
+  | EF_vload _ => OK_addressing :: nil
+  | EF_vstore _ => OK_addressing :: OK_default :: nil
+  | EF_memcpy _ _ => OK_addrstack :: OK_addrstack :: nil
   | EF_annot txt targs => map (fun _ => OK_all) targs
   | EF_debug kind txt targs => map (fun _ => OK_all) targs
   | _ => nil

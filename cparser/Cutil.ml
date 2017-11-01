@@ -447,9 +447,9 @@ let rec alignof env t =
   | TFun(_, _, _, _) -> !config.alignof_fun
   | TNamed(_, _) -> alignof env (unroll env t)
   | TStruct(name, _) ->
-      let ci = Env.find_struct env name in ci.ci_alignof
+    let ci = Env.find_struct env name in ci.ci_alignof
   | TUnion(name, _) ->
-      let ci = Env.find_union env name in ci.ci_alignof
+    let ci = Env.find_union env name in ci.ci_alignof
   | TEnum(_, _) -> Some(alignof_ikind enum_ikind)
 
 (* Compute the natural alignment of a struct or union. *)
@@ -641,6 +641,17 @@ let int_representable v nbits sgn =
     let p = Int64.shift_left 1L (nbits - 1) in Int64.neg p <= v && v < p
   else
     0L <= v && v < Int64.shift_left 1L nbits
+
+let valid_array_size env ty v =
+  match sizeof env ty with
+  | None -> true (* Incomplete type should be caught later *)
+  | Some sz ->
+    let sz = Int64.of_int sz in
+    let ptr_bits = !Machine.config.sizeof_ptr * 8 - 1 in
+    if sz = 0L || v <= (Int64.div Int64.max_int sz) then
+      int_representable (Int64.mul sz v) ptr_bits true
+    else
+      false
 
 (* Type of a function definition *)
 
@@ -954,6 +965,10 @@ let is_debug_stmt s =
       is_debug_call e
   | _ -> false
 
+let is_call_to_fun e s =
+  match e.edesc with
+  | EVar id -> id.C.name = s
+  | _ -> false
 
 (* Assignment compatibility check over attributes.
    Standard attributes ("const", "volatile", "restrict") can safely
@@ -1179,24 +1194,3 @@ let rec subst_stmt phi s =
                List.map subst_asm_operand inputs,
                clob)
   }
-
-let contains_return s =
-  let rec aux s =
-    match s.sdesc with
-    | Sskip
-    | Sbreak
-    | Scontinue
-    | Sdo _
-    | Sdecl _
-    | Sasm _
-    | Sgoto _ -> false
-    | Sif(_, s1, s2)
-    | Sseq(s1, s2) -> aux s1 || aux s2
-    | Sswitch (_, s)
-    | Slabeled (_, s)
-    | Swhile (_, s)
-    | Sdowhile(s, _ ) -> aux s
-    | Sfor(s1, _ , s2, s3) ->  aux s1 || aux s2 || aux s3
-    | Sreturn _ -> true
-    | Sblock sl -> List.fold_left (fun acc s -> acc || aux s) false sl in
-  aux s

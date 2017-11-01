@@ -32,7 +32,7 @@ all_gcc: $(PROGS:%=%.gcc)
 
 test:
 	@for i in $(PROGS); do \
-	   if ./$$i.compcert | cmp -s - Results/$$i; \
+	   if $(SIMU) ./$$i.compcert | cmp -s - Results/$$i; \
            then echo "$$i: passed"; \
            else echo "$$i: FAILED"; exit 2; \
 	   fi; \
@@ -54,17 +54,6 @@ bench_gcc:
 bench:
 	@for i in $(PROGS); do \
 	   echo -n "$$i: "; $(TIME) ./$$i.compcert; \
-         done
-
-cminor_roundtrip:
-	@for i in $(PROGS); do \
-	   $(CCOMP) -dcminor -S $$i.c; \
-	   cp $$i.cm $$i.1.cm; \
-           $(CCOMP) -dcminor -S $$i.cm; \
-           if cmp -s $$i.1.cm $$i.cm; \
-           then echo "$$i: round trip passed"; rm -f $$i.1.cm $$i.cm; \
-           else echo "$$i: round trip FAILED"; diff -u $$i.1.cm $$i.cm; \
-           fi; \
          done
 
 clean:
