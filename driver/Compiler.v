@@ -170,10 +170,15 @@ Definition transf_c_program (p: Csyntax.program) : res Asm.program :=
   @@@ time "Clight generation" SimplExpr.transl_program
   @@@ transf_clight_program.
 
+
+Definition transf_cminor_program_ex (p: Cminor.program) : res Asm.program :=
+  OK p
+  @@@ transf_cminor_program
+  @@ time "Asm Expand" AsmExpand.transf_program.
+
 Definition transf_c_program_ex (p: Csyntax.program) : res Asm.program :=
   OK p
-  @@@ time "Clight generation" SimplExpr.transl_program
-  @@@ transf_clight_program
+  @@@ transf_c_program
   @@ time "Asm Expand" AsmExpand.transf_program.
 
 
