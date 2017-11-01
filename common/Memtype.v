@@ -2191,6 +2191,35 @@ Proof.
   intros; erewrite store_no_abstract; eauto. tauto.
 Qed.
 
+
+Context {injperm: InjectPerm}.
+
+Lemma frameinj_order_strict_0:
+  forall g j m1 m2,
+    inject j g m1 m2 ->
+    frameinj_order_strict g ->
+    forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat.
+Proof.
+  intros. eapply inject_stack_adt in H. 
+  eapply frameinj_order_strict_stack_inject0; eauto.
+Qed.
+
+
+Lemma frameinj_order_strict_pop:
+  forall g j m1 m2,
+    Mem.inject j g m1 m2 ->
+    frameinj_order_strict g ->
+    frameinj_order_strict (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))).
+Proof.
+  red; intros g j m1 m2 INJ. intros.
+  unfold option_map in H1, H2.
+  destr_in H1; destr_in H2. inv H1; inv H2.
+  exploit H. 2: exact Heqo. 2: exact Heqo0. omega. intros.
+  eapply frameinj_order_strict_0 in Heqo; eauto. omega. omega.
+Qed.
+
+
+
 End WITHMEMORYMODEL.
 
 End Mem.

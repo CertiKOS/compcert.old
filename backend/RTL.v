@@ -287,7 +287,7 @@ Inductive step : state -> trace -> state -> Prop :=
   | exec_function_internal:
       forall s f args m m' stk m'' sz,
         Mem.alloc m 0 f.(fn_stacksize) = (m', stk) ->
-        Mem.record_stack_blocks m' (Some (frame_with_info stk None)) sz = Some m'' ->
+        Mem.record_stack_blocks m' (stk::nil, None,sz) m'' ->
       step (Callstate s (Internal f) args m sz)
         E0 (State s
                   f

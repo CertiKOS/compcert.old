@@ -2090,4 +2090,47 @@ predicate that represents the permissions for the source memory [m1] in which
     - intros. eapply stack_inject_not_in_frames0; eauto. 
   Qed.
 
+  Definition frameinj_order_strict (g: frameinj) :=
+    forall i1 i2 i1' i2',
+      (i1 < i2)%nat ->
+      g i1 = Some i1' ->
+      g i2 = Some i2' ->
+      (i1' < i2')%nat.
+
+  Lemma frameinj_order_strict_stack_inject0:
+    forall g j P s1 s2,
+      stack_inject j g P s1 s2 ->
+      frameinj_order_strict g ->
+      forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat.
+  Proof.
+    intros.
+    inv H.
+    edestruct (stack_inject_exists_l0 O). apply stack_inject_range0 in H1; omega.
+    exploit H0. apply H2. eauto. eauto. omega.
+  Qed.
+
+  Lemma frameinj_order_strict_push g:
+    frameinj_order_strict g ->
+    frameinj_order_strict
+      (fun n : nat => if Nat.eq_dec n 0 then Some 0%nat else option_map Datatypes.S (g (Init.Nat.pred n))).
+  Proof.
+    red; intros.
+    unfold option_map in *.
+    repeat destr_in H1; repeat destr_in H2.
+    - omega.
+    - omega.
+    - exploit H. 2: exact Heqo. 2: exact Heqo0. omega. omega.
+  Qed.
+
+  Lemma frameinj_order_strict_flat:
+    forall n,
+      frameinj_order_strict (flat_frameinj n).
+  Proof.
+    unfold flat_frameinj; red; intros.
+    repeat destr_in H0; repeat destr_in H1.
+  Qed.
+
+
+
+
 End INJ.

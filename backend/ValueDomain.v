@@ -3669,7 +3669,7 @@ Qed.
 
 Lemma romatch_record:
   forall m m' fi rm n1,
-  Mem.record_stack_blocks m fi n1  = Some m' ->
+  Mem.record_stack_blocks m fi m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
