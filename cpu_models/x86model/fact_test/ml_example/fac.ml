@@ -115,11 +115,11 @@ let fac_elf_header = create_386_exec_elf_header 0x80480ca 52 244 2 4 3
 let fac_text_seg =
   {
     p_type     = PT_LOAD;
-    p_offset   = 0;
-    p_vaddr    = 0x08048000;
-    p_paddr    = 0x08048000;
-    p_filesz   = 0xd8;
-    p_memsz    = 0xd8;
+    p_offset   = 0x74;
+    p_vaddr    = 0x08048074;
+    p_paddr    = 0x08048074;
+    p_filesz   = 0x64;
+    p_memsz    = 0x64;
     p_flags    = [PF_EXEC; PF_READ];
     p_align    = 0x1000
   }
