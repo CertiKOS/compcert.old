@@ -1,6 +1,6 @@
 (** * Define a series of augmented MSets. *)
 
-Require Coqlib.
+Require RSCoqlib.
 Require Import CommonTacs.
 Set Implicit Arguments.
 
@@ -118,14 +118,14 @@ Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
     M.elements s1 = M.elements s2 ++ M.elements s3 
       -> M.Subset s2 s1.
   Proof. intros; apply inclA_subset. rewrite H.
-    eapply Coqlib.inclA_app_l. apply M.E.eq_equiv.
+    eapply RSCoqlib.inclA_app_l. apply M.E.eq_equiv.
   Qed.
 
   Lemma elements_app_subset2 s1 s2 s3:
     M.elements s1 = M.elements s2 ++ M.elements s3 
       -> M.Subset s3 s1.
   Proof. intros; apply inclA_subset. rewrite H.
-    eapply Coqlib.inclA_app_r. apply M.E.eq_equiv.
+    eapply RSCoqlib.inclA_app_r. apply M.E.eq_equiv.
   Qed.
 
   Lemma elements_app_disjoint s s1 s2: 
@@ -136,7 +136,7 @@ Module WMoreProperties (M:WSets) : WMOREPROPERTIES M.
     apply M.elements_spec1 in H1.
     generalize (M.elements_spec2w s). intro.
     rewrite H in H2.
-    generalize (Coqlib.NoDupA_app_if M.E.eq_equiv H2). 
+    generalize (RSCoqlib.NoDupA_app_if M.E.eq_equiv H2). 
     crush_hyp.
   Qed.
     

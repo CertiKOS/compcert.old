@@ -27,7 +27,9 @@ DIRS=lib common $(ARCHDIRS) backend cfrontend driver debug\
 
 RECDIRS=lib common $(ARCHDIRS) backend cfrontend driver flocq exportclight cparser
 
-COQINCLUDES=$(foreach d, $(RECDIRS), -R $(d) compcert.$(d))
+COQINCLUDES=$(foreach d, $(RECDIRS), -R $(d) compcert.$(d)) \
+	-R cpu_models/shared Shared \
+	-R cpu_models/x86model/Model X86Model
 
 COQC="$(COQBIN)coqc" -q $(COQINCLUDES) $(COQCOPTS)
 COQDEP="$(COQBIN)coqdep" $(COQINCLUDES)
@@ -206,19 +208,6 @@ tools/modorder: tools/modorder.ml
 latexdoc:
 	cd doc; $(COQDOC) --latex -o doc/doc.tex -g $(FILES)
 
-# Rule for compiling rocksalt assembly
-# We put it before the ordinary rules so that it will be used first
-COQINCLUDES_RS=$(COQINCLUDES) \
-	-R cpu_models/shared Shared \
-	-R cpu_models/x86model/Model X86Model
-COQC_RS="$(COQBIN)coqc" -q $(COQINCLUDES_RS) $(COQCOPTS)
-
-RockSalt%.vo: RockSalt%.v
-	@rm -f doc/RockSalt$(*F).glob
-	@echo "COQC_RS $<"
-	@$(COQC_RS) -dump-glob doc/RockSalt$(*F).glob $<
-
-# Rules for compiling ordinary .vo files
 %.vo: %.v
 	@rm -f doc/$(*F).glob
 	@echo "COQC $*.v"

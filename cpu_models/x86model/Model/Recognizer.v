@@ -784,7 +784,7 @@ Module RESetSet.
 
   (** Given an element e, find its index in the set *)
   Definition get_index (e:elt) (s:t) : option nat :=
-    Coqlib.find_index E.eq E.eq_dec e (elements s).
+    RSCoqlib.find_index E.eq E.eq_dec e (elements s).
 
   (** add set s2 to s1; when they are disjoint, the elments
      of the resulting set should be (elements s1) ++ (elements s2) *)
@@ -894,7 +894,7 @@ Module RESetSet.
   Lemma get_element_some_lt: forall n s e,
     get_element n s = Some e -> n < cardinal s.
   Proof. unfold get_element, cardinal, Raw.cardinal. 
-     eauto using Coqlib.nth_error_some_lt.
+     eauto using RSCoqlib.nth_error_some_lt.
   Qed.
 
   Lemma get_element_eq: forall s1 s2 n,
@@ -905,7 +905,7 @@ Module RESetSet.
     elements_ext s1 s2 -> n < cardinal s1
       -> get_element n s2 = get_element n s1.
   Proof. unfold elements_ext, get_element. intros. sim.
-    rewrite H. generalize Coqlib.nth_error_app_lt. crush.
+    rewrite H. generalize RSCoqlib.nth_error_app_lt. crush.
   Qed. 
 
   Lemma get_element_add: forall n s e1 e,
@@ -924,15 +924,15 @@ Module RESetSet.
   Qed.
 
   Lemma get_index_spec: forall e s n,
-    get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
+    get_index e s = Some n <-> RSCoqlib.first_occur E.eq e (elements s) n.
   Proof. unfold get_index; intros.
-    apply Coqlib.find_index_spec. 
+    apply RSCoqlib.find_index_spec. 
   Qed.
 
   Lemma get_index_none: forall e s,
     get_index e s = None -> mem e s = false.
   Proof. unfold get_index. intros.
-    apply Coqlib.find_index_none in H.
+    apply RSCoqlib.find_index_none in H.
     apply negb_true_iff. unfold negb.
     remember_destruct_head as mm; try trivial.
       apply POW.MM.mem_spec in Hmm.
@@ -944,14 +944,14 @@ Module RESetSet.
     get_index e s = Some n -> 
     exists e', get_element n s = Some e' /\ E.eq e e'.
   Proof. intros. apply get_index_spec in H.
-    unfold Coqlib.first_occur in H. crush.
+    unfold RSCoqlib.first_occur in H. crush.
   Qed.
 
   Lemma get_index_some_lt: forall e s n,
     get_index e s = Some n -> n < cardinal s.
   Proof. intros. apply get_index_spec in H.
-    unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
-    apply Coqlib.nth_error_some_lt in H2. auto.
+    unfold RSCoqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
+    apply RSCoqlib.nth_error_some_lt in H2. auto.
   Qed.
 
   Lemma get_index_add_monotone: forall e e1 s n,
@@ -969,18 +969,18 @@ Module RESetSet.
       SCase "->". 
         use_lemma get_index_some_lt by eassumption.
         apply get_index_spec in H0. 
-        unfold Coqlib.first_occur in H0. sim. trivial.
-        apply get_index_spec; unfold Coqlib.first_occur.
-        rewrite H. rewrite Coqlib.firstn_eq_lt by trivial.
+        unfold RSCoqlib.first_occur in H0. sim. trivial.
+        apply get_index_spec; unfold RSCoqlib.first_occur.
+        rewrite H. rewrite RSCoqlib.firstn_eq_lt by trivial.
         split; [crush | idtac].
-          exists x. rewrite Coqlib.nth_error_app_lt by trivial. crush.
+          exists x. rewrite RSCoqlib.nth_error_app_lt by trivial. crush.
       SCase "<-".
         sim. apply get_index_spec in H1. apply get_index_spec.
-        unfold Coqlib.first_occur in *.
+        unfold RSCoqlib.first_occur in *.
         sim. 
-          erewrite <- Coqlib.firstn_eq_lt by trivial.
+          erewrite <- RSCoqlib.firstn_eq_lt by trivial.
             rewrite H in H1. eassumption.
-          exists x. erewrite <- Coqlib.nth_error_app_lt by trivial.
+          exists x. erewrite <- RSCoqlib.nth_error_app_lt by trivial.
             rewrite H in H2. crush.
   Qed.
 
@@ -1028,7 +1028,7 @@ Section DFA.
     dfa_rejects : list bool
   }.
 
-  Hint Rewrite Coqlib.nth_error_app_eq using omega.
+  Hint Rewrite RSCoqlib.nth_error_app_eq using omega.
 
   (** A state is a set of regexps, corresponding to partial derivatives of
       the starting regexp w.r.t. some word. *)
@@ -1162,13 +1162,13 @@ Section DFA.
         destruct s as [s H4]. simpl in *.
         split.
           apply H2.
-          apply Coqlib.nth_error_in in H4.
+          apply RSCoqlib.nth_error_in in H4.
           assert (InA RESet.Equal s (RESS.elements ss)).
             apply In_InA. apply RESet.eq_equiv. assumption.
           apply RESS.elements_spec1. trivial.
         trivial.
     Case "n>=|ss|".
-      apply Coqlib.nth_error_none in H. trivial.
+      apply RSCoqlib.nth_error_none in H. trivial.
   Defined.
 
   Opaque RESS.elements. 
@@ -1199,7 +1199,7 @@ Section DFA.
     rewrite app_ass.
     assert (H12:cardinal_wfs ss = length (RESS.elements (proj1_sig ss))).
       unfold cardinal_wfs. rewrite POW.MM.cardinal_spec. omega.
-    rewrite Coqlib.nth_error_app_eq by crush.
+    rewrite RSCoqlib.nth_error_app_eq by crush.
     rewrite <- app_comm_cons. 
     crush.
   Qed.
@@ -1514,7 +1514,7 @@ Section DFA.
         remember_destruct_head as ne; [idtac | crush].
         intros.
         apply RESS.get_element_some_lt in Hge.
-        apply Coqlib.nth_error_some_lt in Hne.
+        apply RSCoqlib.nth_error_some_lt in Hne.
         crush.
   Qed.
 
@@ -1540,7 +1540,7 @@ Section DFA.
     destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H4)); sim.
     Case "i<n".
       rewrite (get_element_wfs_ext H6) by omega.
-      rewrite Coqlib.nth_error_app_lt by omega.
+      rewrite RSCoqlib.nth_error_app_lt by omega.
       use_lemma H1 by eassumption.
       remember_destruct_head as ge; [idtac | crush].
       remember_destruct_head as ne; [idtac | crush].
@@ -1652,7 +1652,7 @@ Section DFA.
         | None => False
       end.
 
-  Hint Rewrite Coqlib.list_length_map.
+  Hint Rewrite RSCoqlib.list_length_map.
 
   (** [build_dfa] is correct. *)
   Lemma build_dfa_wf: wf_dfa build_dfa.
@@ -1668,25 +1668,25 @@ Section DFA.
     use_lemma H1 by crush.
     remember_destruct_head as ge; [idtac | false_elim].
     remember_destruct_head in H3 as ne; [idtac | false_elim].
-    split. erewrite Coqlib.nth_error_some_nth by eassumption; crush.
+    split. erewrite RSCoqlib.nth_error_some_nth by eassumption; crush.
     split.
     Case "accept states correct".
       change false with (reset_nullable RESet.empty).
       rewrite map_nth.
-      erewrite Coqlib.nth_error_some_nth by eassumption.
+      erewrite RSCoqlib.nth_error_some_nth by eassumption.
       apply reset_nullable_corr.
     split.
     Case "reject states correct".
       change false with (reset_always_rejects (RESet.singleton rEps)).
       rewrite map_nth.
-      erewrite Coqlib.nth_error_some_nth by eassumption.
+      erewrite RSCoqlib.nth_error_some_nth by eassumption.
       apply reset_always_rejects_corr.
     Case "invariant forall j, ...".
       intros. destruct H3 as [H5 H6].
       use_lemma H6 by eassumption.
       remember_destruct_head in H3 as ge2; [idtac | false_elim].
       assert (H8: nth i rows nil = l).
-        auto using Coqlib.nth_error_some_nth. 
+        auto using RSCoqlib.nth_error_some_nth. 
       rewrite H8.
       use_lemma RESS.get_element_some_lt by eassumption.
       split. assumption.
@@ -1793,7 +1793,7 @@ Section DFA_RECOGNIZE.
               (wpdrv (flat_map token_id_to_chars (ts1 ++ (a::nil)))
                      (proj1_sig (ini_state r)))).
         rewrite H17.
-        rewrite Coqlib.flat_map_app. rewrite wpdrv_app.
+        rewrite RSCoqlib.flat_map_app. rewrite wpdrv_app.
         change (flat_map token_id_to_chars (a :: nil)) with
           (token_id_to_chars a ++ nil).
         rewrite app_nil_r.
@@ -1861,12 +1861,12 @@ Section DFA_RECOGNIZE.
     use_lemma dfa_loop_run by eassumption. 
     destruct H1 as [ts1 H1]. sim.
     exists ts1. crush.
-      apply Coqlib.Forall_app in H0. destruct H0.
+      apply RSCoqlib.Forall_app in H0. destruct H0.
         generalize (run_dfa_corr _ H H0).
         remember_destruct_head as rd; crush.
       use_lemma H4 by eassumption.
         rewrite H2 in H0.
-        apply Coqlib.Forall_app in H0. destruct H0.
+        apply RSCoqlib.Forall_app in H0. destruct H0.
         generalize (run_dfa_corr _ H H0).
         remember_destruct_head as rd; crush.
   Qed.

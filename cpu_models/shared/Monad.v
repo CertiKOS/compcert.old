@@ -9,7 +9,7 @@
    the License, or (at your option) any later version.
 *)
 
-Require Import Coqlib.
+Require Import RSCoqlib.
 
 Set Implicit Arguments.
 

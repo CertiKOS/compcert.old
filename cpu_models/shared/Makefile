@@ -1,5 +1,5 @@
 
-MODULES := Coqlib CommonTacs Maps Bits Monad Vector MSetsMore RTL FloatingAux
+MODULES := RSCoqlib CommonTacs RSMaps Bits Monad Vector MSetsMore RSRTL FloatingAux
 VS 	:= $(MODULES:%=%.v)
 
 .PHONY: coq clean

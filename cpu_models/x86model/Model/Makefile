@@ -1,4 +1,4 @@
-MODULES := X86Syntax ParserArg Xform Regexp RESet GrammarType Grammar BiGrammar Parser Recognizer X86BG_ins X86BG Encode X86Semantics SemTests Decode
+MODULES := X86Syntax ParserArg Xform Regexp RESet GrammarType RSGrammar BiGrammar Parser Recognizer X86BG_ins X86BG Encode X86Semantics SemTests Decode
 # CheckDeterministic
 VS 	:= $(MODULES:%=%.v)
 

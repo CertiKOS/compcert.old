@@ -4,7 +4,7 @@ Require Import Coq.MSets.MSetAVL.
 Require Import Coq.Structures.OrdersAlt.
 
 Require Import CommonTacs.
-Require Import Coqlib.  (* for proof_irrelevance *)
+Require Import RSCoqlib.  (* for proof_irrelevance *)
 
 Require Import Xform.
 Require Import Regexp.

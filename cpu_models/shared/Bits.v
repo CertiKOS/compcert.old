@@ -26,7 +26,7 @@
         
 
 
-Require Import Coqlib.
+Require Import RSCoqlib.
 Require Import Coq.ZArith.Znumtheory.
 Require Import Coq.Classes.Morphisms.
 Local Open Scope Z_scope.
@@ -180,7 +180,7 @@ Definition bool_to_int (b : bool) :=
 
 Definition unsigned_overflow(o1 o2: Z) :=
  let res := o1 + o2 in 
- if Coqlib.zlt res modulus then 
+ if RSCoqlib.zlt res modulus then 
    false
  else
    true.
@@ -536,7 +536,7 @@ Lemma int_eq_true_iff :
   forall i1 i2, eq i1 i2 = true <-> unsigned i1 = unsigned i2.
 Proof. intros; split. 
   intro H. apply int_eq_true_iff2 in H. rewrite H; trivial.
-  intro H. unfold eq. rewrite H. apply Coqlib.zeq_true.
+  intro H. unfold eq. rewrite H. apply RSCoqlib.zeq_true.
 Qed.
 
 Lemma int_eq_unsigned :
@@ -584,13 +584,13 @@ Lemma int_ltu_true_iff :
 Proof. intros. split. apply int_ltu_inv.
   intro H. unfold ltu. 
     destruct (zlt (unsigned i1) (unsigned i2)). trivial. 
-    Coqlib.omegaContradiction.
+    RSCoqlib.omegaContradiction.
 Qed.
 
 Lemma int_ltu_false_iff :
   forall i1 i2, ltu i1 i2 = false <-> (unsigned i1 >= unsigned i2)%Z.
 Proof. intros. 
-  split; unfold ltu; destruct (Coqlib.zlt (unsigned i1) (unsigned i2)); 
+  split; unfold ltu; destruct (RSCoqlib.zlt (unsigned i1) (unsigned i2)); 
     congruence.
 Qed.
 
@@ -2079,9 +2079,9 @@ Proof.
   unfold and; intros. apply bitwise_binop_shru. reflexivity.
 Qed.
 
-(* The following is basically the same as Zdiv_interval_2 as found in Coqlib.v
+(* The following is basically the same as Zdiv_interval_2 as found in RSCoqlib.v
    but the version in that file has the condition hi > 0, which seems needlessly strong
-   There seems to be a different version of Coqlib.v that has hi >= 0, as we do here,
+   There seems to be a different version of RSCoqlib.v that has hi >= 0, as we do here,
    but I didn't want to just change it and potentially break some other dependency. -JDT *)
 
 Lemma Zdiv_interval_3:

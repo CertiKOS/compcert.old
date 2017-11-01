@@ -30,7 +30,7 @@ Require Ctyping.
 Require Clight.
 Require Compiler.
 Require Cexecimpl.
-Require Parser.
+Require cparser.Parser.
 Require Initializers.
 Require Int31.
 

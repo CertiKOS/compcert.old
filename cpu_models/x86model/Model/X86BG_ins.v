@@ -10,9 +10,9 @@ Require Import Coq.Strings.String.
 Require Import Coq.Classes.Morphisms.
 Require Import Coq.Program.Program.
 
-Require Import Coqlib.
+Require Import RSCoqlib.
 Require Import CommonTacs.
-Require Import Shared.Maps.
+Require Import Shared.RSMaps.
 
 Unset Automatic Introduction.
 Set Implicit Arguments.

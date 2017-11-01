@@ -16,7 +16,7 @@ Require Import Coq.Lists.SetoidList.
 Require Import Coq.Arith.Arith.
 
 Require Export Xform.
-Require Export Grammar.
+Require Export RSGrammar.
 
 Require Import Shared.MSetsMore.
 Require Shared.Vector.
@@ -26,7 +26,7 @@ Require Import ParserArg.
 (* Import X86_PARSER_ARG. *)
 
 Require Import CommonTacs.
-Require Import Coqlib.
+Require Import RSCoqlib.
 Set Implicit Arguments.
 
 Local Ltac false_elim :=
@@ -201,7 +201,7 @@ Proof. intros.
     apply in_re_set_xform_elim2 in H0. 
     destruct H0 as [v1 H0]. 
     xinterp_simpl. sim. 
-    apply Coqlib.list_in_map_inv in H1. crush.
+    apply RSCoqlib.list_in_map_inv in H1. crush.
   Case "<-". destruct H0 as [v H0]. sim.
     subst rx.
     apply in_re_set_xform_elim2 in H0.
@@ -623,16 +623,16 @@ Section PDRV_CORRECT.
           match goal with
             | [H:In v (map inl _ ++ map inr _) |- _] =>
               apply in_app_or in H; destruct H;
-              apply Coqlib.list_in_map_inv in H; crush
+              apply RSCoqlib.list_in_map_inv in H; crush
           end.
       SCase "true false".
         xinterp_simpl. crush.
           in_regexp_inv; find_contra.
-          apply Coqlib.list_in_map_inv in H. crush.
+          apply RSCoqlib.list_in_map_inv in H. crush.
       SCase "false true".
         xinterp_simpl. crush. 
           in_regexp_inv; find_contra.
-          apply Coqlib.list_in_map_inv in H. crush.
+          apply RSCoqlib.list_in_map_inv in H. crush.
       SCase "false false".
         intros. intro. in_regexp_inv; crush_hyp.
     Case "Star". simpl. 
@@ -739,7 +739,7 @@ Section PDRV_CORRECT.
       SCase "<-". 
         destruct H;
           apply in_re_set_xform_elim2 in H; sim;
-          xinterp_simpl; apply Coqlib.list_in_map_inv in H0;
+          xinterp_simpl; apply RSCoqlib.list_in_map_inv in H0;
           sim; [eapply InrAlt_l | eapply InrAlt_r]; crush.
     Case "Star". simpl; intros.
       rewrite in_re_set_xform_comp2.
@@ -781,9 +781,9 @@ Proof. intros.
       apply in_re_set_xform_elim2 in H2. destruct H2 as [v1 H2].
       exists v1. 
       split; [crush | idtac].
-      xinterp_simpl. apply Coqlib.in_flatten_iff; crush.
+      xinterp_simpl. apply RSCoqlib.in_flatten_iff; crush.
     Case "<-". destruct H as [v' [H2 H4]].
-      xinterp_simpl. apply Coqlib.in_flatten_iff in H4.
+      xinterp_simpl. apply RSCoqlib.in_flatten_iff in H4.
       destruct H4 as [l [H4 H6]].
       apply in_map_iff in H4. destruct H4 as [v1 [H4 H8]].
       exists v1. rewrite pdrv_corr. crush.
@@ -949,7 +949,7 @@ Module RESetSet.
 
   (** Given an element e, find its index in the set *)
   Definition get_index (e:elt) (s:t) : option nat :=
-    Coqlib.find_index E.eq E.eq_dec e (elements s).
+    RSCoqlib.find_index E.eq E.eq_dec e (elements s).
 
   (** add set s2 to s1; when they are disjoint, the elments
      of the resulting set should be (elements s1) ++ (elements s2) *)
@@ -1072,7 +1072,7 @@ Module RESetSet.
   Lemma get_element_some_lt: forall n s e,
     get_element n s = Some e -> n < cardinal s.
   Proof. unfold get_element, cardinal, Raw.cardinal. 
-     eauto using Coqlib.nth_error_some_lt.
+     eauto using RSCoqlib.nth_error_some_lt.
   Qed.
 
   Lemma get_element_eq: forall s1 s2 n,
@@ -1083,7 +1083,7 @@ Module RESetSet.
     elements_ext s1 s2 -> n < cardinal s1
       -> get_element n s2 = get_element n s1.
   Proof. unfold elements_ext, get_element. intros. sim.
-    rewrite H. generalize Coqlib.nth_error_app_lt. crush.
+    rewrite H. generalize RSCoqlib.nth_error_app_lt. crush.
   Qed. 
 
   Lemma get_element_add: forall n s e1 e,
@@ -1102,15 +1102,15 @@ Module RESetSet.
   Qed.
 
   Lemma get_index_spec: forall e s n,
-    get_index e s = Some n <-> Coqlib.first_occur E.eq e (elements s) n.
+    get_index e s = Some n <-> RSCoqlib.first_occur E.eq e (elements s) n.
   Proof. unfold get_index; intros.
-    apply Coqlib.find_index_spec.
+    apply RSCoqlib.find_index_spec.
   Qed.
 
   Lemma get_index_none: forall e s,
     get_index e s = None -> mem e s = false.
   Proof. unfold get_index. intros.
-    apply Coqlib.find_index_none in H.
+    apply RSCoqlib.find_index_none in H.
     apply negb_true_iff. unfold negb.
     remember_destruct_head as mm; try trivial.
       apply POW.MM.mem_spec in Hmm.
@@ -1122,7 +1122,7 @@ Module RESetSet.
     get_index e s = Some n -> 
     exists e', get_element n s = Some e' /\ E.eq e e'.
   Proof. intros. apply get_index_spec in H.
-    unfold Coqlib.first_occur in H. crush.
+    unfold RSCoqlib.first_occur in H. crush.
   Qed.
 
   Lemma get_index_none_get_element e s: 
@@ -1132,23 +1132,23 @@ Module RESetSet.
     unfold get_element. 
     rewrite add_elements_2 by assumption.
     rewrite cardinal_spec.
-    rewrite Coqlib.nth_error_app_eq by trivial.
+    rewrite RSCoqlib.nth_error_app_eq by trivial.
     trivial.
   Qed.
 
   Lemma get_index_some_lt: forall e s n,
     get_index e s = Some n -> n < cardinal s.
   Proof. intros. apply get_index_spec in H.
-    unfold Coqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
-    apply Coqlib.nth_error_some_lt in H2. auto.
+    unfold RSCoqlib.first_occur in H. destruct H as [_ [y [H2 _]]].
+    apply RSCoqlib.nth_error_some_lt in H2. auto.
   Qed.
 
   Lemma get_index_ext s1 s2 e n:
     elements_ext s1 s2 -> get_index e s1 = Some n ->
     get_index e s2 = Some n.
   Proof. unfold elements_ext, get_index.
-    repeat (rewrite Coqlib.find_index_spec by apply E.eq_equiv).
-    generalize Coqlib.first_occur_app. crush.
+    repeat (rewrite RSCoqlib.find_index_spec by apply E.eq_equiv).
+    generalize RSCoqlib.first_occur_app. crush.
   Qed.
 
   Lemma get_index_add_monotone: forall e e1 s n,
@@ -1166,18 +1166,18 @@ Module RESetSet.
       SCase "->". 
         use_lemma get_index_some_lt by eassumption.
         apply get_index_spec in H0. 
-        unfold Coqlib.first_occur in H0. sim. trivial.
-        apply get_index_spec; unfold Coqlib.first_occur.
-        rewrite H. rewrite Coqlib.firstn_eq_lt by trivial.
+        unfold RSCoqlib.first_occur in H0. sim. trivial.
+        apply get_index_spec; unfold RSCoqlib.first_occur.
+        rewrite H. rewrite RSCoqlib.firstn_eq_lt by trivial.
         split; [crush | idtac].
-          exists x. rewrite Coqlib.nth_error_app_lt by trivial. crush.
+          exists x. rewrite RSCoqlib.nth_error_app_lt by trivial. crush.
       SCase "<-".
         sim. apply get_index_spec in H1. apply get_index_spec.
-        unfold Coqlib.first_occur in *.
+        unfold RSCoqlib.first_occur in *.
         sim. 
-          erewrite <- Coqlib.firstn_eq_lt by trivial.
+          erewrite <- RSCoqlib.firstn_eq_lt by trivial.
             rewrite H in H1. eassumption.
-          exists x. erewrite <- Coqlib.nth_error_app_lt by trivial.
+          exists x. erewrite <- RSCoqlib.nth_error_app_lt by trivial.
             rewrite H in H2. crush.
   Qed.
 
@@ -1372,12 +1372,12 @@ Section DFA.
     Case "Some".
       simpl. trivial.
     Case "None".
-      apply Coqlib.nth_error_none in H. trivial.
+      apply RSCoqlib.nth_error_none in H. trivial.
     Grab Existential Variables.
       unfold get_element_wfs in H.
       destruct ss as [ss H2]. simpl in *.
       apply H2.
-        apply Coqlib.nth_error_in in H.
+        apply RSCoqlib.nth_error_in in H.
         assert (InA RESet.Equal rs (RESS.elements ss)).
           apply In_InA. apply RESet.eq_equiv. assumption.
         apply RESS.elements_spec1. trivial.
@@ -1511,7 +1511,7 @@ Section DFA.
   ).
   rewrite Vector.length_of_list. rewrite map_length. apply (dfa_transition_len d).
   intros. generalize (Vector.get_of_list _ (map (transition_to_vtransition (ss:=dfa_states d)) (dfa_transition d)) i H). intro.
-  generalize (Coqlib.map_nth_error_imply _ _ _ H0). crush.
+  generalize (RSCoqlib.map_nth_error_imply _ _ _ H0). crush.
   specialize (dfa_transition_r d i). rewrite H1. rewrite <- H2.
   destruct x. simpl. auto.
   Defined.
@@ -1671,7 +1671,7 @@ Section DFA.
     rewrite app_ass.
     assert (H12:cardinal_wfs ss = length (RESS.elements (proj1_sig ss))).
       unfold cardinal_wfs. rewrite POW.MM.cardinal_spec. omega.
-    rewrite Coqlib.nth_error_app_eq by crush.
+    rewrite RSCoqlib.nth_error_app_eq by crush.
     rewrite <- app_comm_cons. 
     crush.
   Qed.
@@ -1779,7 +1779,7 @@ Section DFA.
   Qed.
 
   Lemma wf_entries_nil n ss i t: @wf_entries n ss nil i t.
-  Proof. unfold wf_entries. rewrite Coqlib.nth_error_nil. trivial. Qed.
+  Proof. unfold wf_entries. rewrite RSCoqlib.nth_error_nil. trivial. Qed.
 
   (* Definition find_or_add (s:wf_state) (ss:wf_states) : wf_states * nat := *)
   (*   match get_index_wfs s ss with *)
@@ -2348,7 +2348,7 @@ Section DFA.
     wf_entries (map (coerce_entry Hwfs H1) entries) i tid.
   Proof. unfold coerce_entry, wf_entries. intros.
     remember_destruct_head as ne; [idtac | trivial].
-    apply Coqlib.map_nth_error_imply in Hne.
+    apply RSCoqlib.map_nth_error_imply in Hne.
     destruct Hne as [en [H2 H4]].
     subst e. simpl.
     rewrite H2 in H.
@@ -2373,7 +2373,7 @@ Section DFA.
     unfold coerce_nils. generalize (get_state_wfs_ext Hwfs H1).
     rewrite H. intros. rewrite (proof_irrelevance _ e eq_refl). 
     unfold eq_rect_r, eq_rect. simpl.
-    apply Coqlib.list_map_identity.
+    apply RSCoqlib.list_map_identity.
   Qed.
 
   Lemma table_inv_imp n ss (rows:transitions_t ss) :
@@ -2387,11 +2387,11 @@ Section DFA.
         generalize (H4 n H0).
         remember_destruct_head as ne; [idtac | crush].
         intros.
-        apply Coqlib.nth_error_some_lt in Hne.
+        apply RSCoqlib.nth_error_some_lt in Hne.
         crush.
   Qed.
 
-  Hint Rewrite Coqlib.list_length_map.
+  Hint Rewrite RSCoqlib.list_length_map.
 
   Lemma gen_row_table_inv n ss rows :
     n = length rows ->
@@ -2426,12 +2426,12 @@ Section DFA.
       | [H:i<1+n |- _] => destruct (le_lt_or_eq _ _ (lt_n_Sm_le _ _ H))
     end.
     Case "i<n".
-      rewrite Coqlib.nth_error_app_lt by omega.
+      rewrite RSCoqlib.nth_error_app_lt by omega.
       remember_rev (nth_error (coerce_transitions Hwfs rows) i) as ne.
       destruct ne as [ts1 | ].
       SCase "ne=Some ...".
         unfold coerce_transitions in Hne.
-        apply Coqlib.map_nth_error_imply in Hne.
+        apply RSCoqlib.map_nth_error_imply in Hne.
         destruct Hne as [ts [H10 H12]].
         specialize (H18 i H8). rewrite H10 in H18.
         subst ts1. simpl.
@@ -2439,9 +2439,9 @@ Section DFA.
           auto using wf_entries_coerce_entry. 
           apply coerce_nils_corr.
       SCase "ne=None".
-        use_lemma Coqlib.nth_error_none by eassumption. omega.
+        use_lemma RSCoqlib.nth_error_none by eassumption. omega.
     Case "i=n". subst i.
-      rewrite Coqlib.nth_error_app_eq by omega. simpl.
+      rewrite RSCoqlib.nth_error_app_eq by omega. simpl.
       crush.
   Qed.
 
@@ -2521,7 +2521,7 @@ Section DFA.
     rewrite H.
     unfold wf_table, table_inv. intros. sim.
     remember_destruct_head as nt; [idtac | trivial].
-    use_lemma Coqlib.nth_error_some_lt by eassumption.
+    use_lemma RSCoqlib.nth_error_some_lt by eassumption.
     specialize (H4 i). rewrite Hnt in H4. crush.
   Defined.
 
@@ -2598,7 +2598,7 @@ Section DFA.
         auto. 
       specialize (H6 _ H0). 
       specialize (Vector.get_of_list _ _ _ H). intro. 
-      rewrite Coqlib.list_map_nth in H1.
+      rewrite RSCoqlib.list_map_nth in H1.
       remember (nth_error (dfa_transition build_dfa) i) as e.
       destruct e ; try contradiction. simpl in H1. 
       injection H1. intro H2 ; clear H1. rewrite <- H2. 
@@ -2728,7 +2728,7 @@ Section NAIVE_PARSE.
     apply in_flat_map in H.
     destruct H as [v1 [H2 H4]].
     unfold compose in H4.
-    apply Coqlib.list_in_map_inv in H4.
+    apply RSCoqlib.list_in_map_inv in H4.
     destruct H4 as [v2 [H6 H8]].
     assert (H10:in_re_set_xform (existT _ rs f) nil v2).
       eapply in_re_set_xform_intro2.
@@ -2774,7 +2774,7 @@ Section NAIVE_PARSE.
       SCase "->".
         destruct H as [v1 [H2 H4]].
         rewrite <- RES.re_set_extract_nil_corr in H2.
-        apply Coqlib.list_in_map_inv in H4.
+        apply RSCoqlib.list_in_map_inv in H4.
         destruct H4 as [v2 [H6 H8]].
         exists v2. crush.
       SCase "<-".
@@ -2995,11 +2995,11 @@ Section DFA_PARSE.
              (row:transition_t (dfa_states (dfa_ps ps)))
              (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = Some row)
              (H':nth_error (row_entries row) tk = None) : void.
-  Proof. intros. generalize (Coqlib.nth_error_none _ _ H').
+  Proof. intros. generalize (RSCoqlib.nth_error_none _ _ H').
     generalize (dfa_wf ps). unfold wf_dfa, wf_table, table_inv.
     intro H2. destruct H2 as [[H3 [H4 H5]] H6].
     assert (H10:row_ps ps < length (dfa_transition (dfa_ps ps))).
-      eapply Coqlib.nth_error_some_lt. eassumption.
+      eapply RSCoqlib.nth_error_some_lt. eassumption.
     specialize (H5 (row_ps ps) H10).
     rewrite H in H5.
     crush.
@@ -3008,7 +3008,7 @@ Section DFA_PARSE.
   Definition parse_token_help4 t r (ps:instParserState t r)
              (H:nth_error (dfa_transition (dfa_ps ps)) (row_ps ps) = None) : void.
   Proof.
-    intros. generalize (Coqlib.nth_error_none _ _ H). generalize (row_ps_lt ps).
+    intros. generalize (RSCoqlib.nth_error_none _ _ H). generalize (row_ps_lt ps).
     intros. generalize (dfa_transition_len (dfa_ps ps)). intros.
     rewrite H2 in H1. omega.
   Defined.
@@ -3141,7 +3141,7 @@ Section DFA_PARSE.
       generalize (split_grammar_corr1 g). rewrite Hsr. intros.
       destruct H as [v' [H4 H6]].
       unfold compose in H6.
-      apply Coqlib.list_in_map_inv in H6.
+      apply RSCoqlib.list_in_map_inv in H6.
       destruct H6 as [v1 [H6 H8]].
       subst. apply H0.
       apply RES.singleton_xform_corr.
@@ -3245,7 +3245,7 @@ Section DFA_PARSE.
           apply H18 in H30.
           exists l. crush.
     Case "None".
-      use_lemma Coqlib.nth_error_none by eassumption.
+      use_lemma RSCoqlib.nth_error_none by eassumption.
       generalize (next_state_lt entries), (dfa_states_len (dfa_ps ps1)).
       generalize (dfa_transition_len (dfa_ps ps1)).
       intros.
@@ -3471,8 +3471,8 @@ Section VDFA_PARSE.
 
   Lemma flat_map_simp {A B} : @flat_map' A B = @flat_map A B.
   Proof.
-    eapply Coqlib.extensionality. intro f.
-    eapply Coqlib.extensionality. intro xs.  
+    eapply RSCoqlib.extensionality. intro f.
+    eapply RSCoqlib.extensionality. intro xs.  
     induction xs ; crush. destruct xs ; crush.
   Qed.
 
@@ -3546,7 +3546,7 @@ Section VDFA_PARSE.
       generalize (split_grammar_corr1 g). rewrite Hsr. intros.
       destruct H as [v' [H4 H6]].
       unfold compose in H6.
-      apply Coqlib.list_in_map_inv in H6.
+      apply RSCoqlib.list_in_map_inv in H6.
       destruct H6 as [v1 [H6 H8]].
       subst. apply H0.
       apply RES.singleton_xform_corr.

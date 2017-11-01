@@ -32,7 +32,7 @@
    star-operator free. Since the new operand_override prefix grammar
    uses the star operator, this file has been disabled. *)
 
-Require Import Coqlib.
+Require Import RSCoqlib.
 Require Import Parser.
 Require Import Ascii.
 Require Import String.

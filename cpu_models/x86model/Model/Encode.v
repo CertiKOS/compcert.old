@@ -4,7 +4,7 @@
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 
-Require Import Coqlib.
+Require Import RSCoqlib.
 Require Import Bits.
 Require Import X86Syntax.
 Require Import Shared.Monad.

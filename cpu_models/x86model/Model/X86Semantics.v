@@ -15,9 +15,9 @@ Require Import Coq.Program.Program.
 Require Import X86Model.Parser.
 Require X86Model.X86BG.
 Require Import Shared.Monad.
-Require Import Shared.Maps.
+Require Import Shared.RSMaps.
 Require Export X86Syntax.
-Require Export Shared.RTL.
+Require Export Shared.RSRTL.
 
 Set Implicit Arguments.
 Unset Automatic Introduction.
@@ -502,7 +502,7 @@ Module X86_MACHINE.
 
 End X86_MACHINE.
 
-Module X86_RTL := RTL.RTL(X86_MACHINE).
+Module X86_RTL := RSRTL.RTL(X86_MACHINE).
 
 (* compilation from x86 instructions to RTL instructions *)
 Module X86_Compile.
@@ -519,9 +519,9 @@ Module X86_Compile.
     Bind := fun A B (c:Conv A) (f:A -> Conv B) (s:conv_state) => 
       let (v,s') := c s in f v s'
   }.
-  intros ; apply Coqlib.extensionality ; auto.
-  intros ; apply Coqlib.extensionality ; intros. destruct (c x). auto.
-  intros ; apply Coqlib.extensionality ; intros. destruct (f x) ; auto. 
+  intros ; apply RSCoqlib.extensionality ; auto.
+  intros ; apply RSCoqlib.extensionality ; intros. destruct (c x). auto.
+  intros ; apply RSCoqlib.extensionality ; intros. destruct (f x) ; auto. 
   Defined.
   Definition runConv (c:Conv unit) : (list rtl_instr) :=
     match c {|c_rev_i := nil ; c_next:=0|} with

@@ -9,7 +9,7 @@
    the License, or (at your option) any later version.
 *)
 
-Require Coqlib.
+Require RSCoqlib.
 Require Import Ascii.
 Require Import String.
 Require Import List.

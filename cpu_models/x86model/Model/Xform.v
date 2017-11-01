@@ -1,5 +1,5 @@
 Require Import Coq.Program.Equality.
-Require Import Coqlib.
+Require Import RSCoqlib.
 Require Import ParserArg.
 Import X86_PARSER_ARG.
 
@@ -742,12 +742,12 @@ Proof.
 Qed.
 
 Lemma xflatten_corr2 {t} (vs: xt_interp (xList_t (xList_t t))) : 
-  xinterp xflatten vs = Coqlib.list_flatten vs.
+  xinterp xflatten vs = RSCoqlib.list_flatten vs.
 Proof.
   rewrite xflatten_corr. fold xt_interp. 
   assert ((fun a b : list (xt_interp t) =>
             fold_right (fun x y => x :: y) b a) = @List.app (xt_interp t)).
-  apply Coqlib.extensionality. intro. apply Coqlib.extensionality. intro y.
+  apply RSCoqlib.extensionality. intro. apply RSCoqlib.extensionality. intro y.
   generalize x ; clear x. induction y. induction x ; auto.
   simpl. rewrite IHx. auto. induction x. auto. simpl. rewrite IHx. auto.
   rewrite H. auto.
@@ -768,14 +768,14 @@ Extraction Implicit xcross [t1 t2].
 
 Lemma xcross_corr t1 t2 (p : xt_interp (xPair_t (xList_t t1) (xList_t t2))) : 
   xinterp xcross p = 
-  Coqlib.list_flatten (List.map (fun x => List.map (fun y => (x,y)) (snd p)) (fst p)).
+  RSCoqlib.list_flatten (List.map (fun x => List.map (fun y => (x,y)) (snd p)) (fst p)).
 Proof. 
   Opaque xflatten xmapenv xpair.
   destruct p. fold xt_interp. unfold xcross. rewrite xopt_corr. 
   repeat rewrite xcomp_corr. simpl. repeat rewrite xcomp_corr. simpl.
   rewrite xflatten_corr2. rewrite xmapenv_corr. fold xt_interp.
   repeat f_equal.
-  apply Coqlib.extensionality. intro. rewrite xcomp_corr. simpl.
+  apply RSCoqlib.extensionality. intro. rewrite xcomp_corr. simpl.
   rewrite xmapenv_corr. fold xt_interp. simpl.
   f_equal.
 Qed.

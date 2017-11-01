@@ -3,7 +3,7 @@
 Require Import Coq.Init.Logic.
 Require Import Coq.Logic.Eqdep.
 
-Require Import Coqlib.  (* for extensionality & proof_irrelevance *)
+Require Import RSCoqlib.  (* for extensionality & proof_irrelevance *)
 Require Import CommonTacs.
 
 Require Import Program.
@@ -1780,28 +1780,28 @@ Proof.
 Qed.
 
 (** * converting a [bigrammar] to a [grammar] *)
-Require Grammar.
+Require RSGrammar.
 
-Fixpoint bigrammar_to_grammar t (g:bigrammar t): Grammar.grammar t :=
+Fixpoint bigrammar_to_grammar t (g:bigrammar t): RSGrammar.grammar t :=
   match g with
-    | Eps => Grammar.Eps
-    | Zero t => Grammar.Zero t
-    | Char c => Grammar.Char c
-    | Any => Grammar.Any
-    | Cat g1 g2 => Grammar.Cat (bigrammar_to_grammar g1)
+    | Eps => RSGrammar.Eps
+    | Zero t => RSGrammar.Zero t
+    | Char c => RSGrammar.Char c
+    | Any => RSGrammar.Any
+    | Cat g1 g2 => RSGrammar.Cat (bigrammar_to_grammar g1)
                                (bigrammar_to_grammar g2)
-    | Alt g1 g2 => Grammar.Alt (bigrammar_to_grammar g1)
+    | Alt g1 g2 => RSGrammar.Alt (bigrammar_to_grammar g1)
                                (bigrammar_to_grammar g2)
-    | Star g => Grammar.Star (bigrammar_to_grammar g)
-    | @Map t1 t2 fi g => Grammar.Map t2 (fst fi) (bigrammar_to_grammar g)
+    | Star g => RSGrammar.Star (bigrammar_to_grammar g)
+    | @Map t1 t2 fi g => RSGrammar.Map t2 (fst fi) (bigrammar_to_grammar g)
   end.
 Extraction Implicit bigrammar_to_grammar [t].
 
 Lemma b2g_corr1 t (g:bigrammar t) s v : 
-  in_bigrammar g s v -> Grammar.in_grammar (bigrammar_to_grammar g) s v.
+  in_bigrammar g s v -> RSGrammar.in_grammar (bigrammar_to_grammar g) s v.
 Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
 
 Lemma b2g_corr2 t (g:bigrammar t) s v : 
-  Grammar.in_grammar (bigrammar_to_grammar g) s v -> in_bigrammar g s v.
+  RSGrammar.in_grammar (bigrammar_to_grammar g) s v -> in_bigrammar g s v.
 Proof. induction g; simpl; intros; dependent induction H; crush. Qed.
 

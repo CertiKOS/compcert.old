@@ -19,9 +19,9 @@ Require Import Coq.Logic.Eqdep.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 
-Require Import Coqlib.
+Require Import RSCoqlib.
 Require Import CommonTacs.
-Require Import Shared.Maps.
+Require Import Shared.RSMaps.
 
 Unset Automatic Introduction.
 Set Implicit Arguments.

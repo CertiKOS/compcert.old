@@ -5,7 +5,7 @@ Require Import X86Semantics.
 Import X86_RTL.
 Import X86_Compile.
 Import X86_MACHINE.
-Require Import Maps.
+Require Import RSMaps.
 Require Import Bits.
 Require Import List.
 Require Import Coq.PArith.BinPos.
