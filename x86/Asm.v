@@ -671,8 +671,8 @@ Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
 
 Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link ofs_ra :=
   match Mem.stack_adt m with
-  | (Some (frame_with_info b (Some fi)), n)::r =>
-    if peq b stk && zeq sz (frame_size fi) && zeq n sz
+  | (b,Some fi, n)::r =>
+    if in_dec peq stk b && zeq sz (frame_size fi) && zeq n sz
            &&
            range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr)
            (fun o => frame_readonly_dec fi o)
@@ -685,8 +685,8 @@ Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link o
       match oldsp with
         Vptr bsp o =>
         match r with
-          (Some (frame_with_info b _),_)::r =>
-          if peq bsp b && Ptrofs.eq_dec o Ptrofs.zero then true else false
+          f::r =>
+          if in_dec peq bsp (frame_blocks f) && Ptrofs.eq_dec o Ptrofs.zero then true else false
         | _ => false 
         end
       | Vundef => false

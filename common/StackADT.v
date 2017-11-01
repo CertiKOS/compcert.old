@@ -2131,6 +2131,22 @@ predicate that represents the permissions for the source memory [m1] in which
   Qed.
 
 
+  Lemma stack_inject_nil:
+    forall f p,
+      stack_inject f (fun _ => None) p nil nil.
+  Proof.
+    constructor.
+    - red. congruence.
+    - congruence.
+    - intros b1 b2 delta FB i1 f1 FAP IFR.
+      inv FAP. simpl in H. rewrite nth_error_nil in H; congruence.
+    - simpl. congruence.
+    - congruence.
+    - simpl; intros; omega.
+    - simpl; intros; omega.
+    - congruence.
+    - congruence.
+  Qed.
 
 
 End INJ.

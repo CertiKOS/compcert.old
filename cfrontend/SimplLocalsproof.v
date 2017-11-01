@@ -2170,38 +2170,32 @@ Proof.
 
 (* return none *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject_parallel; eauto.
-  eapply Mem.frameinj_order_strict_0; eauto.
-  intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto.
+  intros (tm'' & R & S & IS).
   econstructor; split. apply plus_one. econstructor; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.
-  eapply Mem.frameinj_order_strict_pop; eauto.
 
 (* return some *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   exploit sem_cast_inject; eauto. intros [tv' [C D]].
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject_parallel; eauto.
-  eapply Mem.frameinj_order_strict_0; eauto.
-  intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto.
+  intros (tm'' & R & S & T).
   econstructor; split. apply plus_one. econstructor; eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.
-  eapply Mem.frameinj_order_strict_pop; eauto.
 
 (* skip call *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject_parallel; eauto.
-  eapply Mem.frameinj_order_strict_0; eauto.
-  intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto.
+  intros (tm'' & R & S & T).
   econstructor; split. apply plus_one. econstructor; eauto.
   eapply match_cont_is_call_cont; eauto.
   monadInv TRF; auto.
   econstructor; eauto.
   intros. apply match_cont_change_cenv with (cenv_for f); auto. eapply match_cont_free_env'; eauto.
-  eapply Mem.frameinj_order_strict_pop; eauto.
 
 (* switch *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].

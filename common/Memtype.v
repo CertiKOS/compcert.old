@@ -2207,7 +2207,7 @@ Qed.
 
 Lemma frameinj_order_strict_pop:
   forall g j m1 m2,
-    Mem.inject j g m1 m2 ->
+    inject j g m1 m2 ->
     frameinj_order_strict g ->
     frameinj_order_strict (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))).
 Proof.
@@ -2219,6 +2219,22 @@ Proof.
 Qed.
 
 
+Lemma unrecord_stack_block_inject_parallel_strict:
+   forall (m1 m1' m2 : mem) (j : meminj) g,
+     inject j g m1 m2 ->
+     frameinj_order_strict g ->
+     unrecord_stack_block m1 = Some m1' ->
+     exists m2',
+       unrecord_stack_block m2 = Some m2'
+       /\ inject j (fun n => option_map pred (g (S n))) m1' m2'
+       /\ frameinj_order_strict (fun n => option_map pred (g (S n))).
+Proof.
+  intros.
+  generalize (frameinj_order_strict_0 _ _ _ _ H H0). intros.
+  generalize (frameinj_order_strict_pop _ _ _ _ H H0). intros.
+  exploit unrecord_stack_block_inject_parallel; eauto.
+  intros (m2' & USB & INJ); eauto.
+Qed.
 
 End WITHMEMORYMODEL.
 

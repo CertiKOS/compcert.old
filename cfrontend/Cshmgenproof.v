@@ -1389,7 +1389,7 @@ Inductive match_cont: composite_env -> type -> nat -> nat -> Clight.cont -> Csha
                  (Clight.Kcall id f e le k)
                  (Kcall id tf te le tk).
 
-Fixpoint nostackinfo (adt: list (option frame_adt * Z)) (k: cont) : Prop :=
+Fixpoint nostackinfo (adt: stack_adt) (k: cont) : Prop :=
   match k with
     Kstop => True
   | Kseq _ k
@@ -1399,7 +1399,7 @@ Fixpoint nostackinfo (adt: list (option frame_adt * Z)) (k: cont) : Prop :=
       nil => False
     | a::r => nostackinfo r k /\
              match a with
-               (Some (frame_without_info b), _) => True
+               (_, None, _) => True
              | _ => False
              end
     end
@@ -1414,8 +1414,7 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
           (MTR: match_transl ts tk ts' tk')
           (MENV: match_env e te)
           (MK: match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk)
-          (TOPNOINFO: nostackinfo (Mem.stack_adt m) (Kcall None tf te le tk))
-          (* (TOPNOINFO: forall b : block, Mem.is_stack_top m b -> Mem.get_frame_info m b = None) *),
+          (TOPNOINFO: nostackinfo (Mem.stack_adt m) (Kcall None tf te le tk)),
         match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
@@ -1649,10 +1648,8 @@ Proof.
   eapply transl_lvalue_correct; eauto. eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
   simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; try intuition congruence. simpl in *. 
-  destruct p. simpl in *. destruct TOPNOINFO. destruct o; try intuition congruence.
-  destruct f0; try intuition congruence.
-  intros. destruct (in_dec); try intuition congruence.
+  repeat destr_in TOPNOINFO.
+  unfold is_stack_top. simpl. intros; destr. exfalso; apply n. auto.
   eapply match_states_skip; eauto.
   erewrite assign_loc_stack_adt; eauto.
 
@@ -1776,14 +1773,11 @@ Proof.
   eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
-  simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; try intuition congruence. destruct p, o; simpl in *. 
-  destruct f0 ; try intuition congruence.
+  simpl in TOPNOINFO. repeat destr_in TOPNOINFO.
   erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
   exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H0.
-  intros (m'0 & EQ & ADT). inv EQ. destruct TOPNOINFO.
+  intros (m'0 & EQ & ADT). inv EQ. 
   eapply nostackinfo_call_cont; eauto.
-  easy.
 
 - (* return some *)
   monadInv TR. inv MTR.
@@ -1794,13 +1788,10 @@ Proof.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
   simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; simpl in *; try intuition congruence.
-  destruct p. simpl in *.
-  destruct o; simpl in *; try easy.
-  destruct f0 ; try intuition congruence.
+  repeat destr_in TOPNOINFO.
   erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
   exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H2.
-  intros (m'0 & EQ' & ADT). inv EQ'. destruct TOPNOINFO.
+  intros (m'0 & EQ' & ADT). inv EQ'. 
   eapply nostackinfo_call_cont; eauto.
 
 - (* skip call *)
@@ -1810,14 +1801,10 @@ Proof.
   apply plus_one. eapply step_skip_call. auto.
   eapply match_env_free_blocks; eauto. eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
-  simpl in TOPNOINFO.
-  destruct (Mem.stack_adt m) eqn:?; simpl in *; try intuition congruence.
-  destruct p; simpl in *.
-  destruct o; simpl in *; try easy.
-  destruct f0 ; try intuition congruence.
+  simpl in TOPNOINFO. repeat destr_in TOPNOINFO.
   erewrite <- Mem.free_list_stack_blocks in Heql; eauto.
   exploit Mem.unrecord_stack_block_succeeds. eauto. rewrite H1.
-  intros (m'0 & EQ & ADT). inv EQ. destruct TOPNOINFO.
+  intros (m'0 & EQ & ADT). inv EQ. 
   auto.
 
 - (* switch *)
@@ -1864,11 +1851,7 @@ Proof.
   econstructor; split.
   apply plus_one. constructor. simpl. eexact A.
   econstructor; eauto. constructor.
-  simpl in *.
-  destruct (Mem.stack_adt m); simpl in *; auto.
-  destruct p; simpl in *. destruct o; try easy.
-  destruct TOPNOINFO. destruct f0; try intuition congruence.
-  split; auto.
+  simpl in *. repeat destr_in TOPNOINFO. split; auto.
   eapply find_label_nostackinfo. eauto.
   eapply nostackinfo_call_cont; eauto.
 
