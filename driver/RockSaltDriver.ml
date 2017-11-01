@@ -19,6 +19,8 @@ open Frontend
 open Assembler
 open Linker
 open AsmExpand
+open RSAsmToElf
+
 
 let dump_options = ref false
 
@@ -67,8 +69,7 @@ let compile_c_ast sourcename csyntax ofile =
   (* Print Asm in text form *)
   let oc = open_out ofile in
   PrintAsm.print_program oc asm;
-  close_out oc;
-  asm
+  close_out oc
 
 (* From C source to asm *)
 
@@ -76,12 +77,14 @@ let compile_c_file sourcename ifile ofile =
   let ast = parse_c_file sourcename ifile in
   compile_c_ast sourcename ast ofile
 
-(* From C source to elf *)
+(* From C source to Elf *)
 (* let compile_c_file_to_elf sourcename ifile ofile efile = *)
 (*   let asm = compile_c_file sourcename ifile ofile in *)
 (*   match (RockSaltAsmGen.transf_program asm) with *)
-(*   | Error _ -> failwith "Generation of ELF file failed" *)
-(*   | OK rasm -> *)
+(*   | Error msg ->  *)
+(*      eprintf "Generation of ELF file failed: %s" msg; exit 2 *)
+(*   | OK rasm ->  *)
+     
 
 
 (* From Cminor to asm *)
@@ -159,16 +162,13 @@ let process_c_file sourcename =
           then output_filename sourcename ".c" ".s"
           else Filename.temp_file "compcert" ".s" in
         let objname = output_filename ~final: !option_c sourcename ".c" ".o" in
-        compile_c_file_to_elf sourcename preproname asmname objname;
+        compile_c_file sourcename preproname asmname;
+        if not !option_dprepro then
+          safe_remove preproname;
+        let objname = output_filename ~final: !option_c sourcename ".c" ".o" in
         assemble asmname objname;
-        
-        (* compile_c_file sourcename preproname asmname; *)
-        (* if not !option_dprepro then *)
-        (*   safe_remove preproname; *)
-        (* let objname = output_filename ~final: !option_c sourcename ".c" ".o" in *)
-        (* assemble asmname objname; *)
-        (* if not !option_dasm then safe_remove asmname; *)
-        (* objname *)
+        if not !option_dasm then safe_remove asmname;
+        objname
       end in
     if !dump_options then
       Optionsprinter.print (output_filename sourcename ".c" ".opt.json") !stdlib_path;

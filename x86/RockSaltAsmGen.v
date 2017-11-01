@@ -2,6 +2,7 @@
 (* Author        : Yuting Wang *)
 (* Date Created  : 10-23-2017 *)
 
+Require Import Coqlib.
 Require Import Integers AST Floats.
 Require Import Asm.
 Require Import X86Model.Encode.
@@ -394,15 +395,39 @@ Fixpoint transf_globfuns (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
 
 End TRANSL.
 
+(* Create the following start stub *)
+  (* call   main *)
+  (* mov    %eax,%ebx *)
+  (* mov    $0x1,%eax *)
+  (* int    $0x80 *)
+Definition create_start_stub (main_ofs: int32) (text_size: int32) : res (list int8) := 
+  do call_size <- instr_size (CALL true false (Imm_op Word.zero) None);
+  let ofs := Word.sub (Word.add text_size call_size) main_ofs in
+  let stub :=
+      [CALL true false (Imm_op ofs) None;
+       MOV true (Reg_op EBX) (Reg_op EAX);
+       MOV true (Reg_op EAX) (Imm_op Word.one)] in 
+  do stub_bytes <- encode_instr_list stub;
+  (* int 0x80 *)
+  let intrp : list int8 := [Word.repr 205; Word.repr 128] in
+  OK (stub_bytes ++ intrp).
+  
+
 Definition default_fmap (f:ident) : int32 := Word.zero.
 Definition default_lmap (f:ident) (l:label) : int32 := Word.zero.
+(* The starting address of data segment is 0x8000000 *)
+Definition data_addr : int32 := (Word.repr 134217728).
+
+
+Definition align_int32 (n: int32) (amount: Z) :int32 :=
+  Word.repr (align (Word.unsigned n) amount).
+
 
 Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
   (* Transform the global variables *)
   let (data_seg_size, gvars) := 
       transf_globvars p.(AST.prog_defs) Word.zero [] in
   (* Calculate information of the data segment *)
-  let data_addr := Word.repr 4096 in
   let dmap := gvars_to_dmap gvars in
   let init_data := collect_init_data data_addr dmap gvars in
   (* The first pass of functions gives
@@ -417,7 +442,7 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
   do r <- transf_globfuns data_addr dmap
              fmap lmap
              p.(AST.prog_defs) Word.zero [] [];
-  let '(instrs,gfuns,_,_,code_seg_size) := r in
+  let '(instrs,gfuns,fmap,_,code_seg_size) := r in
   (* Compose the results to form the RockSalt program *)
   let gvars_defs :=
       List.map (fun (e: ident * option (globvar gv_info)) =>
@@ -436,14 +461,18 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
                        end))
                gfuns in
   let tinstrs := List.rev instrs in
-  do mach_code <- encode_instr_list tinstrs;
+  do instrs_code <- encode_instr_list tinstrs;
+  do stub_code <- create_start_stub (fmap (p.(AST.prog_main))) code_seg_size;
+  let mach_code := instrs_code ++ stub_code in
+  let text_addr := align_int32 (Word.add data_addr data_seg_size) 4 in
   OK {|
     prog_defs       := gvars_defs ++ gfuns_defs;
     prog_public     := p.(AST.prog_public);
     prog_main       := p.(AST.prog_main);
-    text_seg        := mkSegment (Word.add data_addr data_seg_size) code_seg_size;
+    text_seg        := mkSegment text_addr (Word.repr (Z_of_nat (length mach_code)));
     text_instrs     := tinstrs;
     machine_code    := mach_code;
+    entry_ofs       := code_seg_size;
     data_seg        := mkSegment data_addr data_seg_size;
     init_data       := init_data;
   |}.

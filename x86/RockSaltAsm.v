@@ -1,3 +1,7 @@
+(* Rocksalt assembly program *)
+(* Author        : Yuting Wang *)
+(* Date Created  : 10-28-2017 *)
+
 Require Import Integers AST.
 Require Import X86Model.Encode.
 Require Import X86Model.X86Syntax.
@@ -33,6 +37,7 @@ Record program := mkProg {
   text_seg : segment;
   text_instrs : list instr;
   machine_code : list int8;
+  entry_ofs : int32;
   data_seg : segment;
   init_data : list int8;
 }.

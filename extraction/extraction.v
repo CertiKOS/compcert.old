@@ -33,6 +33,8 @@ Require Cexecimpl.
 Require cparser.Parser.
 Require Initializers.
 Require Int31.
+Require RockSaltAsm.
+Require RockSaltAsmGen.
 
 (* Standard lib *)
 Require Import ExtrOcamlBasic.
@@ -166,7 +168,8 @@ Set Extraction AccessOpaque.
 Cd "extraction".
 
 Separate Extraction
-   Compiler.transf_c_program Compiler.transf_cminor_program
+   Compiler.transf_c_program Compiler.transf_cminor_program 
+   Compiler.transf_c_program_ex Compiler.transf_cminor_program_ex
    Cexecimpl.do_initial_state Cexecimpl.do_step Cexecimpl.at_final_state
    Cexecimpl.step_expr Cexecimpl.init_mem Cexecimpl.state
    Ctypes.merge_attributes Ctypes.remove_attributes Ctypes.build_composite_env
@@ -186,4 +189,5 @@ Separate Extraction
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed
    Globalenvs.Senv.invert_symbol
-   Parser.translation_unit_file StackADT.empty_frame Coqlib.sum_left_map.
+   Parser.translation_unit_file StackADT.empty_frame Coqlib.sum_left_map
+   RockSaltAsmGen.transf_program.
