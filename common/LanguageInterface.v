@@ -19,6 +19,7 @@ Definition reply: Type := val * mem.
 Record callconv :=
   mk_callconv {
     world: Type;
+    dummy_world: world;
     match_senv:
       world -> Senv.t -> Senv.t -> Prop;
     match_query:
@@ -57,6 +58,7 @@ Definition extcall_valid sg (q: query) (r: reply) :=
 Definition cc_id :=
   {|
     world := unit;
+    dummy_world := tt;
     match_senv w := eq;
     match_query w := eq;
     match_reply w q1 q2 := eq;
@@ -70,6 +72,7 @@ Definition loc_out_of_bounds (m: mem) (b: block) (ofs: Z) : Prop :=
 Definition cc_extends :=
   {|
     world := unit;
+    dummy_world := tt;
     match_senv w := eq;
     match_query w :=
       fun '(vargs1, m1) '(vargs2, m2) =>
@@ -140,6 +143,7 @@ Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
 Definition cc_inject :=
   {|
     world := meminj;
+    dummy_world := inject_id;
     match_senv := symbols_inject;
     match_query f :=
       fun '(vargs1, m1) '(vargs2, m2) =>
