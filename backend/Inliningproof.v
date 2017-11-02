@@ -1452,7 +1452,9 @@ Proof.
 
 + (* turned into a call *)
   exploit Mem.free_left_inject. eauto. eauto. intro INJFREE.
-  assert (O < n)%nat by admit. 
+  assert (O < n)%nat. {
+    inv MS0. congruence. omega.
+  } 
   exploit Mem.unrecord_stack_block_inject_left. apply INJFREE. eauto.
   {
     destruct CFINJ as (D & E).
@@ -1486,7 +1488,11 @@ Proof.
   subst fd.
   right; split. simpl; omega. split. auto.
   exploit Mem.free_left_inject; eauto. intro FREEINJ.
-  assert (0 < n)%nat by admit.
+  assert (0 < n )%nat. {
+    inv MS0.
+    2: omega.
+    admit.
+  } 
   exploit Mem.unrecord_stack_block_inject_left; eauto.
   {
     destruct CFINJ as (D & E).
@@ -1617,7 +1623,9 @@ Proof.
 + (* inlined *)
   right. split. simpl. omega. split. auto.
   exploit Mem.free_left_inject; eauto. intros FRINJ.
-  assert (O < n)%nat by admit.
+  assert (O < n)%nat. {
+    inv MS0. congruence. omega.
+  } 
   exploit Mem.unrecord_stack_block_inject_left; eauto.
   {
     destruct CFINJ as (D & E).
