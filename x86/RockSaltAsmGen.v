@@ -89,33 +89,34 @@ Definition int64_to_bytes (i64:Integers.int64) :=
 Definition n_zeros (n:nat) : list int8 :=
   List.map (fun _ => Word.zero) (seq 1 n).
 
-Definition transl_init_data (data_addr:int32) (dmap: DMAP_TYPE) (idata: AST.init_data) : list int8 :=
+Definition transl_init_data (dmap: DMAP_TYPE) (idata: AST.init_data) : ACCUM_DATA :=
   match idata with
-  | Init_int8 i => [Word.repr (Int.unsigned i)]
-  | Init_int16 i => List.map (fun i => Word.repr (Int.unsigned i)) (int16_to_bytes i)
-  | Init_int32 i => List.map (fun i => Word.repr (Int.unsigned i)) (int32_to_bytes i)
-  | Init_int64 i => List.map (fun i => Word.repr (Int64.unsigned i)) (int64_to_bytes i)
-  | Init_float32 f => List.map (fun i => Word.repr (Int64.unsigned i)) 
+  | Init_int8 i => fun data_addr => [Word.repr (Int.unsigned i)]
+  | Init_int16 i => fun data_addr => List.map (fun i => Word.repr (Int.unsigned i)) (int16_to_bytes i)
+  | Init_int32 i => fun data_addr => List.map (fun i => Word.repr (Int.unsigned i)) (int32_to_bytes i)
+  | Init_int64 i => fun data_addr => List.map (fun i => Word.repr (Int64.unsigned i)) (int64_to_bytes i)
+  | Init_float32 f => fun data_addr => List.map (fun i => Word.repr (Int64.unsigned i)) 
                               (int64_to_bytes (Float.to_bits (Float.of_single f)))
-  | Init_float64 f => List.map (fun i => Word.repr (Int64.unsigned i)) 
+  | Init_float64 f => fun data_addr => List.map (fun i => Word.repr (Int64.unsigned i)) 
                               (int64_to_bytes (Float.to_bits f))
-  | Init_space n => n_zeros (compcert.lib.Coqlib.nat_of_Z n)
+  | Init_space n => fun data_addr => n_zeros (compcert.lib.Coqlib.nat_of_Z n)
   | Init_addrof id ofs =>
+    fun data_addr => 
     let i32 := Word.add data_addr (Word.add (dmap id) (Word.repr (Ptrofs.unsigned ofs))) in
     let i32' := Int.repr (Word.unsigned i32) in
     List.map (fun i => Word.repr (Int.unsigned i)) (int32_to_bytes i32')
   end.
 
-Fixpoint collect_init_data (data_addr:int32) (dmap: DMAP_TYPE) (gvars: list (ident * option (globvar gv_info))) : list int8 :=
+Fixpoint collect_init_data (dmap: DMAP_TYPE) (gvars: list (ident * option (globvar gv_info))) : ACCUM_DATA :=
   match gvars with
-  | nil => nil
+  | nil => fun data_addr => nil
   | (_,v)::gvars' =>
-    let l' := collect_init_data data_addr dmap gvars' in
+    let l' := collect_init_data dmap gvars' in
     match v with
     | None => l'
     | Some v => 
-      let init_bytes := List.flat_map (transl_init_data data_addr dmap) v.(gvar_init) in
-      init_bytes ++ l'
+      let init_bytes := flat_map_accum_list (transl_init_data dmap) v.(gvar_init) in
+      app_accum_list init_bytes l'
     end
   end.
 
@@ -125,17 +126,17 @@ Definition no_prefix : prefix := mkPrefix None None false false.
 
 Definition encode ins := x86_encode no_prefix ins.
 
-Fixpoint encode_instr_list (il: list instr) : res (list int8) :=
-  match il with
-  | nil => OK nil
-  | i::il' => 
-    match (encode i) with
-    | None => Error (msg "Encoding instruction list fails")
-    | Some el => 
-      do eil <- encode_instr_list il';
-      OK (el ++ eil)
-    end
-  end.
+(* Fixpoint encode_instr_list (il: list instr) : res (list int8) := *)
+(*   match il with *)
+(*   | nil => OK nil *)
+(*   | i::il' =>  *)
+(*     match (encode i) with *)
+(*     | None => Error (msg "Encoding instruction list fails") *)
+(*     | Some el =>  *)
+(*       do eil <- encode_instr_list il'; *)
+(*       OK (el ++ eil) *)
+(*     end *)
+(*   end. *)
 
 
 (** Translate integer registers *)
@@ -190,60 +191,21 @@ Definition transl_cond_type (t:testcond) :=
   end.
 
 
-Section TRANSL.
-
 Definition FMAP_TYPE := ident -> int32.
 Definition LMAP_TYPE := ident -> label -> int32.
 
-(* The starting address of the data segments for  *)
-(*    holding initialized global data *)
-Variable data_addr : int32.
-(* Mapping from global identifiers to their offsets in  *)
-(*    the data segment *)
-Variable dmap : DMAP_TYPE.
+Definition update_lmap (lmap: LMAP_TYPE) (f:ident) (l:label) (ofs:int32) : LMAP_TYPE :=
+  (fun f' l' => 
+     if ident_eq f' f then
+       (if ident_eq l' l then ofs 
+        else lmap f' l')
+     else lmap f' l').
 
-(* (* The starting address of the code segment *) *)
-(* Parameter text_addr : int32. *)
-(* (* Mapping from labels in functions to their offsets in the code segment *) *)
-(* Parameter lmap : ident -> label -> option int32. *)
-(* (* Mapping from function names to their offsets in the code segment *) *)
-(* Parameter fmap : ident -> option int32. *)
+Definition update_fmap (fmap: FMAP_TYPE) (f:ident) (ofs:int32) : FMAP_TYPE :=
+  (fun f' => 
+     if ident_eq f' f then ofs
+     else fmap f').
 
-
-(* Translate the addressing mode *)
-Definition transl_addr_mode (m: addrmode) : res address :=
-  match m with
-  | Addrmode b ofs const =>
-    do disp <-
-        match const with 
-        | inl disp' => OK (Word.repr disp')
-        | inr (ident,ptrofs) => 
-          OK (Word.add data_addr (Word.add (dmap ident) (ptrofs_to_bits ptrofs)))
-        end;
-    do base_reg <-
-         match b with
-         | None => OK None
-         | Some r => 
-           do r' <- transl_ireg r; OK (Some r')
-         end;
-    do index <-
-         match ofs with
-         | None => OK None
-         | Some (r,scale) => 
-           do r' <- transl_ireg r;
-             OK (Some (Z_to_scale scale, r'))
-         end;
-    OK {|
-        addrDisp := disp;
-        addrBase := base_reg;
-        addrIndex := index;
-      |}
-  end.
-
-(* Inductive instr_with_label : Type :=  *)
-(* | Instr : instr -> instr_with_label *)
-(* | Lbl   : label -> instr_with_label *)
-(* . *)
 
 Definition instr_size (i:instr) : res int32 :=
   match (encode i) with
@@ -260,17 +222,56 @@ Fixpoint instr_list_size (il:list instr) : res int32 :=
     OK (Word.add isz ilsz)
   end.
 
-Definition update_lmap (lmap: LMAP_TYPE) (f:ident) (l:label) (ofs:int32) : LMAP_TYPE :=
-  (fun f' l' => 
-     if ident_eq f' f then
-       (if ident_eq l' l then ofs 
-        else lmap f' l')
-     else lmap f' l').
 
-Definition update_fmap (fmap: FMAP_TYPE) (f:ident) (ofs:int32) : FMAP_TYPE :=
-  (fun f' => 
-     if ident_eq f' f then ofs
-     else fmap f').
+Section TRANSL.
+(* The starting address of the data segments for  *)
+(*    holding initialized global data *)
+(* Variable data_addr : int32. *)
+(* Mapping from global identifiers to their offsets in *)
+(*    the data segment *)
+Variable dmap : DMAP_TYPE.
+
+(* (* The starting address of the code segment *) *)
+(* Parameter text_addr : int32. *)
+(* (* Mapping from labels in functions to their offsets in the code segment *) *)
+(* Parameter lmap : ident -> label -> option int32. *)
+(* (* Mapping from function names to their offsets in the code segment *) *)
+(* Parameter fmap : ident -> option int32. *)
+
+
+(* Translate the addressing mode *)
+Definition transl_addr_mode (m: addrmode) : res (int32 -> address) :=
+  match m with
+  | Addrmode b ofs const =>
+    do base_reg <-
+         match b with
+         | None => OK None
+         | Some r => 
+           do r' <- transl_ireg r; OK (Some r')
+         end;
+    do index <-
+         match ofs with
+         | None => OK None
+         | Some (r,scale) => 
+           do r' <- transl_ireg r;
+             OK (Some (Z_to_scale scale, r'))
+         end;
+    OK (fun data_addr =>
+      let disp :=
+        match const with 
+        | inl disp' => (Word.repr disp')
+        | inr (ident,ptrofs) => 
+          (Word.add data_addr (Word.add (dmap ident) (ptrofs_to_bits ptrofs)))
+        end in
+      {|
+        addrDisp := disp;
+        addrBase := base_reg;
+        addrIndex := index;
+      |})
+  end.
+
+
+
 
 (* The translation of an individual instruction. It takes the following arguments as inputs
 
@@ -284,92 +285,95 @@ Definition update_fmap (fmap: FMAP_TYPE) (f:ident) (ofs:int32) : FMAP_TYPE :=
 *)
 
 Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
-           (f:ident) (i: Asm.instruction) (ofs: int32) : res (list instr * LMAP_TYPE)  :=
+           (f:ident) (i: Asm.instruction) (ofs: int32) : 
+  res (ACCUM_INSTRS * LMAP_TYPE)  :=
   match i with
   | Paddl_ri rd n =>
     do rd' <- transl_ireg rd; 
-    OK ([ADD true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
+    OK (fun data_addr => [ADD true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
   | Psubl_ri rd n => 
     do rd' <- transl_ireg rd; 
-    OK ([SUB true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
+    OK (fun data_addr => [SUB true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
   | Pleal rd a =>
     do rd' <- transl_ireg rd;
     do a' <- transl_addr_mode a;
-    OK ([LEA (Reg_op rd') (Address_op a')], lmap)
+    OK (fun data_addr => [LEA (Reg_op rd') (Address_op (a' data_addr))], lmap)
   | Pmovl_ri rd n =>
     do rd' <- transl_ireg rd;
-    OK ([MOV true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
+    OK (fun data_addr => [MOV true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
   | Pmov_rr rd r1 =>
     do rd' <- transl_ireg rd;
     do r1' <- transl_ireg r1;
-    OK ([MOV true (Reg_op rd') (Reg_op r1')],lmap)
+    OK (fun data_addr => [MOV true (Reg_op rd') (Reg_op r1')],lmap)
   | Pmovl_mr a rs =>
     do a' <- transl_addr_mode a;
     do rs' <- transl_ireg rs;
-    OK ([MOV true (Address_op a') (Reg_op rs')],lmap)
+    OK (fun data_addr => [MOV true (Address_op (a' data_addr)) (Reg_op rs')],lmap)
   | Pmov_mr_a a rs =>
     do a' <- transl_addr_mode a;
     do rs' <- transl_ireg rs;
-    OK ([MOV true (Address_op a') (Reg_op rs')],lmap)
+    OK (fun data_addr => [MOV true (Address_op (a' data_addr)) (Reg_op rs')],lmap)
   | Pmovl_rm rd a =>
     do rd' <- transl_ireg rd;
     do a' <- transl_addr_mode a;
-    OK ([MOV true (Reg_op rd') (Address_op a')],lmap)
+    OK (fun data_addr => [MOV true (Reg_op rd') (Address_op (a' data_addr))],lmap)
   | Pmov_rm_a rd a =>
     do rd' <- transl_ireg rd;
     do a' <- transl_addr_mode a;
-    OK ([MOV true (Reg_op rd') (Address_op a')],lmap)
+    OK (fun data_addr => [MOV true (Reg_op rd') (Address_op (a' data_addr))],lmap)
   | Ptestl_rr r1 r2 =>
     do r1' <- transl_ireg r1;
     do r2' <- transl_ireg r2;
-    OK ([TEST true (Reg_op r1') (Reg_op r2')],lmap)
+    OK (fun data_addr => [TEST true (Reg_op r1') (Reg_op r2')],lmap)
   | Pjcc c l =>
     (* calculate the size of the instruction *)
     do isz <- instr_size (Jcc (transl_cond_type c) Word.zero);
     (* calculate the offset of the jump *)
     let rel_ofs := Word.sub (lmap f l) (Word.add ofs isz) in
-    OK ([Jcc (transl_cond_type c) rel_ofs],lmap)
+    OK (fun data_addr => [Jcc (transl_cond_type c) rel_ofs],lmap)
   | Pcall_s symb _ =>
     (* calculate the size of the instruction *)
     do isz <- instr_size (CALL true false (Imm_op Word.zero) None);
     (* calculate the offset of the call *)
     let rel_ofs := Word.sub (fmap symb) (Word.add ofs isz) in
-    OK ([CALL true false (Imm_op rel_ofs) None],lmap)
+    OK (fun data_addr => [CALL true false (Imm_op rel_ofs) None],lmap)
   (* | Pcall_r r _ => *)
   (*   do r' <- transl_ireg r; *)
   (*   OK (CALL true false (Reg_op r') None) *)
   | Pret =>
-    OK ([RET true None],lmap)
+    OK (fun data_addr => [RET true None],lmap)
   | Pimull_rr rd r1 =>
     do rd' <- transl_ireg rd;
     do r1' <- transl_ireg r1;
-    OK ([IMUL false (Reg_op rd') (Some (Reg_op r1')) None],lmap)
+    OK (fun data_addr => [IMUL false (Reg_op rd') (Some (Reg_op r1')) None],lmap)
   | Pjmp_l l =>
     (* calculate the size of the instruction *)
     do isz <- instr_size (JMP true false (Imm_op Word.zero) None);
     (* calculate the offset of the jump *)
     let rel_ofs := Word.sub (lmap f l) (Word.add ofs isz) in
-    OK ([JMP true false (Imm_op rel_ofs) None],lmap)
+    OK (fun data_addr => [JMP true false (Imm_op rel_ofs) None],lmap)
   | Plabel l =>
-    OK ([], update_lmap lmap f l ofs)
+    OK (fun data_addr => [], update_lmap lmap f l ofs)
   | _ => 
     Error (MSG (Asm.instr_to_string i) :: MSG " not supported" :: nil)
   end.
 
 Fixpoint transl_instr_list (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
-           (f:ident) (il: list instruction) (ofs: int32) (accum : list instr) : res (list instr * LMAP_TYPE * int32)  :=
+           (f:ident) (il: list instruction) (ofs: int32) (accum : ACCUM_INSTRS) 
+  : res (ACCUM_INSTRS * LMAP_TYPE * int32)  :=
   match il with
   | nil => OK (accum, lmap, ofs)
   | i::il' => 
     do (instrs, lmap') <-
        transl_instr fmap lmap f i ofs;
-    do isz <- instr_list_size instrs;
-    transl_instr_list fmap lmap' f il' (Word.add ofs isz) (instrs ++ accum)
+    do isz <- instr_list_size (instrs Word.zero);
+    transl_instr_list fmap lmap' f il' (Word.add ofs isz) 
+                      (app_accum_list instrs accum)
   end.
 
 Definition transl_function (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
-         (f:ident) (code:Asm.code) (ofs:int32) (accum: list instr)
-  : res (list instr * FMAP_TYPE * LMAP_TYPE * int32) := 
+         (f:ident) (code:Asm.code) (ofs:int32) (accum: ACCUM_INSTRS)
+  : res (ACCUM_INSTRS * FMAP_TYPE * LMAP_TYPE * int32) := 
   do (im, ofs') <- transl_instr_list fmap lmap f code ofs accum;
   let (accum', lmap') := im in
   OK (accum', update_fmap fmap f ofs, lmap', ofs').
@@ -378,8 +382,8 @@ Definition transl_function (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
 (* Collect the functions that needs to be translated *)
 Fixpoint transf_globfuns (fmap: FMAP_TYPE) (lmap: LMAP_TYPE) 
   (gdefs : list (ident * option (globdef Asm.fundef unit))) (ofs:int32) 
-  (iaccum: list instr) (daccum: list (ident * option RockSaltAsm.fundef))
-  : res (list instr * list (ident * option RockSaltAsm.fundef) * FMAP_TYPE * LMAP_TYPE * int32) :=
+  (iaccum: ACCUM_INSTRS) (daccum: list (ident * option RockSaltAsm.fundef))
+  : res (ACCUM_INSTRS * list (ident * option RockSaltAsm.fundef) * FMAP_TYPE * LMAP_TYPE * int32) :=
   match gdefs with
   | nil =>  OK (iaccum, daccum, fmap, lmap, ofs)
   | ((id, None) :: gdefs') =>
@@ -403,29 +407,10 @@ Fixpoint transf_globfuns (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
 
 End TRANSL.
 
-(* Create the following start stub *)
-  (* call   main *)
-  (* mov    %eax,%ebx *)
-  (* mov    $0x1,%eax *)
-  (* int    $0x80 *)
-Definition create_start_stub (main_ofs: int32) (text_size: int32) : res (list int8) := 
-  do call_size <- instr_size (CALL true false (Imm_op Word.zero) None);
-  let ofs := Word.sub main_ofs (Word.add text_size call_size) in
-  let stub :=
-      [CALL true false (Imm_op ofs) None;
-       MOV true (Reg_op EBX) (Reg_op EAX);
-       MOV true (Reg_op EAX) (Imm_op Word.one)] in 
-  do stub_bytes <- encode_instr_list stub;
-  (* int 0x80 *)
-  let intrp : list int8 := [Word.repr 205; Word.repr 128] in
-  OK (stub_bytes ++ intrp).
   
 
 Definition default_fmap (f:ident) : int32 := Word.zero.
 Definition default_lmap (f:ident) (l:label) : int32 := Word.zero.
-(* The starting address of data segment is 0x8000000 *)
-Definition data_addr : int32 := (Word.repr 134217728).
-
 
 Definition align_int32 (n: int32) (amount: Z) :int32 :=
   Word.repr (align (Word.unsigned n) amount).
@@ -437,19 +422,18 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
       transf_globvars p.(AST.prog_defs) Word.zero [] in
   (* Calculate information of the data segment *)
   let dmap := gvars_to_dmap gvars in
-  let init_data := collect_init_data data_addr dmap gvars in
+  let init_data := collect_init_data dmap gvars in
   (* The first pass of functions gives
      the mapping for functions and labels *)
-  do r <- transf_globfuns data_addr dmap
+  do r <- transf_globfuns dmap
              default_fmap default_lmap 
-             p.(AST.prog_defs) Word.zero [] [];
-  
-  let '(_,_,fmap,lmap,_) := r in
+             p.(AST.prog_defs) Word.zero (fun data_addr => []) [];
+    let '(_,_,fmap,lmap,_) := r in
   (* The second pass of functions finishes
      the translation using those mappings *)
-  do r <- transf_globfuns data_addr dmap
+  do r <- transf_globfuns dmap
              fmap lmap
-             p.(AST.prog_defs) Word.zero [] [];
+             p.(AST.prog_defs) Word.zero (fun data_addr => []) [];
   let '(instrs,gfuns,fmap,_,code_seg_size) := r in
   (* Compose the results to form the RockSalt program *)
   let gvars_defs :=
@@ -468,19 +452,20 @@ Definition transf_program (p: Asm.program) : res RockSaltAsm.program :=
                        | Some fn => Some (Gfun fn)
                        end))
                gfuns in
-  let tinstrs := List.rev instrs in
-  do instrs_code <- encode_instr_list tinstrs;
-  do stub_code <- create_start_stub (fmap (p.(AST.prog_main))) code_seg_size;
-  let mach_code := instrs_code ++ stub_code in
-  let text_addr := align_int32 (Word.add data_addr data_seg_size) 4 in
+  let tinstrs := fun data_addr => List.rev (instrs data_addr) in
+  (* do instrs_code <- encode_instr_list tinstrs; *)
+  (* do stub_code <- create_start_stub (fmap (p.(AST.prog_main))) code_seg_size; *)
+  (* let mach_code := instrs_code ++ stub_code in *)
+  (* let text_addr := align_int32 (Word.add data_addr data_seg_size) 4 in *)
   OK {|
     prog_defs       := gvars_defs ++ gfuns_defs;
     prog_public     := p.(AST.prog_public);
     prog_main       := p.(AST.prog_main);
-    text_seg        := mkSegment text_addr (Word.repr (Z_of_nat (length mach_code)));
+    (* text_seg        := mkSegment text_addr (Word.repr (Z_of_nat (length mach_code))); *)
     text_instrs     := tinstrs;
-    machine_code    := mach_code;
-    entry_ofs       := code_seg_size;
-    data_seg        := mkSegment data_addr data_seg_size;
+    (* machine_code    := mach_code; *)
+    (* entry_ofs       := code_seg_size; *)
+    (* data_seg        := mkSegment data_addr data_seg_size; *)
     init_data       := init_data;
+    main_ofs        := fmap (p.(AST.prog_main));
   |}.
