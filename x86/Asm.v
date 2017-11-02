@@ -1038,21 +1038,11 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Pallocframe fi ofs_ra ofs_link =>
-    let (m1, stk) := Mem.alloc m 0 (frame_size fi) in
     if check_alloc_frame fi ofs_link ofs_ra then
-      let sp := Vptr stk Ptrofs.zero in
-      match Mem.storev Mptr m1 (Val.offset_ptr sp ofs_link) rs#RSP with
-      | None => Stuck
-      | Some m2 =>
-        match Mem.storev Mptr m2 (Val.offset_ptr sp ofs_ra) rs#RA with
-        | None => Stuck
-        | Some m3 =>
-          match Mem.record_stack_blocks m3 (Some (frame_with_info stk (Some fi))) (frame_size fi) with
-            Some m4 =>
-            Next (nextinstr (rs #RAX <- (rs#RSP) #RSP <- sp)) m4
-          | _ => Stuck
-          end
-        end
+      match Mem.push_frame m fi ((Mptr, ofs_link, rs#RSP)::(Mptr,ofs_ra, rs#RA)::nil) with
+        Some (m4,b) =>
+        Next (nextinstr (rs #RAX <- (rs#RSP) #RSP <- (Vptr b Ptrofs.zero))) m4
+      | _ => Stuck
       end
     else Stuck
   | Pfreeframe sz ofs_ra ofs_link =>

@@ -21,12 +21,20 @@ Section WITHMEMORYMODEL.
   Context `{memory_model: Mem.MemoryModel }.
   Existing Instance inject_perm_upto_writable.
 
+  Program Definition frame_info_monostack : frame_info :=
+    {|
+      frame_size := Mem.stack_limit;
+      frame_perm := fun o => Public;
+      frame_link := nil;
+    |}.
+
   Inductive mono_initial_state {F V} (prog: program F V): state -> Prop :=
   |mis_intro:
      forall rs m m1 bstack m2,
        initial_state prog (State rs m) ->
        Mem.alloc m 0 (Mem.stack_limit) = (m1,bstack) ->
        Mem.drop_perm m1 bstack 0 (Mem.stack_limit) Writable = Some m2 ->
+       Mem.record_stack_blocks m2 (bstack::nil, 
        mono_initial_state prog (State rs m2).
 
   Existing Instance mem_accessors_default.

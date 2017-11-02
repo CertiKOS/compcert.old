@@ -53,6 +53,47 @@ Proof.
   destruct (zle lo o), (zlt o hi); intuition; try congruence; try omega.
 Qed.
 
+Section FORALL.
+
+  Variables P: Z -> Prop.
+  Variable f: forall (x: Z), {P x} + {~ P x}.
+  Variable lo: Z.
+
+  Program Fixpoint forall_rec (hi: Z) {wf (Zwf lo) hi}:
+    {forall x, lo <= x < hi -> P x}
+    + {~ forall x, lo <= x < hi -> P x} :=
+    if zlt lo hi then
+      match f (hi - 1) with
+      | left _ =>
+        match forall_rec (hi - 1) with
+        | left _ => left _ _
+        | right _ => right _ _
+        end
+      | right _ => right _ _
+      end
+    else
+      left _ _
+  .
+  Next Obligation.
+    red. omega.
+  Qed.
+  Next Obligation.
+    assert (x = hi - 1 \/ x < hi - 1) by omega.
+    destruct H2. congruence. auto.
+  Qed.
+  Next Obligation.
+    intro F. apply wildcard'. intros; apply F; eauto. omega.
+  Qed.
+  Next Obligation.
+    intro F. apply wildcard'. apply F. omega.
+  Qed.
+  Next Obligation.
+    omegaContradiction.
+  Defined.
+
+End FORALL.
+
+
 Local Notation "a # b" := (PMap.get b a) (at level 1).
 
 Module Mem.
@@ -1058,110 +1099,70 @@ Proof.
   simpl. intros. destruct f, p. tauto.
 Qed.
 
-Lemma in_bounds_dec (o lo hi: Z): { lo <= o < hi } + { ~ (lo <= o < hi) }.
-Proof.
-  intros.
-  destruct (zle lo o), (zlt o hi); try (right; omega); left; omega.
-Qed.
+(* Lemma in_bounds_dec (o lo hi: Z): { lo <= o < hi } + { ~ (lo <= o < hi) }. *)
+(* Proof. *)
+(*   intros. *)
+(*   destruct (zle lo o), (zlt o hi); try (right; omega); left; omega. *)
+(* Qed. *)
 
-  Section FORALL.
 
-    Variables P: Z -> Prop.
-    Variable f: forall (x: Z), {P x} + {~ P x}.
-    Variable lo: Z.
-    Require Import Zwf.
+(*   Lemma in_bounds_option_dec (o : Z) (bnds: option (Z*Z)): { forall lo hi, bnds = Some (lo, hi) -> lo <= o < hi } + { ~ forall lo hi, bnds = Some (lo, hi) -> lo <= o < hi  }. *)
+(*   Proof. *)
+(*     intros. *)
+(*     destruct bnds. 2: left; intros; congruence. *)
+(*     destruct p. *)
+(*     destruct (zle z o), (zlt o z0); try (    right; intro A; specialize (A _ _ eq_refl); omega). *)
+(*     left; inversion 1; subst; simpl in *; omega. *)
+(*   Qed. *)
 
-    Program Fixpoint forall_rec (hi: Z) {wf (Zwf lo) hi}:
-      {forall x, lo <= x < hi -> P x}
-      + {~ forall x, lo <= x < hi -> P x} :=
-      if zlt lo hi then
-        match f (hi - 1) with
-        | left _ =>
-          match forall_rec (hi - 1) with
-          | left _ => left _ _
-          | right _ => right _ _
-          end
-        | right _ => right _ _
-        end
-      else
-        left _ _
-    .
-    Next Obligation.
-      red. omega.
-    Qed.
-    Next Obligation.
-      assert (x = hi - 1 \/ x < hi - 1) by omega.
-      destruct H2. congruence. auto.
-    Qed.
-    Next Obligation.
-      intro F. apply wildcard'. intros; apply F; eauto. omega.
-    Qed.
-    Next Obligation.
-      intro F. apply wildcard'. apply F. omega.
-    Qed.
-    Next Obligation.
-      omegaContradiction.
-    Defined.
-
-  End FORALL.
-
-  Lemma in_bounds_option_dec (o : Z) (bnds: option (Z*Z)): { forall lo hi, bnds = Some (lo, hi) -> lo <= o < hi } + { ~ forall lo hi, bnds = Some (lo, hi) -> lo <= o < hi  }.
-  Proof.
-    intros.
-    destruct bnds. 2: left; intros; congruence.
-    destruct p.
-    destruct (zle z o), (zlt o z0); try (    right; intro A; specialize (A _ _ eq_refl); omega).
-    left; inversion 1; subst; simpl in *; omega.
-  Qed.
-
-  Definition check_bound bl fi m :=
-    Forall_dec
-      _
-      (fun b =>
-         forall_rec
-           _
-           (fun o =>
-              in_bounds_option_dec o
-                                   (option_map (fun x => (0,x)) (option_map frame_size (frame_adt_info fi))))
-                               (fst (m.(mem_bounds) #b)) (snd (m.(mem_bounds) #b))
-                 )
-                 bl.
+  (* Definition check_bound bl fi m := *)
+  (*   Forall_dec *)
+  (*     _ *)
+  (*     (fun b => *)
+  (*        forall_rec *)
+  (*          _ *)
+  (*          (fun o => *)
+  (*             in_bounds_option_dec o *)
+  (*                                  (option_map (fun x => (0,x)) (option_map frame_size (frame_adt_info fi)))) *)
+  (*                              (fst (m.(mem_bounds) #b)) (snd (m.(mem_bounds) #b)) *)
+  (*                ) *)
+  (*                bl. *)
   
-Program Definition record_stack_blocks_exec (m: mem) (f: frame_adt): option mem :=
-  if (valid_frame_dec f m)
-  then if (Forall_dec _ (fun x => sumbool_not (in_frames_dec (stack_adt m) x)) (frame_blocks f))
-       then if 
-            check_bound (frame_blocks f) f m
-            then if (zlt (size_stack (stack_adt m) + align (Z.max 0 (frame_adt_size f)) 8) stack_limit)
-                 then Some
-                        (mkmem (mem_contents m)
-                               (mem_access m)
-                               (nextblock m)
-                               (access_max m)
-                               (nextblock_noaccess m)
-                               (contents_default m)
-                               (f :: stack_adt m)
-                               (valid_frames_add _ _ _ (stack_valid m) _)
-                               (nodup_add _ _ (stack_norepet m) _)
-                               (frame_agree_perms_add _ _ _ (stack_perm m) _)
-                               (size_stack_add _ _ _)
-                               (mem_bounds m)
-                               _)
-                 else None
-            else None
-       else None
-  else None.
-Next Obligation.
-  eapply H; eauto.
-Qed.
-Next Obligation.
-  rewrite Forall_forall in H1 |- *.
-  intros.
-  eapply H1; eauto. eapply mem_bounds_perm in H4. auto. rewrite H5.  simpl. auto.
-Qed.
-Next Obligation.
-  eapply mem_bounds_perm; eauto.
-Qed.
+(* Program Definition record_stack_blocks_exec (m: mem) (f: frame_adt): option mem := *)
+(*   if (valid_frame_dec f m) *)
+(*   then if (Forall_dec _ (fun x => sumbool_not (in_frames_dec (stack_adt m) x)) (frame_blocks f)) *)
+(*        then if  *)
+(*             check_bound (frame_blocks f) f m *)
+(*             then if (zlt (size_stack (stack_adt m) + align (Z.max 0 (frame_adt_size f)) 8) stack_limit) *)
+(*                  then Some *)
+(*                         (mkmem (mem_contents m) *)
+(*                                (mem_access m) *)
+(*                                (nextblock m) *)
+(*                                (access_max m) *)
+(*                                (nextblock_noaccess m) *)
+(*                                (contents_default m) *)
+(*                                (f :: stack_adt m) *)
+(*                                (valid_frames_add _ _ _ (stack_valid m) _) *)
+(*                                (nodup_add _ _ (stack_norepet m) _) *)
+(*                                (frame_agree_perms_add _ _ _ (stack_perm m) _) *)
+(*                                (size_stack_add _ _ _) *)
+(*                                (mem_bounds m) *)
+(*                                _) *)
+(*                  else None *)
+(*             else None *)
+(*        else None *)
+(*   else None. *)
+(* Next Obligation. *)
+(*   eapply H; eauto. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   rewrite Forall_forall in H1 |- *. *)
+(*   intros. *)
+(*   eapply H1; eauto. eapply mem_bounds_perm in H4. auto. rewrite H5.  simpl. auto. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   eapply mem_bounds_perm; eauto. *)
+(* Qed. *)
 
 Inductive record_stack_blocks (m: mem) (f: frame_adt) : mem -> Prop :=
 | rsb_intro:
@@ -1185,22 +1186,195 @@ Inductive record_stack_blocks (m: mem) (f: frame_adt) : mem -> Prop :=
                          (mem_bounds m)
                          (mem_bounds_perm m)).
 
-Lemma exec_correct:
-  forall m f m',
-    record_stack_blocks_exec m f = Some m' ->
-    record_stack_blocks m f m'.
-Proof.
-  unfold record_stack_blocks_exec.
-  intros.
-  repeat destr_in H. erewrite (mkmem_ext). econstructor; eauto.
-  all: reflexivity.
-  Unshelve.
-  all: auto.
-  clear Heqs1.
-  rewrite Forall_forall in f1 |- *.
-  intros.
-  eapply f1; eauto. eapply mem_bounds_perm in H0. auto. rewrite H1.  simpl. auto.
+Program Definition record_stack_blocks_none (m: mem) bl sz : option mem :=
+  if (valid_frame_dec (bl,None,sz) m)
+  then if (Forall_dec _ (fun x => sumbool_not (in_frames_dec (stack_adt m) x)) bl)
+       then if (zlt (size_stack (stack_adt m) + align (Z.max 0 sz) 8) stack_limit)
+            then Some
+                   (mkmem (mem_contents m)
+                          (mem_access m)
+                          (nextblock m)
+                          (access_max m)
+                          (nextblock_noaccess m)
+                          (contents_default m)
+                          ((bl,None,sz) :: stack_adt m)
+                          (valid_frames_add _ _ _ (stack_valid m) _)
+                          (nodup_add _ _ (stack_norepet m) _)
+                          (frame_agree_perms_add _ _ _ (stack_perm m) _)
+                          (size_stack_add _ _ _)
+                          (mem_bounds m)
+                          _)
+            else None
+       else None
+  else None.
+Next Obligation.
+  eapply H; eauto.
 Qed.
+Next Obligation.
+  rewrite Forall_forall; congruence.
+Qed.
+Next Obligation.
+  eapply mem_bounds_perm; eauto.
+Qed.
+
+Lemma record_stack_blocks_ext:
+  forall m1 fi m2 m2',
+    record_stack_blocks m1 fi m2 ->
+    m2 = m2' ->
+    record_stack_blocks m1 fi m2'.
+Proof.
+  intros; subst; congruence.
+Qed.
+
+Lemma record_stack_blocks_none_correct:
+  forall m bl sz m',
+    record_stack_blocks_none m bl sz = Some m' <->
+    record_stack_blocks m (bl,None,sz) m'.
+Proof.
+  unfold record_stack_blocks_none.
+  split; intros.
+  - repeat destr_in H.
+    eapply record_stack_blocks_ext. econstructor. apply mkmem_ext; auto.
+    Unshelve.
+    simpl; auto. rewrite Forall_forall; simpl; intros. congruence.
+    simpl. auto. auto. 
+  - inv H.
+    repeat destr. f_equal. apply mkmem_ext; auto.
+    simpl in *; omega.
+    exfalso; apply n. auto.
+Qed.
+
+Fixpoint do_stores (m: mem) (l: list (memory_chunk * val * val)) : option mem :=
+  match l with
+    nil => Some m
+  | (k,addr,v)::r =>
+    match storev k m addr v with
+      Some m1 => do_stores m1 r
+    | None => None
+    end
+  end.
+
+Lemma do_stores_nextblock :
+  forall l m m',
+    do_stores m l = Some m' ->
+    nextblock m' = nextblock m.
+Proof.
+  induction l; simpl; intros.
+  congruence. repeat destr_in H.
+  destruct v0; simpl in *; try congruence.
+  assert (nextblock m1 = nextblock m). unfold store in Heqo. repeat destr_in Heqo. reflexivity.
+  rewrite <- H. eauto.
+Qed.
+
+Lemma do_stores_stack_adt :
+  forall l m m',
+    do_stores m l = Some m' ->
+    stack_adt m' = stack_adt m.
+Proof.
+  induction l; simpl; intros.
+  congruence. repeat destr_in H.
+  destruct v0; simpl in *; try congruence.
+  unfold store in Heqo. repeat destr_in Heqo.
+  eapply IHl in H1; eauto.
+Qed.
+
+Lemma do_stores_perm_inv:
+  forall l m m',
+    do_stores m l = Some m' ->
+    forall b o k p,
+      perm m' b o k p ->
+      perm m b o k p.
+Proof.
+  induction l; simpl; intros.
+  congruence. repeat destr_in H.
+  destruct v0; simpl in *; try congruence.
+  unfold store in Heqo0. repeat destr_in Heqo0.
+  eapply IHl in H0. 2: eauto.
+  apply H0.
+Qed.
+
+
+Program Definition push_frame (m0: mem) (fi: frame_info) (l: list (memory_chunk * ptrofs * val))  : option (mem*block) :=
+  match alloc m0 0 (frame_size fi) with
+    (m,b) =>
+    match do_stores m (store_spec_of_ofs_spec b l) with
+      Some m =>
+      if (zlt (size_stack (stack_adt m) + align (Z.max 0 (frame_size fi)) 8) stack_limit)
+      then Some (mkmem (mem_contents m)
+                       (mem_access m)
+                       (nextblock m)
+                       (access_max m)
+                       (nextblock_noaccess m)
+                       (contents_default m)
+                       ((b::nil,Some fi,frame_size fi) :: stack_adt m)
+                       (valid_frames_add _ _ _ (stack_valid m) _)
+                       (nodup_add _ _ (stack_norepet m) _)
+                       (frame_agree_perms_add _ _ _ (stack_perm m) _)
+                       (size_stack_add _ _ _)
+                       (mem_bounds m)
+                       (mem_bounds_perm m),b)
+      else None
+    | None => None
+    end
+  end.
+Next Obligation.
+  simpl in *. red in H0. simpl in H0. destruct H0; try easy. subst.
+  symmetry in Heq_anonymous. apply do_stores_nextblock in Heq_anonymous. simpl in *. rewrite Heq_anonymous. xomega.
+Qed.
+Next Obligation.
+  simpl. constructor; auto.
+  symmetry in Heq_anonymous. apply do_stores_stack_adt in Heq_anonymous. simpl in *. rewrite Heq_anonymous.
+  intro INF. apply stack_valid in INF. xomega.
+Qed.
+Next Obligation.
+  constructor; auto.
+  intros. eapply do_stores_perm_inv in H0. 2: eauto. red in H0. simpl in H0. inv H1. 
+  rewrite PMap.gss in H0. destr_in H0. 2: now inv H0.
+  apply zle_zlt. auto.
+Qed.
+
+
+Lemma push_frame_alloc_record:
+  forall m1 b fi l m4,
+    push_frame m1 fi l = Some (m4,b) ->
+    exists m2,
+      alloc m1 0 (frame_size fi) = (m2, b) /\
+      exists m3,
+      do_stores m2 (store_spec_of_ofs_spec b l) = Some m3 /\
+      record_stack_blocks m3 (b::nil,Some fi,frame_size fi) m4.
+Proof.
+  unfold push_frame. intros.
+  simpl in *. 
+  repeat destr_in H. simpl in *.
+  unfold alloc. eexists;  split.
+  eauto.
+  (* intros. eexists; split. eauto.
+  simpl in H1. setoid_rewrite H in H1.
+  repeat destr_in H1.
+  eapply record_stack_blocks_ext. econstructor.
+  apply mkmem_ext; try reflexivity.
+  Unshelve. simpl. auto.
+  constructor; auto. unfold perm. simpl; intros. rewrite PMap.gss in H. destr_in H.
+  inv H0. eapply zle_zlt; auto.
+  inv H.
+  constructor; auto. simpl.   intro INF. apply stack_valid in INF. xomega.
+  red; unfold in_frame. intros ? [?|[]]; subst.
+  red; simpl. xomega.*)
+Admitted.
+
+Lemma alloc_record_push_frame:
+  forall m1 m2 b fi l m3 m4,
+    alloc m1 0 (frame_size fi) = (m2, b) ->
+    do_stores m2 (store_spec_of_ofs_spec b l) = Some m3 ->
+    record_stack_blocks m3 (b::nil,Some fi,frame_size fi) m4 ->
+    push_frame m1 fi l = Some (m4,b).
+Proof.
+  unfold push_frame. intros.
+  unfold alloc in H. inv H. simpl. 
+  (*destr.
+  f_equal. apply mkmem_ext; auto.*)
+Admitted.
+
 
 Lemma record_stack_block_det:
   forall m f m1 m2,
@@ -1339,6 +1513,8 @@ Proof.
   exact unchanged_on.
   exact stack_adt.
   exact record_stack_blocks.
+  exact push_frame.
+  exact record_stack_blocks_none.
   exact unrecord_stack_block.
   exact stack_limit.
 Defined.
@@ -8018,7 +8194,10 @@ Proof.
   intros; eapply is_stack_top_inject; eauto.
   simpl. vm_compute. intuition congruence.
   simpl. unfold stack_limit. exists 512; omega.
-  intros. simpl. eapply stack_below_limit. 
+  intros. simpl. eapply stack_below_limit.
+  apply push_frame_alloc_record.
+  apply alloc_record_push_frame.
+  apply record_stack_blocks_none_correct.
 Qed.
 
 

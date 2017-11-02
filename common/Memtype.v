@@ -34,6 +34,9 @@ Require Import MemPerm.
 Require Import StackADT.
 
 
+Definition store_spec_of_ofs_spec b (l: list (memory_chunk * ptrofs * val)) : list (memory_chunk * val * val) :=
+  (map (fun cov => let '(ch, o, v) := cov in (ch, Vptr b o, v)) l).
+
 Module Mem.
 
 Definition locset := block -> Z -> Prop.
@@ -180,6 +183,8 @@ that we now axiomatize. *)
  (* Stack ADT and methods *)
  stack_adt: mem -> list frame_adt;
  record_stack_blocks: mem -> frame_adt -> mem -> Prop;
+ push_frame: mem -> frame_info -> list (memory_chunk * ptrofs * val) -> option (mem*block);
+ record_stack_blocks_none: mem -> list block -> Z -> option mem;
  unrecord_stack_block: mem -> option mem;
  frame_inject {injperm: InjectPerm} f m := frame_inject' f (perm m);
  stack_limit: Z;
@@ -203,6 +208,16 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
   match addr with
   | Vptr b ofs => store chunk m b (Ptrofs.unsigned ofs) v
   | _ => None
+  end.
+
+Fixpoint do_stores (m: mem) (l: list (memory_chunk * val * val)) : option mem :=
+  match l with
+    nil => Some m
+  | (k,addr,v)::r =>
+    match storev k m addr v with
+      Some m1 => do_stores m1 r
+    | None => None
+    end
   end.
 
 (** [free_list] frees all the given (block, lo, hi) triples. *)
@@ -1799,6 +1814,27 @@ for [unchanged_on]. *)
  size_stack_below:
    forall m, size_stack (stack_adt m) < stack_limit;
 
+ 
+ push_frame_alloc_record:
+   forall m1 b fi l m4,
+     push_frame m1 fi l = Some (m4,b) ->
+     exists m2,
+       alloc m1 0 (frame_size fi) = (m2, b) /\
+       exists m3,
+         do_stores m2 (store_spec_of_ofs_spec b l) = Some m3 /\
+         record_stack_blocks m3 (b::nil,Some fi,frame_size fi) m4;
+
+ alloc_record_push_frame:
+   forall m1 m2 b fi l m3 m4,
+     alloc m1 0 (frame_size fi) = (m2, b) ->
+     do_stores m2 (store_spec_of_ofs_spec b l) = Some m3 ->
+     record_stack_blocks m3 (b::nil,Some fi,frame_size fi) m4 ->
+     push_frame m1 fi l = Some (m4,b);
+
+ record_stack_blocks_none_correct:
+   forall m bl sz m',
+     record_stack_blocks_none m bl sz = Some m' <->
+     record_stack_blocks m (bl,None,sz) m';
 }.
 
 Section WITHMEMORYMODEL.
@@ -2235,6 +2271,70 @@ Proof.
   exploit unrecord_stack_block_inject_parallel; eauto.
   intros (m2' & USB & INJ); eauto.
 Qed.
+
+Lemma storev_nextblock :
+  forall m chunk addr v m',
+    storev chunk m addr v = Some m' ->
+    nextblock m' = nextblock m.
+Proof.
+  intros; destruct addr; simpl in *; try congruence.
+  eapply nextblock_store; eauto.
+Qed.
+
+Lemma storev_stack_adt :
+  forall m chunk addr v m',
+    storev chunk m addr v = Some m' ->
+    stack_adt m' = stack_adt m.
+Proof.
+  intros; destruct addr; simpl in *; try congruence.
+  eapply store_stack_blocks; eauto.
+Qed.
+
+Lemma storev_perm_inv:
+  forall m chunk addr v m',
+    storev chunk m addr v = Some m' ->
+    forall b o k p,
+      perm m' b o k p ->
+      perm m b o k p.
+Proof.
+  intros; destruct addr; simpl in *; try congruence.
+  eapply perm_store_2; eauto.
+Qed.
+
+Lemma do_stores_nextblock :
+  forall l m m',
+    do_stores m l = Some m' ->
+    nextblock m' = nextblock m.
+Proof.
+  induction l; simpl; intros.
+  congruence. repeat destr_in H.
+  eapply storev_nextblock in Heqo. rewrite <- Heqo; eauto.
+Qed.
+
+Lemma do_stores_stack_adt :
+  forall l m m',
+    do_stores m l = Some m' ->
+    stack_adt m' = stack_adt m.
+Proof.
+  induction l; simpl; intros.
+  congruence. repeat destr_in H.
+  eapply IHl in H1; eauto.
+  rewrite H1. eapply storev_stack_adt; eauto.
+Qed.
+
+Lemma do_stores_perm_inv:
+  forall l m m',
+    do_stores m l = Some m' ->
+    forall b o k p,
+      perm m' b o k p ->
+      perm m b o k p.
+Proof.
+  induction l; simpl; intros.
+  congruence. repeat destr_in H.
+  eapply IHl in H0. 2: eauto.
+  eapply storev_perm_inv; eauto.
+Qed.
+
 
 End WITHMEMORYMODEL.
 
