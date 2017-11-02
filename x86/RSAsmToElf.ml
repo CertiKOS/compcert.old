@@ -16,8 +16,14 @@ open Errors
   (* mov    %eax,%ebx *)
   (* mov    $0x1,%eax *)
   (* int    $0x80 *)
-let create_start_stub (main_vaddr: int) : int list  = 
-  let call_main = CALL (true, false, Imm_op (Z.of_uint main_vaddr), None) in
+let call_size = 
+  let call = CALL (true, false, Imm_op Z.zero, None) in
+  match (encode call) with
+  | None -> failwith "Failed to calculate the call size"
+  | Some bs -> List.length bs
+
+let create_start_stub (main_ofs: int) : int list  = 
+  let call_main = CALL (true, false, Imm_op (Z.of_sint main_ofs), None) in
   let call_main_bytes = 
     match (encode call_main) with
     | None -> failwith "Failed to create the start stub"
@@ -210,8 +216,8 @@ let gen_elf (p:program) : elf_file =
   (* print_rs_globdefs p; *)
   (* Printf.printf "Length of the text segment: %d\n" (List.length p.machine_code); *)
   let (text_vaddr, data_vaddr) = cal_text_data_vaddrs p in
-  let main_vaddr = (Z.to_int p.main_ofs) + text_vaddr in
-  let startstub_bytes = create_start_stub main_vaddr in
+  let main_ofs   = (Z.to_int p.main_ofs) - (prog_instrs_size p + call_size) in
+  let startstub_bytes = create_start_stub main_ofs in
   let instrs_bytes = encode_instr_list (p.text_instrs (Z.of_uint data_vaddr)) in
   {
     ef_header        = gen_elf_header p;
