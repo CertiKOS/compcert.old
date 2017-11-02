@@ -5,7 +5,7 @@
 open Camlcoq
 open Elf
 open RockSaltAsm
-open RSDebug
+(* open RSDebug *)
 
 (* We create a simple ELF file with the following layout
    where every section is aligned at 4 bytes:
@@ -122,8 +122,8 @@ let gen_shstrtab_sec (p:program) : section_header =
 
 (* Create the ELF file from a RockSaltAsm program *)
 let gen_elf (p:program) : elf_file =
-  print_globdefs p;
-  Printf.printf "Length of the text segment: %d\n" (List.length p.machine_code);
+  (* print_rs_globdefs p; *)
+  (* Printf.printf "Length of the text segment: %d\n" (List.length p.machine_code); *)
   {
     ef_header        = gen_elf_header p;
     ef_text_sec      = gen_text_sec p;

@@ -33,7 +33,7 @@ Fixpoint transf_globvars (gdefs : list (ident * option (globdef Asm.fundef unit)
   match gdefs with
   | nil =>  (ofs, daccum)
   | ((id, None) :: gdefs') =>
-    transf_globvars gdefs' ofs ((id, None) :: daccum)
+    transf_globvars gdefs' ofs daccum
   | ((_, Some (Gfun _)) :: gdefs') =>
     transf_globvars gdefs' ofs daccum
   | ((id, Some (Gvar v)) :: gdefs') =>
@@ -383,7 +383,7 @@ Fixpoint transf_globfuns (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
   match gdefs with
   | nil =>  OK (iaccum, daccum, fmap, lmap, ofs)
   | ((id, None) :: gdefs') =>
-    transf_globfuns fmap lmap gdefs' ofs iaccum ((id, None)::daccum)
+    transf_globfuns fmap lmap gdefs' ofs iaccum daccum
   | ((id, Some (Gvar _)) :: gdefs') =>
     transf_globfuns fmap lmap gdefs' ofs iaccum daccum
   | ((id, Some (Gfun fn)) :: gdefs') =>
@@ -393,7 +393,7 @@ Fixpoint transf_globfuns (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
       let '(il, fmap', lmap', ofs') := r in
       let f' := mkFun ofs (Word.sub ofs' ofs) in
       transf_globfuns fmap' lmap' gdefs' ofs'
-                      (il ++ iaccum)
+                      il
                       ((id, Some (Internal f')) :: daccum)
     | External ef => 
       transf_globfuns fmap lmap gdefs' ofs iaccum 
