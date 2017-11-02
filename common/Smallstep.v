@@ -659,15 +659,19 @@ Hypothesis order_wf: well_founded order.
 Hypothesis simulation:
   forall s1 t1 s1', Step L1 s1 t1 s1' ->
   forall s2, match_states s1 s2 ->
-  exists w t2 s2',
+  (exists w t2 s2',
     Star L2 s2 t2 s2' /\
     match_events_query (symbolenv L1) cc w t1 t2 /\
     forall t2',
       match_traces (symbolenv L1) t2 t2' ->
       match_events (symbolenv L1) cc w t1 t2' ->
       exists s2'',
-        (Plus L2 s2 t2' s2'' \/ (Star L2 s2 t2' s2'' /\ order s1' s1)) /\
-        match_states s1' s2''.
+        Plus L2 s2 t2' s2'' /\
+        match_states s1' s2'') \/
+  (stable_event (symbolenv L1) t1 /\
+   exists s2',
+    (Plus L2 s2 t1 s2' \/ (Star L2 s2 t1 s2' /\ order s1' s1))
+   /\ match_states s1' s2').
 
 Lemma stable_step_star_wf s1 t1 s1' s2:
   Step L1 s1 t1 s1' ->
@@ -682,9 +686,9 @@ Lemma stable_step_star_wf s1 t1 s1' s2:
      forall t2',
        match_traces (symbolenv L1) t2 t2' ->
        match_events (symbolenv L1) cc w t1 t2' ->
-       exists s2'',
-         (Plus L2 s2 t2' s2'' \/ (Star L2 s2 t2' s2' /\ order s1' s1)) /\
-         match_states s1' s2'').
+       exists i' s2'',
+         (Plus L2 s2 t2' s2'' \/ (Star L2 s2 t2' s2'' /\ order i' s1)) /\
+         i' = s1' /\ match_states s1' s2'').
 Proof.
   intros Hstep1 Hs Ht1 (s2' & Hstep2 & Hs').
   exists (dummy_world cc), t1, s2'.
@@ -712,9 +716,11 @@ Proof.
   exists s1, s2; auto.
 - intros. destruct H. eapply match_final_states; eauto.
 - intros. destruct H0. subst i.
-  edestruct simulation as (w & t2 & s2' & Hstep2 & Ht & Hstep2'); eauto.
-  exists w, t2, s2'; intuition.
-  edestruct Hstep2' as (s2'' & Hstep2'' & Hs''); eauto 10.
+  edestruct simulation as [(w & t2 & s2' & Hstep2 & Ht & Hstep2') | Hst]; eauto.
+  + exists w, t2, s2'; intuition.
+    edestruct Hstep2' as (s2'' & Hstep2'' & Hs''); eauto 10.
+  + destruct Hst as [? Hst].
+    eapply stable_step_star_wf in Hst; eauto.
 - auto.
 Qed.
 
@@ -801,19 +807,13 @@ Proof.
   - intros s1 t1 s1' Hstep1 s2 Hs.
     edestruct Hsim
       as [(w & t2 & s2' & Hstep2 & Ht & Hstep2') | (Hi & Ht1 & Hs')]; eauto.
-    + exists w, t2, s2'.
+    + left.
+      exists w, t2, s2'.
       intuition.
-      edestruct Hstep2' as (s2'' & Hstep2'' & Hs''); eauto.
-    + subst t1.
-      exists (dummy_world cc), E0, s2.
-      intuition.
-      * apply star_refl.
-      * apply match_events_subrel_query.
-        apply match_stable_event_refl.
-        constructor.
-      * exists s2.
-        inv H.
-        split; eauto using star_refl.
+    + right.
+      subst.
+      split; [ constructor | ].
+      eauto 10 using star_refl.
 Qed.
 
 End SIMULATION_STAR.
