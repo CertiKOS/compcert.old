@@ -327,13 +327,13 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
     (* calculate the size of the instruction *)
     do isz <- instr_size (Jcc (transl_cond_type c) Word.zero);
     (* calculate the offset of the jump *)
-    let rel_ofs := Word.sub (Word.add ofs isz) (lmap f l) in
+    let rel_ofs := Word.sub (lmap f l) (Word.add ofs isz) in
     OK ([Jcc (transl_cond_type c) rel_ofs],lmap)
   | Pcall_s symb _ =>
     (* calculate the size of the instruction *)
     do isz <- instr_size (CALL true false (Imm_op Word.zero) None);
     (* calculate the offset of the call *)
-    let rel_ofs := Word.sub (Word.add ofs isz) (fmap symb) in
+    let rel_ofs := Word.sub (fmap symb) (Word.add ofs isz) in
     OK ([CALL true false (Imm_op rel_ofs) None],lmap)
   (* | Pcall_r r _ => *)
   (*   do r' <- transl_ireg r; *)
@@ -348,7 +348,7 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
     (* calculate the size of the instruction *)
     do isz <- instr_size (JMP true false (Imm_op Word.zero) None);
     (* calculate the offset of the jump *)
-    let rel_ofs := Word.sub (Word.add ofs isz) (lmap f l) in
+    let rel_ofs := Word.sub (lmap f l) (Word.add ofs isz) in
     OK ([JMP true false (Imm_op rel_ofs) None],lmap)
   | Plabel l =>
     OK ([], update_lmap lmap f l ofs)
@@ -410,7 +410,7 @@ End TRANSL.
   (* int    $0x80 *)
 Definition create_start_stub (main_ofs: int32) (text_size: int32) : res (list int8) := 
   do call_size <- instr_size (CALL true false (Imm_op Word.zero) None);
-  let ofs := Word.sub (Word.add text_size call_size) main_ofs in
+  let ofs := Word.sub main_ofs (Word.add text_size call_size) in
   let stub :=
       [CALL true false (Imm_op ofs) None;
        MOV true (Reg_op EBX) (Reg_op EAX);
