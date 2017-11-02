@@ -67,7 +67,7 @@ Inductive event: Type :=
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_annot: string -> list eventval -> event
-  | Event_extcall: ident -> signature -> query -> reply -> event.
+  | Event_extcall: string -> signature -> query -> reply -> event.
 
 (** The dynamic semantics for programs collect traces of events.
   Traces are of two kinds: finite (type [trace]) or infinite (type [traceinf]). *)
