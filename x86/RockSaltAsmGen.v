@@ -238,6 +238,15 @@ Variable dmap : DMAP_TYPE.
 (* (* Mapping from function names to their offsets in the code segment *) *)
 (* Parameter fmap : ident -> option int32. *)
 
+(* Translate the scale *)
+Definition transl_scale (s:Z) : res scale :=
+  match s with
+  | 1 => OK Scale1
+  | 2 => OK Scale2
+  | 4 => OK Scale4
+  | 8 => OK Scale8
+  | _ => Error (msg "Translation of scale failed")
+  end.
 
 (* Translate the addressing mode *)
 Definition transl_addr_mode (m: addrmode) : res (int32 -> address) :=
@@ -254,7 +263,8 @@ Definition transl_addr_mode (m: addrmode) : res (int32 -> address) :=
          | None => OK None
          | Some (r,scale) => 
            do r' <- transl_ireg r;
-             OK (Some (Z_to_scale scale, r'))
+           do sc <- transl_scale scale;
+             OK (Some (sc, r'))
          end;
     OK (fun data_addr =>
       let disp :=
@@ -352,6 +362,13 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
     (* calculate the offset of the jump *)
     let rel_ofs := Word.sub (lmap f l) (Word.add ofs isz) in
     OK (fun data_addr => [JMP true false (Imm_op rel_ofs) None],lmap)
+  | Pcmpl_rr r1 r2 =>
+    do r1' <- transl_ireg r1;
+    do r2' <- transl_ireg r2;
+    OK (fun data_addr => [CMP true (Reg_op r1') (Reg_op r2')],lmap)
+  | Pcmpl_ri r1 n =>
+    do r1' <- transl_ireg r1;
+    OK (fun data_addr => [CMP true (Reg_op r1') (Imm_op (int_to_bits n))],lmap)
   | Plabel l =>
     OK (fun data_addr => [], update_lmap lmap f l ofs)
   | _ => 
