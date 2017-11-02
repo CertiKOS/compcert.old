@@ -55,12 +55,14 @@ Qed.
 Record frame_info :=
   {
     frame_size: Z;
-    frame_link: segment;
+    frame_link: list segment;
     frame_perm: Z -> stack_permission;
     frame_link_size:
-      seg_size frame_link = size_chunk Mptr;
+      Forall (fun fl => seg_size fl = size_chunk Mptr) frame_link;
+    frame_link_rng:
+      Forall (fun fl => forall o, seg_ofs fl <= o < seg_ofs fl + seg_size fl -> 0 <= o < frame_size) frame_link;
     frame_link_readonly:
-      forall i, in_segment i frame_link -> frame_perm i = Readonly;
+      Forall (fun fl => forall i, in_segment i fl -> frame_perm i = Readonly) frame_link;
   }.
 
 Definition frame_public f o := frame_perm f o = Public.
@@ -95,10 +97,9 @@ Definition empty_segment : segment :=
 Program Definition empty_frame   : frame_info :=
   {|
     frame_size := 0;
-    frame_link:= {| seg_ofs := 0; seg_size := size_chunk Mptr |};
+    frame_link:= nil;
     frame_perm o := Readonly;
   |}.
-
 
 Fixpoint range_Z (o: Z) (n: nat) : list Z :=
   match n with
@@ -338,7 +339,7 @@ predicate that represents the permissions for the source memory [m1] in which
 
   Record shift_frame delta fi fi' :=
     {
-      shift_link: shift_segment delta (frame_link fi) (frame_link fi');
+      shift_link: list_forall2 (fun fl1 fl2 => shift_segment delta fl1 fl2) (frame_link fi) (frame_link fi');
       shift_perm: forall o, 0 <= o < frame_size fi -> frame_perm fi o = frame_perm fi' (o + delta);
       shift_size:
         forall o, 0 <= o < frame_size fi -> 0 <= o + delta < frame_size fi';
@@ -348,7 +349,8 @@ predicate that represents the permissions for the source memory [m1] in which
     forall f,
       shift_frame 0 f f.
   Proof.
-    constructor; auto. 
+    constructor; auto.
+    induction (frame_link f); constructor; auto.
     intros; rewrite Z.add_0_r. auto.
     intros; omega.
   Qed.
@@ -515,11 +517,16 @@ predicate that represents the permissions for the source memory [m1] in which
       shift_frame (delta1 + delta2) f1 f3.
   Proof.
     intros f1 f2 f3 delta1 delta2 A B; inv A; inv B; constructor; eauto.
-    intros.
-    rewrite shift_perm0; auto.
-    rewrite Z.add_assoc.
-    apply shift_perm1. auto. intros.
-    apply shift_size0 in H. apply shift_size1 in H. omega.
+    - destruct f1,f2,f3. simpl in *.
+      clear - shift_link0 shift_link1.
+      revert frame_link0 frame_link1 delta1 shift_link0 frame_link2 delta2 shift_link1.
+      induction 1; inversion 1; constructor; eauto.
+    - intros.
+      rewrite shift_perm0; auto.
+      rewrite Z.add_assoc.
+      apply shift_perm1. auto.
+    - intros.
+      apply shift_size0 in H. apply shift_size1 in H. omega.
   Qed.
 
   Hint Resolve shift_frame_trans.

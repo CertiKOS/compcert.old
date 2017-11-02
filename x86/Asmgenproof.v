@@ -378,12 +378,10 @@ Section WITHINITSPRA.
       In sp l /\ n = frame_size fi /\
       forall f, Genv.find_funct_ptr ge fn = Some (Internal f) ->
            frame_size fi = Mach.fn_stacksize f /\
-           range_eqb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr)
-           (fun o => frame_readonly_dec fi o) = true /\
-           range_eqb (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr)
-                     (fun o => frame_readonly_dec fi o) = true /\
-           zeq (Ptrofs.unsigned (fn_link_ofs f)) (seg_ofs (frame_link fi)) &&
-               disjointb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) = true
+           range_eqb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\
+           range_eqb (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\
+           (Forall_dec _ (fun fl => zeq (Ptrofs.unsigned (fn_link_ofs f)) (seg_ofs fl)) (frame_link fi))
+             && disjointb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) = true
 
     | _, _ => False
     end.
@@ -535,8 +533,7 @@ Hypothesis frame_size_correct:
   forall fb f,
     Genv.find_funct_ptr ge fb = Some (Internal f) ->
     frame_size (Mach.fn_frame f) = fn_stacksize f /\
-    Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f)))(*  /\ *)
-    (* Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))) *).
+    Forall (fun fl => Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs fl)) (frame_link (Mach.fn_frame f)).
 
 Lemma agree_undef_regs_parallel:
   forall l sp rs rs0,
@@ -657,6 +654,16 @@ Inductive asm_no_none: state -> Prop :=
     intros.
     destruct peq; try congruence. simpl; reflexivity.
   Qed.
+
+  Lemma if_forall_dec:
+    forall {A P} (Pdec: forall x:A, {P x} + {~P x}) Q {T} (A B: T) x,
+      Forall P x ->
+    (if Forall_dec _ Pdec x && Q then A else B) = if Q then A else B.
+  Proof.
+    intros.
+    destruct (Forall_dec _ Pdec x); auto. congruence.
+  Qed.
+
 
   Lemma check_top_frame_ok:
     forall fb stk ra c s m m' f ,
@@ -1233,13 +1240,14 @@ Transparent destroyed_by_jumptable.
   (* replace (chunk_of_type Tptr) with Mptr in F, P by (unfold Tptr, Mptr; destruct Archi.ptr64; auto). *)
   (* rewrite (sp_val _ _ _ AG) in F. rewrite F. *)
   (* rewrite ATLR. rewrite P. *)
-  unfold check_alloc_frame. rewrite Y. 
+  unfold check_alloc_frame. 
   move H0 at bottom.
   unfold Mach.check_alloc_frame in H0.
-  destruct H0 as (LRRO & LRDISJ & EQlink).
-  rewrite if_zeq.
-  rewrite Y in LRDISJ.
+  destruct H0 as (LRRO & LRDISJ & fl & EQflink & EQlink).
+  rewrite EQflink. simpl.
+  rewrite if_forall_dec.
   rewrite LRDISJ. eauto.
+  constructor; auto.
   econstructor; eauto.
   unfold nextinstr. rewrite Pregmap.gss. repeat rewrite Pregmap.gso; auto with asmgen.
   rewrite ATPC. simpl. constructor; eauto.
@@ -1271,7 +1279,8 @@ Transparent destroyed_at_function_entry.
   apply H0 in H6.
   destruct (frame_readonly_dec (Mach.fn_frame f0) o); auto.
   apply andb_true_iff. split.
-  rewrite Y. destruct zeq; auto.
+  destruct H0. destruct H6. destruct H7 as (fl & EQfl & EQl). rewrite EQfl.
+  destruct Forall_dec. auto. exfalso; apply n; constructor; auto.
   destruct H0. destruct H6. auto.
 
   erewrite (Mem.record_stack_blocks_stack_adt _ _ m1_). 2: eauto.
@@ -1386,8 +1395,7 @@ Hypothesis frame_correct:
   forall (fb : block) (f : Mach.function),
     Genv.find_funct_ptr ge fb = Some (Internal f) ->
     frame_size (Mach.fn_frame f) = fn_stacksize f /\
-    Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) (* /\ *)
-    (* Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))) *).
+    Forall (fun fl => Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs fl)) (frame_link (Mach.fn_frame f)).
 
 Lemma star_preserves {G S} g (sstep: G -> S -> trace -> S -> Prop) (P: S -> Prop):
   (forall s t s', sstep g s t s' -> P s -> P s') ->

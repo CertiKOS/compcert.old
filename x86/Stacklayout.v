@@ -194,18 +194,24 @@ Proof.
   intros; omega.
 Qed.
 
+Lemma lt_add_pos:
+  forall a b,
+    0 < b ->
+    a < a + b.
+Proof.
+  intros; omega.
+Qed.
+
+
 (* fe_ofs_link fe_ofs_retaddr fe_size fe_ofs_local  fe_ofs_arg *)
 (*        fe_ofs_callee_save  fe_stack_data. *)
 Opaque bound_local bound_outgoing  size_callee_save_area bound_stack_data.
-
-
-
 
 Program Definition frame_of_frame_env (b: bounds) : frame_info :=
   let fe := make_env b in
   {|
     frame_size := fe_size fe;
-    frame_link := {| seg_ofs := (fe_ofs_link fe); seg_size := size_chunk Mptr |};
+    frame_link := {| seg_ofs := (fe_ofs_link fe); seg_size := size_chunk Mptr |} :: nil;
     frame_perm := fun o =>
                     if zle (fe_ofs_retaddr fe) o && zlt o (fe_ofs_retaddr fe + size_chunk Mptr)
                     then Readonly
@@ -224,6 +230,22 @@ Program Definition frame_of_frame_env (b: bounds) : frame_info :=
                             else Public
   |}.
 Next Obligation.
+  rewrite Forall_forall. intros ? [?|[]]; subst. intros i H. simpl in *.
+  split. etransitivity. 2: apply H.
+  etransitivity. 2: apply align_le. generalize (bound_outgoing_pos b); omega.
+  destr; omega.
+  eapply Zlt_le_trans. apply H.
+  etransitivity. 2: apply le_add_pos. 2: destr; omega.
+  etransitivity. 2: apply align_le. 2: destr; omega.
+  etransitivity. 2: apply le_add_pos. 2: generalize (bound_stack_data_pos b); omega.
+  etransitivity. 2: apply align_le. 2: omega. 
+  etransitivity. 2: apply le_add_pos. 2: generalize (bound_local_pos b); omega.
+  etransitivity. 2: apply align_le. 2: omega.
+  change (size_chunk Mptr) with (if Archi.ptr64 then 8 else 4).
+  apply size_callee_save_area_incr.
+Qed.
+Next Obligation.
+  rewrite Forall_forall. intros ? [?|[]]; subst. intros i H.
   red in H. simpl in *.
   rewrite ! and_sumbool.
   repeat destr.

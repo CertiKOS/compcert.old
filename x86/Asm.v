@@ -665,22 +665,21 @@ End MEM_ACCESSORS_DEFAULT.
 
 
 Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
-  zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link f)) &&
-      disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr).
+  (Nat.eq_dec (length (frame_link f)) 1)
+    && Forall_dec _ (fun fl => zeq (Ptrofs.unsigned ofs_link) (seg_ofs fl)) (frame_link f)
+    && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr).
 
 
 Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link ofs_ra :=
   match Mem.stack_adt m with
   | (b,Some fi, n)::r =>
-    if in_dec peq stk b && zeq sz (frame_size fi) && zeq n sz
-           &&
-           range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr)
-           (fun o => frame_readonly_dec fi o)
-           &&
-           range_eqb (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
-           (fun o => frame_readonly_dec fi o)
-           && zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link fi)) &&
-           disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
+    if (in_dec peq stk b)
+         && zeq sz (frame_size fi)
+         && zeq n sz
+         && range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (fun o => frame_readonly_dec fi o)
+         && range_eqb (Ptrofs.unsigned ofs_ra) (size_chunk Mptr) (fun o => frame_readonly_dec fi o)
+         && Forall_dec _ (fun fl => zeq (Ptrofs.unsigned ofs_link) (seg_ofs fl)) (frame_link fi)
+         && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
     then
       match oldsp with
         Vptr bsp o =>

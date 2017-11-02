@@ -188,6 +188,7 @@ that we now axiomatize. *)
  unrecord_stack_block: mem -> option mem;
  frame_inject {injperm: InjectPerm} f m := frame_inject' f (perm m);
  stack_limit: Z;
+ update_top_stack_adt: mem -> frame_info -> Z -> option mem;
 }.
 
 

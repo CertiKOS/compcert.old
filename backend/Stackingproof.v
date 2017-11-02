@@ -4145,6 +4145,7 @@ Proof.
       intros. eapply retaddr_link_sep; eauto.
       generalize (size_chunk_pos Mptr); omega.
       generalize (size_chunk_pos Mptr); omega.
+      eexists; split. eauto. simpl. reflexivity.
       split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size. eapply size_no_overflow; eauto.
       split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size. eapply size_no_overflow; eauto.
     }
@@ -4384,8 +4385,7 @@ Lemma stacking_frame_correct:
     forall (fb : Values.block) (f : Mach.function),
       Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv tp) fb = Some (Internal f) ->
       StackADT.frame_size (Mach.fn_frame f) = Mach.fn_stacksize f /\
-      Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs (frame_link (Mach.fn_frame f))) (* /\ *)
-      (* Ptrofs.unsigned (fn_retaddr_ofs f) = (seg_ofs (frame_retaddr (Mach.fn_frame f))) *).
+      Forall (fun fl => Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs fl))  (frame_link (Mach.fn_frame f)).
 Proof.
   intros p tp MP fb f FFP.
   red in MP.
@@ -4397,13 +4397,12 @@ Proof.
   destruct f1; simpl in *; try discriminate.
   monadInv H6.
   rewrite (unfold_transf_function _ _ EQ). 
-  split. reflexivity.
-  Opaque fe_ofs_link. simpl. apply Ptrofs.unsigned_repr.
+  split. reflexivity. 
+  Opaque fe_ofs_link. simpl.
+  constructor; auto. simpl.
+  apply Ptrofs.unsigned_repr.
   split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size.
   eapply size_no_overflow; eauto.
-  (* Opaque fe_ofs_retaddr. simpl. apply Ptrofs.unsigned_repr. *)
-  (* split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size. *)
-  (* eapply size_no_overflow; eauto. *)
 Qed.
 
 Theorem transf_program_correct:
