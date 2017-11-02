@@ -1160,9 +1160,12 @@ Proof.
   intros [m2' [A B]].
   exploit Mem.record_stack_blocks_extends; eauto.
   {
-    simpl. intros; subst.
+    unfold in_frame; simpl. intros ? [?|[]]; subst.
     erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
     eapply Mem.fresh_block_alloc in INF; eauto.
+  }
+  {
+    constructor; auto; simpl; congruence.
   }
   intros (m2'' & C & D).
   left; econstructor; split.

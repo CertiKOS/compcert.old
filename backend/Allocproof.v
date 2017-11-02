@@ -2259,13 +2259,16 @@ Proof.
   intros [tm' [U V]].
   exploit Mem.record_stack_blocks_extends; eauto.
   {
-    simpl. intros; subst.
+    unfold in_frame. simpl. intros ? [?|[]]; subst.
     erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
     eapply Mem.fresh_block_alloc in INF; eauto.
   }
+  {
+    constructor; auto. simpl; congruence.
+  }
   intros (tm'' & W & X).
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
-  { apply wt_init_regs. inv H0. rewrite wt_params. rewrite H10. auto. auto. }
+  { apply wt_init_regs. inv H1. rewrite wt_params. rewrite H10. auto. }
   exploit (exec_moves mv). eauto. eauto.
     eapply can_undef_satisf; eauto. eapply compat_entry_satisf; eauto.
     rewrite call_regs_param_values. eexact ARGS.

@@ -871,6 +871,33 @@ Proof.
   erewrite Mem.nextblock_alloc; eauto. xomega.
 Qed.
 
+Lemma match_stacks_record_left:
+  forall F m m' l stk stk' sp',
+  match_stacks F m m' l stk stk' sp' ->
+  forall f m1,
+    Mem.record_stack_blocks m f m1 ->
+    match_stacks F m1 m' l stk stk' sp'.
+Proof.
+  intros.
+  eapply match_stacks_invariant; eauto.
+  intros. eapply Mem.record_stack_block_perm; eauto.
+  apply Mem.record_stack_block_nextblock in H0. rewrite H0; xomega.
+Qed.
+
+Lemma match_stacks_inside_record_left:
+  forall F m m' n l stk stk' f' ctx sp' rs',
+  match_stacks_inside F m m' n l stk stk' f' ctx sp' rs' ->
+  forall f m1,
+    Mem.record_stack_blocks m f m1 ->
+    match_stacks_inside F m1 m' n l stk stk' f' ctx sp' rs'.
+Proof.
+  intros.
+  eapply match_stacks_inside_invariant; eauto.
+  intros. eapply Mem.record_stack_block_perm; eauto.
+  apply Mem.record_stack_block_nextblock in H0. rewrite H0; xomega.
+Qed.
+
+
 (** Preservation by freeing *)
 
 Lemma match_stacks_free_left:
@@ -1132,28 +1159,21 @@ Qed.
 (* Qed. *)
 
 
-Inductive match_stack_adt : list (option (block*Z)) -> stack_adt -> Prop :=
+Inductive match_stack_adt : list (option (block)) -> stack_adt -> Prop :=
 | match_nil: match_stack_adt nil nil
 | match_cons:
     forall sfl s sz sp,
       match_stack_adt sfl s ->
-      match_stack_adt  (Some (sp, sz) :: sfl) ((sp::nil, None, sz)::s).
+      match_stack_adt  (Some (sp) :: sfl) ((sp::nil, None, sz)::s).
 
 Definition blocks_of_stackframe stk :=
   match stk with
-    Stackframe _ f (Vptr sp _) _ _ => Some (sp, fn_stacksize f)
+    Stackframe _ f (Vptr sp _) _ _ => Some (sp)
   | _ => None
   end.
 
-Inductive MS_state_state : Type := MS_state_state_intro.
-Inductive MS_call_call : Type := MS_call_call_intro.
-Inductive MS_call_state : Type := MS_call_state_intro.
-Inductive MS_ret_ret : Type := MS_ret_ret_intro.
-Inductive MS_ret_state : Type := MS_ret_state_intro.
-
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
 | match_regular_states: forall stk f sp pc rs m stk' f' sp' rs' m' F g fenv ctx n l
-                          (marker: MS_state_state)
         (MS: match_stacks_inside F m m' n l stk stk' f' ctx sp' rs')
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
@@ -1165,13 +1185,12 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (SSZ3: forall ofs, Mem.perm m sp ofs Max Nonempty -> 0 <= ofs < f.(fn_stacksize))
-        (MS1: match_stack_adt (Some (sp, fn_stacksize f) :: map blocks_of_stackframe stk) (Mem.stack_adt m))
-        (MS1: match_stack_adt (Some (sp', fn_stacksize f') :: map blocks_of_stackframe stk') (Mem.stack_adt m'))
+        (MS1: match_stack_adt (Some (sp) :: map blocks_of_stackframe stk) (Mem.stack_adt m))
+        (MS1: match_stack_adt (Some (sp') :: map blocks_of_stackframe stk') (Mem.stack_adt m'))
         (CFINJ: compat_frameinj g (S n::l)),
       match_states (State stk f (Vptr sp Ptrofs.zero) pc rs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
 | match_call_states: forall stk fd args m stk' fd' args' m' cunit F g l sz
-                       (marker: MS_call_call)
         (MS: match_stacks F m m' l stk stk' (Mem.nextblock m'))
         (LINK: linkorder cunit prog)
         (FD: transf_fundef (funenv_program cunit) fd = OK fd')
@@ -1179,11 +1198,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (MINJ: Mem.inject F g m m')
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (map blocks_of_stackframe stk') (Mem.stack_adt m'))
-        (CFINJ: compat_frameinj (fun n => if Nat.eq_dec n O then Some O else g (pred n)) l),
+        (CFINJ: compat_frameinj g l),
       match_states (Callstate stk fd args m sz)
                    (Callstate stk' fd' args' m' sz)
 | match_call_regular_states: forall stk f vargs m stk' f' sp' rs' m' F g fenv ctx ctx' pc' pc1' rargs n l sz
-                               (marker: MS_call_state)
         (MS: match_stacks_inside F m m' n l stk stk' f' ctx sp' rs')
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
@@ -1197,22 +1215,20 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
-        (MS1: match_stack_adt (Some (sp', fn_stacksize f')::map blocks_of_stackframe stk') (Mem.stack_adt m'))
-        (CFINJ: compat_frameinj (fun n => if Nat.eq_dec n O then Some O else g (pred n)) (n::l)),
+        (MS1: match_stack_adt (Some (sp')::map blocks_of_stackframe stk') (Mem.stack_adt m'))
+        (CFINJ: compat_frameinj g (n::l)),
       match_states (Callstate stk (Internal f) vargs m sz)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
 | match_return_states: forall stk v m stk' v' m' F g l
-                         (marker: MS_ret_ret)
         (MS: match_stacks F m m' l stk stk' (Mem.nextblock m'))
         (VINJ: Val.inject F v v')
         (MINJ: Mem.inject F g m m')
-        (CFINJ: compat_frameinj g (tl l))
+        (CFINJ: compat_frameinj g l)
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (map blocks_of_stackframe stk') (Mem.stack_adt m')),
       match_states (Returnstate stk v m)
                    (Returnstate stk' v' m')
 | match_return_regular_states: forall stk v m stk' f' sp' rs' m' F g ctx pc' or rinfo n l
-                                 (marker: MS_ret_state)
         (MS: match_stacks_inside F m m' n l stk stk' f' ctx sp' rs')
         (RET: ctx.(retinfo) = Some rinfo)
         (AT: f'.(fn_code)!pc' = Some(inline_return ctx or rinfo))
@@ -1222,9 +1238,9 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
-        (CFINJ: compat_frameinj (fun n => g (S n)) (pred n::l))
+        (CFINJ: compat_frameinj g (n::l))
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
-        (MS1: match_stack_adt (Some (sp', fn_stacksize f')::map blocks_of_stackframe stk') (Mem.stack_adt m')),
+        (MS1: match_stack_adt (Some (sp')::map blocks_of_stackframe stk') (Mem.stack_adt m')),
       match_states (Returnstate stk v m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 
@@ -1263,6 +1279,29 @@ Proof.
   destruct H. apply SYMBOLS in FS. rewrite DOMAIN in H6; auto. congruence.
 Qed.
 
+Lemma match_stack_adt_noframe:
+  forall x y, match_stack_adt x y ->
+         forall f, In f y ->
+              frame_adt_info f = None.
+Proof.
+  induction 1; simpl; intros; eauto. easy. destruct H0. subst. reflexivity. eauto.
+Qed.
+
+Lemma match_stack_adt_free:
+  forall m b lo hi m' m'',
+  forall x y,
+    match_stack_adt (x::y) (Mem.stack_adt m) ->
+    Mem.free m b lo hi = Some m' ->
+    Mem.unrecord_stack_block m' = Some m'' ->
+    match_stack_adt (y) (Mem.stack_adt m'').
+Proof.
+  intros m b lo hi m' m''  x y MSA FREE USB.
+  inv MSA.
+  edestruct Mem.unrecord_stack_adt; eauto.
+  erewrite <- (Mem.free_stack_blocks) in H2; eauto.
+  rewrite H in H2. inv H2. auto.
+Qed.
+
 Theorem step_simulation:
   forall S1 t S2,
   step fn_stack_requirements ge S1 t S2 ->
@@ -1271,9 +1310,6 @@ Theorem step_simulation:
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
   induction 1; intros; inv MS.
-
-
-
 
 - (* nop *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
@@ -1349,23 +1385,21 @@ Proof.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply ros_is_function_transf; eauto.
   eapply sig_function_translated; eauto.
-  econstructor. constructor.
+  econstructor. 
   eapply match_stacks_cons; eauto. eapply Mem.valid_block_inject_1; eauto. all: eauto. 
   eapply agree_val_regs; eauto.
-  admit; eapply compat_framinj_rec_push_left; eauto.
 
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
   right; split. simpl; omega. split. auto.
-  econstructor. constructor.
+  econstructor.
   eapply match_stacks_inside_inlined; eauto.
   all: eauto.
   red; intros. apply PRIV. inv H13. destruct H16. xomega.
   eapply Mem.valid_block_inject_1; eauto.
   apply agree_val_regs_gen; auto.
   red; intros; apply PRIV. destruct H16. omega.
-  eapply compat_framinj_rec_push_left; eauto. admit.
   
 - (* tailcall *)
   exploit match_stacks_inside_globalenvs; eauto. intros [bound G].
@@ -1403,7 +1437,6 @@ Proof.
   eapply ros_is_function_transf; eauto.
   eapply sig_function_translated; eauto.
   econstructor; eauto.
-  constructor.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
     intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
@@ -1412,22 +1445,14 @@ Proof.
   erewrite (Mem.unrecord_stack_block_nextblock _ _ H3), (Mem.nextblock_free _ _ _ _ _ H2); eauto. xomega.
   erewrite Mem.unrecord_stack_block_nextblock, Mem.nextblock_free; eauto. red in VB; xomega.
   eapply agree_val_regs; eauto.
-  inv MS1. edestruct Mem.unrecord_stack_adt. apply H3. erewrite <- (Mem.free_stack_blocks) in H7; eauto.
-  rewrite H1 in H7. inv H7. auto.
-  inv MS2. edestruct Mem.unrecord_stack_adt. apply P. erewrite <- (Mem.free_stack_blocks) in H7; eauto.
-  rewrite H1 in H7. inv H7. auto.
-  simpl.
 
-  eapply compat_framinj_rec_push_left in CFINJ.
-  simpl. eapply compat_frameinj_rec_ext. 2: eauto.
-  simpl. intros. destr.
-  replace (S (pred i)) with i by omega.
-  destruct CFINJ.
+  eapply match_stack_adt_free; eauto.
+  eapply match_stack_adt_free; eauto.
   eapply compat_framinj_rec_pop. eauto.
 
 + (* turned into a call *)
   exploit Mem.free_left_inject. eauto. eauto. intro INJFREE.
-  assert (1 < n)%nat by admit.
+  assert (O < n)%nat by admit. 
   exploit Mem.unrecord_stack_block_inject_left. apply INJFREE. eauto.
   {
     destruct CFINJ as (D & E).
@@ -1438,13 +1463,13 @@ Proof.
   intro PERM. eapply Mem.perm_free_2. eauto.
   eapply SSZ3. eapply Mem.perm_free_3; eauto.
   eapply Mem.perm_max. eapply Mem.perm_implies; eauto. constructor. eauto.
-  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H11 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
+  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H8 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
   intro MINJ'.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply ros_is_function_transf; eauto.
   eapply sig_function_translated; eauto.
-  econstructor; eauto. constructor.
+  econstructor; eauto. 
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
   intros. eapply Mem.unrecord_stack_block_perm in H6. eapply Mem.perm_free_3; eauto. eauto.
@@ -1453,16 +1478,15 @@ Proof.
   destruct PRIV' as (P1 & P2). split; auto. intros. intro P3. eapply P2; eauto.
   eapply Mem.unrecord_stack_block_perm. eauto. eauto.
   eapply agree_val_regs; eauto.
-  inv MS1. edestruct Mem.unrecord_stack_adt. apply H3. erewrite <- (Mem.free_stack_blocks) in H8; eauto.
-  rewrite H4 in H8. inv H8. auto.
-  admit.
+  eapply match_stack_adt_free; eauto.
+  eapply compat_framinj_rec_pop_left. eauto.
 
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
   right; split. simpl; omega. split. auto.
   exploit Mem.free_left_inject; eauto. intro FREEINJ.
-  assert (1 < n)%nat by admit.
+  assert (0 < n)%nat by admit.
   exploit Mem.unrecord_stack_block_inject_left; eauto.
   {
     destruct CFINJ as (D & E).
@@ -1473,9 +1497,9 @@ Proof.
   intro PERM. eapply Mem.perm_free_2. eauto.
   eapply SSZ3. eapply Mem.perm_free_3; eauto.
   eapply Mem.perm_max. eapply Mem.perm_implies; eauto. constructor. eauto.
-  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H16 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
+  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H13 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
   intro MINJ'.
-  econstructor; eauto. constructor.
+  econstructor; eauto. 
   eapply match_stacks_inside_inlined_tailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
   intros. eapply Mem.unrecord_stack_block_perm in H10. eapply Mem.perm_free_3; eauto. eauto.
@@ -1493,10 +1517,8 @@ Proof.
   intros; split; auto.
   eapply Mem.unrecord_stack_block_perm; eauto.
   tauto.
-  inv MS1. edestruct Mem.unrecord_stack_adt. apply H3. erewrite <- (Mem.free_stack_blocks) in H13; eauto.
-  rewrite H4 in H13. inv H13. auto.
-  eapply compat_framinj_rec_pop_left.
-  replace (S (pred n)) with n by omega. eauto.
+  eapply match_stack_adt_free; eauto.
+  eapply compat_framinj_rec_pop_left. eauto.
 
 - (* builtin *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
@@ -1508,7 +1530,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor. constructor.
+  econstructor.
     eapply match_stacks_inside_set_res.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
     intros; eapply external_call_max_perm; eauto.
@@ -1569,7 +1591,6 @@ Proof.
     eelim B; eauto. replace (ofs + delta - delta) with ofs by omega.
     apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
   }
-  assert (n = 1%nat). admit. subst.
   exploit Mem.unrecord_stack_block_inject_parallel; eauto.
   {
     clear - CFINJ.
@@ -1580,8 +1601,7 @@ Proof.
   intros (m2' & P & Q).
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
-  econstructor; eauto. constructor.
-  3: eapply compat_framinj_rec_pop; eauto.
+  econstructor; eauto. 
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
     intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
@@ -1590,16 +1610,14 @@ Proof.
     erewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.nextblock_free _ _ _ _ _ H0); eauto. xomega.
   erewrite Mem.unrecord_stack_block_nextblock, Mem.nextblock_free; eauto. red in VB; xomega.
   destruct or; simpl. apply agree_val_reg; auto. auto.
-  simpl tl. eauto.
-  inv MS1. edestruct Mem.unrecord_stack_adt. apply H1. erewrite <- (Mem.free_stack_blocks) in H8; eauto.
-  rewrite H2 in H8. inv H8. auto.
-  inv MS2. edestruct Mem.unrecord_stack_adt. apply P. erewrite <- (Mem.free_stack_blocks) in H8; eauto.
-  rewrite H2 in H8. inv H8. auto.
+  eapply compat_framinj_rec_pop; eauto.
+  eapply match_stack_adt_free; eauto.
+  eapply match_stack_adt_free; eauto.
 
 + (* inlined *)
   right. split. simpl. omega. split. auto.
   exploit Mem.free_left_inject; eauto. intros FRINJ.
-  assert (1 < n)%nat by admit.
+  assert (O < n)%nat by admit.
   exploit Mem.unrecord_stack_block_inject_left; eauto.
   {
     destruct CFINJ as (D & E).
@@ -1610,9 +1628,9 @@ Proof.
   intro PERM. eapply Mem.perm_free_2. eauto.
   eapply SSZ3. eapply Mem.perm_free_3; eauto.
   eapply Mem.perm_max. eapply Mem.perm_implies; eauto. constructor. eauto.
-  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H10 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
+  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H9 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
   intro MINJ'.
-  econstructor; eauto. constructor.
+  econstructor; eauto. 
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.unrecord_stack_block_perm in H7. eapply Mem.perm_free_3; eauto. eauto.
     erewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.nextblock_free _ _ _ _ _ H0); eauto. xomega.
@@ -1621,10 +1639,8 @@ Proof.
   * eapply range_private_invariant.
     eapply range_private_free_left; eauto.
     intros; split; auto. eapply Mem.unrecord_stack_block_perm; eauto. tauto.
-  * eapply compat_framinj_rec_pop_left.
-    replace (S (pred n)) with n by omega. eauto.
-  * inv MS1. edestruct Mem.unrecord_stack_adt. apply H1. erewrite <- (Mem.free_stack_blocks) in H9; eauto.
-    rewrite H4 in H9. inv H9. auto.
+  *  simpl. eapply compat_framinj_rec_pop_left. eauto.
+  *   eapply match_stack_adt_free; eauto. 
     
 - (* internal function, not inlined *)
   assert (A: exists f', tr_function cunit f f' /\ fd' = Internal f').
@@ -1636,53 +1652,87 @@ Proof.
   exploit Mem.alloc_parallel_inject. eauto. eauto. apply Zle_refl.
     instantiate (1 := fn_stacksize f'). inv H2. xomega.
   intros [F' [m1' [sp' [A [B [C [D E]]]]]]].
-  exploit Mem.record_stack_blocks_inject_parallel. apply B. 7: eauto.
-  instantiate (1 := (sp'::nil,None, sz)).
-  {
+  exploit Mem.record_stack_blocks_inject_parallel.
+  apply B. 7: eauto.
+  + instantiate (1 := (sp'::nil,None, sz)).
     split; try red; simpl; intros; auto.
     constructor; auto.
     intros. left; congruence.
-  }
-  {
-    unfold in_frame; simpl; intros. intros [?|[]]; subst.
+  + unfold in_frame; simpl; intros. intros [?|[]]; subst.
     erewrite Mem.alloc_stack_blocks in H9; eauto.
     eapply Mem.in_frames_valid in H9. eapply Mem.fresh_block_alloc in H9; eauto.
-  }
-  red; unfold in_frame; simpl. intros ? [?|[]]; subst. eapply Mem.valid_new_block; eauto.
-  simpl; congruence.
-  unfold in_frame; simpl.
-  intros b1 b2 delta FB. split; intros [?|[]]; subst; left. congruence.
-  destruct (peq stk b1); auto.
-  rewrite E in FB; auto. eapply Mem.valid_block_inject_2 in FB; eauto. eapply Mem.fresh_block_alloc in FB; eauto. easy.
-  reflexivity.
-  intros (m2' & P & Q).
-  left; econstructor; split.
-  eapply plus_one. eapply exec_function_internal; eauto.
-  rewrite H7. econstructor. constructor.
-  instantiate (1 := F'). apply match_stacks_inside_base.
-  assert (SP: sp' = Mem.nextblock m'0) by (eapply Mem.alloc_result; eauto).
-  rewrite <- SP in MS0.
-  eapply match_stacks_invariant; eauto.
-    intros. destruct (eq_block b1 stk).
-    subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
-    rewrite E in H9; auto.
-    intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
-    destruct (eq_block b1 stk); intros; auto.
-    subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
-    intros. eapply Mem.perm_alloc_1; eauto.
-    intros. exploit Mem.perm_alloc_inv. eexact A. eauto.
-    rewrite dec_eq_false; auto.
-  auto. auto. auto. eauto. auto.
-  rewrite H5. apply agree_regs_init_regs. eauto. auto. inv H1; auto. congruence. auto.
-  eapply Mem.valid_new_block; eauto.
-  red; intros. split.
-  eapply Mem.perm_alloc_2; eauto. inv H1; xomega.
-  intros; red; intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
-  destruct (eq_block b stk); intros.
-  subst. rewrite D in H9; inv H9. inv H1; xomega.
-  rewrite E in H9; auto. eelim Mem.fresh_block_alloc. eexact A. eapply Mem.valid_block_inject_2; eauto.
-  auto.
-  intros. exploit Mem.perm_alloc_inv; eauto. rewrite dec_eq_true. omega.
+  + red; unfold in_frame; simpl. intros ? [?|[]]; subst. eapply Mem.valid_new_block; eauto.
+  + simpl; congruence.
+  + unfold in_frame; simpl.
+    intros b1 b2 delta FB. split; intros [?|[]]; subst; left.
+    congruence.
+    destruct (peq stk b1); auto.
+    rewrite E in FB; auto. eapply Mem.valid_block_inject_2 in FB; eauto. eapply Mem.fresh_block_alloc in FB; eauto. easy.
+  + reflexivity.
+  + intros (m2' & P & Q).
+    left; econstructor; split.
+    * eapply plus_one. eapply exec_function_internal; eauto.
+    * rewrite H6, H7. econstructor. 
+      -- instantiate (3 := F'). apply match_stacks_inside_base.
+         assert (SP: sp' = Mem.nextblock m'0) by (eapply Mem.alloc_result; eauto).
+         rewrite <- SP in MS0.
+         eapply match_stacks_invariant; eauto.
+         ++ intros. destruct (eq_block b1 stk).
+            subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
+            rewrite E in H9; auto.
+         ++ intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
+            destruct (eq_block b1 stk); intros; auto.
+            subst b1. rewrite D in H9; inv H9. eelim Plt_strict; eauto.
+            intros. eapply Mem.perm_alloc_1; eauto.
+            intros. exploit Mem.perm_alloc_inv. eexact A.
+            eapply Mem.record_stack_block_perm; eauto.
+            eapply Mem.record_stack_block_perm'; eauto.
+            eapply Mem.perm_inject; eauto.
+            eapply Mem.record_stack_block_perm; eauto.
+            constructor.
+            rewrite dec_eq_false; auto.
+            intros.
+            eapply Mem.perm_alloc_4. eauto. eapply Mem.record_stack_block_perm; eauto. auto.
+            destr. subst.
+            rewrite D in H9; inv H9; xomega.
+         ++ intros. eapply Mem.record_stack_block_perm'. eauto.
+            eapply Mem.perm_alloc_1; eauto.
+         ++ intros. eapply Mem.perm_alloc_4. eauto.
+            eapply Mem.record_stack_block_perm. eauto.
+            eauto. intro; subst; xomega.
+         ++ rewrite (Mem.record_stack_block_nextblock _ _ _ H0), (Mem.nextblock_alloc _ _ _ _ _ H). xomega.
+         ++ auto.
+         ++ auto.
+      -- eauto.
+      -- auto. 
+      -- apply agree_regs_init_regs. eauto.
+         inv H2. auto.
+      -- congruence.
+      -- eauto.
+      -- red. erewrite Mem.record_stack_block_nextblock. eapply Mem.valid_new_block; eauto. eauto.
+      -- red; intros. split.
+         ++ eapply Mem.record_stack_block_perm'; eauto.
+            eapply Mem.perm_alloc_2; eauto. inv H2; xomega.
+         ++ intros; red; intros. eapply Mem.record_stack_block_perm in H11; eauto.
+            exploit Mem.perm_alloc_inv. eexact H. eauto.
+            destruct (eq_block b stk); intros.
+            subst. rewrite D in H10; inv H10. inv H2; xomega.
+            rewrite E in H10; auto. eelim Mem.fresh_block_alloc.
+            eexact A. eapply Mem.valid_block_inject_2; eauto.
+      -- auto.
+      -- intros.
+         eapply Mem.record_stack_block_perm in H9; eauto.
+         exploit Mem.perm_alloc_inv; eauto. rewrite dec_eq_true. omega.
+      -- intros.
+         eapply Mem.record_stack_block_perm in H9; eauto.
+         exploit Mem.perm_alloc_inv. 2: eauto. eauto. rewrite dec_eq_true. omega.
+      -- erewrite Mem.record_stack_blocks_stack_adt; eauto.
+         erewrite Mem.alloc_stack_blocks; eauto.
+         econstructor; eauto.
+      -- erewrite Mem.record_stack_blocks_stack_adt; eauto.
+         erewrite Mem.alloc_stack_blocks; eauto.
+         econstructor; eauto.
+      -- eapply compat_framinj_rec_push. eauto.
 
 - (* internal function, inlined *)
   inversion FB; subst.
@@ -1706,20 +1756,49 @@ Proof.
     intros [A B]. eelim B; eauto.
     replace (ofs + delta' - delta') with ofs by omega.
     apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
+    intros. erewrite match_stack_adt_noframe in H9; eauto. congruence.
   intros [F' [A [B [C D]]]].
+  destruct (stack_top_frame_at_position (Mem.stack_adt m'0) sp') as (f0 & FAP & INF).
+  red; inv MS2. simpl. auto.
+  exploit Mem.record_stack_blocks_inject_left. apply A. eauto.
+  2: eauto.
+  {
+    split.
+    - constructor; auto. rewrite C. inversion 1; subst. eauto.
+    - red; simpl. inv MS2. rewrite <- H10 in FAP. inv FAP. simpl in H7.  inv H7. simpl. auto.
+  }
+  intros MINJ'.
   exploit tr_moves_init_regs; eauto. intros [rs'' [P [Q R]]].
   left; econstructor; split.
   eapply plus_left. eapply exec_Inop; eauto. eexact P. traceEq.
   econstructor.
-  eapply match_stacks_inside_alloc_left; eauto.
-  eapply match_stacks_inside_invariant; eauto.
-  omega.
-  eauto. auto.
-  apply agree_regs_incr with F; auto.
-  auto. auto. auto.
-  rewrite H2. eapply range_private_alloc_left; eauto.
-  auto. auto.
-
+  + eapply match_stacks_inside_record_left.
+    eapply match_stacks_inside_alloc_left; eauto.
+    eapply match_stacks_inside_invariant; eauto.
+    xomega.
+    omega. eauto.
+  + eauto.
+  + auto.
+  + apply agree_regs_incr with F; auto.
+  + auto.
+  + eauto.
+  + auto.
+  + rewrite H3.
+    eapply range_private_invariant.
+    eapply range_private_alloc_left; eauto.
+    2: tauto.
+    split; auto. eapply Mem.record_stack_block_perm; eauto.
+  + auto.
+  + auto.
+  + intros.
+    eapply Mem.record_stack_block_perm in H7. 2: eauto.
+    eapply Mem.perm_alloc_inv in H7. 2: eauto. rewrite pred_dec_true in H7. auto. auto.
+  + erewrite Mem.record_stack_blocks_stack_adt; eauto.
+    erewrite Mem.alloc_stack_blocks; eauto.
+    econstructor; eauto.
+  + auto. 
+  + eapply compat_framinj_rec_push_left. eauto.
+    
 - (* external function *)
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
@@ -1729,21 +1808,24 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor.
+  econstructor. 
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
     intros; eapply external_call_max_perm; eauto.
     intros; eapply external_call_max_perm; eauto.
+    eapply external_call_nextblock; eauto.
     xomega.
     eapply external_call_nextblock; eauto.
-    auto. auto.
+    auto. eauto. auto.
+    erewrite <- external_call_stack_blocks; eauto.
+    erewrite <- external_call_stack_blocks; eauto. 
 
 - (* return fron noninlined function *)
   inv MS0.
 + (* normal case *)
   left; econstructor; split.
   eapply plus_one. eapply exec_return.
-  econstructor; eauto.
+  econstructor; eauto. 
   apply match_stacks_inside_set_reg; auto.
   apply agree_set_reg; auto.
 + (* untailcall case *)
@@ -1751,13 +1833,13 @@ Proof.
   rewrite RET in RET0; inv RET0.
   left; econstructor; split.
   eapply plus_one. eapply exec_return.
-  eapply match_regular_states.
+  eapply match_regular_states. 
   eapply match_stacks_inside_set_reg; eauto.
   eauto. auto.
   apply agree_set_reg; auto.
-  auto. auto. auto.
+  auto. eauto. auto.
   red; intros. destruct (zlt ofs (dstk ctx)). apply PAD; omega. apply PRIV; omega.
-  auto. auto.
+  auto. auto. auto. auto. auto. auto.
 
 - (* return from inlined function *)
   inv MS0; try congruence. rewrite RET0 in RET; inv RET.
@@ -1773,7 +1855,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 End WITHMEMINIT.
 
@@ -1792,30 +1874,34 @@ Inductive match_states'
 .
 
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states' st1 st2.
+  forall st1, initial_state fn_stack_requirements prog st1 -> exists st2, initial_state fn_stack_requirements tprog st2 /\ match_states' st1 st2.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & FIND & TR & LINK).
-  exists (Callstate nil tf nil m0); split.
-  econstructor; eauto.
+  exists (Callstate nil tf nil m0 (fn_stack_requirements (prog_main prog))); split.
+  - erewrite <- match_program_main; eauto.
+    econstructor; eauto.
     eapply (Genv.init_mem_match TRANSF); eauto.
     rewrite symbols_preserved. replace (prog_main tprog) with (prog_main prog). auto.
     symmetry; eapply match_program_main; eauto.
     rewrite <- H3. eapply sig_function_translated; eauto.
-  econstructor; eauto.
-  unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
-  econstructor; eauto.
-  instantiate (1 := Mem.flat_inj (Mem.nextblock m0)).
-  apply match_stacks_nil with (Mem.nextblock m0).
-  constructor; intros.
-    apply Ple_refl.
-    unfold Mem.flat_inj. apply pred_dec_true; auto.
-    unfold Mem.flat_inj in H. destruct (plt b1 (Mem.nextblock m0)); congruence.
-    eapply Genv.find_symbol_not_fresh; eauto.
-    eapply Genv.find_funct_ptr_not_fresh; eauto.
-    eapply Genv.find_var_info_not_fresh; eauto.
-    apply Ple_refl.
-  eapply Genv.initmem_inject; eauto.
+  - econstructor; eauto.
+    + unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
+    + econstructor; eauto.
+      * instantiate (1:= nil). instantiate (1 := Mem.flat_inj (Mem.nextblock m0)).
+        apply match_stacks_nil with (Mem.nextblock m0).
+        -- constructor; intros.
+           apply Ple_refl.
+           unfold Mem.flat_inj. apply pred_dec_true; auto.
+           unfold Mem.flat_inj in H. destruct (plt b1 (Mem.nextblock m0)); congruence.
+           eapply Genv.find_symbol_not_fresh; eauto.
+           eapply Genv.find_funct_ptr_not_fresh; eauto.
+           eapply Genv.find_var_info_not_fresh; eauto.
+        -- apply Ple_refl.
+      * eapply Genv.initmem_inject; eauto.
+      * erewrite Genv.init_mem_stack_adt; eauto. constructor.
+      * erewrite Genv.init_mem_stack_adt; eauto. constructor.
+      * erewrite Genv.init_mem_stack_adt; eauto. constructor.
 Qed.
 
 Lemma transf_final_states:
@@ -1828,7 +1914,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics prog) (semantics tprog).
+  forward_simulation (semantics fn_stack_requirements prog) (semantics fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.
