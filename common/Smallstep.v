@@ -895,6 +895,8 @@ Qed.
 
 End SIMULATION_STEP.
 
+*)
+
 (** Simulation when one transition in the first program
     corresponds to zero or one transitions in the second program.
     However, there is no stuttering: infinitely many transitions
@@ -906,22 +908,30 @@ Section SIMULATION_OPT.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
+  forall s1 t1 s1', Step L1 s1 t1 s1' ->
   forall s2, match_states s1 s2 ->
-  (exists s2', Step L2 s2 t s2' /\ match_states s1' s2')
-  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
+  (exists w t2 s2',
+    Star L2 s2 t2 s2' /\
+    match_events_query (symbolenv L1) cc w t1 t2 /\
+    forall t2',
+      match_traces (symbolenv L1) t2 t2' ->
+      match_events (symbolenv L1) cc w t1 t2' ->
+      exists s2'',
+        Plus L2 s2 t2' s2'' /\
+        match_states s1' s2'') \/
+  (stable_event (symbolenv L1) t1 /\
+    ((exists s2', Step L2 s2 t1 s2' /\ match_states s1' s2') \/
+     (measure s1' < measure s1 /\ t1 = E0 /\ match_states s1' s2)%nat)).
 
-Lemma forward_simulation_opt: forward_simulation L1 L2.
+Lemma forward_simulation_opt: forward_simulation cc L1 L2.
 Proof.
   apply forward_simulation_star with measure.
-  intros. exploit simulation; eauto. intros [[s2' [A B]] | [A [B C]]].
-  left; exists s2'; split; auto. apply plus_one; auto.
-  right; auto.
+  intros.
+  edestruct simulation as [ | [Ht [(? & Hstep & ?) | ?]]];
+    eauto 10 using plus_one.
 Qed.
 
 End SIMULATION_OPT.
-
-*)
 
 End FORWARD_SIMU_DIAGRAMS.
 
