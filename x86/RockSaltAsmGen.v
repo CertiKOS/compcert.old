@@ -304,6 +304,10 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
   | Psubl_ri rd n => 
     do rd' <- transl_ireg rd; 
     OK (fun data_addr => [SUB true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)
+  | Psubl_rr rd r1 => 
+    do rd' <- transl_ireg rd; 
+    do r1' <- transl_ireg r1; 
+    OK (fun data_addr => [SUB true (Reg_op rd') (Reg_op r1')], lmap)
   | Pleal rd a =>
     do rd' <- transl_ireg rd;
     do a' <- transl_addr_mode a;
@@ -369,6 +373,11 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
   | Pcmpl_ri r1 n =>
     do r1' <- transl_ireg r1;
     OK (fun data_addr => [CMP true (Reg_op r1') (Imm_op (int_to_bits n))],lmap)
+  | Pcltd =>
+    OK (fun data_addr => [CDQ], lmap)
+  | Pidivl r1 => 
+    do r1' <- transl_ireg r1;
+    OK (fun data_addr => [IDIV true (Reg_op r1')],lmap)
   | Plabel l =>
     OK (fun data_addr => [], update_lmap lmap f l ofs)
   | _ => 
