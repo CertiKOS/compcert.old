@@ -1244,6 +1244,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
       match_states (Returnstate stk v m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 
+
 (** ** Forward simulation *)
 
 Definition measure (S: RTL.state) : nat :=
@@ -1406,6 +1407,11 @@ Proof.
   exploit find_function_agree; eauto. intros (cu & fd' & A & B & C).
   assert (PRIV': range_private F m' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
   { eapply range_private_free_left; eauto. inv FB. rewrite <- H5. auto. }
+  assert (PRIV'': range_private F m'' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
+  {
+    eapply range_private_invariant in PRIV'. eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H4; eauto. tauto.
+  }
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* within the original function *)
   inv MS0; try congruence.
@@ -1476,9 +1482,6 @@ Proof.
   eapply match_stacks_inside_invariant; eauto.
   intros. eapply Mem.unrecord_stack_block_perm in H6. eapply Mem.perm_free_3; eauto. eauto.
   erewrite (Mem.unrecord_stack_block_nextblock _ _ H3), (Mem.nextblock_free _ _ _ _ _ H2); eauto. xomega.
-  red; intros. specialize (PRIV' ofs H4). red in PRIV' |- *.
-  destruct PRIV' as (P1 & P2). split; auto. intros. intro P3. eapply P2; eauto.
-  eapply Mem.unrecord_stack_block_perm. eauto. eauto.
   eapply agree_val_regs; eauto.
   eapply match_stack_adt_free; eauto.
   eapply compat_framinj_rec_pop_left. eauto.
@@ -1486,45 +1489,44 @@ Proof.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
-  right; split. simpl; omega. split. auto.
-  exploit Mem.free_left_inject; eauto. intro FREEINJ.
-  assert (0 < n )%nat. {
-    inv MS0.
-    2: omega.
+  destruct (lt_dec O n) as [LT|EQO].
+  * right; split. simpl; omega. split. auto.
+    exploit Mem.free_left_inject; eauto. intro FREEINJ.
+    exploit Mem.unrecord_stack_block_inject_left; eauto.
+    {
+      destruct CFINJ as (D & E).
+      apply D. omega.
+    }
+    intros. cut (stk = b). intro; subst.
+    inv FB.
+    intro PERM. eapply Mem.perm_free_2. eauto.
+    eapply SSZ3. eapply Mem.perm_free_3; eauto.
+    eapply Mem.perm_max. eapply Mem.perm_implies; eauto. constructor. eauto.
+    erewrite Mem.free_stack_blocks in H1; eauto. inv MS1. rewrite <- H11 in H1; red in H1; simpl in H1. destruct H1; subst; easy.
+    intro MINJ'.
+    econstructor; eauto. 
+    eapply match_stacks_inside_inlined_tailcall; eauto.
+    eapply match_stacks_inside_invariant; eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H5. eapply Mem.perm_free_3; eauto. eauto.
+    erewrite (Mem.unrecord_stack_block_nextblock _ _ H3), (Mem.nextblock_free _ _ _ _ _ H2); eauto. xomega.
+    apply agree_val_regs_gen; auto.
+    eapply range_private_invariant in PRIV'. 
+    red; intros; apply PRIV'.
+    assert (dstk ctx <= dstk ctx').
+    {
+      red in H15; rewrite H15. apply align_le. apply min_alignment_pos.
+    }
+    omega.
+    intros; split; auto.
+    eapply Mem.unrecord_stack_block_perm; eauto.
+    tauto.
+    eapply match_stack_adt_free; eauto.
+    eapply compat_framinj_rec_pop_left. eauto.
+  *
+    assert (n = O) by omega. subst. clear EQO.
+    right; simpl; split; auto. split; auto.
     admit.
-  } 
-  exploit Mem.unrecord_stack_block_inject_left; eauto.
-  {
-    destruct CFINJ as (D & E).
-    apply D. omega.
-  }
-  intros. cut (stk = b). intro; subst.
-  inv FB.
-  intro PERM. eapply Mem.perm_free_2. eauto.
-  eapply SSZ3. eapply Mem.perm_free_3; eauto.
-  eapply Mem.perm_max. eapply Mem.perm_implies; eauto. constructor. eauto.
-  erewrite Mem.free_stack_blocks in H4; eauto. inv MS1. rewrite <- H13 in H4; red in H4; simpl in H4. destruct H4; subst; easy.
-  intro MINJ'.
-  econstructor; eauto. 
-  eapply match_stacks_inside_inlined_tailcall; eauto.
-  eapply match_stacks_inside_invariant; eauto.
-  intros. eapply Mem.unrecord_stack_block_perm in H10. eapply Mem.perm_free_3; eauto. eauto.
-  erewrite (Mem.unrecord_stack_block_nextblock _ _ H3), (Mem.nextblock_free _ _ _ _ _ H2); eauto. xomega.
-  eapply range_private_invariant in PRIV'. eauto.
-  intros. eapply Mem.unrecord_stack_block_perm in H5; eauto. tauto.
-  apply agree_val_regs_gen; auto.
-  eapply range_private_invariant in PRIV'. 
-  red; intros; apply PRIV'.
-  assert (dstk ctx <= dstk ctx').
-  {
-    red in H15; rewrite H15. apply align_le. apply min_alignment_pos.
-  }
-  omega.
-  intros; split; auto.
-  eapply Mem.unrecord_stack_block_perm; eauto.
-  tauto.
-  eapply match_stack_adt_free; eauto.
-  eapply compat_framinj_rec_pop_left. eauto.
+
 
 - (* builtin *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
@@ -1806,7 +1808,7 @@ Proof.
     econstructor; eauto.
   + auto. 
   + eapply compat_framinj_rec_push_left. eauto.
-    
+
 - (* external function *)
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.

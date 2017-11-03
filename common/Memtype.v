@@ -1163,6 +1163,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
   f b1 = Some(b2, delta) ->
   inject f g m1 m2 ->
   valid_access m1 chunk b1 ofs p ->
+  (perm_order p Writable -> frameinj_pack_after O g) ->
   inject_perm_condition p ->
   valid_access m2 chunk b2 (ofs + delta) p;
 
@@ -1295,6 +1296,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
   inject f g m1 m2 ->
   store chunk m1 b1 ofs v1 = Some n1 ->
   f b1 = Some (b2, delta) ->
+  frameinj_pack_after O g ->
   Val.inject f v1 v2 ->
   exists n2,
     store chunk m2 b2 (ofs + delta) v2 = Some n2
@@ -1323,6 +1325,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
   storev chunk m1 a1 v1 = Some n1 ->
   Val.inject f a1 a2 ->
   Val.inject f v1 v2 ->
+  frameinj_pack_after O g ->
   exists n2,
     storev chunk m2 a2 v2 = Some n2 /\ inject f g n1 n2;
 
@@ -1331,6 +1334,7 @@ Class MemoryModel mem `{memory_model_ops: MemoryModelOps mem}
   inject f g m1 m2 ->
   storebytes m1 b1 ofs bytes1 = Some n1 ->
   f b1 = Some (b2, delta) ->
+  frameinj_pack_after O g ->
   list_forall2 (memval_inject f) bytes1 bytes2 ->
   exists n2,
     storebytes m2 b2 (ofs + delta) bytes2 = Some n2
@@ -1657,6 +1661,8 @@ for [unchanged_on]. *)
      (FAP: frame_at_pos (stack_adt m2) 0 f2)
      (FI: frame_inject' j (perm m1) f1 f2)
      (RSB: record_stack_blocks m1 f1 m1'),
+     frameinj_pack_after O g ->
+     frameinj_surjective g (length (stack_adt m2)) ->
      inject j (fun n : nat => if Nat.eq_dec n 0 then Some O else g (Init.Nat.pred n)) m1' m2;
 
  record_stack_blocks_inject_parallel {injperm: InjectPerm}:
@@ -1710,6 +1716,7 @@ for [unchanged_on]. *)
    forall (m1 m1' m2 : mem) (j : meminj) g,
      inject j g m1 m2 ->
      unrecord_stack_block m1 = Some m1' ->
+     frameinj_pack_after O g ->
      (forall i j, g i = Some j -> (O < i) -> (O < j))%nat ->
      exists m2',
        unrecord_stack_block m2 = Some m2' /\ inject j (fun n => option_map pred (g (S n))) m1' m2';
@@ -1718,7 +1725,7 @@ for [unchanged_on]. *)
    forall (m1 m1' m2 : mem) (j : meminj) g,
      inject j g m1 m2 ->
      unrecord_stack_block m1 = Some m1' ->
-     g 1%nat = Some O ->
+     (* g 1%nat = Some O -> *)
      (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ perm m1 b o k p) ->
      inject j (fun n => g (S n)) m1' m2;
 
@@ -1805,6 +1812,7 @@ for [unchanged_on]. *)
    forall f g m1 m2 b1 b2 delta
      (MINJ: inject f g m1 m2)
      (FB: f b1 = Some (b2, delta))
+     (FPA: frameinj_pack_after O g)
      (IST: is_stack_top ( (stack_adt m1)) b1),
      is_stack_top ( (stack_adt m2)) b2 ;
 
@@ -2260,6 +2268,7 @@ Lemma unrecord_stack_block_inject_parallel_strict:
    forall (m1 m1' m2 : mem) (j : meminj) g,
      inject j g m1 m2 ->
      frameinj_order_strict g ->
+     frameinj_pack_after O g ->
      unrecord_stack_block m1 = Some m1' ->
      exists m2',
        unrecord_stack_block m2 = Some m2'
