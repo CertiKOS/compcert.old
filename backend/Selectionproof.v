@@ -895,21 +895,11 @@ Definition measure (s: Cminor.state) : nat :=
 Lemma sel_step_correct:
   forall S1 t S2, Cminor.step ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists w t' T2,
-    star step tge T1 t' T2 /\
-    match_events_query ge cc_extends w t t' /\
-    forall t'',
-      match_traces ge t' t'' ->
-      match_events ge cc_extends w t t'' ->
-      exists T2',
-        plus step tge T1 t'' T2' /\
-        match_states S2 T2') \/
-  (stable_event ge t /\
-    ((exists T2, step tge T1 t T2 /\ match_states S2 T2) \/
-     (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat)).
+  exists w, forall t', match_events ge cc_extends w t t' ->
+  (exists T2, step tge T1 t' T2 /\ match_states S2 T2)
+  \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
-  induction 1; intros T1 ME; inv ME; try (monadInv TS); try (right; split; [constructor|]).
-
+  induction 1; intros T1 ME; inv ME; try (monadInv TS); try stable_step.
 - (* skip seq *)
   inv MC. left; econstructor; split. econstructor. econstructor; eauto.
 - (* skip block *)
@@ -977,20 +967,10 @@ Proof.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)
   exploit sel_builtin_args_correct; eauto. intros [vargs' [P Q]].
-  edestruct external_call_mem_extends as (t'& vres' & m2 & A & B & C); eauto.
-  reflexivity.
-  left; exists tt; eexists; eexists.
-  intuition; eauto.
-  {
-    apply star_one.
-    econstructor; eauto.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  edestruct C as (vres'' & tm'' & Hstep' & ? & ? & ?); eauto.
-  eexists.
-  split.
-  eapply plus_one.
+  exploit external_call_mem_extends; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [vres' [m2 [A [B [C D]]]]].
+  left; econstructor; split.
   econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto. apply sel_builtin_res_correct; auto.
 - (* Seq *)
@@ -1066,36 +1046,18 @@ Proof.
 - (* external call *)
   destruct TF as (hf & HF & TF).
   monadInv TF.
-  edestruct external_call_mem_extends as (t' & vres' & m2 & ? & ? & H'); eauto.
-  reflexivity.
-  left; exists tt; eexists; eexists; split.
-  {
-    apply star_one.
-    econstructor.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  split; eauto.
-  intros t'' ? ?.
-  edestruct H' as (vres'' & m2' & ? & ? & ? & ?); eauto.
-  econstructor; split.
-  apply plus_one.
+  exploit external_call_mem_extends; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [vres' [m2 [A [B [C D]]]]].
+  left; econstructor; split.
   econstructor. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
-  edestruct external_call_mem_extends as (t' & vres' & m2 & ? & ? & H'); eauto.
-  reflexivity.
-  left; exists tt; eexists; econstructor; intuition; eauto.
-  {
-    apply star_one.
-    econstructor; eauto.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  edestruct H' as (vres'' & m2'' & H'' & ? & ? & ?); eauto.
-  eexists; split.
-  apply plus_one.
-  econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved. eauto.
+  exploit external_call_mem_extends; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [vres' [m2 [A [B [C D]]]]].
+  left; econstructor; split.
+  econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 - (* return *)
   apply match_call_cont_cont in MC. destruct MC as (cunit0 & hf0 & MC).

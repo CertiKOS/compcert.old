@@ -556,10 +556,11 @@ Qed.
 Theorem transf_step_correct:
   forall s1 t s2, LTL.step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', plus Linear.step tge s1' t s2' /\ match_states s2 s2')
+  exists w, forall t', match_events ge cc_id w t t' ->
+  (exists s2', plus Linear.step tge s1' t' s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
-  induction 1; intros; try (inv MS).
+  induction 1; intros; try (inv MS); try stable_step.
 
   (* start of block, at an [add_branch] *)
   exploit find_label_lin; eauto. intros [k F].
@@ -726,7 +727,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (Linear.semantics tprog).
+  forward_simulation cc_id (LTL.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

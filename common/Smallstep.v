@@ -513,107 +513,55 @@ Open Scope smallstep_scope.
 
 (** The general form of a forward simulation. *)
 
-Record fsim_properties (L1 L2: semantics) (cc: callconv) (index: Type)
+Record fsim_properties (cc: callconv) (L1 L2: semantics) (index: Type)
                        (order: index -> index -> Prop)
                        (match_states: index -> state L1 -> state L2 -> Prop) : Prop := {
     fsim_order_wf: well_founded order;
     fsim_match_initial_states:
       forall s1, initial_state L1 s1 ->
-      exists i s2, initial_state L2 s2 /\ match_states i s1 s2;
+      exists i, exists s2, initial_state L2 s2 /\ match_states i s1 s2;
     fsim_match_final_states:
       forall i s1 s2 r,
       match_states i s1 s2 -> final_state L1 s1 r -> final_state L2 s2 r;
     fsim_simulation:
-      forall s1 t1 s1', Step L1 s1 t1 s1' ->
+      forall s1 t s1', Step L1 s1 t s1' ->
       forall i s2, match_states i s1 s2 ->
-      exists w t2 s2',
-        Star L2 s2 t2 s2' /\
-        match_events_query (symbolenv L1) cc w t1 t2 /\
-        forall t2',
-          match_traces (symbolenv L1) t2 t2' ->
-          match_events (symbolenv L1) cc w t1 t2' ->
-          exists i' s2'',
-            (Plus L2 s2 t2' s2'' \/ (Star L2 s2 t2' s2'' /\ order i' i))
-            /\ match_states i' s1' s2'';
+      exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+      exists i', exists s2',
+         (Plus L2 s2 t' s2' \/ (Star L2 s2 t' s2' /\ order i' i))
+      /\ match_states i' s1' s2';
     fsim_public_preserved:
       forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id
   }.
 
 Arguments fsim_properties: clear implicits.
 
-Inductive forward_simulation (cc: callconv) (L1 L2: semantics): Prop :=
+Inductive forward_simulation (cc: callconv) (L1 L2: semantics) : Prop :=
   Forward_simulation (index: Type)
                      (order: index -> index -> Prop)
                      (match_states: index -> state L1 -> state L2 -> Prop)
-                     (props: fsim_properties L1 L2 cc index order match_states).
+                     (props: fsim_properties cc L1 L2 index order match_states).
 
-Arguments Forward_simulation cc {L1 L2 index} order match_states props.
+Arguments Forward_simulation {cc L1 L2 index} order match_states props.
 
 (** An alternate form of the simulation diagram *)
 
 Lemma fsim_simulation':
-  forall L1 L2 cc index order match_states,
-  fsim_properties L1 L2 cc index order match_states ->
-  forall i s1 t1 s1', Step L1 s1 t1 s1' ->
+  forall cc L1 L2 index order match_states, fsim_properties cc L1 L2 index order match_states ->
+  forall i s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states i s1 s2 ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t1 t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t1 t2' ->
-      exists i' s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states i' s1' s2'')
-  \/
-  (exists i', order i' i /\ t1 = E0 /\ match_states i' s1' s2).
+  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  (exists i', exists s2', Plus L2 s2 t' s2' /\ match_states i' s1' s2')
+  \/ (exists i', order i' i /\ t = E0 /\ match_states i' s1' s2).
 Proof.
-  intros.
-  cut
-    (exists w t2 s2',
-      Star L2 s2 t2 s2' /\
-      match_events_query (symbolenv L1) cc w t1 t2 /\
-      forall t2',
-        match_traces (symbolenv L1) t2 t2' ->
-        match_events (symbolenv L1) cc w t1 t2' ->
-        (exists i' s2'', Plus L2 s2 t2' s2''/\ match_states i' s1' s2'') \/
-        (exists i', order i' i /\ t1 = E0 /\ match_states i' s1' s2)).
-  {
-    intros (w & t2 & s2' & Hstep2 & Ht & Hstep2').
-    destruct t1 as [ | e1 t1].
-    - inv Ht.
-      specialize (Hstep2' nil).
-      destruct Hstep2' as [Hstep2' | Hstep2'].
-      + constructor.
-      + constructor.
-      + destruct Hstep2' as (i' & s2'' & Hstep2' & Hi).
-        left.
-        exists w, nil, s2'.
-        intuition.
-        * constructor.
-        * inv H2.
-          eauto.
-      + destruct Hstep2' as (i' & Hi & _ & Hs').
-        right.
-        eauto.
-    - left.
-      exists w, t2, s2'.
-      intuition.
-      edestruct Hstep2' as [Hstep2'' | Hstep2'']; eauto.
-      destruct Hstep2'' as (i' & Hi & Ht' & Hs').
-      discriminate.
-  }
-  edestruct fsim_simulation as (w & t2 & s2' & Hstep2 & Ht & Hstep2'); eauto.
-  exists w, t2, s2'; intuition.
-  edestruct Hstep2' as (i' & s2'' & [Hstep2''| [Hstep2'' Hi]] & Hs'); eauto 10.
-  apply star_inv in Hstep2''.
-  destruct Hstep2'' as [[Hs2'' Ht2'] | Hstep2'']; subst.
-  - right.
-    inv H2.
-    inv Ht.
-    eauto.
-  - left.
-    eauto.
+  intros. exploit fsim_simulation; eauto.
+  intros [w Hw]. exists w. intros t' Ht'.
+  edestruct Hw as [i' [s2' [A B]]]; eauto. intuition.
+  left; exists i'; exists s2'; auto.
+  inv H3.
+  inv Ht'.
+  right; exists i'; auto.
+  left; exists i'; exists s2'; split; auto. econstructor; eauto.
 Qed.
 
 (** ** Forward simulation diagrams. *)
@@ -622,9 +570,9 @@ Qed.
 
 Section FORWARD_SIMU_DIAGRAMS.
 
+Variable cc: callconv.
 Variable L1: semantics.
 Variable L2: semantics.
-Variable cc: callconv.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
@@ -657,70 +605,25 @@ Variable order: state L1 -> state L1 -> Prop.
 Hypothesis order_wf: well_founded order.
 
 Hypothesis simulation:
-  forall s1 t1 s1', Step L1 s1 t1 s1' ->
+  forall s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t1 t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t1 t2' ->
-      exists s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states s1' s2'') \/
-  (stable_event (symbolenv L1) t1 /\
-   exists s2',
-    (Plus L2 s2 t1 s2' \/ (Star L2 s2 t1 s2' /\ order s1' s1))
-   /\ match_states s1' s2').
-
-Lemma stable_step_star_wf s1 t1 s1' s2:
-  Step L1 s1 t1 s1' ->
-  match_states s1 s2 ->
-  stable_event (symbolenv L1) t1 ->
-  (exists s2',
-    (Plus L2 s2 t1 s2' \/ (Star L2 s2 t1 s2' /\ order s1' s1))
-    /\ match_states s1' s2') ->
-  (exists w t2 s2',
-     Star L2 s2 t2 s2' /\
-     match_events_query (symbolenv L1) cc w t1 t2 /\
-     forall t2',
-       match_traces (symbolenv L1) t2 t2' ->
-       match_events (symbolenv L1) cc w t1 t2' ->
-       exists i' s2'',
-         (Plus L2 s2 t2' s2'' \/ (Star L2 s2 t2' s2'' /\ order i' s1)) /\
-         i' = s1' /\ match_states s1' s2'').
-Proof.
-  intros Hstep1 Hs Ht1 (s2' & Hstep2 & Hs').
-  exists (dummy_world cc), t1, s2'.
-  split.
-  {
-    destruct Hstep2 as [Hstep2 | [Hstep2 _]]; eauto.
-    apply plus_star; eauto.
-  }
-  split.
-  {
-    apply match_events_subrel_query.
-    apply match_stable_event_refl; eauto.
-  }
-  intros t2' _ Ht2'.
-  assert (t1 = t2') by (eapply match_stable_event_corefl; eauto); subst t2'.
-  eauto.
-Qed.
+  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  exists s2',
+  (Plus L2 s2 t' s2' \/ (Star L2 s2 t' s2' /\ order s1' s1))
+  /\ match_states s1' s2'.
 
 Lemma forward_simulation_star_wf: forward_simulation cc L1 L2.
 Proof.
-  apply (Forward_simulation cc) with order (fun idx s1 s2 => idx = s1 /\ match_states s1 s2);
+  apply Forward_simulation with order (fun idx s1 s2 => idx = s1 /\ match_states s1 s2);
   constructor.
 - auto.
-- intros. exploit match_initial_states; eauto. intros (s2 & A & B).
-  exists s1, s2; auto.
+- intros. exploit match_initial_states; eauto. intros [s2 [A B]].
+    exists s1; exists s2; auto.
 - intros. destruct H. eapply match_final_states; eauto.
-- intros. destruct H0. subst i.
-  edestruct simulation as [(w & t2 & s2' & Hstep2 & Ht & Hstep2') | Hst]; eauto.
-  + exists w, t2, s2'; intuition.
-    edestruct Hstep2' as (s2'' & Hstep2'' & Hs''); eauto 10.
-  + destruct Hst as [? Hst].
-    eapply stable_step_star_wf in Hst; eauto.
+- intros. destruct H0. subst i. exploit simulation; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [s2' [A B]].
+  exists s1'; exists s2'; intuition auto.
 - auto.
 Qed.
 
@@ -735,85 +638,22 @@ Section SIMULATION_STAR.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall s1 t1 s1', Step L1 s1 t1 s1' ->
+  forall s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t1 t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t1 t2' ->
-      exists s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states s1' s2'') \/
-  (stable_event (symbolenv L1) t1 /\
-   ((exists s2', Plus L2 s2 t1 s2' /\ match_states s1' s2') \/
-    (measure s1' < measure s1 /\ t1 = E0 /\ match_states s1' s2)%nat)).
-
-Lemma stable_step_star s1 t s1' s2:
-  Step L1 s1 t s1' ->
-  match_states s1 s2 ->
-  stable_event (symbolenv L1) t ->
-  (exists s2', Plus L2 s2 t s2' /\ match_states s1' s2') ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t t2' ->
-      exists s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states s1' s2'').
-Proof.
-  intros Hstep1 Hs Ht (s2' & Hstep2 & Hs').
-  exists (dummy_world cc), t, s2'.
-  split.
-  {
-    apply plus_star; eauto.
-  }
-  split.
-  {
-    apply match_events_subrel_query.
-    apply match_stable_event_refl; eauto.
-  }
-  intros t2' _ Ht2'.
-  assert (t = t2') by (eapply match_stable_event_corefl; eauto); subst t2'.
-  eauto.
-Qed.
+  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  (exists s2', Plus L2 s2 t' s2' /\ match_states s1' s2')
+  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
 
 Lemma forward_simulation_star: forward_simulation cc L1 L2.
 Proof.
-  assert
-   (forall s1 t1 s1', Step L1 s1 t1 s1' ->
-    forall s2, match_states s1 s2 ->
-    (exists w t2 s2',
-      Star L2 s2 t2 s2' /\
-      match_events_query (symbolenv L1) cc w t1 t2 /\
-      forall t2',
-        match_traces (symbolenv L1) t2 t2' ->
-        match_events (symbolenv L1) cc w t1 t2' ->
-        exists s2'',
-          Plus L2 s2 t2' s2'' /\
-          match_states s1' s2'') \/
-    (measure s1' < measure s1 /\
-     t1 = E0 /\
-     match_states s1' s2)%nat) as Hsim.
-  {
-    intros.
-    edestruct simulation as [? | [? [? | ?]]]; eauto using stable_step_star.
-  }
   apply forward_simulation_star_wf with (ltof _ measure).
-  - apply well_founded_ltof.
-  - intros s1 t1 s1' Hstep1 s2 Hs.
-    edestruct Hsim
-      as [(w & t2 & s2' & Hstep2 & Ht & Hstep2') | (Hi & Ht1 & Hs')]; eauto.
-    + left.
-      exists w, t2, s2'.
-      intuition.
-    + right.
-      subst.
-      split; [ constructor | ].
-      eauto 10 using star_refl.
+  apply well_founded_ltof.
+  intros. exploit simulation; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [[s2' [A B]] | [A [B C]]].
+  exists s2'; auto.
+  subst t; inv Ht'.
+  exists s2; split. right; split. apply star_refl. auto. auto.
 Qed.
 
 End SIMULATION_STAR.
@@ -824,57 +664,19 @@ End SIMULATION_STAR.
 Section SIMULATION_PLUS.
 
 Hypothesis simulation:
-  forall s1 t1 s1', Step L1 s1 t1 s1' ->
+  forall s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t1 t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t1 t2' ->
-      exists s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states s1' s2'') \/
-  (stable_event (symbolenv L1) t1 /\
-   exists s2',
-     Plus L2 s2 t1 s2' /\ match_states s1' s2').
-
-Lemma stable_step_plus s1 t s1' s2:
-  stable_event (symbolenv L1) t ->
-  Step L1 s1 t s1' ->
-  match_states s1 s2 ->
-  (exists s2', Plus L2 s2 t s2' /\ match_states s1' s2') ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t t2' ->
-      exists s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states s1' s2'').
-Proof.
-  intros Ht Hstep Hs (s2' & Hstep2 & Hs').
-  exists (dummy_world cc), t, s2'.
-  intuition; eauto using plus_star.
-  - eapply match_events_subrel_query.
-    eapply match_stable_event_refl; eauto.
-  - assert (t = t2') by (eapply match_stable_event_corefl; eauto); subst t2'.
-    eauto.
-Qed.
+  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  exists s2', Plus L2 s2 t' s2' /\ match_states s1' s2'.
 
 Lemma forward_simulation_plus: forward_simulation cc L1 L2.
 Proof.
   apply forward_simulation_star with (measure := fun _ => O).
-  intros.
-  left.
-  edestruct simulation as [Hsim | [Ht Hsim]]; eauto.
-  eapply stable_step_plus; eauto.
+  intros. exploit simulation; eauto.
+  intros [w Hw]; eauto.
 Qed.
 
 End SIMULATION_PLUS.
-
-(*
 
 (** Lock-step simulation: each transition in the first semantics
     corresponds to exactly one transition in the second semantics. *)
@@ -884,18 +686,19 @@ Section SIMULATION_STEP.
 Hypothesis simulation:
   forall s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  exists s2', Step L2 s2 t s2' /\ match_states s1' s2'.
+  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  exists s2', Step L2 s2 t' s2' /\ match_states s1' s2'.
 
-Lemma forward_simulation_step: forward_simulation L1 L2.
+Lemma forward_simulation_step: forward_simulation cc L1 L2.
 Proof.
   apply forward_simulation_plus.
-  intros. exploit simulation; eauto. intros [s2' [A B]].
+  intros. exploit simulation; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [s2' [A B]].
   exists s2'; split; auto. apply plus_one; auto.
 Qed.
 
 End SIMULATION_STEP.
-
-*)
 
 (** Simulation when one transition in the first program
     corresponds to zero or one transitions in the second program.
@@ -908,95 +711,57 @@ Section SIMULATION_OPT.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall s1 t1 s1', Step L1 s1 t1 s1' ->
+  forall s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  (exists w t2 s2',
-    Star L2 s2 t2 s2' /\
-    match_events_query (symbolenv L1) cc w t1 t2 /\
-    forall t2',
-      match_traces (symbolenv L1) t2 t2' ->
-      match_events (symbolenv L1) cc w t1 t2' ->
-      exists s2'',
-        Plus L2 s2 t2' s2'' /\
-        match_states s1' s2'') \/
-  (stable_event (symbolenv L1) t1 /\
-    ((exists s2', Step L2 s2 t1 s2' /\ match_states s1' s2') \/
-     (measure s1' < measure s1 /\ t1 = E0 /\ match_states s1' s2)%nat)).
+  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  (exists s2', Step L2 s2 t' s2' /\ match_states s1' s2')
+  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
 
 Lemma forward_simulation_opt: forward_simulation cc L1 L2.
 Proof.
   apply forward_simulation_star with measure.
-  intros.
-  edestruct simulation as [ | [Ht [(? & Hstep & ?) | ?]]];
-    eauto 10 using plus_one.
+  intros. exploit simulation; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [[s2' [A B]] | [A [B C]]].
+  left; exists s2'; split; auto. apply plus_one; auto.
+  right; auto.
 Qed.
 
 End SIMULATION_OPT.
 
 End FORWARD_SIMU_DIAGRAMS.
 
-Section FORWARD_SIMU_EQ_DIAGRAMS.
+(** The following tactics are useful to remove the [exists w, ...]
+  part of the diagram whenever possible. For equality passes, we can
+  alwats drop it. In general, we can drop it whenever the source trace
+  is a stable event. *)
 
-Variable L1: semantics.
-Variable L2: semantics.
-Variable cc: callconv.
-
-Hypothesis public_preserved:
-  forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
-
-Variable match_states: state L1 -> state L2 -> Prop.
-
-Hypothesis match_initial_states:
-  forall s1, initial_state L1 s1 ->
-  exists s2, initial_state L2 s2 /\ match_states s1 s2.
-
-Hypothesis match_final_states:
-  forall s1 s2 r,
-  match_states s1 s2 ->
-  final_state L1 s1 r ->
-  final_state L2 s2 r.
-
-Section FORWARD_SIMULATION_PLUS_EQ.
-
-Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  (match_events_query (symbolenv L1) cc_id tt t t \/
-   stable_event (symbolenv L1) t) /\
-  (exists s2', Plus L2 s2 t s2' /\ match_states s1' s2').
-
-Lemma forward_simulation_plus_eq: forward_simulation cc_id L1 L2.
+Lemma stable_step_id ge t (P: trace -> Prop):
+  P t ->
+  exists w, forall t', match_events ge cc_id w t t' -> P t'.
 Proof.
-  eapply forward_simulation_plus with (match_states := match_states).
-  - assumption.
-  - intros; edestruct match_initial_states; eauto.
-  - eauto.
-  - left.
-    edestruct simulation as (Ht & s2' & Hstep2 & Hs'); eauto.
-    assert (match_events_query (symbolenv L1) cc_id tt t1 t1).
-    {
-      destruct Ht; eauto.
-      eapply match_events_subrel_query.
-      eapply match_stable_event_refl; eauto.
-    }
-    clear Ht.
-    exists (dummy_world _), t1, s2'; intuition.
-    + eauto using plus_star.
-    + assert (t1 = t2') by eauto using match_events_id_corefl; subst t2'.
-      eauto.
+  intros H.
+  destruct t as [ | [ | | | | id sg q r]];
+    try (exists dummy_world; inversion 1; congruence).
+  edestruct (match_cc_id q) as (w & Hq & Hw).
+  exists w; intros t' Ht'.
+  inv Ht'.
+  assert (q = q2) by eauto using match_query_injective; subst.
+  assert (r = r2) by eauto; subst.
+  assumption.
 Qed.
 
-End FORWARD_SIMULATION_PLUS_EQ.
-
-End FORWARD_SIMU_EQ_DIAGRAMS.
-
-(*
+Ltac stable_step :=
+  first
+    [ apply stable_step_id
+    | apply stable_step; [constructor | ] ].
 
 (** ** Forward simulation of transition sequences *)
 
+(*
 Section SIMULATION_SEQUENCES.
 
-Context L1 L2 index order match_states (S: fsim_properties L1 L2 index order match_states).
+Context cc L1 L2 index order match_states (S: fsim_properties cc L1 L2 index order match_states).
 
 Lemma simulation_star:
   forall s1 t s1', Star L1 s1 t s1' ->
@@ -1061,11 +826,16 @@ Proof.
 Qed.
 
 End SIMULATION_SEQUENCES.
+*)
 
 (** ** Composing two forward simulations *)
 
+(*
 Lemma compose_forward_simulations:
-  forall L1 L2 L3, forward_simulation L1 L2 -> forward_simulation L2 L3 -> forward_simulation L1 L3.
+  forall cc12 cc23 L1 L2 L3,
+    forward_simulation cc12 L1 L2 ->
+    forward_simulation cc23 L2 L3 ->
+    forward_simulation (cc_compose cc12 cc23) L1 L3.
 Proof.
   intros L1 L2 L3 S12 S23.
   destruct S12 as [index order match_states props].
@@ -1105,7 +875,6 @@ Proof.
 - (* symbols *)
   intros. transitivity (Senv.public_symbol (symbolenv L2) id); eapply fsim_public_preserved; eauto.
 Qed.
-
 *)
 
 (** * Receptiveness and determinacy *)
@@ -1179,8 +948,6 @@ Qed.
 End DETERMINACY.
 
 (** * Backward simulations between two transition semantics. *)
-
-(*
 
 Definition safe (L: semantics) (s: state L) : Prop :=
   forall s',
@@ -1516,6 +1283,7 @@ Qed.
 
 (** ** Converting a forward simulation to a backward simulation *)
 
+(*
 Section FORWARD_TO_BACKWARD.
 
 Context L1 L2 index order match_states (FS: fsim_properties L1 L2 index order match_states).
@@ -1808,6 +1576,7 @@ Proof.
 - (* symbols preserved *)
   exact (fsim_public_preserved FS).
 Qed.
+*)
 
 (** * Transforming a semantics into a single-event, equivalent semantics *)
 
@@ -1847,6 +1616,7 @@ End ATOMIC.
 (** A forward simulation from a semantics [L1] to a single-event semantics [L2]
   can be "factored" into a forward simulation from [atomic L1] to [L2]. *)
 
+(*
 Section FACTOR_FORWARD_SIMULATION.
 
 Variable L1: semantics.
@@ -2035,6 +1805,7 @@ Proof.
 - (* symbols *)
   simpl. exact (bsim_public_preserved sim).
 Qed.
+*)
 
 (** Receptiveness of [atomic L]. *)
 
@@ -2069,8 +1840,6 @@ Proof.
 (* single-event *)
   red. intros. inv H0; simpl; omega.
 Qed.
-
-*)
 
 (** * Connections with big-step semantics *)
 

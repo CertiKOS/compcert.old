@@ -2002,21 +2002,10 @@ End FIND_LABEL.
 Lemma step_simulation:
   forall S1 t S2, step1 ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  (exists j t' S2',
-    star step2 tge S1' t' S2' /\
-    match_events_query ge cc_inject j t t' /\
-    forall t'',
-      match_traces ge t' t'' ->
-      match_events ge cc_inject j t t'' ->
-      exists S2'',
-        plus step2 tge S1' t'' S2'' /\
-        match_states S2 S2'') \/
-  (stable_event ge t /\
-   exists S2',
-     plus step2 tge S1' t S2' /\ match_states S2 S2').
+  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists S2', plus step2 tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
-  induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS);
-    try (right; split; [constructor | ]).
+  induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS); try stable_step.
 
 (* assign *)
   generalize (is_liftable_var_charact (cenv_for f) a1); destruct (is_liftable_var (cenv_for f) a1) as [id|]; monadInv TRS.
@@ -2072,30 +2061,12 @@ Proof.
   intros. econstructor; eauto.
 
 (* builtin *)
-  left.
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
-  edestruct external_call_mem_inject
-    as (t' & vres' & m2' & Hstep' & Ht' & H''); eauto.
-  {
-    apply match_globalenvs_preserves_globals; eauto with compat.
-  }
-  exists j, t'; eexists.
-  intuition.
-  {
-    apply star_one.
-    econstructor; eauto with compat.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  edestruct H'' as (f' & vres'' & m2'' & Hstep'' & A & B & X & Y & E & F); eauto.
-  eexists.
-  intuition.
-  {
-    apply plus_one.
-    econstructor; eauto with compat.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
+  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
+  intros [w Hr]. exists w. intros t' Ht'.
+  edestruct Hr as [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]]; eauto.
+  econstructor. split.
+  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
@@ -2251,31 +2222,13 @@ Proof.
   rewrite T; xomega.
 
 (* external function *)
-  left.
   monadInv TRFD. inv FUNTY.
-  edestruct external_call_mem_inject
-    as (t' & vres' & m2' & Hstep' & Ht' & H''); eauto.
-  {
-    apply match_globalenvs_preserves_globals.
-    eapply match_cont_globalenv. eexact (MCONT VSet.empty).
-  }
-  exists j, t'; eexists.
-  intuition.
-  {
-    apply star_one.
-    constructor.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  edestruct H'' as (f' & vres'' & m2'' & Hstep'' & A & B & C & D & E & F); eauto.
-  eexists.
-  intuition.
-  {
-    apply plus_one.
-    constructor.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
+  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
+  eapply match_cont_globalenv. eexact (MCONT VSet.empty).
+  intros [w Hw]. exists w. intros t' Ht'.
+  edestruct Hw as [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]]; eauto.
+  econstructor; split.
+  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   intros. apply match_cont_incr_bounds with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_cont_extcall; eauto. xomega. xomega.

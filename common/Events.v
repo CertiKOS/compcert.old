@@ -551,7 +551,7 @@ Inductive match_events: trace -> trace -> Prop :=
       extcall_valid sg q1 r1 ->
       extcall_valid sg q2 r2 ->
       match_query cc w q1 q2 ->
-      match_reply cc w q1 q2 r1 r2 ->
+      match_reply cc w r1 r2 ->
       match_events
         (Event_extcall id sg q1 r1 :: nil)
         (Event_extcall id sg q2 r2 :: nil).
@@ -633,13 +633,19 @@ Qed.
 
 End MATCH_TRACES.
 
+Arguments match_events : clear implicits.
+Arguments match_events_query : clear implicits.
+
 (** Properties specific to certain calling conventions. *)
 
 Lemma match_events_id_corefl ge w t1 t2:
   match_events ge cc_id w t1 t2 ->
-  t1 = t2.
+  t2 = t1.
 Proof.
-  destruct 1;
+  destruct 1; try congruence.
+  destruct H1.
+  inv H2.
+  simpl in *.
   congruence.
 Qed.
 
@@ -655,11 +661,9 @@ Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
 
 Lemma match_traces_preserved:
-  forall t1 t2,
-    match_events_query ge1 cc w t1 t2 ->
-    match_events_query ge2 cc w t1 t2.
+  forall t1 t2, match_traces ge1 t1 t2 -> match_traces ge2 t1 t2.
 Proof.
-  induction 1; econstructor; eauto using eventval_valid_preserved.
+  induction 1; constructor; auto; eapply eventval_valid_preserved; eauto.
 Qed.
 
 End MATCH_TRACES_INV.
@@ -726,77 +730,6 @@ Inductive volatile_store (ge: Senv.t):
 Definition extcall_sem : Type :=
   Senv.t -> list val -> mem -> trace -> val -> mem -> Prop.
 
-(** External calls must commute with the calling convention, in the
-  following sense. The system has two responsabilities: when two
-  states are related by the simulation relation, the forward
-  simulation should hold on the system component of any generated
-  event (per [match_traces]). Receptiveness means that any environment
-  behavior will then be allowed. In the case where the source and
-  target environments have related behaviors (per [match_event]),
-  then the system needs to transition to related states. *)
-
-Definition extcall_relational_properties cc (sem: extcall_sem) (sg: signature) :=
-  forall ge1 ge2 w vargs1 m1 t1 vres1 m1' vargs2 m2,
-    sem ge1 vargs1 m1 t1 vres1 m1' ->
-    match_senv cc w ge1 ge2 ->
-    match_query cc w (vargs1, m1) (vargs2, m2) ->
-    exists t2 vres2 m2',
-      sem ge2 vargs2 m2 t2 vres2 m2' /\
-      match_events_query ge1 cc w t1 t2 /\
-      forall t2',
-        match_traces ge1 t2 t2' ->
-        match_events ge1 cc w t1 t2' ->
-        exists vres2' m2'',
-          sem ge2 vargs2 m2 t2' vres2' m2'' /\
-          match_reply cc w (vargs1, m1) (vargs2, m2) (vres1, m1') (vres2', m2'').
-
-(** For calls which generate stable events, [match_event] reduces to
-  equality, so that the two steps above collapse into one. *)
-
-Lemma extcall_stable_event_relational_properties cc (sem: extcall_sem) sg:
-  (forall ge1 ge2 w vargs m1 t vres m2 vargs' m1',
-    match_senv cc w ge1 ge2 ->
-    sem ge1 vargs m1 t vres m2 ->
-    match_query cc w (vargs, m1) (vargs', m1') ->
-    exists vres' m2',
-      sem ge2 vargs' m1' t vres' m2' /\ 
-      stable_event ge1 t /\
-      match_reply cc w (vargs, m1) (vargs', m1') (vres, m2) (vres', m2')) ->
-  extcall_relational_properties cc sem sg.
-Proof.
-  intros H.
-  red.
-  intros until m2.
-  intros Hstep Hge Hq.
-  edestruct H as (vres2 & m2' & Hstep2 & Ht & Hr); eauto.
-  exists t1, vres2, m2'.
-  split; eauto.
-  split.
-  {
-    eapply match_events_subrel_query.
-    eapply match_stable_event_refl; eauto.
-  }
-  intros t2' Ht2' Ht'.
-  assert (t1 = t2') by eauto using match_stable_event_corefl; subst t2'.
-  exists vres2, m2'.
-  eauto.
-Qed.
-
-(** When proving [ec_mem_extends] or [ec_mem_inject] below, this can
-  be used for proofs of cases with stable events. We make some effort
-  to produce a proof state identical to before our changes. *)
-
-Ltac extcall_relational_properties_compat :=
-  eapply extcall_stable_event_relational_properties;
-  intros ge ge' w vargs m1 t vres m2 vargs' m1' Hge;
-  simpl in Hge; (subst ge' || rename Hge into H);
-  intro;
-  let Hq := fresh in
-  intros Hq **;
-  (eapply match_query_extends in Hq; destruct Hq as (? & ?)) ||
-  (eapply match_query_inject in Hq; destruct Hq as (? & ?));
-  simpl in *.
-
 (** We now specify the expected properties of this predicate. *)
 
 Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
@@ -839,12 +772,34 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 (** External calls must commute with memory extensions, in the
   following sense. *)
   ec_mem_extends:
-    extcall_relational_properties cc_extends sem sg;
+    forall ge vargs m1 t vres m2 m1' vargs',
+    sem ge vargs m1 t vres m2 ->
+    Mem.extends m1 m1' ->
+    Val.lessdef_list vargs vargs' ->
+    exists w, forall t', match_events ge cc_extends w t t' ->
+    exists vres', exists m2',
+       sem ge vargs' m1' t' vres' m2'
+    /\ Val.lessdef vres vres'
+    /\ Mem.extends m2 m2'
+    /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2';
 
 (** External calls must commute with memory injections,
   in the following sense. *)
   ec_mem_inject:
-    extcall_relational_properties cc_inject sem sg;
+    forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
+    symbols_inject f ge1 ge2 ->
+    sem ge1 vargs m1 t vres m2 ->
+    Mem.inject f m1 m1' ->
+    Val.inject_list f vargs vargs' ->
+    exists w, forall t', match_events ge2 cc_inject w t t' ->
+    exists f', exists vres', exists m2',
+       sem ge2 vargs' m1' t' vres' m2'
+    /\ Val.inject f' vres vres'
+    /\ Mem.inject f' m2 m2'
+    /\ Mem.unchanged_on (loc_unmapped f) m1 m2
+    /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
+    /\ inject_incr f f'
+    /\ inject_separated f f' m1 m1';
 
 (** External calls produce at most one event. *)
   ec_trace_length:
@@ -863,6 +818,18 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
     match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
 }.
+
+Lemma stable_step cc ge t (P: world cc -> trace -> Prop):
+  stable_event ge t ->
+  P dummy_world t ->
+  exists w, forall t', match_events ge cc w t t' -> P w t'.
+Proof.
+  intros Ht H.
+  exists dummy_world.
+  intros t' Ht'.
+  apply match_stable_event_corefl in Ht'; eauto.
+  congruence.
+Qed.
 
 (** ** Semantics of volatile loads *)
 
@@ -949,17 +916,25 @@ Proof.
 (* readonly *)
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
-- extcall_relational_properties_compat.
-  inv H. inv H1. inv H6. inv H4.
+- inv H. inv H1. inv H6. inv H4.
+  apply stable_step.
+  {
+    destruct H2; try constructor.
+    inv H2; simpl; eauto.
+  }
   exploit volatile_load_extends; eauto. intros [v' [A B]].
   exists v'; exists m1'; intuition. constructor; auto.
-  admit. (* volatile load has stable event *)
 (* mem injects *)
-- extcall_relational_properties_compat.
-  inv H0. inv H2. inv H7. inversion H5; subst.
+- inv H0. inv H2. inv H7. inversion H5; subst.
+  apply stable_step.
+  {
+    destruct H3; try constructor.
+    destruct H as [? _].
+    inv H3; simpl; eauto.
+  }
   exploit volatile_load_inject; eauto. intros [v' [A B]].
-  exists v'; exists m1'; intuition. constructor; auto.
-  admit. (* stable event *)
+  exists f; exists v'; exists m1'; intuition. constructor; auto.
+  red; intros. congruence.
 (* trace length *)
 - inv H; inv H0; simpl; omega.
 (* receptive *)
@@ -976,7 +951,7 @@ Proof.
   assert (v = v0) by (eapply eventval_match_determ_1; eauto). subst v0.
   auto.
   split. constructor. intuition congruence.
-Admitted.
+Qed.
 
 (** ** Semantics of volatile stores *)
 
@@ -1022,7 +997,7 @@ Lemma volatile_store_extends:
   /\ Mem.extends m2 m2'
   /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2'.
 Proof.
-  intros. inv H; inv H2.
+  intros. inv H.
 - econstructor; split. econstructor; eauto.
   eapply eventval_match_lessdef; eauto. apply Val.load_result_lessdef; auto.
   auto with mem.
@@ -1102,18 +1077,15 @@ Proof.
 (* readonly *)
 - inv H. eapply volatile_store_readonly; eauto.
 (* mem extends*)
-- extcall_relational_properties_compat.
-  inv H. inv H1. inv H6. inv H7. inv H4.
+- inv H. inv H1. inv H6. inv H7. inv H4.
+  apply stable_step. { inv H2; constructor. }
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
   exists Vundef; exists m2'; intuition. constructor; auto.
-  admit. (* stable event *)
 (* mem inject *)
-- extcall_relational_properties_compat.
-  inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
+- inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
+  apply stable_step. { inv H3; constructor. }
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
-  exists Vundef; exists m2'; intuition. constructor; auto.
-  admit. (* stable event *)
-  eapply match_reply_inject_intro; eauto.
+  exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
 (* trace length *)
 - inv H; inv H0; simpl; omega.
 (* receptive *)
@@ -1125,7 +1097,7 @@ Proof.
   assert (ev = ev0) by (eapply eventval_match_determ_2; eauto). subst ev0.
   split. constructor. auto.
   split. constructor. intuition congruence.
-Admitted.
+Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
 
@@ -1167,8 +1139,8 @@ Proof.
 (* readonly *)
 - inv H. eapply UNCHANGED; eauto.
 (* mem extends *)
-- extcall_relational_properties_compat.
-  inv H. inv H1. inv H7.
+- inv H. inv H1. inv H7.
+  apply stable_step. { constructor. }
   assert (SZ: v2 = Vptrofs sz).
   { unfold Vptrofs in *. destruct Archi.ptr64; inv H5; auto. }
   subst v2.
@@ -1178,11 +1150,10 @@ Proof.
   intros [m2' [C D]].
   exists (Vptr b Ptrofs.zero); exists m2'; intuition.
   econstructor; eauto.
-  admit. (* stable event *)
-  eauto.
+  eapply UNCHANGED; eauto.
 (* mem injects *)
-- extcall_relational_properties_compat.
-  inv H0. inv H2. inv H8.
+- inv H0. inv H2. inv H8.
+  apply stable_step. { constructor. }
   assert (SZ: v' = Vptrofs sz).
   { unfold Vptrofs in *. destruct Archi.ptr64; inv H6; auto. }
   subst v'.
@@ -1191,10 +1162,11 @@ Proof.
   exploit Mem.store_mapped_inject. eexact A. eauto. eauto.
   instantiate (1 := Vptrofs sz). unfold Vptrofs; destruct Archi.ptr64; constructor.
   rewrite Zplus_0_r. intros [m2' [E G]].
-  exists (Vptr b' Ptrofs.zero); exists m2'; intuition auto.
+  exists f'; exists (Vptr b' Ptrofs.zero); exists m2'; intuition auto.
   econstructor; eauto.
-  admit. (* stable event *)
-  eapply match_reply_inject_intro; eauto.
+  econstructor. eauto. auto.
+  eapply UNCHANGED; eauto.
+  eapply UNCHANGED; eauto.
   red; intros. destruct (eq_block b1 b).
   subst b1. rewrite C in H2. inv H2. eauto with mem.
   rewrite D in H2 by auto. congruence.
@@ -1212,7 +1184,7 @@ Proof.
   }
   subst.
   split. constructor. intuition congruence.
-Admitted.
+Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
 
@@ -1243,8 +1215,8 @@ Proof.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.free_range_perm; eauto.
 (* mem extends *)
-- extcall_relational_properties_compat.
-  inv H. inv H1. inv H8. inv H6.
+- inv H. inv H1. inv H8. inv H6.
+  apply stable_step. { constructor. }
   exploit Mem.load_extends; eauto. intros [v' [A B]].
   assert (v' = Vptrofs sz).
   { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. }
@@ -1252,8 +1224,6 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [C D]].
   exists Vundef; exists m2'; intuition.
   econstructor; eauto.
-  simpl. auto.
-  eapply match_reply_extends_intro; eauto.
   eapply Mem.free_unchanged_on; eauto.
   unfold loc_out_of_bounds; intros.
   assert (Mem.perm m1 b i Max Nonempty).
@@ -1261,8 +1231,8 @@ Proof.
     eapply Mem.free_range_perm. eexact H4. eauto. }
   tauto.
 (* mem inject *)
-- extcall_relational_properties_compat.
-  inv H0. inv H2. inv H7. inv H9.
+- inv H0. inv H2. inv H7. inv H9.
+  apply stable_step. { constructor. }
   exploit Mem.load_inject; eauto. intros [v' [A B]].
   assert (v' = Vptrofs sz).
   { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. }
@@ -1275,18 +1245,20 @@ Proof.
     generalize (size_chunk_pos Mptr); omega.
   intro EQ.
   exploit Mem.free_parallel_inject; eauto. intros (m2' & C & D).
-  exists Vundef, m2'; split.
+  exists f, Vundef, m2'; split.
   apply extcall_free_sem_intro with (sz := sz) (m' := m2').
     rewrite EQ. rewrite <- A. f_equal. omega.
     auto. auto.
     rewrite ! EQ. rewrite <- C. f_equal; omega.
-  simpl. split; auto.
-  eapply match_reply_inject_intro; eauto.
-  eapply Mem.free_unchanged_on; eauto. unfold loc_unmapped. intros; congruence.
-  eapply Mem.free_unchanged_on; eauto. unfold loc_out_of_reach.
+  split. auto.
+  split. auto.
+  split. eapply Mem.free_unchanged_on; eauto. unfold loc_unmapped. intros; congruence.
+  split. eapply Mem.free_unchanged_on; eauto. unfold loc_out_of_reach.
     intros. red; intros. eelim H2; eauto.
     apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
     apply P. omega.
+  split. auto.
+  red; intros. congruence.
 (* trace length *)
 - inv H; simpl; omega.
 (* receptive *)
@@ -1338,8 +1310,8 @@ Proof.
   intros; red; intros. elim H8.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
 - (* extensions *)
-  extcall_relational_properties_compat.
   intros. inv H.
+  apply stable_step. { constructor. }
   inv H1. inv H13. inv H14. inv H10. inv H11.
   exploit Mem.loadbytes_length; eauto. intros LEN.
   exploit Mem.loadbytes_extends; eauto. intros [bytes2 [A B]].
@@ -1347,7 +1319,7 @@ Proof.
   exists Vundef; exists m2'.
   split. econstructor; eauto.
   split. constructor.
-  apply match_reply_extends_intro; auto.
+  split. auto.
   eapply Mem.storebytes_unchanged_on; eauto. unfold loc_out_of_bounds; intros.
   assert (Mem.perm m1 bdst i Max Nonempty).
   apply Mem.perm_cur_max. apply Mem.perm_implies with Writable; auto with mem.
@@ -1355,8 +1327,8 @@ Proof.
   erewrite list_forall2_length; eauto.
   tauto.
 - (* injections *)
-  extcall_relational_properties_compat.
   intros. inv H0. inv H2. inv H14. inv H15. inv H11. inv H12.
+  apply stable_step. { constructor. }
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
   assert (bytes = nil).
@@ -1365,19 +1337,20 @@ Proof.
   destruct (Mem.range_perm_storebytes m1' b0 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta0))) nil)
   as [m2' SB].
   simpl. red; intros; omegaContradiction.
-  exists Vundef, m2'.
+  exists f, Vundef, m2'.
   split. econstructor; eauto.
   intros; omegaContradiction.
   intros; omegaContradiction.
   right; omega.
   apply Mem.loadbytes_empty. omega.
-  split. constructor.
-  eapply match_reply_inject_intro; eauto.
-  eapply Mem.storebytes_empty_inject; eauto.
-  eapply Mem.storebytes_unchanged_on; eauto. unfold loc_unmapped; intros.
+  split. auto.
+  split. eapply Mem.storebytes_empty_inject; eauto.
+  split. eapply Mem.storebytes_unchanged_on; eauto. unfold loc_unmapped; intros.
   congruence.
-  eapply Mem.storebytes_unchanged_on; eauto.
+  split. eapply Mem.storebytes_unchanged_on; eauto.
   simpl; intros; omegaContradiction.
+  split. apply inject_incr_refl.
+  red; intros; congruence.
 + (* general case sz > 0 *)
   exploit Mem.loadbytes_length; eauto. intros LEN.
   assert (RPSRC: Mem.range_perm m1 bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sz) Cur Nonempty).
@@ -1394,7 +1367,7 @@ Proof.
   exploit Mem.address_inject.  eauto. eexact PDST. eauto. intros EQ2.
   exploit Mem.loadbytes_inject; eauto. intros [bytes2 [A B]].
   exploit Mem.storebytes_mapped_inject; eauto. intros [m2' [C D]].
-  exists Vundef; exists m2'.
+  exists f; exists Vundef; exists m2'.
   split. econstructor; try rewrite EQ1; try rewrite EQ2; eauto.
   intros; eapply Mem.aligned_area_inject with (m := m1); eauto.
   intros; eapply Mem.aligned_area_inject with (m := m1); eauto.
@@ -1402,15 +1375,17 @@ Proof.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto. omega.
   split. constructor.
-  eapply match_reply_inject_intro; eauto.
-  eapply Mem.storebytes_unchanged_on; eauto. unfold loc_unmapped; intros.
+  split. auto.
+  split. eapply Mem.storebytes_unchanged_on; eauto. unfold loc_unmapped; intros.
   congruence.
-  eapply Mem.storebytes_unchanged_on; eauto. unfold loc_out_of_reach; intros. red; intros.
+  split. eapply Mem.storebytes_unchanged_on; eauto. unfold loc_out_of_reach; intros. red; intros.
   eelim H2; eauto.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Writable; auto with mem.
   eapply Mem.storebytes_range_perm; eauto.
   erewrite list_forall2_length; eauto.
   omega.
+  split. apply inject_incr_refl.
+  red; intros; congruence.
 - (* trace length *)
   intros; inv H. simpl; omega.
 - (* receptive *)
@@ -1447,19 +1422,18 @@ Proof.
 (* readonly *)
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
-- extcall_relational_properties_compat.
-  inv H.
+- inv H.
+  apply stable_step. { constructor. }
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_lessdef; eauto.
-  constructor.
 (* mem injects *)
-- extcall_relational_properties_compat.
-  inv H0.
-  exists Vundef; exists m1'; intuition.
+- inv H0.
+  apply stable_step. { constructor. }
+  exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
-  constructor.
+  red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
 (* receptive *)
@@ -1495,19 +1469,18 @@ Proof.
 (* readonly *)
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
-- extcall_relational_properties_compat.
-  inv H. inv H1. inv H6.
+- inv H. inv H1. inv H6.
+  apply stable_step. { constructor. }
   exists v2; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
-  constructor.
 (* mem inject *)
-- extcall_relational_properties_compat.
-  inv H0. inv H2. inv H7.
-  exists v'; exists m1'; intuition.
+- inv H0. inv H2. inv H7.
+  apply stable_step. { constructor. }
+  exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
-  constructor.
+  red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
 (* receptive *)
@@ -1541,17 +1514,16 @@ Proof.
 (* readonly *)
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
-- extcall_relational_properties_compat.
-  inv H.
+- inv H.
+  apply stable_step. { constructor. }
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
-  constructor.
 (* mem injects *)
-- extcall_relational_properties_compat.
-  inv H0.
-  exists Vundef; exists m1'; intuition.
+- inv H0.
+  apply stable_step. { constructor. }
+  exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
-  constructor.
+  red; intros; congruence.
 (* trace length *)
 - inv H; simpl; omega.
 (* receptive *)
@@ -1570,37 +1542,6 @@ Inductive external_functions_sem id (sg: signature): extcall_sem :=
   external_funcions_sem_intro ge vargs m vres m':
     extcall_step_valid sg vargs m vres m' ->
     external_functions_sem id sg ge vargs m (Event_extcall id sg (vargs, m) (vres, m') :: E0) vres m'.
-
-Lemma external_functions_sem_relational_properties cc id sg:
-  extcall_relational_properties cc (external_functions_sem id sg) sg.
-Proof.
-  red.
-  intros.
-  destruct H.
-  assert (Hvalid2: extcall_step_valid sg vargs2 m2 Vundef m2).
-  {
-    split; eauto.
-    + constructor.
-    + apply Mem.unchanged_on_refl.
-  }
-  eexists.
-  exists Vundef, m2.
-  split.
-  {
-    econstructor; eauto.
-  }
-  split.
-  {
-    econstructor; eauto.
-  }
-  intros t2' Ht2' Ht'.
-  inv Ht2'.
-  inv Ht'.
-  destruct r2 as [vres2 m2'].
-  exists vres2, m2'.
-  split; eauto.
-  constructor; eauto.
-Qed.
 
 Lemma external_functions_properties:
   forall id sg, extcall_properties (external_functions_sem id sg) sg.
@@ -1621,9 +1562,29 @@ Proof.
   - destruct 1.
     eapply ecv_readonly; eauto.
   (* mem extends *)
-  - apply external_functions_sem_relational_properties.
+  - intros.
+    destruct H.
+    edestruct match_cc_extends as (w & Hq & Hr); eauto.
+    exists w; intros t' Ht'.
+    inv Ht'.
+    assert (q2 = (vargs', m1')) by eauto using match_query_injective; subst.
+    destruct r2 as [vres' m2'].
+    specialize (Hr _ _ _ _ H10).
+    exists vres', m2'; intuition.
+    constructor.
+    assumption.
   (* mem inject *)
-  - apply external_functions_sem_relational_properties.
+  - intros.
+    destruct H0.
+    edestruct match_cc_inject as (w & Hq & Hr); eauto.
+    exists w; intros t' Ht'.
+    inv Ht'.
+    assert (q2 = (vargs', m1')) by eauto using match_query_injective; subst.
+    destruct r2 as [vres' m2'].
+    edestruct Hr as (f' & H'); eauto.
+    exists f', vres', m2'; intuition.
+    constructor.
+    assumption.
   (* trace length *)
   - destruct 1; simpl.
     reflexivity.
@@ -1732,39 +1693,26 @@ Lemma external_call_mem_inject:
   external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
-  exists t' vres' m2',
-    external_call ef ge vargs' m1' t' vres' m2' /\
-    match_events_query ge cc_inject f t t' /\
-    forall t'',
-      match_traces ge t' t'' ->
-      match_events ge cc_inject f t t'' ->
-      exists f' vres'' m2'',
-        external_call ef ge vargs' m1' t'' vres'' m2'' /\
-        Val.inject f' vres vres'' /\
-        Mem.inject f' m2 m2'' /\
-        Mem.unchanged_on (loc_unmapped f) m1 m2 /\
-        Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'' /\
-        inject_incr f f' /\
-        inject_separated f f' m1 m1'.
+  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists f', exists vres', exists m2',
+     external_call ef ge vargs' m1' t' vres' m2'
+    /\ Val.inject f' vres vres'
+    /\ Mem.inject f' m2 m2'
+    /\ Mem.unchanged_on (loc_unmapped f) m1 m2
+    /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
+    /\ inject_incr f f'
+    /\ inject_separated f f' m1 m1'.
 Proof.
-  intros. destruct H as (A & B & C).
-  edestruct external_call_mem_inject_gen
-    as (t' & vres' & m2' & Hstep' & Ht' & Hstep''); eauto.
-  {
-    instantiate (1 := ge).
-    repeat split; intros.
-    + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
-    + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
-    + simpl in H3. exists b1; split; eauto.
-    + simpl; unfold Genv.block_is_volatile.
-      destruct (Genv.find_var_info ge b1) as [gv1|] eqn:V1.
-      * exploit B; eauto. intros EQ; rewrite EQ in H; inv H. rewrite V1; auto.
-      * destruct (Genv.find_var_info ge b2) as [gv2|] eqn:V2; auto.
-        exploit C; eauto. intros EQ; subst b2. congruence.
-  }
-  exists t', vres', m2'.
-  intuition.
-  edestruct Hstep'' as (vres2'' & m2'' & ? & f' & ?); eauto.
+  intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
+  repeat split; intros.
+  + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
+  + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
+  + simpl in H3. exists b1; split; eauto.
+  + simpl; unfold Genv.block_is_volatile.
+    destruct (Genv.find_var_info ge b1) as [gv1|] eqn:V1.
+    * exploit B; eauto. intros EQ; rewrite EQ in H; inv H. rewrite V1; auto.
+    * destruct (Genv.find_var_info ge b2) as [gv2|] eqn:V2; auto.
+      exploit C; eauto. intros EQ; subst b2. congruence.
 Qed.
 
 (** Corollaries of [external_call_determ]. *)
@@ -1785,16 +1733,6 @@ Lemma external_call_deterministic:
   vres1 = vres2 /\ m1 = m2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. intuition.
-Qed.
-
-Lemma external_call_valid_query ef ge vargs m t vres m' w:
-  external_call ef ge vargs m t vres m' ->
-  match_events_query ge cc_id w t t.
-Proof.
-  intros.
-  edestruct external_call_determ as [Hmt _]; eauto.
-  destruct Hmt; constructor; eauto.
-  constructor.
 Qed.
 
 (** * Evaluation of builtin arguments *)

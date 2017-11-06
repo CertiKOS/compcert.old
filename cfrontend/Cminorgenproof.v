@@ -1946,24 +1946,11 @@ Definition measure (S: Csharpminor.state) : nat :=
 Lemma transl_step_correct:
   forall S1 t S2, Csharpminor.step ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists w t' T2,
-    star step tge T1 t' T2 /\
-    match_events_query ge cc_inject w t t' /\
-    forall t'',
-      match_traces ge t' t'' ->
-      match_events ge cc_inject w t t'' ->
-      exists T2',
-        plus step tge T1 t'' T2' /\
-        match_states S2 T2') \/
-  (stable_event ge t /\
-    ((exists T2,
-       plus step tge T1 t T2 /\
-       match_states S2 T2) \/
-     (measure S2 < measure S1 /\
-       t = E0 /\
-       match_states S2 T1)%nat)).
+  exists w, forall t', match_events ge cc_inject w t t' ->
+  (exists T2, plus step tge T1 t' T2 /\ match_states S2 T2)
+  \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
-  induction 1; intros T1 MSTATE; inv MSTATE; try (right; split; [constructor|]).
+  induction 1; intros T1 MSTATE; inv MSTATE; try stable_step.
 
 (* skip seq *)
   monadInv TR. left.
@@ -2043,30 +2030,14 @@ Proof.
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  intros (t' & vres' & tm' & EC & QINJ & Htstep).
-  left.
-  do 3 eexists.
-  split.
-  {
-    apply star_one.
-    econstructor; eauto.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  split; eauto.
-  intros t'' Ht'' Ht.
-  edestruct Htstep as (f' & vres'' & tm'' & EC' & ? & ? & ? & ? & ? & ?); eauto.
-  eexists.
-  split.
-  {
-    apply plus_one.
-    econstructor; eauto.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  assert (MCS': match_callstack f' m' tm''
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
+  left; econstructor; split.
+  apply plus_one. econstructor. eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
-                 (Mem.nextblock m') (Mem.nextblock tm'')).
+                 (Mem.nextblock m') (Mem.nextblock tm')).
     apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
     eapply match_callstack_external_call; eauto.
     intros. eapply external_call_max_perm; eauto.
@@ -2214,27 +2185,11 @@ Opaque PTree.set.
   exploit match_callstack_match_globalenvs; eauto. intros [hi MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  intros (t' & vres' & tm' & EC & QINJ & Htstep).
-  left.
-  do 3 eexists.
-  split.
-  {
-    apply star_one.
-    econstructor; eauto.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
-  split; eauto.
-  intros t'' Ht'' Ht.
-  edestruct Htstep as (f' & vres'' & tm'' & EC' & ? & ? & ? & ? & ? & ?); eauto.
-  eexists.
-  split.
-  {
-    apply plus_one.
-    econstructor; eauto.
-    eapply external_call_symbols_preserved; eauto.
-    apply senv_preserved.
-  }
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
+  left; econstructor; split.
+  apply plus_one. econstructor.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.

@@ -703,11 +703,10 @@ Lemma transl_expr_Ebuiltin_correct:
 Proof.
   intros; red; intros. inv TE.
   exploit H0; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
-  edestruct external_call_mem_extends as (t' & vx & tm2x & A & B & C); eauto.
-  instantiate (2 := tt).
-  reflexivity.
-  inv B.
-  edestruct (C E0) as (v' & tm2 & D & E & F & G); try constructor.
+  exploit external_call_mem_extends; eauto.
+  intros [w Hw].
+  specialize (Hw E0 (match_events_E0 _ _)).
+  destruct Hw as [v' [tm2 [A [B [C [D E]]]]]].
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
   split. eapply star_right. eexact EX1.
@@ -738,11 +737,10 @@ Lemma transl_expr_Eexternal_correct:
 Proof.
   intros; red; intros. inv TE.
   exploit H3; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
-  edestruct external_call_mem_extends as (t' & vx & tm2x & A & B & C); eauto.
-  instantiate (2 := tt).
-  reflexivity.
-  inv B.
-  edestruct (C E0) as (v' & tm2 & D & E & F & G); try constructor.
+  exploit external_call_mem_extends; eauto.
+  intros [w Hw].
+  specialize (Hw E0 (match_events_E0 _ _)).
+  destruct Hw as [v' [tm2 [A [B [C [D E]]]]]].
   exploit function_ptr_translated; eauto. simpl. intros [tf [P Q]]. inv Q.
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
@@ -1305,21 +1303,12 @@ Qed.
 Theorem transl_step_correct:
   forall S1 t S2, CminorSel.step ge S1 t S2 ->
   forall R1, match_states S1 R1 ->
-  (exists w t' R2,
-    star RTL.step tge R1 t' R2 /\
-    match_events_query ge cc_extends w t t' /\
-    forall t'',
-      match_traces ge t' t'' ->
-      match_events ge cc_extends w t t'' ->
-      exists R2',
-        plus RTL.step tge R1 t'' R2' /\
-        match_states S2 R2') \/
- (stable_event ge t /\
+  exists w, forall t', match_events ge cc_extends w t t' ->
   exists R2,
-  (plus RTL.step tge R1 t R2 \/ (star RTL.step tge R1 t R2 /\ lt_state S2 S1))
-  /\ match_states S2 R2).
+  (plus RTL.step tge R1 t' R2 \/ (star RTL.step tge R1 t' R2 /\ lt_state S2 S1))
+  /\ match_states S2 R2.
 Proof.
-  induction 1; intros R1 MSTATE; inv MSTATE; try (right; split; [constructor|]).
+  induction 1; intros R1 MSTATE; inv MSTATE; try stable_step.
 
   (* skip seq *)
   inv TS. inv TK. econstructor; split.
@@ -1441,22 +1430,11 @@ Proof.
   exploit (@eval_builtin_args_lessdef _ ge (fun r => rs'#r) (fun r => rs'#r)); eauto.
   intros (vargs'' & X & Y).
   assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
-  edestruct external_call_mem_extends as (t' & xv & xtm & A & B & C); eauto.
-  reflexivity.
-  left.
-  exists tt; eexists; eexists; split.
-  {
-    eapply star_right. eexact E.
-    eapply exec_Ibuiltin. eauto.
-    eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-    eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-    traceEq.
-  }
-  split; eauto.
-  intros t'' Ht'' Ht.
-  edestruct C as (v' & tm'' & Hstep & ? & ? & ?); eauto.
-  eexists; split.
-  eapply plus_right. eexact E.
+  edestruct external_call_mem_extends as [w Hw]; eauto.
+  exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [tv [tm'' [A [B [C D]]]]].
+  econstructor; split.
+  left. eapply plus_right. eexact E.
   eapply exec_Ibuiltin. eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
@@ -1573,20 +1551,11 @@ Proof.
 
   (* external call *)
   monadInv TF.
-  edestruct external_call_mem_extends as (tvres & tm' & A & B & C & D); eauto.
-  reflexivity.
-  left.
-  exists tt; eexists; eexists.
-  split.
-  {
-    apply star_one. eapply exec_function_external; eauto.
-    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  }
-  split; eauto.
-  intros.
-  edestruct D as (? & ? & ? & ? & ? & ?); eauto.
+  edestruct external_call_mem_extends as [w Hw]; eauto.
+  exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [tvres [tm' [A [B [C D]]]]].
   econstructor; split.
-  apply plus_one. eapply exec_function_external; eauto.
+  left; apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
 
