@@ -4150,7 +4150,7 @@ Proof.
   + eapply plus_left. econstructor; eauto.
     {
       unfold check_alloc_frame. 
-      rewrite (unfold_transf_function _ _ TRANSL). Opaque fe_ofs_link fe_ofs_retaddr. simpl.
+      rewrite (unfold_transf_function _ _ TRANSL). Opaque fe_ofs_link fe_ofs_retaddr fe_size. simpl.
       assert (forall z, proj_sumbool (zeq z z) = true).
       {
         intros. destruct zeq. reflexivity. congruence.
@@ -4166,6 +4166,8 @@ Proof.
       intros. eapply retaddr_link_sep; eauto.
       generalize (size_chunk_pos Mptr); omega.
       generalize (size_chunk_pos Mptr); omega.
+      split.
+      generalize (frame_env_range (function_bounds f)) (bound_stack_data_pos (function_bounds f)). simpl. omega.
       eexists; split. eauto. simpl. reflexivity.
       split. apply fe_ofs_retaddr_pos. etransitivity. apply fe_ofs_retaddr_fe_size. eapply size_no_overflow; eauto.
       split. apply fe_ofs_link_pos. etransitivity. apply fe_ofs_link_fe_size. eapply size_no_overflow; eauto.

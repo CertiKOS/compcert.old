@@ -1839,6 +1839,57 @@ for [unchanged_on]. *)
    forall m bl sz m',
      record_stack_blocks_none m bl sz = Some m' <->
      record_stack_blocks m (bl,None,sz) m';
+
+ record_stack_block_inject_left_zero {injperm: InjectPerm}:
+    forall m1 m1' m2 j g f1 f2
+      (INJ: inject j g m1 m2)
+      (FAP: frame_at_pos (stack_adt m2) O f2)
+      (FI: frame_inject' j (perm m1) f1 f2)
+      (SZ1: Forall (fun f => 0 <= frame_adt_size f)%Z (stack_adt m1))
+      (SZ2: Forall (fun f => 0 = frame_adt_size f)%Z (stack_adt m2)) 
+      (SZf1: (0 <= frame_adt_size f1)%Z)
+      (RSB: record_stack_blocks m1 f1 m1'),
+      inject j (fun n : nat => if Nat.eq_dec n O then Some O else g (pred n)) m1' m2;
+
+
+
+ unrecord_stack_block_inject_left_zero {injperm: InjectPerm}:
+    forall (m1 m1' m2 : mem) (j : meminj) g,
+      inject j g m1 m2 ->
+      unrecord_stack_block m1 = Some m1' ->
+      (forall i j, g i = Some j -> j = O) ->
+      (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ Mem.perm m1 b o k p) ->
+      inject j (fun n => g (S n)) m1' m2;
+
+
+ mem_inject_ext {injperm: InjectPerm}:
+   forall j g1 g2 m1 m2,
+     inject j g1 m1 m2 ->
+     (forall x, g1 x = g2 x) ->
+     inject j g2 m1 m2;
+
+ record_stack_blocks_intro:
+    forall m1 f,
+      valid_frame f m1 ->
+      Forall (fun b => ~ in_frames (stack_adt m1) b) (frame_blocks f) ->
+      Forall
+        (fun b : block =>
+           forall (o : Z) (k : perm_kind) (p : permission),
+             perm m1 b o k p -> forall fi : frame_info, frame_adt_info f = Some fi -> (0 <= o < frame_size fi)%Z) 
+        (frame_blocks f) ->
+      (size_stack (stack_adt m1) + align (Z.max 0 (frame_adt_size f)) 8 < stack_limit)%Z ->
+      exists m2,
+        record_stack_blocks m1 f m2;
+
+ record_stack_block_right {injperm: InjectPerm}:
+   forall j g m1 m2 m2' fi,
+     inject j g m1 m2 ->
+     record_stack_blocks m2 fi m2' ->
+     stack_adt m1 = nil ->
+     (forall o, option_map (fun fi => frame_perm fi o) (frame_adt_info fi) = Some Public) ->
+     inject j (fun n => option_map S (g n)) m1 m2';
+
+
 }.
 
 Section WITHMEMORYMODEL.

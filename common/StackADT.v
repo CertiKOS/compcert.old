@@ -337,10 +337,44 @@ predicate that represents the permissions for the source memory [m1] in which
 
   Hint Resolve shift_segment_id.
 
+  Definition stack_perm_le (sp1 sp2: stack_permission) :=
+    match sp1, sp2 with
+      Readonly, _ => True
+    | Private, Readonly => False
+    | Private, _ => True
+    | Public, Public => True
+    | Public, _ => False
+    end.
+
+  Lemma stack_perm_le_public:
+    forall fi p o,
+      (forall x, frame_perm fi x = Public) ->
+      stack_perm_le p (frame_perm fi o).
+  Proof.
+    intros fi p o PUB; rewrite PUB.
+    destruct p; red; auto.
+  Qed.
+
+  Lemma stack_perm_le_refl:
+    forall p,
+      stack_perm_le p p.
+  Proof.
+    destruct p; red; auto.
+  Qed.
+
+  Lemma stack_perm_le_trans:
+    forall p1 p2 p3,
+      stack_perm_le p1 p2 ->
+      stack_perm_le p2 p3 ->
+      stack_perm_le p1 p3.
+  Proof.
+    destruct p1,p2,p3; unfold stack_perm_le; intros; congruence.
+  Qed.
+
   Record shift_frame delta fi fi' :=
     {
-      shift_link: list_forall2 (fun fl1 fl2 => shift_segment delta fl1 fl2) (frame_link fi) (frame_link fi');
-      shift_perm: forall o, 0 <= o < frame_size fi -> frame_perm fi o = frame_perm fi' (o + delta);
+      (* shift_link: list_forall2 (fun fl1 fl2 => shift_segment delta fl1 fl2) (frame_link fi) (frame_link fi'); *)
+      shift_perm: forall o, 0 <= o < frame_size fi -> stack_perm_le (frame_perm fi o) (frame_perm fi' (o + delta));
       shift_size:
         forall o, 0 <= o < frame_size fi -> 0 <= o + delta < frame_size fi';
     }.
@@ -350,8 +384,7 @@ predicate that represents the permissions for the source memory [m1] in which
       shift_frame 0 f f.
   Proof.
     constructor; auto.
-    induction (frame_link f); constructor; auto.
-    intros; rewrite Z.add_0_r. auto.
+    intros; rewrite Z.add_0_r. eapply stack_perm_le_refl; auto.
     intros; omega.
   Qed.
 
@@ -517,14 +550,13 @@ predicate that represents the permissions for the source memory [m1] in which
       shift_frame (delta1 + delta2) f1 f3.
   Proof.
     intros f1 f2 f3 delta1 delta2 A B; inv A; inv B; constructor; eauto.
-    - destruct f1,f2,f3. simpl in *.
-      clear - shift_link0 shift_link1.
-      revert frame_link0 frame_link1 delta1 shift_link0 frame_link2 delta2 shift_link1.
-      induction 1; inversion 1; constructor; eauto.
+    (* - destruct f1,f2,f3. simpl in *. *)
+    (*   clear - shift_link0 shift_link1. *)
+    (*   revert frame_link0 frame_link1 delta1 shift_link0 frame_link2 delta2 shift_link1. *)
+    (*   induction 1; inversion 1; constructor; eauto. *)
     - intros.
-      rewrite shift_perm0; auto.
-      rewrite Z.add_assoc.
-      apply shift_perm1. auto.
+      eapply stack_perm_le_trans; eauto.
+      rewrite Z.add_assoc. eauto.
     - intros.
       apply shift_size0 in H. apply shift_size1 in H. omega.
   Qed.
@@ -602,7 +634,9 @@ predicate that represents the permissions for the source memory [m1] in which
           exploit frame_inject_frame1; eauto. 
           inversion 1.
           unfold frame_public.
-          erewrite <- shift_perm; eauto.
+          split; auto.
+          generalize (shift_perm0 _ A).
+          rewrite B. destruct (frame_perm f0 (o + z + z0)); intuition.
         * rewrite Z.add_assoc.
           rewrite Forall_forall in *.
           exploit frame_inject_frame1; eauto.
@@ -800,7 +834,7 @@ predicate that represents the permissions for the source memory [m1] in which
           frame_at_pos s2 i2 f2 ->
           g i1 = Some i2 ->
           (forall i, g i = Some i2 -> i <= i1) ->
-          frame_adt_size f2 = frame_adt_size f1;
+          (frame_adt_size f2 <= frame_adt_size f1)%Z;
     }.
 
   (* Definition stack_injection f m s1 s2 : Prop := *)
@@ -925,7 +959,7 @@ predicate that represents the permissions for the source memory [m1] in which
           g i1 = Some i2 /\
           frame_inject' f m f1 f2 /\
            i2 <=  i1 /\
-          ((forall i, g i = Some i2 -> i <= i1) -> frame_adt_size f2 = frame_adt_size f1).
+          ((forall i, g i = Some i2 -> i <= i1) -> (frame_adt_size f2 <= frame_adt_size f1)%Z).
   Proof.
     intros f g m s1 s2 SI b1 b2 delta FB i1 f1 FAP IFR.
     edestruct stack_inject_compat as (i2 & f2 & FAP2 & IFR2 & GI1); eauto.
@@ -1466,7 +1500,9 @@ predicate that represents the permissions for the source memory [m1] in which
         frame_public f2 (o+delta).
   Proof.
     unfold frame_public. intros.
-    erewrite <- shift_perm; eauto.
+    generalize (shift_perm _ _ _ H _ H0); eauto.
+    rewrite H1.
+    destruct (frame_perm f2); simpl; intuition.
   Qed.
 
   Close Scope nat_scope.
@@ -1931,14 +1967,15 @@ predicate that represents the permissions for the source memory [m1] in which
         intros. unfold frame_readonly.
         assert (lo <= o - delta < hi) by omega.
         apply B in H3. unfold frame_readonly in H3.
-        erewrite shift_perm in H3; eauto.
-        replace (o - delta + delta) with o in H3 by omega. auto.
+        generalize (shift_perm _ _ _ H1 (o - delta)).
+        intro C. trim C. rewrite Forall_forall in FAP.
         unfold get_frame_info in H. symmetry in H.
         apply get_assoc_spec in H.
         destruct H as (l & n & IN1 & IN2).
-        rewrite Forall_forall in FAP. specialize (FAP _ IN1).
-        eapply FAP; eauto.
-        apply RP. omega.
+        specialize (FAP _ IN1). red in FAP. simpl in FAP. eapply FAP. eauto. apply RP. omega.
+        intro FP; apply H3.
+        replace (o - delta + delta) with o in C by omega.
+        red in C. repeat destr_in C.
       + intros.
         unfold frame_readonly.
         replace o with (o - delta + delta) by omega.
@@ -2294,7 +2331,7 @@ predicate that represents the permissions for the source memory [m1] in which
     transitivity (size_stack (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1))).
     2: apply size_stack_filteri.
     exploit stack_inject_length_stack; eauto. intro L.
-    assert (list_forall2 (fun f1 f2 => frame_adt_size f1 = frame_adt_size f2) (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)) s2).
+    assert (list_forall2 (fun f1 f2 => frame_adt_size f2 <= frame_adt_size f1) (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)) s2).
     {
       revert s1 s2 SI SURJ L.
       induction s1; simpl; intros; eauto.
@@ -2307,7 +2344,6 @@ predicate that represents the permissions for the source memory [m1] in which
         exploit stack_inject_pack. eauto. eauto. intro. assert (x = O) by omega. subst.
         inv FAP. destruct s2; simpl in H0; inv H0.
         constructor.
-        symmetry.
         eapply stack_inject_sizes. eauto. instantiate (1:=O). constructor; reflexivity.
         2: eauto.
         constructor; reflexivity.
@@ -2319,7 +2355,8 @@ predicate that represents the permissions for the source memory [m1] in which
     generalize (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)).
     generalize s2.
     induction 1; simpl; intros; eauto. omega.
-    destruct b1, a1. destruct p, p0. simpl in H; subst. omega.
+    destruct b1, a1. destruct p, p0. simpl in H; subst.
+    apply Z.add_le_mono. auto. admit.
   Admitted.
 
   

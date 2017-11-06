@@ -667,7 +667,8 @@ End MEM_ACCESSORS_DEFAULT.
 Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
   (Nat.eq_dec (length (frame_link f)) 1)
     && Forall_dec _ (fun fl => zeq (Ptrofs.unsigned ofs_link) (seg_ofs fl)) (frame_link f)
-    && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr).
+    && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
+    && zle 0 (frame_size f).
 
 
 Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link ofs_ra :=

@@ -302,6 +302,7 @@ Definition check_alloc_frame (f: frame_info) (fn: function) :=
       Ptrofs.unsigned (fn_retaddr_ofs fn) <= o < Ptrofs.unsigned (fn_retaddr_ofs fn) + size_chunk Mptr ->
       frame_readonly f o) /\
   disjointb  (Ptrofs.unsigned (fn_link_ofs fn)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs fn)) (size_chunk Mptr) = true /\
+  0 <= (frame_size f) /\
   exists fl, frame_link f = fl :: nil /\ seg_ofs fl = Ptrofs.unsigned (fn_link_ofs fn).
 
 Inductive step: state -> trace -> state -> Prop :=

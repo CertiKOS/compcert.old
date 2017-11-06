@@ -1240,14 +1240,24 @@ Transparent destroyed_by_jumptable.
   (* replace (chunk_of_type Tptr) with Mptr in F, P by (unfold Tptr, Mptr; destruct Archi.ptr64; auto). *)
   (* rewrite (sp_val _ _ _ AG) in F. rewrite F. *)
   (* rewrite ATLR. rewrite P. *)
-  unfold check_alloc_frame. 
-  move H0 at bottom.
-  unfold Mach.check_alloc_frame in H0.
-  destruct H0 as (LRRO & LRDISJ & fl & EQflink & EQlink).
-  rewrite EQflink. simpl.
-  rewrite if_forall_dec.
-  rewrite LRDISJ. eauto.
-  constructor; auto.
+
+  Lemma check_alloc_frame_correct:
+    forall fi f,
+      Mach.check_alloc_frame fi f ->
+      check_alloc_frame fi (fn_link_ofs f) (fn_retaddr_ofs f) = true.
+  Proof.
+    unfold Mach.check_alloc_frame.
+    intros fi f (LRRO & LRDISJ & SZpos & fl & EQflink & EQlink).
+    unfold check_alloc_frame.
+    rewrite ! andb_true_iff.
+    repeat split.
+    rewrite EQflink. simpl. auto.
+    rewrite EQflink. destruct Forall_dec; auto.
+    auto.
+    destruct zle; auto.
+  Qed.
+
+  erewrite check_alloc_frame_correct; eauto.
   econstructor; eauto.
   unfold nextinstr. rewrite Pregmap.gss. repeat rewrite Pregmap.gso; auto with asmgen.
   rewrite ATPC. simpl. constructor; eauto.
@@ -1265,23 +1275,24 @@ Transparent destroyed_at_function_entry.
   erewrite Mem.store_stack_blocks. 2: simpl in *; eauto.
   erewrite Mem.alloc_stack_blocks. 2: eauto.
   auto.
+  destruct H0 as (LRRO & LRDISJ & SZpos & fl & EQfl & EQflofs).
   constructor; auto. simpl; auto.
   rewrite X, H. 
   split; auto.
   inversion 1. subst. 
   unfold Mach.check_alloc_frame in H0.
   move H0 at bottom.
-  split; auto. rewrite <- and_assoc. split.
+  split; auto.
+  rewrite <- and_assoc. split.
   apply range_eqb_and.
   generalize (size_chunk_pos Mptr); omega.
   generalize (size_chunk_pos Mptr); omega.
   intros.
-  apply H0 in H6.
-  destruct (frame_readonly_dec (Mach.fn_frame f0) o); auto.
+  apply LRRO in H5.
+  destruct (frame_readonly_dec (Mach.fn_frame f0) o); auto. 
   apply andb_true_iff. split.
-  destruct H0. destruct H6. destruct H7 as (fl & EQfl & EQl). rewrite EQfl.
-  destruct Forall_dec. auto. exfalso; apply n; constructor; auto.
-  destruct H0. destruct H6. auto.
+  destruct Forall_dec; auto.
+  auto.
 
   erewrite (Mem.record_stack_blocks_stack_adt _ _ m1_). 2: eauto.
   erewrite (Mem.record_stack_blocks_stack_adt _ _ m1''). 2: eauto.
