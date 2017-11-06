@@ -417,7 +417,9 @@ Proof.
     eapply Events.external_call_trace_length; eauto.
     eapply Events.external_call_trace_length; eauto.
   - (* initial states *)
-    inv H; inv H0. inv H; inv H1. f_equal. congruence.
+    inv H; inv H0. inv H; inv H1. f_equal.
+    eapply Memtype.Mem.record_stack_block_det; eauto.
+    congruence.
   - (* final no step *)
     assert (NOTNULL: forall b ofs, Values.Vnullptr <> Values.Vptr b ofs).
     { intros; unfold Values.Vnullptr; destruct Archi.ptr64; congruence. }

@@ -8403,6 +8403,7 @@ Proof.
   intros; eapply mem_inject_ext; eauto.
   intros; eapply record_stack_blocks_intro; eauto.
   intros; eapply record_stack_block_right; eauto.
+  intros; eapply record_stack_block_det; eauto.
 Qed.
 
 End Mem.

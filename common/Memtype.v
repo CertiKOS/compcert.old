@@ -1889,7 +1889,11 @@ for [unchanged_on]. *)
      (forall o, option_map (fun fi => frame_perm fi o) (frame_adt_info fi) = Some Public) ->
      inject j (fun n => option_map S (g n)) m1 m2';
 
-
+ record_stack_block_det:
+   forall m f m1 m2,
+     record_stack_blocks m f m1 ->
+     record_stack_blocks m f m2 ->
+     m1 = m2;
 }.
 
 Section WITHMEMORYMODEL.
