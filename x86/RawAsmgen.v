@@ -850,8 +850,8 @@ Section WITHMEMORYMODEL.
     exploit Mem.store_mapped_inject. apply MINJ'. simpl in *; eauto. eauto.
     eapply val_inject_incr; eauto. intros (m3' & STORE & MINJ2).
     simpl.
-    assert (Ptrofs.unsigned (Ptrofs.add (Ptrofs.repr newostack) (Ptrofs.repr (seg_ofs (frame_link fi)))) =
-            seg_ofs (frame_link fi) + newostack) as EQ.
+    assert (Ptrofs.unsigned (Ptrofs.add (Ptrofs.repr newostack) (Ptrofs.repr (seg_ofs fl))) =
+            seg_ofs fl + newostack) as EQ.
     2: rewrite EQ, STORE.
     rewrite Ptrofs.add_commut. erewrite Mem.address_inject; eauto. rewrite Ptrofs.unsigned_repr. omega. omega.
     exploit Mem.store_valid_access_3. exact STORE_PARENT. 

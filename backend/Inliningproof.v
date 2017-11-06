@@ -1249,6 +1249,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
       match_states (Returnstate stk v m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 
+
 (** ** Forward simulation *)
 
 Definition measure (S: RTL.state) : nat :=
@@ -1412,6 +1413,11 @@ Proof.
   exploit find_function_agree; eauto. intros (cu & fd' & A & B & C).
   assert (PRIV': range_private F m' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
   { eapply range_private_free_left; eauto. inv FB. rewrite <- H5. auto. }
+  assert (PRIV'': range_private F m'' m'0 sp' (dstk ctx) f'.(fn_stacksize)).
+  {
+    eapply range_private_invariant in PRIV'. eauto.
+    intros. eapply Mem.unrecord_stack_block_perm in H4; eauto. tauto.
+  }
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* within the original function *)
   inv MS0; try congruence.
@@ -1484,9 +1490,6 @@ Proof.
   eapply match_stacks_inside_invariant; eauto.
   intros. eapply Mem.unrecord_stack_block_perm in H6. eapply Mem.perm_free_3; eauto. eauto.
   erewrite (Mem.unrecord_stack_block_nextblock _ _ H3), (Mem.nextblock_free _ _ _ _ _ H2); eauto. xomega.
-  red; intros. specialize (PRIV' ofs H4). red in PRIV' |- *.
-  destruct PRIV' as (P1 & P2). split; auto. intros. intro P3. eapply P2; eauto.
-  eapply Mem.unrecord_stack_block_perm. eauto. eauto.
   eapply agree_val_regs; eauto.
   eapply match_stack_adt_free; eauto.
   eapply compat_framinj_rec_pop_left. eauto.
@@ -1547,6 +1550,7 @@ Proof.
 (*   destruct CFINJ as (D & E). *)
 (*   rewrite D in H5 |- * by omega. auto. *)
 (*   replace (S (pred x)) with x by omega; auto. *)
+
 
 - (* builtin *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
@@ -1851,7 +1855,7 @@ Proof.
     destruct (Nat.eq_dec j O). subst. exists O; destr.
     destruct (SURJ j). omega. 
     exists (Datatypes.S x). destr.
-    
+
 - (* external function *)
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
