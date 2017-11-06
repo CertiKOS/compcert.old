@@ -1036,11 +1036,12 @@ Lemma record_stack_block_parallel_rule:
     (forall (ofs : Z) (k : perm_kind) (p : permission),
         Mem.perm m2 b' ofs k p -> 0 <= ofs < frame_size fi) ->
     (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
+    frameinj_surjective g (length (Mem.stack_adt m2)) ->
     exists m2',
       Mem.record_stack_blocks m2 (b'::nil, Some fi, n) m2' /\
       m2' |= minjection j (fun n => if Nat.eq_dec n O then Some O else option_map S (g (pred n))) m1' ** P.
 Proof.
-  intros m1 m1' m2 j g P fi b b' delta n FB INVAR MINJ NIN RSB1 PERM1 PERM2 UNIQ.
+  intros m1 m1' m2 j g P fi b b' delta n FB INVAR MINJ NIN RSB1 PERM1 PERM2 UNIQ SURJ.
   destruct MINJ as (MINJ & PM & DISJ).
   generalize (Mem.record_stack_blocks_inject_parallel _ m1' _ _ _ (b::nil,None,n) (b'::nil, Some fi, n) MINJ).
   intro A. exploit A.
@@ -1059,6 +1060,7 @@ Proof.
   - intros. unfold in_frame. simpl.
     split; intros [B|[]]; left; subst. congruence. eapply UNIQ in H. auto.
   - reflexivity.
+  - eauto.
   - eauto.
   - intros (m2' & RSB2 & INJ).
     eexists; split; eauto.
@@ -1089,6 +1091,7 @@ Lemma push_frame_parallel_rule
     hi <= frame_size fi ->
     (forall ofs, 0 <= ofs < sz1 -> frame_public fi (ofs + delta)) ->
     n = frame_size fi ->
+    frameinj_surjective g (length (Mem.stack_adt m2)) ->
     exists j' m2_1' b2 m2',
       Mem.alloc m2 0 (frame_size fi) = (m2_1', b2) 
       /\ Mem.record_stack_blocks m2_1' (b2::nil, Some fi, frame_size fi) m2' 
@@ -1099,7 +1102,7 @@ Lemma push_frame_parallel_rule
       /\ j' b1 = Some (b2, delta)
       /\ inject_separated j j' m1 m2.
 Proof.
-  intros until delta; intros n INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ. subst n.
+  intros until delta; intros n INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ SURJ. subst n.
   destruct (Mem.alloc m2 0 (frame_size fi)) as (m2_ & sp) eqn:ALLOC2.
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
@@ -1120,6 +1123,7 @@ Proof.
     exploit Mem.alloc_result. apply ALLOC1. intro; subst.
     eapply Mem.valid_block_inject_1 in H. 2: apply INJ'.
     exploit Mem.valid_block_alloc_inv. apply ALLOC1. apply H. intros [A|A]; auto. intuition.
+  - erewrite Mem.alloc_stack_blocks; eauto.
   - intros (m0 & EQmem & INJ''). 
     rewrite sep_swap3 in INJ''.
     exists j', m2_, sp, m0; split; eauto.

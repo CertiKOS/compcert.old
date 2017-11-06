@@ -1683,7 +1683,8 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
                (Frame cenv tfn e le te sp lo hi :: cs)
                (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv xenv cs)
-      (ORDSTRICT: frameinj_order_strict g),
+      (ORDSTRICT: frameinj_order_strict g)
+      (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Csharpminor.State fn s k e le m)
                    (State tfn ts tk (Vptr sp Ptrofs.zero) te tm)
   | match_state_seq:
@@ -1695,7 +1696,8 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
                (Frame cenv tfn e le te sp lo hi :: cs)
                (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont (Csharpminor.Kseq s2 k) tk cenv xenv cs)
-      (ORDSTRICT: frameinj_order_strict g),
+      (ORDSTRICT: frameinj_order_strict g)
+      (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Csharpminor.State fn (Csharpminor.Sseq s1 s2) k e le m)
                    (State tfn ts1 tk (Vptr sp Ptrofs.zero) te tm)
   | match_callstate:
@@ -1706,7 +1708,8 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       (MK: match_cont k tk cenv nil cs)
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs)
-      (ORDSTRICT: frameinj_order_strict g),
+      (ORDSTRICT: frameinj_order_strict g)
+      (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Csharpminor.Callstate fd args k m sz)
                    (Callstate tfd targs tk tm sz)
   | match_returnstate:
@@ -1715,7 +1718,8 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (RESINJ: Val.inject f v tv)
-      (ORDSTRICT: frameinj_order_strict g),
+      (ORDSTRICT: frameinj_order_strict g)
+      (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Csharpminor.Returnstate v k m)
                    (Returnstate tv tk tm).
 
@@ -1892,7 +1896,8 @@ Lemma switch_match_states:
                (Mem.nextblock m) (Mem.nextblock tm))
     (MK: match_cont k tk cenv xenv cs)
     (TK: transl_lblstmt_cont cenv xenv ls tk tk')
-    (ORDSTRICT: frameinj_order_strict g),
+    (ORDSTRICT: frameinj_order_strict g)
+    (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
   exists S,
   plus (step fn_stack_requirements) tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
   /\ match_states (Csharpminor.State fn (seq_of_lbl_stmt ls) k e le m) S.
@@ -2128,6 +2133,8 @@ Proof.
   econstructor; eauto.
   rewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.unrecord_stack_block_nextblock _ _ USB).
   auto.
+  eapply Mem.frameinj_surjective_free_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* set *)
   monadInv TR.
@@ -2153,7 +2160,8 @@ Proof.
   eapply match_callstack_invariant with f0 m tm; eauto.
   intros. eapply Mem.perm_store_2; eauto.
   intros. eapply Mem.perm_store_1; eauto.
-
+  erewrite Mem.storev_stack_adt; eauto.
+  
 (* call *)
   simpl in H1. exploit functions_translated; eauto. intros [tfd [FIND TRANS]].
   monadInv TR.
@@ -2198,6 +2206,7 @@ Opaque PTree.set.
   unfold set_optvar. destruct optid; simpl.
   eapply match_callstack_set_temp; eauto.
   auto.
+  erewrite <- external_call_stack_blocks; eauto.
 
 (* seq *)
   monadInv TR.
@@ -2299,6 +2308,8 @@ Opaque PTree.set.
   eauto.
   eapply match_call_cont; eauto.
   simpl; auto.
+  eapply Mem.frameinj_surjective_free_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* return some *)
   monadInv TR. left.
@@ -2312,6 +2323,8 @@ Opaque PTree.set.
   rewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.unrecord_stack_block_nextblock _ _ USB).
   eauto.
   eapply match_call_cont; eauto.
+  eapply Mem.frameinj_surjective_free_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* label *)
   monadInv TR.
@@ -2342,7 +2355,7 @@ Opaque PTree.set.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 [MINJ2 [INCR2 SEP2]]]].
   exploit Mem.record_stack_blocks_inject_parallel. exact MINJ2.
-  7: eauto.
+  8: eauto.
   instantiate (1 := (sp::nil, None, sz)).
   {
     constructor.
@@ -2380,6 +2393,7 @@ Opaque PTree.set.
     eexists; split. 2: eapply in_blocks_of_env. reflexivity. eauto.
   }
   { reflexivity. }
+  erewrite Mem.alloc_stack_blocks; eauto.
   intros (m2' & RSB & INJ3).
   left; econstructor; split.
   apply plus_one. econstructor; simpl; eauto.
@@ -2389,7 +2403,17 @@ Opaque PTree.set.
   eapply match_callstack_record; eauto.
   inv MK; simpl in ISCC; contradiction || econstructor; eauto.
   eapply frameinj_order_strict_push; eauto.
-
+  {
+    simpl.
+    red; intros.
+    destruct (Nat.eq_dec j O). subst. exists O; destr.
+    destruct (SURJ (pred j)). erewrite Mem.record_stack_blocks_stack_adt in H5. 2: eauto.
+    simpl in H5. erewrite Mem.alloc_stack_blocks in H5. 2: eauto. omega.
+    exists (S x). destr.
+    replace (pred (Datatypes.S x)) with x by omega.
+    rewrite H6. simpl. f_equal. omega.
+  }
+  
 (* external call *)
   monadInv TR.
   exploit match_callstack_match_globalenvs; eauto. intros [hi MG].
@@ -2406,6 +2430,7 @@ Opaque PTree.set.
   xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
+  erewrite <- external_call_stack_blocks; eauto.
 
 (* return *)
   inv MK. simpl.
@@ -2471,6 +2496,7 @@ Proof.
   constructor. red; auto.
   constructor.
   eapply frameinj_order_strict_flat.
+  eapply frameinj_surjective_flat; eauto.
 Qed.
 
 Lemma transl_final_states:

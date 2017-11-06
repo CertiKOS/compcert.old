@@ -669,18 +669,18 @@ predicate that represents the permissions for the source memory [m1] in which
                    end)
             (frame_blocks f1).
 
-  Definition latest {A B} (P: A -> B -> Prop) (l1: list A) (l2: list B) (a: A) (b: B) : Prop :=
-    P a b /\
-    forall ia ib,
-      nth_error l1 ia = Some a ->
-      nth_error l2 ib = Some b ->
-      forall ia' a',
-        (ia < ia')%nat ->
-        nth_error l1 ia' = Some a' ->
-        forall ib' b',
-          nth_error l2 ib' = Some b' ->
-          P a' b' ->
-          (ib < ib')%nat.
+  (* Definition latest {A B} (P: A -> B -> Prop) (l1: list A) (l2: list B) (a: A) (b: B) : Prop := *)
+  (*   P a b /\ *)
+  (*   forall ia ib, *)
+  (*     nth_error l1 ia = Some a -> *)
+  (*     nth_error l2 ib = Some b -> *)
+  (*     forall ia' a', *)
+  (*       (ia < ia')%nat -> *)
+  (*       nth_error l1 ia' = Some a' -> *)
+  (*       forall ib' b', *)
+  (*         nth_error l2 ib' = Some b' -> *)
+  (*         P a' b' -> *)
+  (*         (ib < ib')%nat. *)
 
   Lemma compose_decompose:
     forall f f' b1 b3 delta,
@@ -752,6 +752,9 @@ predicate that represents the permissions for the source memory [m1] in which
       generalize (H _ _ H2), (H _ _ H3). omega.
   Qed.
 
+  Definition frameinj_surjective (g: frameinj) n2 :=
+    forall j, j < n2 -> exists i, g i = Some j.
+  
   Record stack_inject (f: meminj) (g: frameinj) m (s1 s2: list frame_adt) :=
     {
       stack_inject_preserves_order: frameinj_preserves_order g;
@@ -787,8 +790,8 @@ predicate that represents the permissions for the source memory [m1] in which
         forall i j, g i = Some j -> i < length s1 /\ j < length s2;
       stack_inject_exists_l:
         forall i, i < length s1 -> exists j, g i = Some j;
-      stack_inject_exists_r:
-        forall j, j < length s2 -> exists i, g i = Some j;
+      (* stack_inject_exists_r: *)
+      (*   forall j, j < length s2 -> exists i, g i = Some j; *)
       stack_inject_pack:
         forall i j, g i = Some j -> j <= i;
       stack_inject_sizes:
@@ -1485,6 +1488,7 @@ predicate that represents the permissions for the source memory [m1] in which
   Lemma stack_inject_compose:
     forall (f f' : meminj) g g' m1 l1 l2,
       stack_inject f g m1 l1 l2 ->
+      frameinj_surjective g (length l2) ->
       forall m2 l3,
         stack_inject f' g' m2 l2 l3 ->
         nodup l2 ->
@@ -1497,7 +1501,7 @@ predicate that represents the permissions for the source memory [m1] in which
         Forall (frame_agree_perms m2) l2 ->
         stack_inject (compose_meminj f f') (compose_frameinj g g') m1 l1 l3.
   Proof.
-    intros f f' g g' m1 l1 l2 SI1 m2 l3 SI2 ND2 ND3 PERM FAP.
+    intros f f' g g' m1 l1 l2 SI1 SURJ m2 l3 SI2 ND2 ND3 PERM FAP.
     destruct SI1, SI2.
     split.
     - eapply frameinj_preserves_order_compose; eauto.
@@ -1548,12 +1552,6 @@ predicate that represents the permissions for the source memory [m1] in which
       edestruct stack_inject_exists_l0; eauto.
       rewrite H0.
       apply stack_inject_range0 in H0. destruct H0. eauto.
-    - intros.
-      edestruct stack_inject_exists_r1; eauto.
-      edestruct stack_inject_range1; eauto. 
-      unfold compose_frameinj.
-      edestruct stack_inject_exists_r0; eauto.
-      exists x0; rewrite H3; auto.
     - unfold compose_frameinj.
       intros i j CINJ; destr_in CINJ.
       eapply stack_inject_pack0 in Heqo.
@@ -1564,7 +1562,7 @@ predicate that represents the permissions for the source memory [m1] in which
       destruct (stack_inject_frames0 _ _ _ FAP1 Heqo) as (f2 & FAP2 & FI12).
       destruct (stack_inject_frames1 _ _ _ FAP2 CINJ) as (f3' & FAP3' & FI23).
       edestruct (compose_frameinj_smallest g g') as (i2 & G12 & G23 & SMALLEST12 & SMALLEST23); eauto.
-      intros. eapply stack_inject_exists_r0. eapply stack_inject_range1. eauto.
+      intros. eapply SURJ. eapply stack_inject_range1. eauto.
       unfold compose_frameinj; rewrite Heqo, CINJ. auto.
       assert (f3 = f3') by (eapply frame_at_same_pos; eauto). subst.
       assert (n =i2) by congruence. subst.
@@ -2150,10 +2148,195 @@ predicate that represents the permissions for the source memory [m1] in which
     - simpl. congruence.
     - congruence.
     - simpl; intros; omega.
-    - simpl; intros; omega.
     - congruence.
     - congruence.
   Qed.
+
+  Lemma frameinj_surjective_flat n x:
+    (x <= n)%nat ->
+    frameinj_surjective (flat_frameinj n) x.
+  Proof.
+    red; intros.
+    unfold flat_frameinj.
+    exists j; destr. omega.
+  Qed.
+
+
+  Lemma stack_inject_length_stack:
+    forall j g P s1 s2,
+      stack_inject j g P s1 s2 ->
+      frameinj_surjective g (length s2) ->
+      (length s2 <= length s1)%nat.
+  Proof.
+    intros j g P s1 s2 SI SURJ.
+    inversion SI.
+    destruct (Nat.eq_dec (length s2) 0). omega.
+    destruct (SURJ (length s2 - 1)%nat).
+    omega.
+    exploit stack_inject_range; eauto.
+    intros (C & D).
+    destruct (stack_inject_exists_l0 (length s1 - 1)%nat).
+    omega.
+    exploit stack_inject_range0. apply H0. intros (A & B).     
+    exploit stack_inject_preserves_order. eauto.
+    2: apply H. 2: apply H0.
+    omega.
+    intros.
+    assert (x0 = length s2 - 1)%nat by omega.
+    subst.
+    apply stack_inject_pack0 in H0.
+    omega.
+  Qed.
+
+  Lemma size_stack_pos:
+    forall s,
+      (0 <= size_stack s)%Z.
+  Proof.
+    induction s; simpl; intros; eauto. omega.
+    destruct a,p.
+    generalize (align_le (Z.max 0 z) 8) (Z.le_max_l 0 z); omega.
+  Qed.
+
+  Fixpoint list_nats n :=
+    match n with
+      O => nil
+    | S m => m :: list_nats m
+    end.
+
+  Lemma in_list_nats:
+    forall n m,
+      In m (list_nats n) <-> (m < n)%nat.
+  Proof.
+    induction n; simpl; split; intros.
+    - easy.
+    - omega.
+    - destruct H; subst. omega. apply IHn in H; omega.
+    - destruct (Nat.eq_dec m n); auto. right; rewrite IHn. omega.
+  Qed.
+
+  Lemma option_eq_true:
+    forall {A} Aeq (o1 o2: option A),
+      proj_sumbool (option_eq Aeq o1 o2) = true <-> o1 = o2.
+  Proof.
+    intros.
+    destruct (option_eq Aeq o1 o2); try congruence.
+    subst; tauto. split; inversion 1. congruence.
+  Qed.
+
+  Fixpoint filteri {A} (f: nat -> A -> bool) i (l: list A) : list (nat*A) :=
+    match l with
+      nil => nil
+    | a::r => let r' := filteri f (S i) r in
+             if f i a then (i,a) :: r' else r'
+    end.
+
+  Definition latest (g: frameinj) i1 s1 :=
+    exists i2, g i1 = Some i2 /\ (forall i, i < s1 -> g i = Some i2 -> i <= i1)%nat.
+
+  Definition latestb (g: frameinj) i1 s1 :=
+    match g i1 with
+      Some i2 =>
+      forallb (fun i => negb (option_eq Nat.eq_dec (g i) (Some i2)) || le_dec i i1) (list_nats s1)
+    | None => false
+    end.
+
+  Lemma latest_latestb:
+    forall g i1 s1,
+      latest g i1 s1 <-> latestb g i1 s1  = true.
+  Proof.
+    unfold latest,latestb; split; intros.
+    - destruct H as (i2 & EQ & F). rewrite EQ.
+      rewrite forallb_forall. intro x. rewrite in_list_nats. intros.
+      destruct (option_eq Nat.eq_dec (g x) (Some i2)); simpl; auto.
+      specialize (F _ H e).
+      destruct le_dec; auto.
+    - destr_in H.
+      rewrite forallb_forall in H.
+      eexists; split; eauto. intros.
+      rewrite <- in_list_nats in H0.
+      specialize (H _ H0). rewrite H1 in H.
+      erewrite (proj2 (option_eq_true _ _ _)) in H; auto.
+      simpl in H.
+      destruct (le_dec i i1); auto. inv H.
+  Qed.
+
+  Lemma le_add_pos:
+    (forall a b,
+        0 <= b ->
+        a <= a + b)%Z.
+  Proof.
+    intros; omega.
+  Qed.
+
+
+
+  Lemma size_stack_filteri:
+    forall s1 n f,
+      (size_stack (map snd (filteri f n s1)) <= size_stack s1)%Z.
+  Proof.
+    induction s1; simpl; intros; eauto.
+    omega.
+    destruct a, p.
+    destr. simpl.
+    specialize (IHs1 (S n) f). omega.
+    etransitivity. apply IHs1. apply le_add_pos.
+    etransitivity. 2: apply align_le. 2: omega.
+    apply Z.le_max_l.
+  Qed.
+
+  Lemma size_stack_stack_inject:
+    forall j g P s1 s2,
+      stack_inject j g P s1 s2 ->
+      frameinj_surjective g (length s2) ->
+      (size_stack s2 <= size_stack s1)%Z.
+  Proof.
+    intros j g P s1 s2 SI SURJ.
+    transitivity (size_stack (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1))).
+    2: apply size_stack_filteri.
+    exploit stack_inject_length_stack; eauto. intro L.
+    assert (list_forall2 (fun f1 f2 => frame_adt_size f1 = frame_adt_size f2) (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)) s2).
+    {
+      revert s1 s2 SI SURJ L.
+      induction s1; simpl; intros; eauto.
+      destruct s2. constructor. simpl in L; omega.
+      destr. simpl.
+      - apply latest_latestb in Heqb. destruct Heqb as (x & EQ & LAT).
+        edestruct (stack_inject_frames) as (y & FAP & FI). eauto.
+        instantiate (2:=O). constructor. reflexivity.
+        eauto.
+        exploit stack_inject_pack. eauto. eauto. intro. assert (x = O) by omega. subst.
+        inv FAP. destruct s2; simpl in H0; inv H0.
+        constructor.
+        symmetry.
+        eapply stack_inject_sizes. eauto. instantiate (1:=O). constructor; reflexivity.
+        2: eauto.
+        constructor; reflexivity.
+        intros; eapply LAT. eapply stack_inject_range in H0; eauto. simpl in *. tauto. auto.
+        admit.
+      - admit.
+    }
+    revert H.
+    generalize (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)).
+    generalize s2.
+    induction 1; simpl; intros; eauto. omega.
+    destruct b1, a1. destruct p, p0. simpl in H; subst. omega.
+  Admitted.
+
+  
+
+  Lemma stack_inject_g0_0:
+    forall j g p s1 s2,
+      stack_inject j g p s1 s2 ->
+      (0 < length s1 ->
+       0 < length s2 ->
+       g 0 = Some 0)%nat.
+  Proof.
+    intros j g p s1 s2 SI LT1 LT2.
+    inv SI.
+    destruct (stack_inject_exists_l0 _ LT1). rewrite H. apply stack_inject_pack0 in H. 
+    f_equal; omega.
+  Qed.
+
 
 
 End INJ.

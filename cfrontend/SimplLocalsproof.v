@@ -1095,6 +1095,15 @@ Proof.
   simpl in H0. eapply Mem.nextblock_store; eauto.
   eapply Mem.nextblock_storebytes; eauto.
 Qed.
+Lemma assign_loc_stack_adt:
+  forall ge ty m b ofs v m',
+    assign_loc ge ty m b ofs v m' ->
+    Mem.stack_adt m' = Mem.stack_adt m.
+Proof.
+  intros ge0 ty m b ofs v m' AL; inv AL.
+  eapply Mem.storev_stack_adt; eauto.
+  eapply Mem.storebytes_stack_blocks; eauto.
+Qed.
 
 Theorem store_params_correct:
   forall j g f k cenv le lo hi te tlo thi e m params args m',
@@ -1113,7 +1122,8 @@ Theorem store_params_correct:
   /\ bind_parameter_temps params targs tle2 = Some tle
   /\ Mem.inject j g m' tm'
   /\ match_envs j cenv e le m' lo hi te tle tlo thi
-  /\ Mem.nextblock tm' = Mem.nextblock tm.
+  /\ Mem.nextblock tm' = Mem.nextblock tm
+  /\ Mem.stack_adt tm' = Mem.stack_adt tm.
 Proof.
   induction 1; simpl; intros until targs; intros NOREPET CASTED VINJ MENV MINJ TLE LE.
   (* base case *)
@@ -1146,7 +1156,7 @@ Proof.
   apply TLE. intuition.
   intros. apply LE. auto.
   instantiate (1 := s).
-  intros [tle [tm' [U [V [X [Y Z]]]]]].
+  intros [tle [tm' [U [V [X [Y [Z ZZ]]]]]]].
   exists tle; exists tm'; split.
   eapply star_trans.
   eapply star_left. econstructor.
@@ -1161,7 +1171,10 @@ Proof.
   reflexivity. reflexivity.
   eexact U.
   traceEq.
-  rewrite (assign_loc_nextblock _ _ _ _ _ _ _ A) in Z. auto.
+  rewrite (assign_loc_nextblock _ _ _ _ _ _ _ A) in Z.
+  split; auto. split; auto. split; auto. split; auto.
+  rewrite ZZ.
+  eapply assign_loc_stack_adt; eauto.
 Qed.
 
 Lemma bind_parameters_nextblock:
@@ -1789,7 +1802,8 @@ Inductive match_states: state -> state -> Prop :=
         (COMPAT: compat_cenv (addr_taken_stmt s) (cenv_for f))
         (BOUND: Ple hi (Mem.nextblock m))
         (TBOUND: Ple thi (Mem.nextblock tm))
-        (ORDSTRICT: frameinj_order_strict g),
+        (ORDSTRICT: frameinj_order_strict g)
+        (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (State f s k e le m)
                    (State tf ts tk te tle tm)
   | match_call_state:
@@ -1800,7 +1814,8 @@ Inductive match_states: state -> state -> Prop :=
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
         (ANORM: val_casted_list vargs targs)
-        (ORDSTRICT: frameinj_order_strict g),
+        (ORDSTRICT: frameinj_order_strict g)
+        (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Callstate fd vargs k m sz)
                    (Callstate tfd tvargs tk tm sz)
   | match_return_state:
@@ -1808,7 +1823,8 @@ Inductive match_states: state -> state -> Prop :=
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j g m tm)
         (RINJ: Val.inject j v tv)
-        (ORDSTRICT: frameinj_order_strict g),
+        (ORDSTRICT: frameinj_order_strict g)
+        (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Returnstate v k m)
                    (Returnstate tv tk tm).
 
@@ -2086,6 +2102,7 @@ Proof.
   eapply match_cont_invariant; eauto.
   erewrite assign_loc_nextblock; eauto.
   erewrite assign_loc_nextblock; eauto.
+  erewrite assign_loc_stack_adt; eauto.
 
 (* set temporary *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
@@ -2127,7 +2144,8 @@ Proof.
   inv MENV; xomega. inv MENV; xomega.
   eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
   eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  
 (* sequence *)
   econstructor; split. apply plus_one. econstructor.
   econstructor; eauto with compat. econstructor; eauto with compat.
@@ -2175,7 +2193,9 @@ Proof.
   econstructor; split. apply plus_one. econstructor; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.
-
+  eapply Mem.frameinj_surjective_free_list_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
+  
 (* return some *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   exploit sem_cast_inject; eauto. intros [tv' [C D]].
@@ -2186,6 +2206,8 @@ Proof.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.
+  eapply Mem.frameinj_surjective_free_list_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* skip call *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
@@ -2196,6 +2218,8 @@ Proof.
   monadInv TRF; auto.
   econstructor; eauto.
   intros. apply match_cont_change_cenv with (cenv_for f); auto. eapply match_cont_free_env'; eauto.
+  eapply Mem.frameinj_surjective_free_list_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* switch *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
@@ -2246,7 +2270,7 @@ Proof.
   intros [j' [te [tm0 [A [B [C [D [E [F G]]]]]]]]].
   assert (K: list_forall2 val_casted vargs (map snd (fn_params f))).
   { apply val_casted_list_params. unfold type_of_function in FUNTY. congruence. }
-  exploit Mem.record_stack_blocks_inject_parallel. eauto. 7: eauto.
+  exploit Mem.record_stack_blocks_inject_parallel. eauto. 8: eauto.
   instantiate (1 := (map fst (map fst (blocks_of_env tge te)), None, sz)).
   {
     constructor. 
@@ -2297,6 +2321,7 @@ Proof.
     repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
   }
   reflexivity.
+  erewrite alloc_variables_stack_adt; eauto.
   intros (m2' & RSB & INJ).
   exploit store_params_correct.
   eauto.
@@ -2314,7 +2339,7 @@ Proof.
   intros. apply (create_undef_temps_lifted id f). auto.
   intros. destruct (create_undef_temps (fn_temps f))!id as [v|] eqn:?; auto.
   exploit create_undef_temps_inv; eauto. intros [P Q]. elim (l id id); auto.
-  intros [tel [tm1 [P [Q [R [S T]]]]]].
+  intros [tel [tm1 [P [Q [R [S [T TT]]]]]]].
   change (cenv_for_gen (addr_taken_stmt (fn_body f)) (fn_params f ++ fn_vars f))
   with (cenv_for f) in *.
   generalize (vars_and_temps_properties (cenv_for f) (fn_params f) (fn_vars f) (fn_temps f)).
@@ -2349,7 +2374,19 @@ Proof.
   rewrite T.
   rewrite (Mem.record_stack_block_nextblock _ _ _ RSB). xomega.
   eapply frameinj_order_strict_push; eauto.
-
+  rewrite TT.
+  erewrite Mem.record_stack_blocks_stack_adt; eauto.
+  erewrite alloc_variables_stack_adt. 2: eauto.
+  {
+    simpl.
+    red; intros.
+    destruct (Nat.eq_dec j0 O). subst. exists O; destr.
+    destruct (SURJ (pred j0)). omega.
+    exists (Datatypes.S x). destr.
+    replace (pred (Datatypes.S x)) with x by omega.
+    rewrite H5. simpl. f_equal. omega.
+  }
+  
 (* external function *)
   monadInv TRFD. inv FUNTY.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
@@ -2362,7 +2399,8 @@ Proof.
   eapply match_cont_extcall; eauto. xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  
 (* return *)
   specialize (MCONT (cenv_for f)). inv MCONT.
   econstructor; split.
@@ -2399,6 +2437,7 @@ Proof.
   eapply Genv.initmem_inject; eauto.
   constructor.
   eapply frameinj_order_strict_flat; eauto.
+  eapply frameinj_surjective_flat; auto.
 Qed.
 
 Lemma final_states_simulation:

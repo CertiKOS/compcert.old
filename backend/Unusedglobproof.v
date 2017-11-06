@@ -845,7 +845,8 @@ Inductive match_states: state -> state -> Prop :=
          (SPINJ: j sp = Some(tsp, 0))
          (REGINJ: regset_inject j rs trs)
          (MEMINJ: Mem.inject j g m tm)
-         (ORDSTRICT: frameinj_order_strict g),
+         (ORDSTRICT: frameinj_order_strict g)
+         (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
   | match_states_call: forall s fd args m ts targs tm j sz g
@@ -853,14 +854,16 @@ Inductive match_states: state -> state -> Prop :=
          (KEPT: forall id, ref_fundef fd id -> kept id)
          (ARGINJ: Val.inject_list j args targs)
          (MEMINJ: Mem.inject j g m tm)
-         (ORDSTRICT: frameinj_order_strict g),
+         (ORDSTRICT: frameinj_order_strict g)
+         (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Callstate s fd args m sz)
                    (Callstate ts fd targs tm sz)
   | match_states_return: forall s res m ts tres tm j g
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
          (MEMINJ: Mem.inject j g m tm)
-         (ORDSTRICT: frameinj_order_strict g),
+         (ORDSTRICT: frameinj_order_strict g)
+         (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Returnstate s res m)
                    (Returnstate ts tres tm).
 
@@ -1037,6 +1040,7 @@ Proof.
   exploit Mem.storev_mapped_inject; eauto. intros (tm' & D & E).
   econstructor; split. eapply exec_Istore; eauto.
   econstructor; eauto.
+  erewrite Mem.storev_stack_adt; eauto.
 
 - (* call *)
   exploit find_function_inject.
@@ -1070,7 +1074,9 @@ Proof.
   erewrite (Mem.unrecord_stack_block_nextblock); eauto.
   change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
-
+  eapply Mem.frameinj_surjective_free_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
+  
 - (* builtin *)
   exploit eval_builtin_args_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
@@ -1088,7 +1094,8 @@ Proof.
   assert (Mem.valid_block tm tsp) by (eapply Mem.valid_block_inject_2; eauto).
   unfold Mem.valid_block in *; xomega.
   apply set_res_inject; auto. apply regset_inject_incr with j; auto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  
 - (* cond *)
   assert (C: eval_condition cond trs##args tm = Some b).
   { eapply eval_condition_inject; eauto. apply regs_inject; auto. }
@@ -1116,6 +1123,8 @@ Proof.
   erewrite Mem.unrecord_stack_block_nextblock; eauto.
   change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
   destruct or; simpl; auto.
+  eapply Mem.frameinj_surjective_free_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 - (* internal function *)
   exploit Mem.alloc_parallel_inject. eauto. eauto. apply Zle_refl. apply Zle_refl.
@@ -1128,7 +1137,7 @@ Proof.
     intros. destruct (eq_block b1 stk).
     subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
     rewrite G in H2 by auto. congruence. }
-  exploit Mem.record_stack_blocks_inject_parallel. apply D. 7: eauto. 
+  exploit Mem.record_stack_blocks_inject_parallel. apply D. 8: eauto. 
   instantiate (1 := (tstk::nil, None, sz)).
   {
     constructor.
@@ -1156,12 +1165,25 @@ Proof.
     red in JB; xomega.
   }
   reflexivity.
+  erewrite Mem.alloc_stack_blocks; eauto.
   intros (m2' & RSB & INJ').
   econstructor; split.
   eapply exec_function_internal; eauto.
   eapply match_states_regular with (j := j'); eauto.
   apply init_regs_inject; auto. apply val_inject_list_incr with j; auto.
   eapply frameinj_order_strict_push; eauto.
+  erewrite Mem.record_stack_blocks_stack_adt; eauto.
+  erewrite Mem.alloc_stack_blocks; eauto.
+  simpl.
+  {
+    simpl.
+    red; intros.
+    destruct (Nat.eq_dec j0 O). subst. exists O; destr.
+    destruct (SURJ (pred j0)). omega.
+    exists (Datatypes.S x). destr.
+    replace (pred (Datatypes.S x)) with x by omega.
+    rewrite H2. simpl. f_equal. omega.
+  }
 
 - (* external function *)
   exploit external_call_inject; eauto.
@@ -1176,7 +1198,8 @@ Proof.
   unfold Mem.valid_block in *; xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  
 - (* return *)
   inv STACKS. econstructor; split.
   eapply exec_return.
@@ -1519,6 +1542,8 @@ Proof.
   erewrite <- Genv.init_mem_genv_next by eauto. apply Ple_refl.
   erewrite <- Genv.init_mem_genv_next by eauto. apply Ple_refl.
   eapply frameinj_order_strict_flat.
+  eapply frameinj_surjective_flat; eauto.
+  erewrite ! Genv.init_mem_stack_adt; eauto.
 Qed.
 
 Lemma transf_final_states:
