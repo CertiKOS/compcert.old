@@ -89,7 +89,7 @@ GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pr
 
 ifeq ($(wildcard .depend.extr),.depend.extr)
 
-CCOMP_OBJS:=$(shell $(MODORDER) driver/Driver.cmx)
+CCOMP_OBJS:=$(shell $(MODORDER) driver/RockSaltDriver.cmx)
 
 ccomp: $(CCOMP_OBJS)
 	@echo "Linking $@"
