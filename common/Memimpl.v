@@ -1345,11 +1345,11 @@ Inductive push_frame_spec: mem -> frame_info -> list (memory_chunk * ptrofs * va
       push_frame_spec m fi l mpf b.
 
 Lemma destr_dep_let:
-  forall {A1 A2 B: Type} (a: A1*A2) (bres: B) (T: forall m b (p: (m,b) = a) m b, option B),
+  forall {A1 A2 B: Type} (a: A1*A2) (bres: B) (T: forall m b (p: (m,b) = a), option B),
     (let (m,b) as ano return (ano = a -> option B) := a in
-     fun Heq : (m,b) = a => T _ _ Heq m b) eq_refl = Some bres ->
+     fun Heq : (m,b) = a => T _ _ Heq) eq_refl = Some bres ->
     forall (P: B -> Prop),
-      (forall m b (pf: (m, b) = a) x, T _ _ pf m b = Some x -> P x) ->
+      (forall m b (pf: (m, b) = a) x, T _ _ pf = Some x -> P x) ->
       P bres.
 Proof.
   intros. destruct a. apply H0 in H; auto.
@@ -1357,13 +1357,13 @@ Qed.
 
 Lemma destr_dep_match:
   forall {A B: Type} (a: option A) (x: B)
-    (T: forall x (pf: Some x = a) y, B)
+    (T: forall x (pf: Some x = a), B)
     (MATCH: match a as ano return (ano = a -> option B) with
-            | Some m1 => fun Heq: Some m1 = a => Some (T _ Heq m1)
+            | Some m1 => fun Heq: Some m1 = a => Some (T _ Heq)
             | None => fun Heq => None
             end eq_refl = Some x) ,
   forall P: B -> Prop,
-    (forall m (pf: Some m = a) x, T m pf m = x -> P x) ->
+    (forall m (pf: Some m = a) x, T m pf = x -> P x) ->
     P x.
 Proof.
   intros. destr_in MATCH. subst. inv MATCH. eapply H. eauto.
@@ -1372,11 +1372,11 @@ Qed.
 Lemma constr_let:
   forall {A1 A2 B: Type} (a: A1 * A2)
     m b (EQ: a = (m,b))
-    (T: forall m b (pf: (m,b) = a), A1 -> A2 -> option B)
+    (T: forall m b (pf: (m,b) = a), option B)
     X
-    (EQ: T _ _ (eq_sym EQ) m b = Some X),
+    (EQ: T _ _ (eq_sym EQ) = Some X),
     (let (m0,b0) as ano return (ano = a -> option B) := a in
-     fun Heq : (m0,b0) = a => T m0 b0 Heq (fst a) (snd a)) eq_refl = Some X.
+     fun Heq : (m0,b0) = a => T m0 b0 Heq) eq_refl = Some X.
 Proof.
   intros. subst. simpl in *.  auto. 
 Qed.
@@ -1405,79 +1405,13 @@ Proof.
   unfold push_frame in H.
   destr_in H.
   intros.
-  generalize (destr_dep_let (alloc m 0 (frame_size fi)) (m', b) 
-                   (fun m0 b Heq_anonymous _ _ =>
-                      match
-         do_stores m0 (store_spec_of_ofs_spec b l) as anonymous'
-         return (anonymous' = do_stores m0 (store_spec_of_ofs_spec b l) -> option (mem * block))
-       with
-       | Some m1 =>
-           fun Heq_anonymous0 : Some m1 = do_stores m0 (store_spec_of_ofs_spec b l) =>
-           Some
-             ({|
-              mem_contents := mem_contents m1;
-              mem_access := mem_access m1;
-              nextblock := nextblock m1;
-              access_max := access_max m1;
-              nextblock_noaccess := nextblock_noaccess m1;
-              contents_default := contents_default m1;
-              stack_adt := (b :: nil, Some fi, frame_size fi) :: stack_adt m1;
-              stack_valid := valid_frames_add (stack_adt m1) (b :: nil, Some fi, frame_size fi)
-                               (nextblock m1) (stack_valid m1)
-                               (fun (b0 : block) (H0 : in_frame (b :: nil, Some fi, frame_size fi) b0)
-                                =>
-                                push_frame_obligation_1 m fi l m0 b Heq_anonymous m1 Heq_anonymous0 b0
-                                  H0);
-              stack_norepet := nodup_add (stack_adt m1) (b :: nil, Some fi, frame_size fi)
-                                 (stack_norepet m1)
-                                 (push_frame_obligation_2 m fi l m0 b Heq_anonymous m1 Heq_anonymous0);
-              stack_perms := frame_agree_perms_add (b :: nil, Some fi, frame_size fi) 
-                               (stack_adt m1) m1 (stack_perm m1)
-                               (push_frame_obligation_3 m fi l l0 m0 b Heq_anonymous m1 Heq_anonymous0);
-              stack_below_limit := size_stack_add (b :: nil, Some fi, frame_size fi) 
-                                     (stack_adt m1)
-                                     (push_frame_obligation_4 m fi l l0 m0 b Heq_anonymous m1
-                                        Heq_anonymous0);
-              mem_bounds := mem_bounds m1;
-              mem_bounds_perm := mem_bounds_perm m1 |}, b)
-       | None => fun _ : None = do_stores m0 (store_spec_of_ofs_spec b l) => None
-                      end eq_refl) H).
-  clear H. intro A. 
   change ((fun x => push_frame_spec m fi l (fst x) (snd x)) (m', b)).
-  eapply A.
-  clear A.
+  eapply (destr_dep_let (alloc m 0 (frame_size fi)) (m', b) ). apply H. clear H.
   intros m0 b0 pf x A.
-  generalize (destr_dep_match (do_stores m0 (store_spec_of_ofs_spec b0 l)) x
-                    (fun m1 Heq_anonymous0 _ =>
-            ({|
-             mem_contents := mem_contents m1;
-             mem_access := mem_access m1;
-             nextblock := nextblock m1;
-             access_max := access_max m1;
-             nextblock_noaccess := nextblock_noaccess m1;
-             contents_default := contents_default m1;
-             stack_adt := (b0 :: nil, Some fi, frame_size fi) :: stack_adt m1;
-             stack_valid := valid_frames_add (stack_adt m1) (b0 :: nil, Some fi, frame_size fi)
-                              (nextblock m1) (stack_valid m1)
-                              (fun (b1 : block) (H0 : in_frame (b0 :: nil, Some fi, frame_size fi) b1)
-                               => push_frame_obligation_1 m fi l m0 b0 pf m1 Heq_anonymous0 b1 H0);
-             stack_norepet := nodup_add (stack_adt m1) (b0 :: nil, Some fi, frame_size fi)
-                                (stack_norepet m1)
-                                (push_frame_obligation_2 m fi l m0 b0 pf m1 Heq_anonymous0);
-             stack_perms := frame_agree_perms_add (b0 :: nil, Some fi, frame_size fi) 
-                              (stack_adt m1) m1 (stack_perm m1)
-                              (push_frame_obligation_3 m fi l l0 m0 b0 pf m1 Heq_anonymous0);
-             stack_below_limit := size_stack_add (b0 :: nil, Some fi, frame_size fi) 
-                                    (stack_adt m1)
-                                    (push_frame_obligation_4 m fi l l0 m0 b0 pf m1 Heq_anonymous0);
-             mem_bounds := mem_bounds m1;
-             mem_bounds_perm := mem_bounds_perm m1 |}, b0))).
-  setoid_rewrite A. clear A.
-  intro A. trim A. auto.
   change ((fun x => push_frame_spec m fi l (fst x) (snd x)) x).
-  apply A. clear A. 
+  eapply destr_dep_match. apply A. simpl. clear A.
   intros. subst. simpl.
-  econstructor. eauto. eauto. auto.
+  econstructor; eauto.
   econstructor.
 Qed.
 
@@ -1489,43 +1423,8 @@ Proof.
   intros.
   inv H. unfold push_frame.
   destr.
-  generalize (constr_let (alloc m 0 (frame_size fi)) _ _ H0
-                         (fun m0 b0 (Heq_anonymous: (m0,b0) = alloc m 0 (frame_size fi)) _ _ =>
-                             match
-     do_stores m0 (store_spec_of_ofs_spec b0 l) as anonymous'
-     return (anonymous' = do_stores m0 (store_spec_of_ofs_spec b0 l) -> option (mem * block))
-   with
-   | Some m1 =>
-       fun Heq_anonymous0 : Some m1 = do_stores m0 (store_spec_of_ofs_spec b0 l) =>
-       Some
-         ({|
-          mem_contents := mem_contents m1;
-          mem_access := mem_access m1;
-          nextblock := nextblock m1;
-          access_max := access_max m1;
-          nextblock_noaccess := nextblock_noaccess m1;
-          contents_default := contents_default m1;
-          stack_adt := (b0 :: nil, Some fi, frame_size fi) :: stack_adt m1;
-          stack_valid := valid_frames_add (stack_adt m1) (b0 :: nil, Some fi, frame_size fi)
-                           (nextblock m1) (stack_valid m1)
-                           (fun (b1 : block) (H4 : in_frame (b0 :: nil, Some fi, frame_size fi) b1) =>
-                            push_frame_obligation_1 m fi l m0 b0 Heq_anonymous m1 Heq_anonymous0 b1 H4);
-          stack_norepet := nodup_add (stack_adt m1) (b0 :: nil, Some fi, frame_size fi)
-                             (stack_norepet m1)
-                             (push_frame_obligation_2 m fi l m0 b0 Heq_anonymous m1 Heq_anonymous0);
-          stack_perms := frame_agree_perms_add (b0 :: nil, Some fi, frame_size fi) 
-                           (stack_adt m1) m1 (stack_perm m1)
-                           (push_frame_obligation_3 m fi l l0 m0 b0 Heq_anonymous m1 Heq_anonymous0);
-          stack_below_limit := size_stack_add (b0 :: nil, Some fi, frame_size fi) 
-                                 (stack_adt m1)
-                                 (push_frame_obligation_4 m fi l l0 m0 b0 Heq_anonymous m1
-                                    Heq_anonymous0);
-          mem_bounds := mem_bounds m1;
-          mem_bounds_perm := mem_bounds_perm m1 |}, b0)
-   | None => fun _ : None = do_stores m0 (store_spec_of_ofs_spec b0 l) => None
-   end eq_refl)). intro B. apply B. clear B.
-  eapply (constr_match (do_stores malloc (store_spec_of_ofs_spec b l)) mstores).
-  Unshelve. 2: eauto.
+  erewrite constr_let; eauto. Unshelve. 4: eauto.
+  erewrite constr_match; eauto. Unshelve. 3: eauto.
   inv H3. f_equal. f_equal.
   apply mkmem_ext; auto.
 Qed.
