@@ -67,7 +67,7 @@ Inductive event: Type :=
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_annot: string -> list eventval -> event
-  | Event_extcall: string -> signature -> query -> reply -> event.
+  | Event_extcall: query -> reply -> event.
 
 (** The dynamic semantics for programs collect traces of events.
   Traces are of two kinds: finite (type [trace]) or infinite (type [traceinf]). *)
@@ -518,13 +518,13 @@ Inductive match_events_query: trace -> trace -> Prop :=
       match_events_query
         (Event_annot id args :: nil)
         (Event_annot id args :: nil)
-  | match_events_query_extcall id sg q1 q2 r1 r2:
-      extcall_valid sg q1 r1 ->
-      extcall_valid sg q2 r2 ->
+  | match_events_query_extcall q1 q2 r1 r2:
+      extcall_valid q1 r1 ->
+      extcall_valid q2 r2 ->
       match_query cc w q1 q2 ->
       match_events_query
-        (Event_extcall id sg q1 r1 :: nil)
-        (Event_extcall id sg q2 r2 :: nil).
+        (Event_extcall q1 r1 :: nil)
+        (Event_extcall q2 r2 :: nil).
 
 Inductive match_events: trace -> trace -> Prop :=
   | match_events_E0:
@@ -547,14 +547,14 @@ Inductive match_events: trace -> trace -> Prop :=
       match_events
         (Event_annot id args :: nil)
         (Event_annot id args :: nil)
-  | match_events_extcall id sg q1 q2 r1 r2:
-      extcall_valid sg q1 r1 ->
-      extcall_valid sg q2 r2 ->
+  | match_events_extcall q1 q2 r1 r2:
+      extcall_valid q1 r1 ->
+      extcall_valid q2 r2 ->
       match_query cc w q1 q2 ->
       match_reply cc w r1 r2 ->
       match_events
-        (Event_extcall id sg q1 r1 :: nil)
-        (Event_extcall id sg q2 r2 :: nil).
+        (Event_extcall q1 r1 :: nil)
+        (Event_extcall q2 r2 :: nil).
 
 Lemma match_events_subrel_query t1 t2:
   match_events t1 t2 ->
@@ -570,7 +570,7 @@ Definition stable_event t :=
     | nil => True
     | Event_syscall _ _ res :: nil => eventval_valid ge res
     | Event_vload _ _ _ res :: nil => eventval_valid ge res
-    | Event_extcall _ _ _ _ :: nil => False
+    | Event_extcall _ _ :: nil => False
     | _ :: nil => True
     | _ => False
   end.
@@ -592,12 +592,12 @@ Inductive match_traces: trace -> trace -> Prop :=
       match_traces (Event_vstore chunk id ofs arg :: nil) (Event_vstore chunk id ofs arg :: nil)
   | match_traces_annot: forall id args,
       match_traces (Event_annot id args :: nil) (Event_annot id args :: nil)
-  | match_traces_extcall: forall id sg q r1 r2,
-      extcall_valid sg q r1 ->
-      extcall_valid sg q r2 ->
+  | match_traces_extcall: forall q r1 r2,
+      extcall_valid q r1 ->
+      extcall_valid q r2 ->
       match_traces
-        (Event_extcall id sg q r1 :: nil)
-        (Event_extcall id sg q r2 :: nil).
+        (Event_extcall q r1 :: nil)
+        (Event_extcall q r2 :: nil).
 
 Lemma match_traces_match_events_query t1 t2:
   stable_event t1 ->
@@ -677,7 +677,7 @@ Definition output_event (ev: event) : Prop :=
   | Event_vload _ _ _ _ => False
   | Event_vstore _ _ _ _ => True
   | Event_annot _ _ => True
-  | Event_extcall _ _ _ _ => False
+  | Event_extcall _ _ => False
   end.
 
 Fixpoint output_trace (t: trace) : Prop :=
@@ -1541,7 +1541,7 @@ Qed.
 Inductive external_functions_sem id (sg: signature): extcall_sem :=
   external_funcions_sem_intro ge vargs m vres m':
     extcall_step_valid sg vargs m vres m' ->
-    external_functions_sem id sg ge vargs m (Event_extcall id sg (vargs, m) (vres, m') :: E0) vres m'.
+    external_functions_sem id sg ge vargs m (Event_extcall (id, sg, vargs, m) (vres, m') :: E0) vres m'.
 
 Lemma external_functions_properties:
   forall id sg, extcall_properties (external_functions_sem id sg) sg.
@@ -1564,12 +1564,12 @@ Proof.
   (* mem extends *)
   - intros.
     destruct H.
-    edestruct match_cc_extends as (w & Hq & Hr); eauto.
+    edestruct (match_cc_extends id sg) as (w & Hq & Hr); eauto.
     exists w; intros t' Ht'.
     inv Ht'.
-    assert (q2 = (vargs', m1')) by eauto using match_query_injective; subst.
+    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_injective; subst.
     destruct r2 as [vres' m2'].
-    specialize (Hr _ _ _ _ H10).
+    specialize (Hr _ _ _ _ H8).
     exists vres', m2'; intuition.
     constructor.
     assumption.
@@ -1579,7 +1579,7 @@ Proof.
     edestruct match_cc_inject as (w & Hq & Hr); eauto.
     exists w; intros t' Ht'.
     inv Ht'.
-    assert (q2 = (vargs', m1')) by eauto using match_query_injective; subst.
+    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_injective; subst.
     destruct r2 as [vres' m2'].
     edestruct Hr as (f' & H'); eauto.
     exists f', vres', m2'; intuition.

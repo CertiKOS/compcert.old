@@ -741,7 +741,7 @@ Lemma stable_step_id ge t (P: trace -> Prop):
   exists w, forall t', match_events ge cc_id w t t' -> P t'.
 Proof.
   intros H.
-  destruct t as [ | [ | | | | id sg q r]];
+  destruct t as [ | [ | | | | q r]];
     try (exists dummy_world; inversion 1; congruence).
   edestruct (match_cc_id q) as (w & Hq & Hw).
   exists w; intros t' Ht'.

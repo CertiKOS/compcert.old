@@ -1,3 +1,4 @@
+Require Import String.
 Require Import Coqlib.
 Require Import AST.
 Require Import Integers.
@@ -8,10 +9,11 @@ Require Import Globalenvs.
 
 (** * Semantic interface of languages *)
 
-Definition query: Type := list val * mem.
+Definition query: Type := string * signature * list val * mem.
 Definition reply: Type := val * mem.
 
-Definition dummy_query: query := (nil, Mem.empty).
+Definition dummy_query: query :=
+  (EmptyString, mksignature nil None cc_default, nil, Mem.empty).
 
 (** * Calling conventions *)
 
@@ -81,8 +83,8 @@ Record extcall_step_valid sg (vargs: list val) m1 vres m2 :=
       Mem.unchanged_on (loc_not_writable m1) m1 m2;
   }.
 
-Definition extcall_valid sg (q: query) (r: reply) :=
-  let '(vargs, m) := q in
+Definition extcall_valid (q: query) (r: reply) :=
+  let '(id, sg, vargs, m) := q in
   let '(vres, m') := r in
   extcall_step_valid sg vargs m vres m'.
 
@@ -122,7 +124,9 @@ Program Definition cc_extends :=
     dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w :=
-      fun '(vargs1, m1) '(vargs2, m2) =>
+      fun '(id1, sg1, vargs1, m1) '(id2, sg2, vargs2, m2) =>
+        id1 = id2 /\
+        sg1 = sg2 /\
         Val.lessdef_list vargs1 vargs2 /\
         Mem.extends m1 m2;
     match_reply_def w :=
@@ -132,16 +136,15 @@ Program Definition cc_extends :=
         Mem.unchanged_on (loc_out_of_bounds m1) m2 m2';
   |}.
 Next Obligation.
-  split.
-  - constructor.
-  - apply Mem.extends_refl.
+  intuition.
+  apply Mem.extends_refl.
 Qed.
 
-Lemma match_cc_extends vargs1 m1 vargs2 m2:
+Lemma match_cc_extends id sg vargs1 m1 vargs2 m2:
   Mem.extends m1 m2 ->
   Val.lessdef_list vargs1 vargs2 ->
   exists w,
-    match_query cc_extends w (vargs1, m1) (vargs2, m2) /\
+    match_query cc_extends w (id, sg, vargs1, m1) (id, sg, vargs2, m2) /\
     forall vres1 m1' vres2 m2',
       match_reply cc_extends w (vres1, m1') (vres2, m2') ->
       Val.lessdef vres1 vres2 /\
@@ -149,7 +152,7 @@ Lemma match_cc_extends vargs1 m1 vargs2 m2:
       Mem.unchanged_on (loc_out_of_bounds m1) m2 m2'.
 Proof.
   intros Hm Hvargs.
-  assert (Hq: match_query_def cc_extends tt (vargs1, m1) (vargs2, m2)).
+  assert (Hq: match_query_def cc_extends tt (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
   {
     simpl.
     eauto.
@@ -194,7 +197,9 @@ Program Definition cc_inject :=
     dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
     match_query_def f :=
-      fun '(vargs1, m1) '(vargs2, m2) =>
+      fun '(id1, sg1, vargs1, m1) '(id2, sg2, vargs2, m2) =>
+        id1 = id2 /\
+        sg1 = sg2 /\
         Val.inject_list f vargs1 vargs2 /\
         Mem.inject f m1 m2;
     match_reply_def f :=
@@ -208,17 +213,16 @@ Program Definition cc_inject :=
           inject_separated f f' m1 m2;
   |}.
 Next Obligation.
-  split.
-  - constructor.
-  - apply (Mem.neutral_inject Mem.empty).
-    apply Mem.empty_inject_neutral.
+  intuition.
+  apply (Mem.neutral_inject Mem.empty).
+  apply Mem.empty_inject_neutral.
 Qed.
 
-Lemma match_cc_inject f vargs1 m1 vargs2 m2:
+Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
   Val.inject_list f vargs1 vargs2 ->
   Mem.inject f m1 m2 ->
   exists w,
-    match_query cc_inject w (vargs1, m1) (vargs2, m2) /\
+    match_query cc_inject w (id, sg, vargs1, m1) (id, sg, vargs2, m2) /\
     forall vres1 m1' vres2 m2',
       match_reply cc_inject w (vres1, m1') (vres2, m2') ->
       exists f',
@@ -230,7 +234,7 @@ Lemma match_cc_inject f vargs1 m1 vargs2 m2:
         inject_separated f f' m1 m2.
 Proof.
   intros Hvargs Hm.
-  assert (Hq: match_query_def cc_inject f (vargs1, m1) (vargs2, m2)).
+  assert (Hq: match_query_def cc_inject f (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
   {
     simpl.
     eauto.
