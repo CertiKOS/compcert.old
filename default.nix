@@ -5,7 +5,7 @@ with pkgs;
 stdenv.mkDerivation {
   name = "certikos";
 
-  buildInputs = with ocamlPackages_4_02; [
+  buildInputs = with ocamlPackages_latest; [
     camlp4
     ocaml menhir findlib coq_8_6
     coqPackages_8_6.flocq

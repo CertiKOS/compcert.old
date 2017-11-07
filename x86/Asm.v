@@ -12,7 +12,7 @@
 
 (** Abstract syntax and semantics for IA32 assembly language *)
 
-Require Import Coqlib Maps String.
+Require Import String Coqlib Maps.
 Require Import AST Integers Floats Values Memory Events Globalenvs Smallstep.
 Require Import Locations Stacklayout Conventions EraseArgs.
 

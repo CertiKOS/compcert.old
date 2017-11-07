@@ -111,6 +111,7 @@ Set Implicit Arguments.
   Lemma op_s_nonempty: non_empty (` (! op_s)).
   Proof. apply bitsmatch_nonempty. unfold op_s. crush. Qed.
 
+  Hint Extern 100 => progress change unit with (interp Unit_t) : ibr_rng_db. 
   Definition op_override_b: wf_bigrammar bool_t.
     refine((op_s $$ star (! op_s) op_s_nonempty)
              @ (fun _ => true %% bool_t)
