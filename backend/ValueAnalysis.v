@@ -917,7 +917,10 @@ Proof.
   revert ARGS. generalize vargs.
   induction vargs0; simpl; intros; constructor.
   eapply vmatch_inj; eauto. auto.
-  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP).
+  intros [w Hw].
+  assert (Ht: match_events ge cc_inject w t t) by admit. (* need lemma: extcall of self-injecting produces self-injecting trace. *)
+  specialize (Hw t Ht).
+  destruct Hw as (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP).
   assert (JBELOW: forall b, Plt b (Mem.nextblock m) -> j' b = inj_of_bc bc b).
   {
     intros. destruct (inj_of_bc bc b) as [[b' delta] | ] eqn:EQ.
@@ -1019,7 +1022,7 @@ Proof.
 - (* unmapped blocks are invariant *)
   intros. eapply Mem.loadbytes_unchanged_on_1; auto.
   apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
-Qed.
+Admitted.
 
 Remark list_forall2_in_l:
   forall (A B: Type) (P: A -> B -> Prop) x1 l1 l2,

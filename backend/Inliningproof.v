@@ -933,10 +933,11 @@ Theorem step_simulation:
   forall S1 t S2,
   step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
+  exists w, forall t', match_events ge cc_inject w t t' ->
+  (exists S2', plus step tge S1' t' S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
-  induction 1; intros; inv MS.
+  induction 1; intros; inv MS; try stable_step.
 
 - (* nop *)
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
@@ -1082,7 +1083,8 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -1235,7 +1237,8 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
@@ -1320,7 +1323,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics prog) (semantics tprog).
+  forward_simulation cc_inject (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

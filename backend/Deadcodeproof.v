@@ -717,7 +717,8 @@ Qed.
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists S2', step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
 
 Ltac TransfInstr :=
@@ -740,7 +741,7 @@ Ltac UseTransfer :=
        simpl in *
   end.
 
-  induction 1; intros S1' MS SS; inv MS.
+  induction 1; intros S1' MS SS; inv MS; try stable_step.
 
 - (* nop *)
   TransfInstr; UseTransfer.
@@ -907,6 +908,11 @@ Ltac UseTransfer :=
     exists tv; split; auto. constructor; auto.
   }
   destruct X as (tvres & P & Q).
+  eapply stable_step.
+  {
+    destruct P; try constructor.
+    eapply eventval_match_valid; eauto.
+  }
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
@@ -928,6 +934,11 @@ Ltac UseTransfer :=
   intros (tv2 & A2 & B2 & C2 & D2).
   exploit transf_volatile_store; eauto.
   intros (EQ & tm' & P & Q). subst vres.
+  eapply stable_step.
+  {
+    destruct P; try constructor.
+    destruct H0; constructor.
+  }
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
@@ -968,6 +979,7 @@ Ltac UseTransfer :=
   rewrite nat_of_Z_eq in H1 by omega. auto.
   eauto.
   intros (tm' & A & B).
+  eapply stable_step; [constructor | ].
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
@@ -982,6 +994,7 @@ Ltac UseTransfer :=
   set (adst := aaddr_arg (vanalyze cu f) # pc dst) in *.
   set (asrc := aaddr_arg (vanalyze cu f) # pc src) in *.
   inv H1.
+  eapply stable_step; [constructor | ].
   econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -998,6 +1011,7 @@ Ltac UseTransfer :=
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   inv H1.
+  eapply stable_step; [constructor | ].
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
@@ -1010,6 +1024,7 @@ Ltac UseTransfer :=
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   inv H1. inv B. inv H6.
+  eapply stable_step; [constructor | ].
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
@@ -1021,6 +1036,7 @@ Ltac UseTransfer :=
 + (* debug *)
   inv H1.
   exploit can_eval_builtin_args; eauto. intros (vargs' & A).
+  eapply stable_step; [constructor | ].
   econstructor; split.
   eapply exec_Ibuiltin; eauto. constructor.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1036,7 +1052,8 @@ Ltac UseTransfer :=
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   exploit external_call_mem_extends; eauto 2 with na.
   eapply magree_extends; eauto. intros. apply nlive_all.
-  intros (v' & tm' & P & Q & R & S).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (v' & tm' & P & Q & R & S).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
@@ -1087,7 +1104,8 @@ Ltac UseTransfer :=
 
 - (* external function *)
   exploit external_call_mem_extends; eauto.
-  intros (res' & tm' & A & B & C & D).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (res' & tm' & A & B & C & D).
   simpl in FUN. inv FUN.
   econstructor; split.
   econstructor; eauto.
@@ -1127,7 +1145,7 @@ Qed.
 (** * Semantic preservation *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation cc_extends (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   intros.
   apply forward_simulation_step with
@@ -1138,7 +1156,9 @@ Proof.
 - simpl; intros. destruct H. eapply transf_final_states; eauto.
 - simpl; intros. destruct H0.
   assert (sound_state prog s1') by (eapply sound_step; eauto).
-  fold ge; fold tge. exploit step_simulation; eauto. intros [st2' [A B]].
+  fold ge; fold tge. exploit step_simulation; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [st2' [A B]].
   exists st2'; auto.
 Qed.
 

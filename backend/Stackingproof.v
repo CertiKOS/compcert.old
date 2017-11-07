@@ -1836,10 +1836,12 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step ge s1 t s2 ->
   forall (WTS: wt_state s1) s1' (MS: match_states s1 s1'),
-  exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
+  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists s2', plus step tge s1' t' s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros;
   try inv MS;
+  try stable_step;
   try rewrite transl_code_eq;
   try (generalize (function_is_within_bounds f _ (is_tail_in TAIL));
        intro BOUND; simpl in BOUND);
@@ -2012,7 +2014,8 @@ Proof.
   intros [vargs' [P Q]].
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
-  clear SEP; intros (j' & res' & m1' & EC & RES & SEP & INCR & ISEP).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  clear SEP; destruct Hw as (j' & res' & m1' & EC & RES & SEP & INCR & ISEP).
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
   apply plus_one. econstructor; eauto.
@@ -2107,7 +2110,8 @@ Proof.
   exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   rewrite sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
-  intros (j' & res' & m1' & A & B & C & D & E).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -2182,7 +2186,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
+  forward_simulation cc_inject (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).
@@ -2192,7 +2196,9 @@ Proof.
   apply wt_initial_state with (prog := prog); auto. exact wt_prog.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0.
-  exploit transf_step_correct; eauto. intros [s2' [A B]].
+  exploit transf_step_correct; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [s2' [A B]].
   exists s2'; split. exact A. split.
   eapply step_type_preservation; eauto. eexact wt_prog. eexact H.
   auto.

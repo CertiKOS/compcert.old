@@ -781,8 +781,9 @@ Lemma external_call_inject:
   external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
+  exists w, forall t', match_events ge cc_inject w t t' ->
   exists f', exists vres', exists m2',
-    external_call ef tge vargs' m1' t vres' m2'
+    external_call ef tge vargs' m1' t' vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -790,9 +791,10 @@ Lemma external_call_inject:
     /\ inject_incr f f'
     /\ inject_separated f f' m1 m1'.
 Proof.
-  intros. eapply external_call_mem_inject_gen; eauto.
+  intros. edestruct external_call_mem_inject_gen; eauto.
   apply globals_symbols_inject; auto.
-Qed.
+  admit. (* discrepancy ge/tge -- change ec_mem_inject? *)
+Admitted.
 
 Lemma find_function_inject:
   forall j ros rs fd trs,
@@ -882,9 +884,10 @@ Qed.
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists S2', step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
-  induction 1; intros; inv MS.
+  induction 1; intros; inv MS; try stable_step.
 
 - (* nop *)
   econstructor; split.
@@ -974,7 +977,8 @@ Proof.
   intros (vargs' & P & Q).
   exploit external_call_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
-  intros (j' & tv & tm' & A & B & C & D & E & F & G).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (j' & tv & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply match_states_regular with (j := j'); eauto.
@@ -1029,7 +1033,8 @@ Proof.
 - (* external function *)
   exploit external_call_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
-  intros (j' & tres & tm' & A & B & C & D & E & F & G).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (j' & tres & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_function_external; eauto.
   eapply match_states_return with (j := j'); eauto.
@@ -1253,7 +1258,7 @@ Proof.
 Qed.
 
 Lemma transf_program_correct_1:
-  forward_simulation (semantics p) (semantics tp).
+  forward_simulation cc_inject (semantics p) (semantics tp).
 Proof.
   intros.
   eapply forward_simulation_step.
@@ -1266,7 +1271,8 @@ Qed.
 End SOUNDNESS.
 
 Theorem transf_program_correct:
-  forall p tp, match_prog p tp -> forward_simulation (semantics p) (semantics tp).
+  forall p tp, match_prog p tp ->
+  forward_simulation cc_inject (semantics p) (semantics tp).
 Proof.
   intros p tp (used & A & B).  apply transf_program_correct_1 with used; auto.
 Qed.

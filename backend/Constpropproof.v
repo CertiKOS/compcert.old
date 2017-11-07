@@ -351,10 +351,11 @@ Lemma transf_step_correct:
   forall s1 t s2,
   step ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  (exists n2, exists s2', step tge s1' t s2' /\ match_states n2 s2 s2')
+  exists w, forall t', match_events ge cc_extends w t t' ->
+  (exists n2, exists s2', step tge s1' t' s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.
-  induction 1; intros; inv MS; try InvSoundState; try (inv PC; try congruence).
+  induction 1; intros; inv MS; try stable_step; try InvSoundState; try (inv PC; try congruence).
 
 - (* Inop, preserved *)
   rename pc'0 into pc. TransfInstr; intros.
@@ -479,7 +480,8 @@ Opaque builtin_strength_reduction.
     apply REGS. eauto. eexact P.
   intros (vargs'' & U & V).
   exploit external_call_mem_extends; eauto.
-  intros [v' [m2' [A [B [C D]]]]].
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [v' [m2' [A [B [C D]]]]].
   left; econstructor; econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved. eexact symbols_preserved. eauto.
@@ -543,7 +545,8 @@ Opaque builtin_strength_reduction.
 
 - (* external function *)
   exploit external_call_mem_extends; eauto.
-  intros [v' [m2' [A [B [C D]]]]].
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [v' [m2' [A [B [C D]]]]].
   simpl. left; econstructor; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -583,7 +586,7 @@ Qed.
   follows. *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation cc_extends (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   apply Forward_simulation with lt (fun n s1 s2 => sound_state prog s1 /\ match_states n s1 s2); constructor.
 - apply lt_wf.
@@ -594,9 +597,11 @@ Proof.
   assert (sound_state prog s1') by (eapply sound_step; eauto).
   fold ge; fold tge.
   exploit transf_step_correct; eauto.
-  intros [ [n2 [s2' [A B]]] | [n2 [A [B C]]]].
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [ [n2 [s2' [A B]]] | [n2 [A [B C]]]].
   exists n2; exists s2'; split; auto. left; apply plus_one; auto.
-  exists n2; exists s2; split; auto. right; split; auto. subst t; apply star_refl.
+  exists n2; exists s2; split; auto. right; split; auto.
+  subst t; inv Ht'; apply star_refl.
 - apply senv_preserved.
 Qed.
 

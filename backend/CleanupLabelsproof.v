@@ -232,10 +232,11 @@ Qed.
 Theorem transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
+  exists w, forall t', match_events ge cc_id w t t' ->
+  (exists s2', step tge s1' t' s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
-  induction 1; intros; inv MS; try rewrite remove_unused_labels_cons.
+  induction 1; intros; inv MS; stable_step; try rewrite remove_unused_labels_cons.
 (* Lgetstack *)
   left; econstructor; split.
   econstructor; eauto.
@@ -345,7 +346,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+  forward_simulation cc_id (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

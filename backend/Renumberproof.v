@@ -158,9 +158,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
   forall S1', match_states S1 S1' ->
-  exists S2', RTL.step tge S1' t S2' /\ match_states S2 S2'.
+  exists w, forall t', match_events ge cc_id w t t' ->
+  exists S2', RTL.step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
-  induction 1; intros S1' MS; inv MS; try TR_AT.
+  induction 1; intros S1' MS; inv MS; stable_step; try TR_AT.
 (* nop *)
   econstructor; split. eapply exec_Inop; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
@@ -250,7 +251,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation cc_id (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_step.
   apply senv_preserved.

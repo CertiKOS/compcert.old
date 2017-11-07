@@ -423,9 +423,10 @@ Qed.
 Theorem transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall ts1 (MS: match_states s1 ts1),
-  exists ts2, plus step tge ts1 t ts2 /\ match_states s2 ts2.
+  exists w, forall t', match_events ge cc_id w t t' ->
+  exists ts2, plus step tge ts1 t' ts2 /\ match_states s2 ts2.
 Proof.
-  induction 1; intros ts1 MS; inv MS; try (inv TRC).
+  induction 1; intros ts1 MS; stable_step; inv MS; try (inv TRC).
 - (* getstack *)
   econstructor; split.
   eapply plus_left. constructor; auto. apply eval_add_delta_ranges. traceEq.
@@ -548,7 +549,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics prog) (semantics tprog).
+  forward_simulation cc_id (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

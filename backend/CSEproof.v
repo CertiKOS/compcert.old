@@ -974,9 +974,10 @@ Ltac TransfInstr :=
 Lemma transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1') (SOUND: sound_state prog s1),
-  exists s2', step tge s1' t s2' /\ match_states s2 s2'.
+  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists s2', step tge s1' t' s2' /\ match_states s2 s2'.
 Proof.
-  induction 1; intros; inv MS; try (TransfInstr; intro C).
+  induction 1; intros; inv MS; try stable_step; try (TransfInstr; intro C).
 
   (* Inop *)
 - econstructor; split.
@@ -1111,7 +1112,8 @@ Proof.
   exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & A & B).
   exploit external_call_mem_extends; eauto.
-  intros (v' & m1' & P & Q & R & S).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (v' & m1' & P & Q & R & S).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
@@ -1198,7 +1200,8 @@ Proof.
 - (* external function *)
   monadInv TFD.
   exploit external_call_mem_extends; eauto.
-  intros (v' & m1' & P & Q & R & S).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (v' & m1' & P & Q & R & S).
   econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -1236,7 +1239,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation cc_extends (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_step with
     (match_states := fun s1 s2 => sound_state prog s1 /\ match_states s1 s2).
@@ -1245,7 +1248,8 @@ Proof.
   exists s2. split. auto. split. apply sound_initial; auto. auto.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0. exploit transf_step_correct; eauto.
-  intros [s2' [A B]]. exists s2'; split. auto. split. eapply sound_step; eauto. auto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as [s2' [A B]]. exists s2'; split. auto. split. eapply sound_step; eauto. auto.
 Qed.
 
 End PRESERVATION.

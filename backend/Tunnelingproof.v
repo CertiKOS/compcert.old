@@ -393,10 +393,11 @@ Qed.
 Lemma tunnel_step_correct:
   forall st1 t st2, step ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  (exists st2', step tge st1' t st2' /\ match_states st2 st2')
+  exists w, forall t', match_events ge cc_extends w t t' ->
+  (exists st2', step tge st1' t' st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
-  induction 1; intros; try inv MS.
+  induction 1; intros; try inv MS; try stable_step.
 
 - (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
@@ -466,7 +467,9 @@ Proof.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
-  exploit external_call_mem_extends; eauto. intros (tvres & tm' & A & B & C & D).
+  exploit external_call_mem_extends; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved. 
@@ -512,7 +515,8 @@ Proof.
   simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef.
 - (* external function *)
   exploit external_call_mem_extends; eauto using locmap_getpairs_lessdef.
-  intros (tvres & tm' & A & B & C & D).
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw as (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -550,7 +554,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
+  forward_simulation cc_extends (LTL.semantics prog) (LTL.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.
