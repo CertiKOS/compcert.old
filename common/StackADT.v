@@ -2260,11 +2260,11 @@ predicate that represents the permissions for the source memory [m1] in which
     subst; tauto. split; inversion 1. congruence.
   Qed.
 
-  Fixpoint filteri {A} (f: nat -> A -> bool) i (l: list A) : list (nat*A) :=
+  Fixpoint filteri {A} (f: nat -> A -> bool) (l: list (nat * A)) : list (A) :=
     match l with
       nil => nil
-    | a::r => let r' := filteri f (S i) r in
-             if f i a then (i,a) :: r' else r'
+    | (i,a)::r => let r' := filteri f r in
+             if f i a then a :: r' else r'
     end.
 
   Definition latest (g: frameinj) i1 s1 :=
@@ -2305,11 +2305,15 @@ predicate that represents the permissions for the source memory [m1] in which
     intros; omega.
   Qed.
 
-
+  Fixpoint pairi {A} (l: list A) i : list (nat * A) :=
+    match l with
+      nil => nil
+    | a::r => (i,a)::(pairi r (S i))
+    end.
 
   Lemma size_stack_filteri:
     forall s1 n f,
-      (size_stack (map snd (filteri f n s1)) <= size_stack s1)%Z.
+      (size_stack (filteri f (pairi s1 n)) <= size_stack s1)%Z.
   Proof.
     induction s1; simpl; intros; eauto.
     omega.
@@ -2321,6 +2325,295 @@ predicate that represents the permissions for the source memory [m1] in which
     apply Z.le_max_l.
   Qed.
 
+  Fixpoint sorted_fst {A} (l: list (nat * A)) :=
+    match l with
+      nil => True
+    | (x,_)::r =>
+      match r with
+        (y,t)::r' => (x < y)%nat /\ sorted_fst r
+      | nil => True
+      end
+    end.
+
+  Lemma sorted_tl:
+    forall {A} (l: list (nat * A)),
+      sorted_fst l ->
+      sorted_fst (tl l).
+  Proof.
+    destruct l; auto.
+    simpl. destruct p. destruct l; auto.
+    destruct p; tauto.
+  Qed.
+
+
+  Lemma sorted_fst_lt:
+    forall {A} (l: list (nat * A)) i1 f1 i2 f2,
+      In (i1, f1) l ->
+      sorted_fst ((i2,f2)::l) ->
+      (i2 < i1)%nat.
+  Proof.
+    induction l; simpl; intros; eauto. easy.
+    destruct a. destruct H0.
+    destruct H. inv H. auto.
+    eapply IHl; simpl; eauto.
+    destruct l. auto. destruct p.
+    destruct H1; split; auto. omega.
+    Unshelve. auto.
+  Qed.
+
+  Lemma sorted_fst_lt_map:
+    forall {A} (l: list (nat * A)) i1 i2 f2,
+      In i1 (map fst l) ->
+      sorted_fst ((i2,f2)::l) ->
+      (i2 < i1)%nat.
+  Proof.
+    intros. rewrite in_map_iff in H.
+    destruct H as (x & EQ & IN). destruct x. simpl in EQ. subst.
+    eapply sorted_fst_lt; eauto.
+  Qed.
+
+  
+  Opaque sorted_fst.
+
+
+
+  Ltac elim_div :=
+    unfold Zdiv, Zmod in *;
+    repeat
+      match goal with
+      |  H : context[ Zdiv_eucl ?X ?Y ] |-  _ =>
+         generalize (Z_div_mod_full X Y) ; destruct (Zdiv_eucl X Y)
+      |  |-  context[ Zdiv_eucl ?X ?Y ] =>
+         generalize (Z_div_mod_full X Y) ; destruct (Zdiv_eucl X Y)
+      end; unfold Remainder.
+  
+  Lemma align_ge1:
+    forall sz al,
+      al > 0 ->
+      exists b, 0 <= b < al /\
+           align sz al = sz + b /\ 
+           b = (al - 1 - (sz - 1 - al * ((sz - 1) / al))).
+  Proof.
+    intros.
+    generalize (align_le sz al H).
+    destruct (align_divides sz al H).
+    rewrite H0.
+    intros. 
+    unfold align in H0.
+    rewrite <- H0.
+    replace ((sz+al-1)/al) with (1+ ((sz-1)/al)).
+    {
+      replace ((1+ ((sz-1)/al))*al) with (al + (sz -1)/al *al).
+      {
+        rewrite Z.mul_comm.
+        replace (al * ((sz - 1) / al)) with
+        (al * ((sz - 1) / al) + (sz-1) mod al - (sz-1) mod al) by omega.
+        rewrite <- Z.div_mod by omega.
+        rewrite Z.mod_eq by omega.
+        exists (al - 1 - (sz - 1 - al * ((sz - 1) / al))).
+        split; try omega.
+        {
+          elim_div. assert (al <> 0) by omega. intuition.
+        }
+      }
+      rewrite Z.mul_add_distr_r. omega.
+    }
+    {
+      replace (sz + al - 1) with ((sz -1) + 1*al) by omega.
+      rewrite Z_div_plus_full by omega.
+      omega.
+    }
+  Qed.
+  
+  Lemma align_mono:
+    forall al sz sz',
+      al > 0 ->
+      0 <= sz <= sz' ->
+      align sz al <= align sz' al.
+  Proof.
+    intros.
+    generalize (align_ge1 sz al H)
+               (align_ge1 sz' al H).
+    intros [b [A [B C]]] [c [D [E F]]].
+    destruct (zlt (sz'-sz) al); try intuition omega.
+    assert (exists d, 0 <= d < al /\ sz' = sz + d).
+    {
+      clear - H0 H l.
+      exists (sz'-sz). intuition try omega.
+    }
+    destruct H1 as [d [ENC EQ]]. rewrite EQ in *.
+    clear EQ.
+    rewrite B; rewrite E.
+    cut (      al * ((sz - 1) / al) <=
+               (   al * ((sz + d - 1) / al))); intros; try omega.  
+    apply Z.mul_le_mono_nonneg_l; try  omega.
+    apply Z.div_le_mono; try omega.
+  Qed.
+  
+  Lemma size_stack_filteri_le:
+    forall (s1 s2: list (nat * frame_adt))
+      (SORT1: sorted_fst s1)
+      (SORT2: sorted_fst s2)
+      g
+      (SIZELE: forall i1 i2 f1 f2,
+          In (i1, f1) s1 ->
+          In (i2, f2) s2 ->
+          g i1 = Some i2 ->
+          (forall i, g i = Some i2 -> (i <= i1)%nat) ->
+          frame_adt_size f2 <= frame_adt_size f1)
+      (EX: forall i j fi, In (i,fi) s1 -> g i = Some j -> exists fj, In (j,fj) s2)
+      (* (LEN: (length s2 <= length s1)%nat) *)
+      (EXX: forall i (IN: In i (map fst s1)) i1 (LE: (i <= i1)%nat) j (GJ: g i1 = Some j),
+          In i1 (map fst s1))
+      n
+      (LT: (forall i j, g i = Some j -> i < n)%nat)
+      (ORDER: forall i1 i2 j1 j2, (i1 <= i2 -> g i1 = Some j1 -> g i2 = Some j2 -> j1 <= j2)%nat)
+      (EXR: forall j f, In (j,f) s2 -> exists i, In i (map fst s1) /\ g i = Some j)
+    ,
+      size_stack (map snd s2) <=
+      size_stack (filteri (fun (i1 : nat) (_ : frame_adt) => latestb g i1 n) s1).
+  Proof.
+    induction s1; simpl; intros.
+    - destruct s2. simpl; omega.
+      destruct p. specialize (EXR _ _ (or_introl eq_refl)). destruct EXR as [i [[] ?]].
+    - destruct a. destr.
+      + destruct s2. simpl. destruct f, p.
+        apply Z.add_nonneg_nonneg.
+        apply size_stack_pos.
+        etransitivity. 2: apply align_le. 2: omega. apply Z.le_max_l.
+        simpl. destruct p. simpl. destruct f0. destruct p, f, p. simpl.
+        apply latest_latestb in Heqb. destruct Heqb as (xx & Gxx & LATEST).
+        destruct (EX _ _ _ (or_introl eq_refl) Gxx) as (fj & INJ).
+        simpl in INJ.
+        destruct INJ. inv H.
+        apply Z.add_le_mono.
+        * apply IHs1.
+          -- destruct s1. auto. destruct p. apply SORT1.
+          -- apply sorted_tl in SORT2; auto.
+          -- intros; eapply SIZELE; simpl; eauto.
+          -- intros; exploit EX. right; eauto. eauto. intros (fj & INJ).
+             simpl in INJ. destruct INJ; eauto.
+             inv H1.
+             apply LATEST in H0.
+             eapply sorted_fst_lt in H; eauto. omega. 
+             eauto.
+          -- intros. simpl in *.
+             specialize (EXX _ (or_intror IN) _ LE _ GJ).
+             destruct EXX; auto. subst. rewrite Gxx in GJ. inv GJ.
+             eapply sorted_fst_lt_map in IN; eauto. omega.
+          -- auto.
+          -- auto.
+          -- intros. specialize (EXR _ _ (or_intror H)). destruct EXR as (i & IN & GI).
+             destruct IN; eauto.
+             simpl in H0. subst. 
+             rewrite GI in Gxx. inv Gxx. eapply sorted_fst_lt in H; eauto. omega.
+        * specialize (SIZELE _ _ _ _ (or_introl eq_refl) (or_introl eq_refl) Gxx).
+          apply align_mono. omega.
+          split. apply Z.le_max_l.
+          apply Z.max_le_compat_l. apply SIZELE.
+          intros i GI. apply LATEST; eauto.
+        * exfalso.
+          exploit (sorted_fst_lt s2). eauto. eauto. intro LTn.
+          destruct (EXR _ _ (or_introl eq_refl)) as (i & IN & GI).
+          destruct IN. simpl in H0; subst. rewrite Gxx in GI; inv GI. omega.
+          apply in_map_iff in H0.
+          destruct H0 as (x & EQ & IN). subst. destruct x. simpl in *.
+          exploit (sorted_fst_lt s1); eauto. intro LTnn.
+          exploit (ORDER n0 n2). omega. eauto. eauto. omega.
+      + apply IHs1; eauto.
+        * apply sorted_tl in SORT1; eauto.
+        * intros.
+          destruct (EXX _ (or_intror IN) _ LE _ GJ); auto. simpl in H; subst.
+          eapply sorted_fst_lt_map in IN; eauto. omega.
+        * intros.
+          destruct (EXR _ _ H) as (i & IN & GI).
+          destruct IN; eauto.
+          inv H0. simpl in *.
+          assert (~ latest g n0 n). rewrite latest_latestb. congruence.
+          unfold latest in H0.
+          rewrite GI in H0.
+          assert (~ forall i0, g i0 = Some j -> i0 <= n0)%nat.
+          intro F.
+          apply H0.
+          eexists; split; eauto.
+          assert (exists i0, g i0 = Some j /\ n0 < i0)%nat.
+          apply Classical_Pred_Type.not_all_not_ex.
+          intro F; apply H1. intros.
+          specialize (F i0). rewrite H2 in F.
+          destruct (le_dec i0 n0); auto. exfalso; apply F; split; auto. omega.
+          clear H0 H1.
+          destruct H2 as (i0 & GI0 & LTi0).
+          exists i0; split; auto.
+          specialize (EXX _ (or_introl eq_refl) i0). trim EXX. omega.
+          specialize (EXX _ GI0).
+          destruct EXX; auto. subst. omega.
+  Qed.
+
+  Lemma map_snd_pairi:
+    forall {A} (l: list A) n,
+      map snd (pairi l n) = l.
+  Proof.
+    induction l; simpl; intros; eauto.
+    rewrite IHl. auto.
+  Qed.
+
+  Lemma sorted_fst_pairi:
+    forall {A} (l: list A) n,
+      sorted_fst (pairi l n).
+  Proof.
+    Transparent sorted_fst.
+    induction l; simpl; intros; eauto.
+    destr. rewrite <- Heql0. destruct p. split; eauto.
+    destruct l; simpl in *. inv Heql0. inv Heql0. omega.
+  Qed.
+
+  Lemma In_pairi_lt:
+    forall {A} i1 f1 (s1: list A) n,
+      In (i1, f1) (pairi s1 n) ->
+      (n <= i1)%nat.
+  Proof.
+    induction s1; simpl; intros; eauto. easy.
+    destruct H as [H|H]. inv H.
+    auto.
+    apply IHs1 in H. omega.
+  Qed.
+  
+  Lemma In_pairi_nth:
+    forall {A} i1 f1 (s1: list A) n,
+      In (i1, f1) (pairi s1 n) ->
+      nth_error s1 (i1 - n) = Some f1.
+  Proof.
+    induction s1; simpl; intros; eauto. easy.
+    destruct H. inv H. replace (i1 - i1)%nat with O by omega. reflexivity.
+    specialize (IHs1 _ H). apply In_pairi_lt in H.
+    replace (i1 - n)%nat with (S (i1 - S n)) by omega. simpl. auto.
+  Qed.
+
+  Lemma nth_In_pairi:
+    forall {A} f1 (s1: list A) n i1,
+      nth_error s1 i1 = Some f1 ->
+      In (i1 + n, f1)%nat (pairi s1 n).
+  Proof.
+    induction s1; simpl; intros; eauto. rewrite nth_error_nil in H. easy.
+    destruct i1 eqn:?; simpl in H. inv H.
+    left. f_equal. 
+    eapply IHs1 with (n:= S n) in H. right.
+    rewrite plus_Snm_nSm; auto.
+  Qed.
+
+  Lemma In_map_fst_pairi:
+    forall {A} (s1: list A) i1 n,
+      (i1 < length s1)%nat ->
+      In (i1 + n)%nat (map fst (pairi s1 n)).
+  Proof.
+    induction s1; simpl; intros; eauto.
+    omega.
+    destruct i1. left; auto.
+    rewrite plus_Snm_nSm.
+    right; apply IHs1. omega.    
+  Qed.
+        
+  
   Lemma size_stack_stack_inject:
     forall j g P s1 s2,
       stack_inject j g P s1 s2 ->
@@ -2328,38 +2621,38 @@ predicate that represents the permissions for the source memory [m1] in which
       (size_stack s2 <= size_stack s1)%Z.
   Proof.
     intros j g P s1 s2 SI SURJ.
-    transitivity (size_stack (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1))).
+    transitivity (size_stack (filteri (fun i1 _ => latestb g i1 (length s1)) (pairi s1 O))).
     2: apply size_stack_filteri.
-    exploit stack_inject_length_stack; eauto. intro L.
-    assert (list_forall2 (fun f1 f2 => frame_adt_size f2 <= frame_adt_size f1) (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)) s2).
-    {
-      revert s1 s2 SI SURJ L.
-      induction s1; simpl; intros; eauto.
-      destruct s2. constructor. simpl in L; omega.
-      destr. simpl.
-      - apply latest_latestb in Heqb. destruct Heqb as (x & EQ & LAT).
-        edestruct (stack_inject_frames) as (y & FAP & FI). eauto.
-        instantiate (2:=O). constructor. reflexivity.
-        eauto.
-        exploit stack_inject_pack. eauto. eauto. intro. assert (x = O) by omega. subst.
-        inv FAP. destruct s2; simpl in H0; inv H0.
-        constructor.
-        eapply stack_inject_sizes. eauto. instantiate (1:=O). constructor; reflexivity.
-        2: eauto.
-        constructor; reflexivity.
-        intros; eapply LAT. eapply stack_inject_range in H0; eauto. simpl in *. tauto. auto.
-        admit.
-      - admit.
-    }
-    revert H.
-    generalize (map snd (filteri (fun i1 _ => latestb g i1 (length s1)) 0 s1)).
-    generalize s2.
-    induction 1; simpl; intros; eauto. omega.
-    destruct b1, a1. destruct p, p0. simpl in H; subst.
-    apply Z.add_le_mono. auto. admit.
-  Admitted.
-
-  
+    erewrite <- (map_snd_pairi s2).
+    instantiate (1:=O).
+    apply size_stack_filteri_le.
+    apply sorted_fst_pairi.
+    apply sorted_fst_pairi.
+    - intros. apply In_pairi_nth in H.
+      apply In_pairi_nth in H0.
+      rewrite <- minus_n_O in *.
+      eapply stack_inject_sizes; eauto; try constructor; eauto.
+    - intros.
+      apply In_pairi_nth in H. rewrite <- minus_n_O in H.
+      exploit stack_inject_frames; eauto. constructor; eauto. intros (f2 & FAP & FI).
+      inv FAP. eapply nth_In_pairi with (n:=O) in H1.
+      rewrite plus_0_r in H1. eauto.
+    - intros.
+      rewrite in_map_iff in IN.
+      destruct IN as ((ii & f) & EQ & IN). subst. simpl in *.
+      eapply In_pairi_nth in IN. rewrite <- minus_n_O in IN.
+      eapply stack_inject_range in GJ; eauto.
+      destruct GJ as (LTi1 & LTj0).
+      replace (i1) with (i1+O)%nat by omega. eapply In_map_fst_pairi. auto.
+    - intros; eapply stack_inject_range in H; eauto. tauto.
+    - intros. inv SI. eauto.
+    - intros j0 f IN.
+      eapply In_pairi_nth in IN. rewrite <- minus_n_O in IN.
+      destruct (SURJ j0). rewrite <- nth_error_Some. congruence.
+      exists x; split; auto.
+      replace (x) with (x+O)%nat by omega. eapply In_map_fst_pairi. 
+      eapply stack_inject_range in H; eauto. tauto.
+  Qed.
 
   Lemma stack_inject_g0_0:
     forall j g p s1 s2,
