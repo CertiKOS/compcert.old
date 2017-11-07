@@ -7894,6 +7894,7 @@ Proof.
   simpl. repeat destr. apply Forall_forall. subst.
   intros. unfold flat_inj in H0; destr_in H0; inv H0.
   eapply shift_frame_id.
+  apply Forall_forall; auto.
 Qed.
 
 Lemma record_stack_blocks_sep:

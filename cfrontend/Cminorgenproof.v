@@ -2365,7 +2365,7 @@ Opaque PTree.set.
       apply in_blocks_of_env_inv in IN. destruct IN as [id0 [EID LO0]].
       exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H6.
       intros b2 delta0 FB. rewrite FB in H10. inv H10. eauto.
-    - red; simpl. auto.
+    - apply Forall_forall; simpl. auto.
   }
   {
     intros. unfold in_frame; simpl. intros [A|[]]. subst.

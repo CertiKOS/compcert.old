@@ -2284,7 +2284,7 @@ Proof.
       rewrite IN in ENV. inv ENV. rewrite J'B in MAPPED; inv MAPPED.
       unfold blocks_of_env; rewrite ! map_map, in_map_iff.
       repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
-    - red. simpl. auto. 
+    - apply Forall_forall. simpl. auto. 
   }
   {
     intros b0 INS INF. red in INF. simpl in INF.
