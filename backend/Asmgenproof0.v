@@ -150,6 +150,7 @@ Qed.
 Record agree (ms: Mach.regset) (sp: val) (rs: Asm.regset) : Prop := mkagree {
   agree_sp: rs#SP = sp;
   agree_sp_def: sp <> Vundef;
+  agree_sp_type: Val.has_type sp Tptr;
   agree_mregs: forall r: mreg, Val.lessdef (ms r) (rs#(preg_of r))
 }.
 
@@ -319,6 +320,7 @@ Qed.
 Lemma agree_change_sp:
   forall ms sp rs sp',
   agree ms sp rs -> sp' <> Vundef ->
+  forall TYPE: Val.has_type sp' Tptr,
   agree ms sp' (rs#SP <- sp').
 Proof.
   intros. inv H. split; auto.
@@ -886,6 +888,12 @@ End STRAIGHTLINE.
 
 Section MATCH_STACK.
 
+Variables init_sp init_ra: val.
+Hypothesis init_sp_not_vundef: init_sp <> Vundef.
+Hypothesis init_ra_not_vundef: init_ra <> Vundef.
+Hypothesis init_sp_type: Val.has_type init_sp Tptr.
+Hypothesis init_ra_type: Val.has_type init_ra Tptr.
+
 Variable ge: Mach.genv.
 
 Inductive match_stack: list Mach.stackframe -> Prop :=
@@ -895,33 +903,32 @@ Inductive match_stack: list Mach.stackframe -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge ra fb f c false tf tc ->
       sp <> Vundef ->
+      forall SP_TYPE: Val.has_type sp Tptr,
       match_stack s ->
       match_stack (Stackframe fb sp ra c :: s).
 
-Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
-Proof.
-  induction 1; simpl.
-  unfold Vnullptr; destruct Archi.ptr64; congruence.
-  auto.
-Qed.
+Lemma parent_sp_def: forall s, match_stack s -> parent_sp init_sp s <> Vundef.
+Proof. induction 1; simpl; congruence. Qed.
 
-Lemma parent_ra_def: forall s, match_stack s -> parent_ra s <> Vundef.
-Proof.
-  induction 1; simpl.
-  unfold Vnullptr; destruct Archi.ptr64; congruence.
-  inv H0. congruence.
-Qed.
+Lemma parent_ra_def: forall s, match_stack s -> parent_ra init_ra s <> Vundef.
+Proof. induction 1; simpl; try congruence. inv H0. congruence. Qed.
+
+Lemma parent_sp_type: forall s, match_stack s -> Val.has_type (parent_sp init_sp s) Tptr.
+Proof. induction 1; simpl; auto. Qed.
+
+Lemma parent_ra_type: forall s, match_stack s -> Val.has_type (parent_ra init_ra s) Tptr.
+Proof. induction 1; simpl; try congruence. inv H0. constructor. Qed.
 
 Lemma lessdef_parent_sp:
   forall s v,
-  match_stack s -> Val.lessdef (parent_sp s) v -> v = parent_sp s.
+  match_stack s -> Val.lessdef (parent_sp init_sp s) v -> v = parent_sp init_sp s.
 Proof.
   intros. inv H0. auto. exploit parent_sp_def; eauto. tauto.
 Qed.
 
 Lemma lessdef_parent_ra:
   forall s v,
-  match_stack s -> Val.lessdef (parent_ra s) v -> v = parent_ra s.
+  match_stack s -> Val.lessdef (parent_ra init_ra s) v -> v = parent_ra init_ra s.
 Proof.
   intros. inv H0. auto. exploit parent_ra_def; eauto. tauto.
 Qed.

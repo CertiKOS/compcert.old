@@ -102,11 +102,12 @@ module Printer(Target:TARGET) =
 
     let print_globdef oc (name,gdef) =
       match gdef with
-      | Gfun (Internal code) ->
+      | Some (Gfun (Internal code)) ->
         if not (C2C.atom_is_iso_inline_definition name) then
           print_function oc name code
-      | Gfun (External ef) ->   ()
-      | Gvar v -> print_var oc name v
+      | Some (Gfun (External ef)) ->   ()
+      | Some (Gvar v) -> print_var oc name v
+      | None -> ()
 
     module DwarfTarget: DwarfTypes.DWARF_TARGET =
       struct

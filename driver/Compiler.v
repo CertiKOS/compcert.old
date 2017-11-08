@@ -28,7 +28,6 @@ Require Linear.
 Require Mach.
 Require Asm.
 (** Translation passes. *)
-Require Initializers.
 Require SimplExpr.
 Require SimplLocals.
 Require Cshmgen.
@@ -117,6 +116,8 @@ Definition partial_if {A: Type}
   RTL program.  The three translations produce Asm programs ready for
   pretty-printing and assembling. *)
 
+Local Existing Instance ValueAnalysis.romem_for_wp_instance.
+
 Definition transf_rtl_program (f: RTL.program) : res Asm.program :=
    OK f
    @@ print (print_RTL 0)
@@ -165,11 +166,6 @@ Definition transf_c_program (p: Csyntax.program) : res Asm.program :=
   OK p
   @@@ time "Clight generation" SimplExpr.transl_program
   @@@ transf_clight_program.
-
-(** Force [Initializers] and [Cexec] to be extracted as well. *)
-
-Definition transl_init := Initializers.transl_init.
-Definition cexec_do_step := Cexec.do_step.
 
 (** The following lemmas help reason over compositions of passes. *)
 

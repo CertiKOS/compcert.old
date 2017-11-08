@@ -165,6 +165,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma sig_preserved:
   forall f, funsig (tunnel_fundef f) = funsig f.
 Proof.
@@ -380,10 +386,14 @@ Definition measure (st: state) : nat :=
   | Returnstate s ls m => 0%nat
   end.
 
+Section WITHINITLS.
+
+Variable init_ls: locset.
+
 Lemma match_parent_locset:
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  locmap_lessdef (parent_locset s) (parent_locset ts).
+  locmap_lessdef (parent_locset init_ls s) (parent_locset init_ls ts).
 Proof.
   induction 1; simpl.
 - red; auto.
@@ -391,10 +401,10 @@ Proof.
 Qed.
 
 Lemma tunnel_step_correct:
-  forall st1 t st2, step ge st1 t st2 ->
+  forall st1 t st2, step init_ls ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
   exists w, forall t', match_events ge cc_extends w t t' ->
-  (exists st2', step tge st1' t' st2' /\ match_states st2 st2')
+  (exists st2', step init_ls tge st1' t' st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
   induction 1; intros; try inv MS; try stable_step.
@@ -402,7 +412,7 @@ Proof.
 - (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
     (exists st2' : state,
-     step tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
+     step init_ls tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
      /\ match_states (Block s f sp bb rs m) st2')).
   { intros. rewrite H0. econstructor; split.
     econstructor. simpl. rewrite PTree.gmap1. rewrite H. simpl. eauto.
@@ -528,6 +538,8 @@ Proof.
   constructor; auto.
 Qed.
 
+End WITHINITLS.
+
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
@@ -560,7 +572,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  eexact tunnel_step_correct.
+  apply tunnel_step_correct.
 Qed.
 
 End PRESERVATION.

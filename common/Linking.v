@@ -238,14 +238,68 @@ Global Opaque Linker_def.
   is undefined if static definitions with the same name appear in both
   compilation units. *)
 
+Definition link_option {V: Type} {LV: Linker V} v1 v2 :=
+  match v1 with
+    | None => Some v2
+    | Some v1' =>
+      match v2 with
+        | None => Some v1
+        | Some v2' =>
+          match link v1' v2' with
+            | None => None
+            | Some v' => Some (Some v')
+          end
+      end
+  end.
+
+Definition linkorder_option {V: Type} {LV: Linker V} v1 v2 :=
+  match v1 with
+    | None => True
+    | Some v1' =>
+      match v2 with
+        | None => False
+        | Some v2' => linkorder v1' v2'
+      end
+  end.
+
+Local Program Instance Linker_option (V: Type) {LV: Linker V}: Linker (option V) := {
+  link := link_option;
+  linkorder := linkorder_option
+}.
+Next Obligation.
+  unfold linkorder_option.
+  destruct x; auto using linkorder_refl.
+Qed.
+Next Obligation.
+  unfold linkorder_option in * |- * .
+  destruct x; auto.
+  destruct y; try tauto.
+  destruct z; try tauto.
+  eapply linkorder_trans; eauto.
+Qed.
+Next Obligation.
+  unfold link_option in * .
+  unfold linkorder_option in * |- * .
+  destruct x as [ v | ] ; simpl.
+  - destruct y as [ v0 | ] ; simpl.
+    * destruct (link v v0) eqn:LINK; try discriminate.
+      inversion H; subst.
+      apply link_linkorder; auto.
+    * inversion H; subst.
+      auto using linkorder_refl.
+  - inversion H; subst.
+    split; auto.
+    destruct z; auto using linkorder_refl.
+Qed.
+
 Section LINKER_PROG.
 
 Context {F V: Type} {LF: Linker F} {LV: Linker V} (p1 p2: program F V).
 
-Let dm1 := prog_defmap p1.
-Let dm2 := prog_defmap p2.
+Let dm1 := prog_option_defmap p1.
+Let dm2 := prog_option_defmap p2.
 
-Definition link_prog_check (x: ident) (gd1: globdef F V) :=
+Definition link_prog_check (x: ident) (gd1: option (globdef F V)) :=
   match dm2!x with
   | None => true
   | Some gd2 =>
@@ -254,7 +308,7 @@ Definition link_prog_check (x: ident) (gd1: globdef F V) :=
       && match link gd1 gd2 with Some _ => true | None => false end
   end.
 
-Definition link_prog_merge (o1 o2: option (globdef F V)) :=
+Definition link_prog_merge (o1 o2: option (option (globdef F V))) :=
   match o1, o2 with
   | None, _ => o2
   | _, None => o1
@@ -290,7 +344,35 @@ Proof.
   destruct (in_dec peq id (prog_public p1)); try discriminate.
   destruct (in_dec peq id (prog_public p2)); try discriminate.
   destruct (link gd1 gd2) eqn:L; try discriminate.
-  intuition auto. exists g; auto.
+  intuition auto. exists o; auto.
+Qed.
+
+Lemma link_prog_inv_strong:
+  forall p,
+  link_prog = Some p ->
+      p1.(prog_main) = p2.(prog_main)
+   /\ (forall id gd1 gd2,
+         (prog_defmap p1)!id = Some gd1 -> (prog_defmap p2)!id = Some gd2 ->
+         In id p1.(prog_public) /\ In id p2.(prog_public) /\ exists gd, link gd1 gd2 = Some gd)
+  /\ p = {| prog_main := p1.(prog_main);
+            prog_public := p1.(prog_public) ++ p2.(prog_public);
+            prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2) |}.
+Proof.
+  intros p H.
+  exploit link_prog_inv; eauto.
+  intros (MAIN & DEFS & P).
+  split; auto.
+  split; auto.
+  intros id gd1 gd2 H0 H1.
+  apply prog_defmap_option_defmap in H0.
+  apply prog_defmap_option_defmap in H1.
+  exploit DEFS; eauto.
+  destruct 1 as (I1 & I2 & gd & Hgd).
+  split; auto.
+  split; auto.
+  simpl in Hgd.
+  destruct (link gd1 gd2); eauto.
+  discriminate.
 Qed.
 
 Lemma link_prog_succeeds:
@@ -311,11 +393,20 @@ Proof.
   destruct (link gd1 gd2); auto; discriminate.
 Qed.
 
+(*
 Lemma prog_defmap_elements:
   forall (m: PTree.t (globdef F V)) pub mn x,
   (prog_defmap {| prog_defs := PTree.elements m; prog_public := pub; prog_main := mn |})!x = m!x.
 Proof.
   intros. unfold prog_defmap; simpl. apply PTree_Properties.of_list_elements.
+Qed.
+*)
+
+Lemma prog_option_defmap_elements:
+  forall (m: PTree.t (option (globdef F V))) pub mn x,
+  (prog_option_defmap {| prog_defs := PTree.elements m; prog_public := pub; prog_main := mn |})!x = m!x.
+Proof.
+  intros. unfold prog_option_defmap; simpl. apply PTree_Properties.of_list_elements.
 Qed.
 
 End LINKER_PROG.
@@ -326,9 +417,9 @@ Instance Linker_prog (F V: Type) {LF: Linker F} {LV: Linker V} : Linker (program
      p1.(prog_main) = p2.(prog_main)
   /\ incl p1.(prog_public) p2.(prog_public)
   /\ forall id gd1,
-     (prog_defmap p1)!id = Some gd1 ->
+     (prog_option_defmap p1)!id = Some gd1 ->
      exists gd2,
-        (prog_defmap p2)!id = Some gd2
+        (prog_option_defmap p2)!id = Some gd2
      /\ linkorder gd1 gd2
      /\ (~In id p2.(prog_public) -> gd2 = gd1)
 }.
@@ -346,20 +437,30 @@ Proof.
 - intros. apply link_prog_inv in H. destruct H as (L1 & L2 & L3).
   subst z; simpl. intuition auto.
 + red; intros; apply in_app_iff; auto.
-+ rewrite prog_defmap_elements, PTree.gcombine, H by auto.
-  destruct (prog_defmap y)!id as [gd2|] eqn:GD2; simpl.
++ rewrite prog_option_defmap_elements, PTree.gcombine, H by auto.
+  destruct (prog_option_defmap y)!id as [gd2|] eqn:GD2; simpl.
 * exploit L2; eauto. intros (P & Q & gd & R).
   exists gd; split. auto. split. apply link_linkorder in R; tauto.
   rewrite in_app_iff; tauto.
-* exists gd1; split; auto. split. apply linkorder_refl. auto.
+* exists gd1; split; auto. split. apply (linkorder_refl (Linker := Linker_option _)). auto.
 + red; intros; apply in_app_iff; auto.
-+ rewrite prog_defmap_elements, PTree.gcombine, H by auto.
-  destruct (prog_defmap x)!id as [gd2|] eqn:GD2; simpl.
++ rewrite prog_option_defmap_elements, PTree.gcombine, H by auto.
+  destruct (prog_option_defmap x)!id as [gd2|] eqn:GD2; simpl.
 * exploit L2; eauto. intros (P & Q & gd & R).
   exists gd; split. auto. split. apply link_linkorder in R; tauto.
   rewrite in_app_iff; tauto.
-* exists gd1; split; auto. split. apply linkorder_refl. auto.
+* exists gd1; split; auto. split. apply (linkorder_refl (Linker := Linker_option _)). auto.
 Defined.
+
+Lemma prog_option_defmap_linkorder:
+  forall {F V: Type} {LF: Linker F} {LV: Linker V} (p1 p2: program F V) id gd1,
+  linkorder p1 p2 ->
+  (prog_option_defmap p1)!id = Some gd1 ->
+  exists gd2, (prog_option_defmap p2)!id = Some gd2 /\ linkorder gd1 gd2.
+Proof.
+  intros. destruct H as (A & B & C).
+  exploit C; eauto. intros (gd2 & P & Q & R). exists gd2; auto.
+Qed.
 
 Lemma prog_defmap_linkorder:
   forall {F V: Type} {LF: Linker F} {LV: Linker V} (p1 p2: program F V) id gd1,
@@ -367,8 +468,14 @@ Lemma prog_defmap_linkorder:
   (prog_defmap p1)!id = Some gd1 ->
   exists gd2, (prog_defmap p2)!id = Some gd2 /\ linkorder gd1 gd2.
 Proof.
-  intros. destruct H as (A & B & C).
-  exploit C; eauto. intros (gd2 & P & Q & R). exists gd2; auto.
+  intros.
+  rewrite <- prog_defmap_option_defmap in H0.
+  eapply prog_option_defmap_linkorder in H0; eauto.
+  destruct H0 as (gd2 & A & B).
+  simpl in B.
+  destruct gd2; try contradiction.
+  rewrite -> prog_defmap_option_defmap in A.
+  eauto.
 Qed.
 
 Global Opaque Linker_prog.
@@ -404,12 +511,18 @@ Inductive match_globdef (ctx: C): globdef F1 V1 -> globdef F2 V2 -> Prop :=
       match_globvar v1 v2 ->
       match_globdef ctx (Gvar v1) (Gvar v2).
 
+(*
 Definition match_ident_globdef
      (ctx: C) (ig1: ident * globdef F1 V1) (ig2: ident * globdef F2 V2) : Prop :=
   fst ig1 = fst ig2 /\ match_globdef ctx (snd ig1) (snd ig2).
+*)
+
+Definition match_ident_option_globdef
+     (ctx: C) (ig1: ident * option (globdef F1 V1)) (ig2: ident * option (globdef F2 V2)) : Prop :=
+  fst ig1 = fst ig2 /\ option_rel (match_globdef ctx) (snd ig1) (snd ig2).
 
 Definition match_program_gen (ctx: C) (p1: program F1 V1) (p2: program F2 V2) : Prop :=
-  list_forall2 (match_ident_globdef ctx) p1.(prog_defs) p2.(prog_defs)
+  list_forall2 (match_ident_option_globdef ctx) p1.(prog_defs) p2.(prog_defs)
   /\ p2.(prog_main) = p1.(prog_main)
   /\ p2.(prog_public) = p1.(prog_public).
 
@@ -417,7 +530,14 @@ Theorem match_program_defmap:
   forall ctx p1 p2, match_program_gen ctx p1 p2 ->
   forall id, option_rel (match_globdef ctx) (prog_defmap p1)!id (prog_defmap p2)!id.
 Proof.
-  intros. apply PTree_Properties.of_list_related. apply H.
+  intros. apply PTree_Properties.of_list_option_related. apply H.
+Qed.
+
+Theorem match_program_option_defmap:
+  forall ctx p1 p2, match_program_gen ctx p1 p2 ->
+  forall id, option_rel (option_rel (match_globdef ctx)) (prog_option_defmap p1)!id (prog_option_defmap p2)!id.
+Proof.
+  intros. apply PTree_Properties.of_list_related. apply H. 
 Qed.
 
 Lemma match_program_gen_main:
@@ -492,12 +612,17 @@ Proof.
   revert x EQ. generalize (prog_defs p).
   induction l as [ | [i g] l]; simpl; intros.
 - monadInv EQ. constructor.
-- destruct g as [f|v].
+- destruct g as [[f|v]|].
 + destruct (transf_fun i f) as [tf|?] eqn:TF; monadInv EQ.
-  constructor; auto. split; simpl; auto. econstructor. apply linkorder_refl. eauto.
+  constructor; auto. split; simpl; auto. econstructor. econstructor. apply linkorder_refl. eauto.
 + destruct (transf_globvar transf_var i v) as [tv|?] eqn:TV; monadInv EQ.
   constructor; auto. split; simpl; auto. constructor.
+  constructor.
   monadInv TV. destruct v; simpl; constructor. eauto.
++ monadInv EQ.
+  constructor; auto.
+  split; simpl; auto.
+  constructor.
 Qed.
 
 Theorem match_transform_partial_program_contextual:
@@ -623,6 +748,42 @@ Proof.
 - constructor; auto.
 Qed.
 
+Lemma option_rel_match_globdef_linkorder ctx ctx' g1 g2:
+  option_rel (match_globdef match_fundef match_varinfo ctx) g1 g2 ->
+  linkorder ctx ctx' ->
+  option_rel (match_globdef match_fundef match_varinfo ctx') g1 g2.
+Proof.
+  inversion 1; constructor; eauto using match_globdef_linkorder.
+Qed.
+
+Lemma link_match_option_globdef:
+  forall ctx1 ctx2 ctx g1 tg1 g2 tg2 g,
+  linkorder ctx1 ctx -> linkorder ctx2 ctx ->
+  link g1 g2 = Some g ->
+  option_rel (match_globdef match_fundef match_varinfo ctx1) g1 tg1 ->
+  option_rel (match_globdef match_fundef match_varinfo ctx2) g2 tg2 ->
+  exists tg, link tg1 tg2 = Some tg /\ option_rel (match_globdef match_fundef match_varinfo ctx) g tg.
+Proof.
+  inversion 4; subst; simpl in * .
+  + inv H1. esplit; split; eauto.
+    eapply option_rel_match_globdef_linkorder; eauto.
+  + inversion 1; subst.
+    - esplit.
+      split; eauto.
+      inv H1.
+      constructor.
+      eapply match_globdef_linkorder; eauto.
+    - destruct (link_def x x0) eqn:LINK ; try discriminate.
+      inv H1.
+      exploit link_match_globdef; (try eexact LINK); (try eexact H3); (try eexact H5); eauto.
+      destruct 1 as (tg & LINK' & MATCH).
+      assert (link_def y y0 = Some tg) as LINK_DEF' by assumption.
+      rewrite LINK_DEF' .
+      esplit.
+      split; eauto.
+      constructor; auto.
+Qed.
+
 Theorem link_match_program:
   forall ctx1 ctx2 ctx p1 p2 tp1 tp2 p,
   link p1 p2 = Some p ->
@@ -638,21 +799,21 @@ Proof.
 - apply link_prog_succeeds.
 + congruence.
 + intros.
-  generalize (match_program_defmap _ _ _ _ _ H0 id) (match_program_defmap _ _ _ _ _ H1 id).
+  generalize (match_program_option_defmap _ _ _ _ _ H0 id) (match_program_option_defmap _ _ _ _ _ H1 id).
   rewrite H4, H5. intros R1 R2; inv R1; inv R2.
   exploit Q; eauto. intros (X & Y & gd & Z).
-  exploit link_match_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
+  exploit link_match_option_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
   intros (tg & TL & _). intuition congruence.
 - split; [|split].
 + rewrite R. apply PTree.elements_canonical_order'. intros id.
   rewrite ! PTree.gcombine by auto.
-  generalize (match_program_defmap _ _ _ _ _ H0 id) (match_program_defmap _ _ _ _ _ H1 id).
+  generalize (match_program_option_defmap _ _ _ _ _ H0 id) (match_program_option_defmap _ _ _ _ _ H1 id).
   clear R. intros R1 R2; inv R1; inv R2; unfold link_prog_merge.
 * constructor.
-* constructor. apply match_globdef_linkorder with ctx2; auto.
-* constructor. apply match_globdef_linkorder with ctx1; auto.
+* constructor. apply option_rel_match_globdef_linkorder with ctx2; auto.
+* constructor. apply option_rel_match_globdef_linkorder with ctx1; auto.
 * exploit Q; eauto. intros (X & Y & gd & Z).
-  exploit link_match_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
+  exploit link_match_option_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
   intros (tg & TL & MG). rewrite Z, TL. constructor; auto.
 + rewrite R; simpl; auto.
 + rewrite R; simpl. congruence.

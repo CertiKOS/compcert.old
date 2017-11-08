@@ -20,6 +20,9 @@ Require Import Op Registers RTL.
 Require Import Liveness ValueDomain ValueAOp ValueAnalysis.
 Require Import ConstpropOp ConstpropOpproof Constprop.
 
+Section WITHROMEMFOR.
+Context `{romem_for_instance: ROMemFor}.
+
 Definition match_prog (prog tprog: program) :=
   match_program (fun cu f tf => tf = transf_fundef (romem_for cu) f) eq prog tprog.
 
@@ -29,13 +32,19 @@ Proof.
   intros. eapply match_transform_program_contextual. auto.
 Qed.
 
+End WITHROMEMFOR.
+
 Section PRESERVATION.
 
 Variable prog: program.
 Variable tprog: program.
-Hypothesis TRANSL: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+
+Section WITHROMEMFOR.
+Context `{romem_for_instance: ROMemFor}.
+
+Hypothesis TRANSL: match_prog prog tprog.
 
 (** * Correctness of the code transformation *)
 
@@ -49,6 +58,12 @@ Proof (Genv.find_symbol_match TRANSL).
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSL).
+
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
 
 Lemma functions_translated:
   forall (v: val) (f: fundef),
@@ -559,6 +574,12 @@ Opaque builtin_strength_reduction.
   econstructor; eauto. constructor. apply set_reg_lessdef; auto.
 Qed.
 
+End WITHROMEMFOR.
+
+Local Existing Instance romem_for_wp_instance.
+
+Hypothesis TRANSL: match_prog prog tprog.
+
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
   exists n, exists st2, initial_state tprog st2 /\ match_states n st1 st2.
@@ -570,6 +591,7 @@ Proof.
   apply (Genv.init_mem_match TRANSL); auto.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.
+  assumption.
   symmetry; eapply match_program_main; eauto.
   rewrite <- H3. apply sig_function_translated.
   constructor. auto. constructor. constructor. apply Mem.extends_refl.
@@ -603,6 +625,7 @@ Proof.
   exists n2; exists s2; split; auto. right; split; auto.
   subst t; inv Ht'; apply star_refl.
 - apply senv_preserved.
+  assumption.
 Qed.
 
 End PRESERVATION.

@@ -580,4 +580,6 @@ Proof.
   eexact H. apply insert_lenv_0.
 Qed.
 
+Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
+
 Hint Resolve eval_lift: evalexpr.

@@ -510,17 +510,18 @@ Inductive wt_function (ce: composite_env) (e: typenv) : function -> Prop :=
       wt_stmt ce (bind_vars (bind_vars e f.(fn_params)) f.(fn_vars)) f.(fn_return) f.(fn_body) ->
       wt_function ce e f.
 
-Fixpoint bind_globdef (e: typenv) (l: list (ident * globdef fundef type)) : typenv :=
+Fixpoint bind_globdef (e: typenv) (l: list (ident * option (globdef fundef type))) : typenv :=
   match l with
   | nil => e
-  | (id, Gfun fd) :: l => bind_globdef (PTree.set id (type_of_fundef fd) e) l
-  | (id, Gvar v) :: l => bind_globdef (PTree.set id v.(gvar_info) e) l
+  | (id, None) :: l => bind_globdef e l
+  | (id, Some (Gfun fd)) :: l => bind_globdef (PTree.set id (type_of_fundef fd) e) l
+  | (id, Some (Gvar v)) :: l => bind_globdef (PTree.set id v.(gvar_info) e) l
   end.
 
 Inductive wt_program : program -> Prop :=
   | wt_program_intro: forall p,
       let e := bind_globdef (PTree.empty _) p.(prog_defs) in
-      (forall id f, In (id, Gfun (Internal f)) p.(prog_defs) ->
+      (forall id f, In (id, Some (Gfun (Internal f))) p.(prog_defs) ->
          wt_function p.(prog_comp_env) e f) ->
       wt_program p.
 
@@ -1359,16 +1360,19 @@ Proof.
     induction l as [ | [id gd] l ]; intros l' t M; inv M.
     auto.
     destruct b1 as [id' gd']; destruct H1; simpl in *. inv H0; simpl.
+    auto.
+    inv H1; simpl.
     replace (type_of_fundef f2) with (type_of_fundef f1); auto.
-    unfold retype_fundef in H2. destruct f1; monadInv H2; auto. monadInv EQ0; auto.
-    inv H1. simpl. auto.
+    unfold retype_fundef in H0. destruct f1; monadInv H0; auto. monadInv EQ0; auto.
+    inv H. simpl. auto.
   }
   rewrite ENVS.
   intros id f. revert MATCH; generalize (prog_defs p) (AST.prog_defs tp).
   induction 1; simpl; intros.
   contradiction.
   destruct H0; auto. subst b1; inv H. simpl in H1. inv H1. 
-  destruct f1; monadInv H4. eapply retype_function_sound; eauto.
+  inv H3.
+  destruct f1; monadInv H5. eapply retype_function_sound; eauto.
 Qed.
 
 (** * Subject reduction *)
@@ -1384,6 +1388,8 @@ Proof.
 - auto.
 - destruct (Int.eq n Int.zero); auto.
 Qed.
+
+Hint Resolve pres_cast_int_int: ty.
 
 Lemma wt_val_casted:
   forall v ty, val_casted v ty -> wt_val v ty.
@@ -1613,14 +1619,14 @@ Lemma wt_deref_loc:
 Proof.
   induction 1.
 - (* by value, non volatile *)
-  simpl in H1. exploit Mem.load_result; eauto. intros EQ; rewrite EQ.
+  simpl in H1. exploit Mem.load_loadbytes; eauto. intros (? & _ & EQ); rewrite EQ.
   apply wt_decode_val; auto.
 - (* by value, volatile *)
   inv H1.
   + (* truly volatile *)
     eapply wt_load_result; eauto.
   + (* not really volatile *)
-    exploit Mem.load_result; eauto. intros EQ; rewrite EQ.
+    exploit Mem.load_loadbytes; eauto. intros (? & _ & EQ); rewrite EQ.
     apply wt_decode_val; auto.
 - (* by reference *)
   destruct ty; simpl in H; try discriminate; auto with ty.
@@ -1856,7 +1862,7 @@ Let gtenv := bind_globdef (PTree.empty _) prog.(prog_defs).
 
 Hypothesis WT_EXTERNAL:
   forall id ef args res cc vargs m t vres m',
-  In (id, Gfun (External ef args res cc)) prog.(prog_defs) ->
+  In (id, Some (Gfun (External ef args res cc))) prog.(prog_defs) ->
   external_call ef ge vargs m t vres m' ->
   wt_val vres res.
 
@@ -2144,3 +2150,5 @@ Proof.
 Qed.
 
 End PRESERVATION.
+
+Hint Constructors wt_expr_cont wt_stmt_cont wt_stmt wt_state: ty.

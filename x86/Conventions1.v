@@ -473,3 +473,294 @@ Lemma loc_arguments_main:
 Proof.
   unfold loc_arguments; destruct Archi.ptr64; reflexivity.
 Qed.
+
+Lemma loc_arguments_32_charact':
+  forall tyl ofs p,
+    In p (regs_of_rpairs (loc_arguments_32 tyl ofs)) ->
+    loc_argument_32_charact ofs p.
+Proof.
+  intros tyl ofs p IN.
+  apply in_regs_of_rpairs_inv in IN. destruct IN as (P & IN & IN').
+  apply loc_arguments_32_charact in IN.
+  destruct P; simpl in *; auto.
+  destruct IN'; subst; auto. easy.
+  destruct IN' as [A|[A|A]]; inv A; intuition.
+Qed.
+
+Lemma loc_arguments_64_charact':
+  forall tyl ir fr ofs p,
+    (2|ofs) ->
+    In p (regs_of_rpairs (loc_arguments_64 tyl ir fr ofs)) ->
+    loc_argument_64_charact ofs p.
+Proof.
+  intros tyl ir fr ofs p DIV IN.
+  apply in_regs_of_rpairs_inv in IN. destruct IN as (P & IN & IN').
+  apply loc_arguments_64_charact in IN; auto.
+  destruct P; simpl in *; auto.
+  destruct IN'; subst; auto. easy.
+  destruct IN' as [A|[A|A]]; inv A; intuition.
+Qed.
+
+Lemma loc_arguments_32_norepet sg z:
+  Loc.norepet (regs_of_rpairs (loc_arguments_32 sg z)).
+Proof.
+  revert z.
+  induction sg; simpl; auto using Loc.norepet_nil.
+  intros z.
+  assert (H32: forall ty,
+             Loc.norepet
+               (regs_of_rpair (One (S Outgoing z ty)) ++
+                regs_of_rpairs (loc_arguments_32 sg (z + typesize ty)))).
+  {
+    simpl. intros ty. apply Loc.norepet_cons; auto.
+    rewrite Loc.notin_iff.
+    intros l' H.
+    apply loc_arguments_32_charact' in H.
+    destruct l' ; try contradiction. simpl in H.
+    destruct sl; try contradiction.
+    right. simpl. omega.
+  }
+  destruct a; auto.
+  simpl in *. apply Loc.norepet_cons.
+  - rewrite Loc.notin_iff.
+    inversion 1; subst.
+    simpl; right; omega.
+    apply loc_arguments_32_charact' in H0.
+    destruct l' ; try contradiction.
+    destruct sl; try contradiction.
+    destruct H0.
+    red.
+    right; simpl in *; omega.
+  - apply Loc.norepet_cons; auto.
+    rewrite Loc.notin_iff.
+    intros l' H0.
+    apply loc_arguments_32_charact' in H0.
+    destruct l' ; try contradiction.
+    destruct sl; try contradiction.
+    destruct H0.
+    red; right; simpl in *; omega.
+Qed.
+
+Definition loc_argument_64_charact' ofs ir fr l :=
+  match l with
+  | R r => (In r int_param_regs /\ exists i, i >= ir /\ list_nth_z int_param_regs i = Some r)
+          \/ (In r float_param_regs /\ exists i, i >= fr /\ list_nth_z float_param_regs i = Some r)
+  | S Local _ _ => False
+  | S Incoming _ _ => False
+  | S Outgoing ofs' _ => ofs' >= ofs /\ (2 | ofs')
+  end.
+
+Remark loc_arguments_64_charact'':
+  forall tyl ir fr ofs p,
+  In p (loc_arguments_64 tyl ir fr ofs) -> (2 | ofs) -> forall_rpair (loc_argument_64_charact' ofs ir fr) p.
+Proof.
+  assert (X: forall ofs1 ofs2 ir fr l, loc_argument_64_charact' ofs2 ir fr l -> ofs1 <= ofs2 -> loc_argument_64_charact' ofs1 ir fr l).
+  { destruct l; simpl; intros; auto. destruct sl; auto. intuition omega. }
+  assert (Y: forall ofs1 ofs2 ir fr p, forall_rpair (loc_argument_64_charact' ofs2 ir fr) p -> ofs1 <= ofs2 -> forall_rpair (loc_argument_64_charact' ofs1 ir fr) p).
+  { destruct p; simpl; intuition eauto. }
+  assert (Z: forall ofs, (2 | ofs) -> (2 | ofs + 2)).
+  { intros. apply Z.divide_add_r; auto. apply Zdivide_refl. }
+  assert (C: forall ofs ir1 ir2 fr l, loc_argument_64_charact' ofs ir2 fr l -> ir1 <= ir2 -> loc_argument_64_charact' ofs ir1 fr l).
+  {
+    Opaque int_param_regs float_param_regs.
+    destruct l; simpl; intros; auto. destruct H.
+    - destruct H.
+      left; split; auto. destruct H1 as (i & LE & NTH); exists i; split; eauto. omega.
+    - destruct H.
+      right; split; auto.
+  } 
+  assert (D: forall ofs ir1 ir2 fr p, forall_rpair (loc_argument_64_charact' ofs ir2 fr) p -> ir1 <= ir2 -> forall_rpair (loc_argument_64_charact' ofs ir1 fr) p).
+  { destruct p; simpl; intuition eauto.
+  }
+  assert (E: forall ofs ir fr1 fr2 l, loc_argument_64_charact' ofs ir fr2 l -> fr1 <= fr2 -> loc_argument_64_charact' ofs ir fr1 l).
+  {
+    Opaque int_param_regs float_param_regs.
+    destruct l; simpl; intros; auto. destruct H.
+    - destruct H.
+      left; split; auto. 
+    - destruct H.
+      right; split; auto.
+      destruct H1 as (i & LE & NTH). exists i; split; eauto. omega.
+  } 
+  assert (F: forall ofs ir fr1 fr2 p, forall_rpair (loc_argument_64_charact' ofs ir fr2) p -> fr1 <= fr2 -> forall_rpair (loc_argument_64_charact' ofs ir fr1) p).
+  { destruct p; simpl; intuition eauto.
+  }
+Opaque list_nth_z.
+  induction tyl; simpl loc_arguments_64; intros.
+  elim H.
+  assert (A: forall ty, In p
+      match list_nth_z int_param_regs ir with
+      | Some ireg => One (R ireg) :: loc_arguments_64 tyl (ir + 1) fr ofs
+      | None => One (S Outgoing ofs ty) :: loc_arguments_64 tyl ir fr (ofs + 2)
+      end ->
+      forall_rpair (loc_argument_64_charact' ofs ir fr) p).
+  { intros. destruct (list_nth_z int_param_regs ir) as [r|] eqn:G; destruct H1.
+    subst. left. split. eapply list_nth_z_in; eauto. exists ir; split. omega. auto.
+    eapply D.
+    eapply IHtyl. eauto. auto. omega. 
+    subst. split. omega. assumption.
+    eapply Y; eauto. omega. }
+  assert (B: forall ty, In p
+      match list_nth_z float_param_regs fr with
+      | Some ireg => One (R ireg) :: loc_arguments_64 tyl ir (fr + 1) ofs
+      | None => One (S Outgoing ofs ty) :: loc_arguments_64 tyl ir fr (ofs + 2)
+      end ->
+      forall_rpair (loc_argument_64_charact' ofs ir fr) p).
+  { intros. destruct (list_nth_z float_param_regs fr) as [r|] eqn:I; destruct H1.
+    subst. right. split. eapply list_nth_z_in; eauto. exists fr; split. omega. auto.
+    eapply F. eapply IHtyl; eauto. omega.
+    subst. split. omega. assumption. 
+    eapply Y; eauto. omega. }
+  destruct a; eauto.
+Qed.
+
+
+Remark loc_arguments_64_charact''':
+  forall tyl ir fr ofs p,
+    In p (regs_of_rpairs (loc_arguments_64 tyl ir fr ofs)) ->
+    (2 | ofs) ->
+    loc_argument_64_charact' ofs ir fr p.
+Proof.
+  intros.
+  apply in_regs_of_rpairs_inv in H.
+  destruct H as (p0 & IN & ROR).
+  exploit loc_arguments_64_charact''; eauto.
+  intros.
+  destruct p0; simpl in *.
+  destruct ROR; subst; auto.  easy.
+  intuition subst; auto.
+Qed.
+
+
+Lemma list_nth_z_rew:
+  forall {A} (l: list A) a n,
+    list_nth_z (a::l) n =
+    if zeq n 0
+    then Some a
+    else list_nth_z l (Z.pred n).
+Proof. simpl; intros. reflexivity. Qed.
+
+Lemma list_nth_z_norepet_same:
+  forall {A} (l: list A) (lnr: list_norepet l) r i1 i2,
+    list_nth_z l i1 = Some r ->
+    list_nth_z l i2 = Some r ->
+    i1 = i2.
+Proof.
+  induction 1; simpl; intros; eauto.
+  discriminate.
+  rewrite list_nth_z_rew in H0, H1.
+  destruct (zeq i1 0). inv H0.
+  destruct (zeq i2 0). auto. apply list_nth_z_in in H1. congruence.
+  destruct (zeq i2 0). inv H1. apply list_nth_z_in in H0. congruence.
+  eapply IHlnr in H0. 2: exact H1. apply f_equal with (f:=Z.succ) in H0.
+  rewrite <- ! Zsucc_pred in H0.
+  eauto.
+Qed.
+
+Lemma loc_arguments_64_norepet sg:
+  forall ir fr ofs,
+    (2 | ofs) ->
+  Loc.norepet (regs_of_rpairs (loc_arguments_64 sg ir fr ofs)).
+Proof.
+  Opaque int_param_regs float_param_regs.
+  induction sg; simpl; auto using Loc.norepet_nil.
+  assert (H64: forall ty ofs ir fr,
+             (2 | ofs + 2) ->
+             Loc.norepet
+               (regs_of_rpair (One (S Outgoing ofs ty)) ++
+                              regs_of_rpairs (loc_arguments_64 sg ir fr (ofs + 2(* typesize ty *))))).
+  {
+    simpl. intros ty ofs ir fr DIV.
+    apply Loc.norepet_cons; auto.
+    - rewrite Loc.notin_iff.
+      intros l' H.
+      apply loc_arguments_64_charact' in H; auto.
+      destruct l' ; try contradiction. simpl. auto.
+      destruct sl; try contradiction. simpl.
+      simpl in H.
+      right. simpl.
+      cut (typesize ty <= 2). omega.
+      destruct ty ; simpl;  omega.
+  }
+  
+  generalize (loc_arguments_64_charact''' sg).
+  unfold loc_argument_64_charact'.
+  assert ( forall r, In r int_param_regs -> In r float_param_regs -> False).
+  {
+    Transparent int_param_regs float_param_regs.
+    simpl. intuition congruence.
+  }
+  assert( list_norepet int_param_regs).
+  repeat (constructor; [ simpl; intuition congruence | ]); constructor.
+  assert( list_norepet float_param_regs).
+  repeat (constructor; [ simpl; intuition congruence | ]); constructor.
+  revert H H0 H1.
+  generalize int_param_regs as IPR, float_param_regs as FPR.
+  intros IPR FPR DISJ LNR1 LNR2 CHARACT.
+  assert (H64_reg: forall ir fr ofs ireg,
+             (2 | ofs ) ->
+             list_nth_z IPR ir = Some ireg ->
+             Loc.norepet
+               (regs_of_rpair (One (R ireg)) ++
+                              regs_of_rpairs (loc_arguments_64 sg (ir + 1) fr ofs))).
+  {
+    simpl. intros ir fr ofs ireg DIV NTH.
+    apply Loc.norepet_cons; auto.
+    rewrite Loc.notin_iff.
+    intros l' H.
+    apply CHARACT in H; auto. simpl.
+    destruct l'; auto.
+    destruct H as [(IN & (i & SUP & EQ)) | (IN & (i & SUP & EQ))].
+    intro; subst.
+    exploit (list_nth_z_norepet_same (A:=mreg)). 2: apply NTH. 2: apply EQ. auto. intro; subst. omega.
+    apply list_nth_z_in in NTH. intro; subst. eauto.
+  }
+  assert (H64_freg: forall ir fr ofs ireg,
+             (2 | ofs ) ->
+             list_nth_z FPR fr = Some ireg ->
+             Loc.norepet
+               (regs_of_rpair (One (R ireg)) ++
+                              regs_of_rpairs (loc_arguments_64 sg ir (fr + 1) ofs))).
+  {
+    simpl. intros ir fr ofs ireg DIV NTH.
+    apply Loc.norepet_cons; auto.
+    rewrite Loc.notin_iff.
+    intros l' H.
+    apply CHARACT in H; auto. simpl.
+    destruct l'; auto.
+    destruct H as [(IN & (i & SUP & EQ)) | (IN & (i & SUP & EQ))].
+    intro; subst. apply list_nth_z_in in NTH. eauto. 
+    intro; subst.
+    exploit (list_nth_z_norepet_same (A:=mreg)). 2: apply NTH. 2: apply EQ. auto. intro; subst. omega.
+  }
+  intros.
+  destruct a; auto.
+  - destruct (list_nth_z IPR ir) eqn:EQ.
+    + simpl in *. apply H64_reg. auto. auto.
+    + simpl in *. apply H64. apply Z.divide_add_r; auto. apply Zdivide_refl.
+  - destruct (list_nth_z FPR fr) eqn:EQ.
+    + simpl in *. apply H64_freg. auto. auto.
+    + simpl in *. apply H64. apply Z.divide_add_r; auto. apply Zdivide_refl.
+  - destruct (list_nth_z IPR ir) eqn:EQ.
+    + simpl in *. apply H64_reg. auto. auto.
+    + simpl in *. apply H64. apply Z.divide_add_r; auto. apply Zdivide_refl.
+  - destruct (list_nth_z FPR fr) eqn:EQ.
+    + simpl in *. apply H64_freg. auto. auto.
+    + simpl in *. apply H64. apply Z.divide_add_r; auto. apply Zdivide_refl.
+  - destruct (list_nth_z IPR ir) eqn:EQ.
+    + simpl in *. apply H64_reg. auto. auto.
+    + simpl in *. apply H64. apply Z.divide_add_r; auto. apply Zdivide_refl.
+  - destruct (list_nth_z IPR ir) eqn:EQ.
+    + simpl in *. apply H64_reg. auto. auto.
+    + simpl in *. apply H64. apply Z.divide_add_r; auto. apply Zdivide_refl.
+Qed.
+
+Lemma loc_arguments_norepet:
+  forall sg,
+    Loc.norepet (regs_of_rpairs (loc_arguments sg)).
+Proof.
+  unfold loc_arguments; intros.
+  destruct Archi.ptr64.
+  apply loc_arguments_64_norepet. apply Z.divide_0_r.
+  apply loc_arguments_32_norepet.
+Qed.

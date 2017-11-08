@@ -1998,6 +1998,12 @@ Proof.
   intros. inv H; auto.
 Qed.
 
+Lemma offset_ptr_lessdef:
+  forall v v' o, lessdef v v' -> lessdef (offset_ptr v o) (offset_ptr v' o).
+Proof.
+  intros v v' o LD; inv LD; auto.
+Qed.
+
 Lemma offset_ptr_zero:
   forall v, lessdef (offset_ptr v Ptrofs.zero) v.
 Proof.
@@ -2388,4 +2394,15 @@ Proof.
   intros. inv H; auto; inv H0; auto. econstructor.
   unfold compose_meminj; rewrite H1; rewrite H3; eauto.
   rewrite Ptrofs.add_assoc. decEq. unfold Ptrofs.add. apply Ptrofs.eqm_samerepr. auto with ints.
+Qed.
+
+Lemma val_list_lessdef_inject_compose j l1 l2:
+	Val.lessdef_list l1 l2 ->
+	forall l3,
+	  Val.inject_list j l2 l3 ->
+	  Val.inject_list j l1 l3.
+Proof.
+	induction 1; inversion 1; subst; auto.
+	constructor; auto.
+	inversion H; subst; auto.
 Qed.

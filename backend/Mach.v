@@ -28,6 +28,7 @@ Require Import Smallstep.
 Require Import Op.
 Require Import Locations.
 Require Import Conventions.
+Require Import EraseArgs.
 Require Stacklayout.
 
 (** * Abstract syntax *)
@@ -202,12 +203,6 @@ Proof.
   intros; red; intros. eapply is_tail_incl; eauto. eapply find_label_tail; eauto.
 Qed.
 
-Section RELSEM.
-
-Variable return_address_offset: function -> code -> ptrofs -> Prop.
-
-Variable ge: genv.
-
 Definition find_function_ptr
         (ge: genv) (ros: mreg + ident) (rs: regset) : option block :=
   match ros with
@@ -275,17 +270,24 @@ Inductive state: Type :=
              (m: mem),                 (**r memory state *)
       state.
 
+Section RELSEM.
+Variables init_sp init_ra: val.
+
 Definition parent_sp (s: list stackframe) : val :=
   match s with
-  | nil => Vnullptr
+  | nil => init_sp
   | Stackframe f sp ra c :: s' => sp
   end.
 
 Definition parent_ra (s: list stackframe) : val :=
   match s with
-  | nil => Vnullptr
+  | nil => init_ra
   | Stackframe f sp ra c :: s' => ra
   end.
+
+Variable return_address_offset: function -> code -> ptrofs -> Prop.
+
+Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -345,7 +347,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' ->
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
@@ -389,7 +391,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m' ->
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s rs m')
   | exec_function_internal:
@@ -406,6 +408,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb rs m t rs' ef args res m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
+      forall (* CompCertX: BEGIN additional conditions for calling convention *)
+        (STACK:
+           exists m_,
+             free_extcall_args (parent_sp s) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
+             exists t_ res'_ m'_,
+               external_call ef ge args m_ t_ res'_ m'_
+        )
+      ,      (* CompCertX: END additional conditions for calling convention *)
       external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res rs ->
       step (Callstate s fb rs m)
@@ -431,7 +441,7 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
-  Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step Vnullptr Vnullptr rao) (initial_state p) final_state (Genv.globalenv p).
 
 (** * Leaf functions *)
 
@@ -472,7 +482,7 @@ Inductive wf_state: state -> Prop :=
       wf_state (Returnstate s rs m).
 
 Lemma wf_step:
-  forall S1 t S2, step rao ge S1 t S2 -> wf_state S1 -> wf_state S2.
+  forall S1 t S2, step Vnullptr Vnullptr rao ge S1 t S2 -> wf_state S1 -> wf_state S2.
 Proof.
   induction 1; intros WF; inv WF; try (econstructor; now eauto with coqlib).
 - (* call *)

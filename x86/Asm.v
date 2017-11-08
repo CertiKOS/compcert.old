@@ -14,7 +14,7 @@
 
 Require Import Coqlib Maps.
 Require Import AST Integers Floats Values Memory Events Globalenvs Smallstep.
-Require Import Locations Stacklayout Conventions.
+Require Import Locations Stacklayout Conventions EraseArgs.
 
 (** * Abstract syntax *)
 
@@ -924,7 +924,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pcall_r r sg =>
       Next (rs#RA <- (Val.offset_ptr rs#PC Ptrofs.one) #PC <- (rs r)) m
   | Pret =>
-      Next (rs#PC <- (rs#RA)) m
+  (** [CompCertX:test-compcert-ra-vundef] We need to erase the value of RA,
+      which is actually popped away from the stack in reality. *)
+      Next (rs#PC <- (rs#RA) #RA <- Vundef) m
   (** Saving and restoring registers *)
   | Pmov_rm_a rd a =>
       exec_load (if Archi.ptr64 then Many64 else Many32) m a rs rd
@@ -957,7 +959,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
           | Some sp =>
               match rs#RSP with
               | Vptr stk ofs =>
-                  match Mem.free m stk 0 sz with
+                (* RSP does not necessarily point to the base of the stack frame *)
+                  match Mem.free m stk (Ptrofs.unsigned ofs) (Ptrofs.unsigned ofs + sz) with
                   | None => Stuck
                   | Some m' => Next (nextinstr (rs#RSP <- sp #RA <- ra)) m'
                   end
@@ -1105,8 +1108,20 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       extcall_arguments rs m (ef_sig ef) args ->
+      forall (* CompCertX: BEGIN additional conditions for calling convention *)
+        (STACK:
+           exists m_,
+             free_extcall_args (rs RSP) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
+             exists t_ res'_ m'_,
+               external_call ef ge args m_ t_ res'_ m'_
+        )
+        (SP_TYPE: Val.has_type (rs RSP) Tptr)
+        (RA_TYPE: Val.has_type (rs RA) Tptr)
+        (SP_NOT_VUNDEF: rs RSP <> Vundef)
+        (RA_NOT_VUNDEF: rs RA <> Vundef)
+      ,      (* CompCertX: END additional conditions for calling convention *)
       external_call ef ge args m t res m' ->
-      rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) ->
+      rs' = (set_pair (loc_external_result (ef_sig ef)) res rs) #PC <- (rs RA) #RA <- Vundef ->
       step (State rs m) t (State rs' m').
 
 End RELSEM.

@@ -46,6 +46,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma functions_translated:
   forall v f,
   Genv.find_funct ge v = Some f ->
@@ -222,18 +228,23 @@ Definition measure (st: state) : nat :=
   end.
 
 Lemma match_parent_locset:
+  forall init_ls,
   forall s ts,
   list_forall2 match_stackframes s ts ->
-  parent_locset ts = parent_locset s.
+  parent_locset init_ls ts = parent_locset init_ls s.
 Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
+Section WITHINITLS. 
+
+Variable init_ls: locset.
+
 Theorem transf_step_correct:
-  forall s1 t s2, step ge s1 t s2 ->
+  forall s1 t s2, step init_ls ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
   exists w, forall t', match_events ge cc_id w t t' ->
-  (exists s2', step tge s1' t' s2' /\ match_states s2 s2')
+  (exists s2', step init_ls tge s1' t' s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; stable_step; try rewrite remove_unused_labels_cons.
@@ -324,6 +335,8 @@ Proof.
   econstructor; eauto.
 Qed.
 
+End WITHINITLS.
+
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
@@ -352,7 +365,7 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  eexact transf_step_correct.
+  apply transf_step_correct.
 Qed.
 
 End CLEANUP.

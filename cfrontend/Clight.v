@@ -220,12 +220,18 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :
   This is allowed only if [ty] indicates an access by value or by copy.
   [m'] is the updated memory state. *)
 
-Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
+(** [CompCertX:test-compcert-protect-stack-arg] As we now need to protect some locations against writing, this protection may need the global environment. *)
+
+Section SEMANTICS.
+
+Variable ge: genv.
+
+Inductive assign_loc (ce: composite_env := ge) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
                                             val -> mem -> Prop :=
   | assign_loc_value: forall v chunk m',
       access_mode ty = By_value chunk ->
       Mem.storev chunk m (Vptr b ofs) v = Some m' ->
-      assign_loc ce ty m b ofs v m'
+      assign_loc ty m b ofs v m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
       (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs')) ->
@@ -235,11 +241,7 @@ Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: pt
               \/ Ptrofs.unsigned ofs + sizeof ce ty <= Ptrofs.unsigned ofs' ->
       Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) = Some bytes ->
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
-      assign_loc ce ty m b ofs (Vptr b' ofs') m'.
-
-Section SEMANTICS.
-
-Variable ge: genv.
+      assign_loc ty m b ofs (Vptr b' ofs') m'.
 
 (** Allocation of function-local variables.
   [alloc_variables e1 m1 vars e2 m2] allocates one memory block
@@ -274,7 +276,7 @@ Inductive bind_parameters (e: env):
   | bind_parameters_cons:
       forall m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
-      assign_loc ge ty m b Ptrofs.zero v1 m1 ->
+      assign_loc ty m b Ptrofs.zero v1 m1 ->
       bind_parameters e m1 params vl m2 ->
       bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
 
@@ -540,7 +542,7 @@ with find_label_ls (lbl: label) (sl: labeled_statements) (k: cont)
   parameter binding semantics, then instantiate it later to give the two
   semantics described above. *)
 
-Variable function_entry: function -> list val -> mem -> env -> temp_env -> mem -> Prop.
+Variable function_entry: genv -> function -> list val -> mem -> env -> temp_env -> mem -> Prop.
 
 (** Transition relation *)
 
@@ -550,7 +552,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_lvalue e le m a1 loc ofs ->
       eval_expr e le m a2 v2 ->
       sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      assign_loc ge (typeof a1) m loc ofs v m' ->
+      assign_loc (typeof a1) m loc ofs v m' ->
       step (State f (Sassign a1 a2) k e le m)
         E0 (State f Sskip k e le m')
 
@@ -649,7 +651,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s' k' e le m)
 
   | step_internal_function: forall f vargs k m e le m1,
-      function_entry f vargs m e le m1 ->
+      function_entry ge f vargs m e le m1 ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
 
@@ -696,7 +698,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
-Definition step1 (ge: genv) := step ge (function_entry1 ge).
+Definition step1 (ge: genv) := step ge (function_entry1).
 
 (** Second, parameters as temporaries. *)
 
@@ -709,7 +711,7 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 
-Definition step2 (ge: genv) := step ge (function_entry2 ge).
+Definition step2 (ge: genv) := step ge (function_entry2).
 
 (** Wrapping up these definitions in two small-step semantics. *)
 

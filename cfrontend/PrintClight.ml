@@ -263,9 +263,9 @@ let print_fundef p id fd =
 
 let print_globdef p (id, gd) =
   match gd with
-  | AST.Gfun f -> print_fundef p id f
-  | AST.Gvar v -> print_globvar p id v  (* from PrintCsyntax *)
-
+  | Some (AST.Gfun f) -> print_fundef p id f
+  | Some (AST.Gvar v) -> print_globvar p id v  (* from PrintCsyntax *)
+  | None -> ()
 let print_program p prog =
   fprintf p "@[<v 0>";
   List.iter (declare_composite p) prog.prog_types;

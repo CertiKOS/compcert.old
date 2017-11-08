@@ -571,6 +571,10 @@ Definition transf_function (rm: romem) (f: function) : res function :=
 Definition transf_fundef (rm: romem) (f: fundef) : res fundef :=
   AST.transf_partial_fundef (transf_function rm) f.
 
+Section WITHROMEMFOR.
+Context `{romem_for_instance: ROMemFor}.
+
 Definition transf_program (p: program) : res program :=
   transform_partial_program (transf_fundef (romem_for p)) p.
 
+End WITHROMEMFOR.

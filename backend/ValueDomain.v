@@ -4278,49 +4278,29 @@ Proof.
   induction 1; constructor. eapply vmatch_inj; eauto. auto.
 Qed.
 
+Lemma mmatch_inj_strong:
+  forall bc m am, mmatch bc m am -> Mem.inject (inj_of_bc bc) m m.
+Proof.
+  intros bc m am H.
+  apply Mem.self_inject.
+- unfold inj_of_bc. intro b. destruct (bc b); auto.
+- intros b H1.
+  eapply mmatch_below; eauto.
+  unfold inj_of_bc in H1.
+  destruct (bc b); congruence.
+- intros b H1 o b' o' q n H2.
+  assert (bc b <> BCinvalid) as Hb.
+  { unfold inj_of_bc in H1. destruct (bc b); congruence. }
+  cut (bc b' <> BCinvalid).
+  { intro Hb'. unfold inj_of_bc. destruct (bc b'); congruence. }
+  eapply mmatch_top in H2; eauto.
+  inversion H2; congruence.
+Qed.
+
 Lemma mmatch_inj:
   forall bc m am, mmatch bc m am -> bc_below bc (Mem.nextblock m) -> Mem.inject (inj_of_bc bc) m m.
 Proof.
-  intros. constructor. constructor.
-- (* perms *)
-  intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
-  rewrite Zplus_0_r. auto.
-- (* alignment *)
-  intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
-  apply Zdivide_0.
-- (* contents *)
-  intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
-  rewrite Zplus_0_r.
-  set (mv := ZMap.get ofs (PMap.get b1 (Mem.mem_contents m))).
-  assert (Mem.loadbytes m b1 ofs 1 = Some (mv :: nil)).
-  {
-    Local Transparent Mem.loadbytes.
-    unfold Mem.loadbytes. rewrite pred_dec_true. reflexivity.
-    red; intros. replace ofs0 with ofs by omega. auto.
-  }
-  destruct mv; econstructor. destruct v; econstructor.
-  apply inj_of_bc_valid.
-  assert (PM: pmatch bc b i Ptop).
-  { exploit mmatch_top; eauto. intros [P Q].
-    eapply pmatch_top'. eapply Q; eauto. }
-  inv PM; auto.
-  rewrite Ptrofs.add_zero; auto.
-- (* free blocks *)
-  intros. unfold inj_of_bc. erewrite bc_below_invalid; eauto.
-- (* mapped blocks *)
-  intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
-  apply H0; auto.
-- (* overlap *)
-  red; intros.
-  exploit inj_of_bc_inv. eexact H2. intros (A1 & B & C); subst.
-  exploit inj_of_bc_inv. eexact H3. intros (A2 & B & C); subst.
-  auto.
-- (* overflow *)
-  intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
-  rewrite Zplus_0_r. split. omega. apply Ptrofs.unsigned_range_2.
-- (* perm inv *)
-  intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
-  rewrite Zplus_0_r in H2. auto.
+  intros; eapply mmatch_inj_strong; eauto.
 Qed.
 
 Lemma inj_of_bc_preserves_globals:
@@ -4509,7 +4489,7 @@ Module VA <: SEMILATTICE.
   Lemma eq_sym: forall x y, eq x y -> eq y x.
   Proof.
     destruct x, y; simpl; auto. intros [A B].
-    split. apply AE.eq_sym; auto. intros. rewrite B. tauto.
+    split. apply AE.eq_sym; auto. intros. rewrite B; auto. tauto.
   Qed.
   Lemma eq_trans: forall x y z, eq x y -> eq y z -> eq x z.
   Proof.

@@ -47,6 +47,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf_partial TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma function_ptr_translated:
   forall (b: block) (f: Csharpminor.fundef),
   Genv.find_funct_ptr ge b = Some f ->
@@ -146,6 +152,9 @@ Proof.
   unfold Mem.storev; intros. destruct addr; try discriminate.
   eapply Mem.nextblock_store; eauto.
 Qed.
+
+Section WITHMEMINIT.
+Variable m_init: mem.
 
 (** * Correspondence between C#minor's and Cminor's environments and memory states *)
 
@@ -423,6 +432,7 @@ Qed.
 
 Inductive match_globalenvs (f: meminj) (bound: block): Prop :=
   | mk_match_globalenvs
+      (NEXT: Ple (Mem.nextblock m_init) bound)
       (DOMAIN: forall b, Plt b bound -> f b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, f b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
@@ -438,6 +448,35 @@ Proof.
   split. intros. apply DOMAIN. eapply SYMBOLS. eauto.
   split. intros. apply DOMAIN. eapply VARINFOS. eauto.
   intros. symmetry. eapply IMAGE; eauto.
+Qed.
+
+Lemma match_globalenvs_inject_incr:
+  forall j bound,
+    match_globalenvs j bound ->
+    inject_incr (Mem.flat_inj (Mem.nextblock m_init)) j.
+Proof.
+  inversion 1; subst.
+  unfold inject_incr, Mem.flat_inj.
+  intros.
+  destruct (plt b (Mem.nextblock m_init)); try discriminate.
+  inv H0.
+  eapply DOMAIN.
+  xomega.
+Qed.
+
+Lemma match_globalenvs_inject_separated:
+  forall j bound,
+    match_globalenvs j bound ->
+    inject_separated (Mem.flat_inj (Mem.nextblock m_init)) j m_init m_init.
+Proof.
+  inversion 1; subst.
+  unfold inject_separated, Mem.flat_inj, Mem.valid_block.
+  intros.
+  destruct (plt b1 (Mem.nextblock m_init)); try discriminate.
+  split; auto.
+  destruct (plt b2 bound).
+   exploit IMAGE; eauto. congruence.
+  xomega.
 Qed.
 
 (** * Invariant on abstract call stacks  *)
@@ -494,6 +533,28 @@ Lemma match_callstack_match_globalenvs:
   exists hi, match_globalenvs f hi.
 Proof.
   induction 1; eauto.
+Qed.
+
+Lemma match_callstack_inject_incr:
+  forall f m tm cs bound tbound,
+    match_callstack f m tm cs bound tbound ->
+    inject_incr (Mem.flat_inj (Mem.nextblock m_init)) f.
+Proof.
+  intros.
+  exploit match_callstack_match_globalenvs; eauto.
+  destruct 1.
+  eauto using match_globalenvs_inject_incr.
+Qed.
+
+Lemma match_callstack_inject_separated:
+  forall f m tm cs bound tbound,
+    match_callstack f m tm cs bound tbound ->
+    inject_separated (Mem.flat_inj (Mem.nextblock m_init)) f m_init m_init.
+Proof.
+  intros.
+  exploit match_callstack_match_globalenvs; eauto.
+  destruct 1.
+  eauto using match_globalenvs_inject_separated.
 Qed.
 
 (** Invariance properties for [match_callstack]. *)
@@ -2206,12 +2267,29 @@ Opaque PTree.set.
   eapply match_callstack_set_temp; eauto.
 Qed.
 
+End WITHMEMINIT.
+
+(** [CompCertX:test-compcert-protect-stack-arg] For the whole-program
+setting, we have to embed the initial memory into a new
+[match_states'] predicate, which will be the new simulation
+relation. *)
+
+Inductive match_states'
+          (s: Csharpminor.state) (s': Cminor.state): Prop :=
+| match_states'_intro
+    m_init
+    (M_INIT: Genv.init_mem prog = Some m_init)    
+    (genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init))
+    (MATCH: match_states m_init s s')
+.
+
 Lemma match_globalenvs_init:
   forall m,
   Genv.init_mem prog = Some m ->
-  match_globalenvs (Mem.flat_inj (Mem.nextblock m)) (Mem.nextblock m).
+  match_globalenvs m (Mem.flat_inj (Mem.nextblock m)) (Mem.nextblock m).
 Proof.
   intros. constructor.
+  apply Ple_refl.
   intros. unfold Mem.flat_inj. apply pred_dec_true; auto.
   intros. unfold Mem.flat_inj in H0.
   destruct (plt b1 (Mem.nextblock m)); congruence.
@@ -2222,7 +2300,7 @@ Qed.
 
 Lemma transl_initial_states:
   forall S, Csharpminor.initial_state prog S ->
-  exists R, Cminor.initial_state tprog R /\ match_states S R.
+  exists R, Cminor.initial_state tprog R /\ match_states' S R.
 Proof.
   induction 1.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
@@ -2235,6 +2313,8 @@ Proof.
   eapply match_program_main; eauto. 
   eexact FIND.
   rewrite <- H2. apply sig_preserved; auto.
+  econstructor; eauto.
+  unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
   eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m0)) (cs := @nil frame) (cenv := PTree.empty Z).
   auto.
   eapply Genv.initmem_inject; eauto.
@@ -2245,9 +2325,9 @@ Qed.
 
 Lemma transl_final_states:
   forall S R r,
-  match_states S R -> Csharpminor.final_state S r -> Cminor.final_state R r.
+  match_states' S R -> Csharpminor.final_state S r -> Cminor.final_state R r.
 Proof.
-  intros. inv H0. inv H. inv MK. inv RESINJ. constructor.
+  intros. inv H0. inv H. inv MATCH. inv MK. inv RESINJ. constructor.
 Qed.
 
 Theorem transl_program_correct:
@@ -2257,7 +2337,11 @@ Proof.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
-  eexact transl_step_correct.
+  instantiate (1 := measure).
+  intros. inv H0. exploit transl_step_correct; eauto.
+  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  destruct Hw. destruct H0. destruct H0. left. esplit. split. eassumption. econstructor; eauto.
+  destruct H0. destruct H1. right. split; auto. split; auto. econstructor; eauto.
 Qed.
 
 End TRANSLATION.

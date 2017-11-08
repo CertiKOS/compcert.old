@@ -4267,6 +4267,141 @@ Proof.
   repeat rewrite Zplus_0_r. intros [m'' [A B]]. congruence.
 Qed.
 
+(** The following property is needed by Unusedglobproof, to prove
+    injection between the initial memory states. *)
+
+Lemma zero_delta_inject f m1 m2:
+  (forall b1 b2 delta, f b1 = Some (b2, delta) -> delta = 0) ->
+  (forall b1 b2, f b1 = Some (b2, 0) -> Mem.valid_block m1 b1 /\ Mem.valid_block m2 b2) ->
+  (forall b1 p, f b1 = Some p -> forall b2, f b2 = Some p -> b1 = b2) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
+     forall o k p,
+       Mem.perm m1 b1 o k p ->
+       Mem.perm m2 b2 o k p) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
+     forall o k p,
+       Mem.perm m2 b2 o k p ->
+       Mem.perm m1 b1 o k p \/ ~ Mem.perm m1 b1 o Max Nonempty) ->
+  (forall b1 b2,
+     f b1 = Some (b2, 0) ->
+     forall o v1,
+       loadbytes m1 b1 o 1 = Some (v1 :: nil) ->
+       exists v2,
+         loadbytes m2 b2 o 1 = Some (v2 :: nil) /\
+         memval_inject f v1 v2) ->
+  Mem.inject f m1 m2.
+Proof.
+  intros H H0 NODUP H1 H1INV H2.
+  constructor.
+  {
+    constructor.
+    + intros b1 b2 delta ofs k p H3.
+      specialize (H _ _ _ H3).
+      subst.
+      rewrite Z.add_0_r.
+      eauto.
+    + intros b1 b2 delta chunk ofs p H3 H4.
+      specialize (H _ _ _ H3).
+      subst.
+      exists 0. omega.
+    + intros b1 ofs b2 delta H3 H4.
+      specialize (H _ _ _ H3).
+      subst.
+      rewrite Z.add_0_r.
+      specialize (H2 _ _ H3 ofs).
+      revert H2.
+      unfold loadbytes.
+      destruct (range_perm_dec m1 b1 ofs (ofs + 1) Cur Readable) as [ | n1].
+      - simpl.
+        destruct (range_perm_dec m2 b2 ofs (ofs + 1) Cur Readable) as [ | n2].
+        {
+          intro H2.
+          specialize (H2 _ (eq_refl _)).
+          destruct H2 as (? & H2 & INJ).
+          congruence.
+        }
+        destruct n2.
+        red. intros ofs0 H.
+        eapply H1; eauto.
+      - destruct n1.
+        red. intros ofs0 H.
+        replace ofs0 with ofs by omega.
+        assumption.
+  }
+  + intros b H3.
+    destruct (f b) as [ [ ] | ] eqn:F; auto.
+    specialize (H _ _ _ F).
+    subst.
+    destruct H3.
+    eapply H0; eauto.
+  + intros b b' delta H3.
+    specialize (H _ _ _ H3).
+    subst.
+    eapply H0; eauto.
+  + unfold meminj_no_overlap.
+    intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 H3 H4 H5 H6 H7.
+    generalize (H _ _ _ H4). intro; subst.
+    generalize (H _ _ _ H5). intro; subst.
+    left.
+    intro; subst.
+    destruct H3; eauto.
+  + intros b b' delta ofs H3 H4.
+    specialize (H _ _ _ H3).
+    subst.
+    split.
+    * omega.
+    * rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
+  + intros b1 ofs b2 delta k p H3 H4.
+    exploit H; eauto. intro; subst.
+    eapply H1INV; eauto.
+    replace ofs with (ofs + 0) by omega.
+    assumption.
+Qed.
+
+(** The following is a consequence of the above. It is needed by
+    ValueDomain, to prove mmatch_inj. *)
+
+Lemma self_inject f m:
+  (forall b, f b = None \/ f b = Some (b, 0)) ->
+  (forall b, f b <> None -> Mem.valid_block m b) ->
+  (forall b,
+     f b <> None ->
+     forall o b' o' q n,
+       loadbytes m b o 1 = Some (Fragment (Vptr b' o') q n :: nil) ->
+       f b' <> None) ->
+  Mem.inject f m m.
+Proof.
+  intros H H0 H1.
+  apply zero_delta_inject.
+  + intros b1 b2 delta H2.
+    destruct (H b1); congruence.
+  + intros b1 b2 H2.
+    destruct (H b1); try congruence.
+    replace b2 with b1 by congruence.
+    assert (f b1 <> None) by congruence.
+    auto.
+  + intros b1 p H2 b2 H3.
+    destruct (H b1); destruct (H b2); congruence.
+  + intros b1 b2 H2 o k p H3.
+    destruct (H b1); congruence.
+  + intros b1 b2 H2 o k p H3.
+    destruct (H b1); intuition congruence.
+  + intros b1 b2 H2 o v1 H3.
+    destruct (H b1); try congruence.
+    replace b2 with b1 by congruence.
+    esplit.
+    split; eauto.
+    destruct v1 as [ | | v]; try constructor.
+    destruct v as [ | | | | | b ]; try constructor.
+    apply H1 in H3; try congruence.
+    destruct (H b); try congruence.
+    econstructor; eauto.
+    rewrite Ptrofs.add_zero.
+    reflexivity.
+Qed.
+
 (** * Invariance properties between two memory states *)
 
 Section UNCHANGED_ON.
@@ -4483,6 +4618,38 @@ Proof.
 - apply unchanged_on_perm0; auto.
 - apply unchanged_on_contents0; auto.
   apply H0; auto. eapply perm_valid_block; eauto.
+Qed.
+
+(** The following property is needed by Separation, to prove minjection. *)
+
+Lemma inject_unchanged_on j m0 m m' :
+   inject j m0 m ->
+   unchanged_on
+     (fun (b : block) (ofs : Z) =>
+        exists (b0 : block) (delta : Z),
+          j b0 = Some (b, delta) /\
+          perm m0 b0 (ofs - delta) Max Nonempty) m m' ->
+   inject j m0 m' .
+Proof.
+  intro INJ.
+  set (img := fun b' ofs => exists b delta, j b = Some(b', delta) /\ Mem.perm m0 b (ofs - delta) Max Nonempty) in *.
+  assert (IMG: forall b1 b2 delta ofs k p,
+           j b1 = Some (b2, delta) -> Mem.perm m0 b1 ofs k p -> img b2 (ofs + delta)).
+  { intros. red. exists b1, delta; split; auto. 
+    replace (ofs + delta - delta) with ofs by omega. 
+    eauto with mem. }
+  inversion INJ; constructor.
+- destruct mi_inj0. constructor; intros.
++ eapply perm_unchanged_on; eauto.
++ eauto.
++ rewrite (unchanged_on_contents _ _ _ H); eauto.
+- assumption.
+- intros. eapply valid_block_unchanged_on; eauto.
+- assumption.
+- assumption.
+- intros. destruct (Mem.perm_dec m0 b1 ofs Max Nonempty); auto.
+  eapply mi_perm_inv; eauto. 
+  eapply perm_unchanged_on_2; eauto.
 Qed.
 
 End Mem.

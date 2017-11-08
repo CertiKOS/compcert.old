@@ -73,14 +73,15 @@ Definition add_ref_init_data (w: workset) (i: init_data) : workset :=
 Definition add_ref_globvar (gv: globvar unit) (w: workset): workset :=
   List.fold_left add_ref_init_data gv.(gvar_init) w.
 
-Definition prog_map : Type := PTree.t (globdef fundef unit).
+Definition prog_map : Type := PTree.t (option (globdef fundef unit)).
 
 Definition add_ref_definition (pm: prog_map) (id: ident) (w: workset): workset :=
   match pm!id with
   | None => w
-  | Some (Gfun (Internal f)) => add_ref_function f w
-  | Some (Gfun (External ef)) => w
-  | Some (Gvar gv) => add_ref_globvar gv w
+  | Some None => w
+  | Some (Some (Gfun (Internal f))) => add_ref_function f w
+  | Some (Some (Gfun (External ef))) => w
+  | Some (Some (Gvar gv)) => add_ref_globvar gv w
   end.
 
 (** The initial workset is composed of all public definitions of the compilation unit,
@@ -110,7 +111,7 @@ Definition used_globals (p: program) (pm: prog_map) : option IS.t :=
 (** We also eliminate multiple definitions of the same global name, keeping ony
   the last definition (in program definition order). *)
 
-Fixpoint filter_globdefs (used: IS.t) (accu defs: list (ident * globdef fundef unit)) :=
+Fixpoint filter_globdefs (used: IS.t) (accu defs: list (ident * option (globdef fundef unit))) :=
   match defs with
   | nil => accu
   | (id, gd) :: defs' =>
@@ -124,10 +125,10 @@ Fixpoint filter_globdefs (used: IS.t) (accu defs: list (ident * globdef fundef u
   the possible exception of the [prog_main] name. *)
 
 Definition global_defined (p: program) (pm: prog_map) (id: ident) : bool :=
-  match pm!id with Some _ => true | None => ident_eq id (prog_main p) end.
+  match pm!id with Some (Some _) => true | _ => ident_eq id (prog_main p) end.
 
 Definition transform_program (p: program) : res program :=
-  let pm := prog_defmap p in
+  let pm := prog_option_defmap p in
   match used_globals p pm with
   | None => Error (msg "Unusedglob: analysis failed")
   | Some used =>

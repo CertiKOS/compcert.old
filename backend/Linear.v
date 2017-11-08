@@ -89,11 +89,7 @@ Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
   | i1 :: il => if is_label lbl i1 then Some il else find_label lbl il
   end.
 
-Section RELSEM.
-
-Variable ge: genv.
-
-Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
+Definition find_function (ge: genv) (ros: mreg + ident) (rs: locset) : option fundef :=
   match ros with
   | inl r => Genv.find_funct ge (rs (R r))
   | inr symb =>
@@ -134,13 +130,20 @@ Inductive state: Type :=
              (m: mem),                (**r memory state *)
       state.
 
+Section RELSEM.
+
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
+
+Variable parent_lm: locset.
+
 Definition parent_locset (stack: list stackframe) : locset :=
   match stack with
-  | nil => Locmap.init Vundef
+  | nil => parent_lm
   | Stackframe f sp ls c :: stack' => ls
   end.
+
+Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Lgetstack:
@@ -175,14 +178,14 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b rs' m')
   | exec_Lcall:
       forall s f sp sig ros b rs m f',
-      find_function ros rs = Some f' ->
+      find_function ge ros rs = Some f' ->
       sig = funsig f' ->
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
-      find_function ros rs' = Some f' ->
+      find_function ge ros rs' = Some f' ->
       sig = funsig f' ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
@@ -264,4 +267,4 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).

@@ -1721,6 +1721,172 @@ Proof.
   intros. apply REC; auto. rewrite ! T.gempty. constructor.
 Qed.
 
+(** Creating a tree from a list of (key, option value) pairs. *)
+
+Section OF_LIST_OPTION.
+
+Variable A: Type.
+
+Let f := fun (m: T.t A) (k_v: T.elt * option A) =>
+           match snd k_v with
+             | Some o =>
+               T.set (fst k_v) o m
+             | None => T.remove (fst k_v) m
+           end.
+
+Definition of_list_option (l: list (T.elt * option A)) : T.t A :=
+  List.fold_left f l (T.empty _).
+
+Lemma in_of_list_option:
+  forall l k v, T.get k (of_list_option l) = Some v -> In (k, Some v) l.
+Proof.
+  assert (REC: forall k v l m,
+           T.get k (fold_left f l m) = Some v -> In (k, Some v) l \/ T.get k m = Some v).
+  { induction l as [ | [k1 v1] l]; simpl; intros.
+  - tauto.
+  - apply IHl in H. unfold f in H. simpl in H.
+    destruct v1.
+    rewrite T.gsspec in H.
+    *
+    destruct H; auto.
+    destruct (T.elt_eq k k1). inv H. auto. auto.
+    *
+    rewrite T.grspec in H.
+    destruct (T.elt_eq k k1); intuition discriminate.
+  }
+  intros. apply REC in H. rewrite T.gempty in H. intuition congruence.
+Qed.
+
+Remark of_list_option_unchanged:
+  forall k l m, ~In k (map fst l) -> T.get k (List.fold_left f l m) = T.get k m.
+Proof.
+  induction l as [ | [k1 v1] l]; simpl; intros.
+- auto.
+- rewrite IHl by tauto. unfold f.
+  simpl. destruct v1.
+  *
+  apply T.gso; intuition auto.
+  *
+  rewrite T.grspec.
+  destruct (T.elt_eq k k1); intuition congruence.
+Qed.
+
+Lemma of_list_option_unique:
+  forall k v l1 l2,
+  ~In k (map fst l2) -> T.get k (of_list_option (l1 ++ (k, Some v) :: l2)) = Some v.
+Proof.
+  intros. unfold of_list_option. rewrite fold_left_app. simpl.
+  rewrite of_list_option_unchanged by auto. unfold f; apply T.gss.
+Qed.
+
+Lemma of_list_option_norepet:
+  forall l k v, list_norepet (map fst l) -> In (k, Some v) l -> T.get k (of_list_option l) = Some v.
+Proof.
+  assert (REC: forall k v l m,
+            list_norepet (map fst l) ->
+            In (k, Some v) l ->
+            T.get k (fold_left f l m) = Some v).
+  { induction l as [ | [k1 v1] l]; simpl; intros.
+    contradiction.
+    inv H. destruct H0.
+    inv H. rewrite of_list_option_unchanged by auto. apply T.gss.
+    apply IHl; auto. 
+  }
+  intros; apply REC; auto.
+Qed.
+
+End OF_LIST_OPTION.
+
+Lemma of_list_option_of_list:
+  forall {V: Type} l i (v: V),
+    T.get i (of_list l) = Some (Some v) <->
+    T.get i (of_list_option l) = Some v.
+Proof.
+  unfold of_list, of_list_option.
+  intros V l.
+  cut (
+      forall t to,
+        (forall i v,
+           T.get i to = Some (Some v) <->
+           T.get i t = Some v) ->
+        (forall i v,
+           T.get i
+                 (fold_left
+                    (fun m k_v =>
+                       T.set (fst k_v) (snd k_v) m)
+                    l to)
+           = Some (Some v) <->
+           T.get i
+                 (fold_left
+                    (fun m k_v =>
+                       match snd k_v with
+                         | Some o => T.set (fst k_v) o m
+                         | None => T.remove (fst k_v) m
+                       end)
+                    l t)
+           = Some v)
+    ).
+  {
+    intro K.
+    apply K.
+    intros.
+    rewrite ! T.gempty.
+    intuition congruence.
+  }
+  induction l; simpl; auto.
+  intros t to H i v.
+  apply IHl; clear IHl; auto.
+  clear i v.
+  intros i v.
+  destruct (snd a).
+  + rewrite ! T.gsspec.
+    destruct (T.elt_eq i (fst a)); auto.
+    clear; intuition congruence.
+  + rewrite ! T.gsspec.
+    rewrite ! T.grspec.
+    destruct (T.elt_eq i (fst a)); auto.
+    clear; intuition congruence.
+Qed.
+
+Lemma of_list_option_related:
+  forall (A B: Type) (R: A -> B -> Prop) k l1 l2,
+  list_forall2 (fun ka kb => fst ka = fst kb /\ option_rel R (snd ka) (snd kb)) l1 l2 ->
+  option_rel R (T.get k (of_list_option l1)) (T.get k (of_list_option l2)).
+Proof.
+  intros until k. unfold of_list_option.
+  set (R' := fun ka kb => fst ka = fst kb /\ option_rel R (snd ka) (snd kb)).
+  set (fa := fun (m : T.t A) (k_v : T.elt * option A) =>
+               match snd k_v with
+                 | Some o => T.set (fst k_v) o m
+                 | _ => T.remove (fst k_v) m
+               end).
+  set (fb := fun (m : T.t B) (k_v : T.elt * option B) =>
+               match snd k_v with
+                 | Some o => T.set (fst k_v) o m
+                 | _ => T.remove (fst k_v) m
+               end).
+  assert (REC: forall l1 l2, list_forall2 R' l1 l2 ->
+               forall m1 m2, option_rel R (T.get k m1) (T.get k m2) ->
+               option_rel R (T.get k (fold_left fa l1 m1)) (T.get k (fold_left fb l2 m2))).
+  { induction 1; intros; simpl.
+  - auto.
+  - apply IHlist_forall2. unfold fa, fb.
+    generalize H. intro K.
+    unfold R' in K.
+    destruct K as [Kf Ks].
+    inversion Ks.
+    *
+    rewrite Kf.
+    rewrite ! T.grspec.
+    destruct (T.elt_eq k (fst b1)); auto. constructor.
+    *
+    rewrite ! T.gsspec.
+    destruct H as [E F]. rewrite E. destruct (T.elt_eq k (fst b1)).
+    constructor; auto.
+    auto. }
+  intros. apply REC; auto. rewrite ! T.gempty. constructor.
+Qed.
+
 End Tree_Properties.
 
 Module PTree_Properties := Tree_Properties(PTree).

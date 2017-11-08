@@ -290,7 +290,47 @@ Module Loc.
     right; red; intros P; inv P; contradiction.
   Defined.
 
-(** [Loc.no_overlap l1 l2] holds if elements of [l1] never overlap partially
+  Lemma norepet_app_inv l1:
+    forall l2,
+      norepet (l1 ++ l2) ->
+      norepet l1 /\ norepet l2 /\ disjoint l1 l2.
+  Proof.
+    induction l1; simpl.
+    {
+      intros l2 H.
+      split.
+      {
+        constructor.
+      }
+      split; auto.
+      red.
+      contradiction.
+    }
+    inversion 1; subst.
+    apply IHl1 in H3.
+    destruct H3 as (L1 & L2 & DISJ).
+    split.
+    {
+      constructor; auto.
+      rewrite notin_iff in H2.
+      rewrite notin_iff.
+      intros l' H0.
+      apply H2.
+      apply in_or_app. auto.
+    }
+    split; auto.
+    red.
+    unfold disjoint in DISJ.
+    inversion 1; subst; eauto.
+    intros H1.
+    rewrite notin_iff in H2.
+    eapply H2.
+    apply in_or_app.
+    auto.
+  Qed.
+
+  
+  (** [Loc.no_overlap l1 l2] holds if elements of [l1] never overlap partially
   with elements of [l2]. *)
 
   Definition no_overlap (l1 l2 : list loc) :=

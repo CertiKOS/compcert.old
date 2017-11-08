@@ -238,6 +238,12 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma sig_preserved:
   forall f, funsig (transf_fundef f) = funsig f.
 Proof.

@@ -43,6 +43,10 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof. apply senv_preserved. Qed.
+
 Lemma functions_translated:
   forall b f,
   Genv.find_funct_ptr ge b = Some f ->
@@ -360,6 +364,10 @@ Qed.
 - Mach register values and PPC register values agree.
 *)
 
+Section WITHINITSPRA.
+
+Variables init_sp init_ra: val.
+
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s fb sp c ep ms m m' rs f tf tc
@@ -368,24 +376,25 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
-        (AXP: ep = true -> rs#RAX = parent_sp s),
+        (AXP: ep = true -> rs#RAX = parent_sp init_sp s),
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
       forall s fb ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
-        (AG: agree ms (parent_sp s) rs)
+        (AG: agree ms (parent_sp init_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
-        (ATLR: rs RA = parent_ra s),
+        (ATLR: rs RA = parent_ra init_ra s),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
       forall s ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
-        (AG: agree ms (parent_sp s) rs)
-        (ATPC: rs PC = parent_ra s),
+        (AG: agree ms (parent_sp init_sp s) rs)
+        (RA_VUNDEF: rs RA = Vundef)
+        (ATPC: rs PC = parent_ra init_ra s),
       match_states (Mach.Returnstate s ms m)
                    (Asm.State rs m').
 
@@ -399,7 +408,7 @@ Lemma exec_straight_steps:
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
-    /\ (it1_is_parent ep i = true -> rs2#RAX = parent_sp s)) ->
+    /\ (it1_is_parent ep i = true -> rs2#RAX = parent_sp init_sp s)) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
@@ -465,8 +474,14 @@ Definition measure (s: Mach.state) : nat :=
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
+Hypothesis init_sp_not_vundef: init_sp <> Vundef.
+Hypothesis init_ra_not_vundef: init_ra <> Vundef.
+
+Hypothesis init_sp_type: Val.has_type init_sp Tptr.
+Hypothesis init_ra_type: Val.has_type init_ra Tptr.
+
 Theorem step_simulation:
-  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
+  forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists w, forall t', match_events ge cc_extends w t t' ->
   (exists S2', plus step tge S1' t' S2' /\ match_states S2 S2')
@@ -507,7 +522,7 @@ Local Transparent destroyed_by_setstack.
   unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto.
   intros [parent' [A B]]. rewrite (sp_val _ _ _ AG) in A.
-  exploit lessdef_parent_sp; eauto. clear B; intros B; subst parent'.
+  exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'.
   exploit Mem.loadv_extends. eauto. eexact H1. auto.
   intros [v' [C D]].
 Opaque loadind.
@@ -594,6 +609,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
 + (* Direct call *)
@@ -608,6 +624,7 @@ Opaque loadind.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
+  eapply agree_sp_type; eauto.
   simpl. eapply agree_exten; eauto. intros. Simplifs.
   Simplifs. rewrite <- H2. auto.
 
@@ -619,8 +636,8 @@ Opaque loadind.
   rewrite (sp_val _ _ _ AG) in *. unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [parent' [A B]].
   exploit Mem.loadv_extends. eauto. eexact H2. auto. simpl. intros [ra' [C D]].
-  exploit lessdef_parent_sp; eauto. intros. subst parent'. clear B.
-  exploit lessdef_parent_ra; eauto. intros. subst ra'. clear D.
+  exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
+  exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
@@ -642,6 +659,7 @@ Opaque loadind.
   econstructor; eauto.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   Simplifs. rewrite Pregmap.gso; auto.
   generalize (preg_of_not_SP rf). rewrite (ireg_of_eq _ _ EQ1). congruence.
 + (* Direct call *)
@@ -658,6 +676,7 @@ Opaque loadind.
   econstructor; eauto.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
   rewrite Pregmap.gss. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
 - (* Mbuiltin *)
@@ -673,7 +692,7 @@ Opaque loadind.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
@@ -803,9 +822,9 @@ Transparent destroyed_by_jumptable.
   rewrite (sp_val _ _ _ AG) in *. unfold load_stack in *.
   replace (chunk_of_type Tptr) with Mptr in * by (unfold Tptr, Mptr; destruct Archi.ptr64; auto).
   exploit Mem.loadv_extends. eauto. eexact H0. auto. simpl. intros [parent' [A B]].
-  exploit lessdef_parent_sp; eauto. intros. subst parent'. clear B.
+  exploit (lessdef_parent_sp init_sp); eauto. intros. subst parent'. clear B.
   exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [ra' [C D]].
-  exploit lessdef_parent_ra; eauto. intros. subst ra'. clear D.
+  exploit (lessdef_parent_ra init_ra); eauto. intros. subst ra'. clear D.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [E F]].
   monadInv H6.
   exploit code_tail_next_int; eauto. intro CT1.
@@ -818,8 +837,10 @@ Transparent destroyed_by_jumptable.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. eauto. traceEq.
   constructor; auto.
+  apply agree_set_other; auto.
   apply agree_set_other; auto. apply agree_nextinstr. apply agree_set_other; auto.
   eapply agree_change_sp; eauto. eapply parent_sp_def; eauto.
+  eapply parent_sp_type; eauto.
 
 - (* internal function *)
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
@@ -850,6 +871,7 @@ Transparent destroyed_at_function_entry.
   apply agree_undef_regs with rs0; eauto.
   simpl; intros. apply Pregmap.gso; auto with asmgen. tauto.
   congruence.
+  constructor.
   intros. Simplifs. eapply agree_sp; eauto.
 
 - (* external function *)
@@ -862,20 +884,56 @@ Transparent destroyed_at_function_entry.
   destruct Hw as [res' [m2' [P [Q [R S]]]]].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  {
+    destruct STACK as (m_ & FEA & t_ & res'_ & m'_ & EC).
+    inv AG.
+    exploit EraseArgs.free_extcall_args_parallel_extends.
+    eapply Val.lessdef_refl.
+    eassumption. eauto.
+    intros (m'_0 & FEA' & EXT).
+    esplit. rewrite agree_sp. split; eauto.
+    exploit external_call_mem_extends. eexact EC. eauto. eauto.
+    admit. (* can't produce a matching trace for this other execution? would need to modify the erase-arguments condition to have the shape with a world? *)
+    (*
+    intros (vres' & m2'0 & EC' & LDres & EXT' & UNCH).
+    repeat eexists.
+    eapply external_call_symbols_preserved; eauto.
+    exact senv_preserved.
+    *)
+  }
+  { (* rs SP Tint *)
+    erewrite agree_sp by eauto.
+    eapply parent_sp_type; eauto.
+  }
+  { (* rs RA Tint *)
+    rewrite ATLR.
+    eapply parent_ra_type; eauto.
+  }
+  { (* rs SP not Vundef *)
+    erewrite agree_sp by eauto.
+    eapply parent_sp_def; eauto.
+  }
+  { (* rs RA not Vundef *)
+    rewrite ATLR.
+    eapply parent_ra_def; eauto.
+  }
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto.
   unfold loc_external_result.
+  apply agree_set_other; auto.
   apply agree_set_other; auto. apply agree_set_pair; auto.
 
 - (* return *)
   inv STACKS. simpl in *.
   right. split. omega. split. auto.
   econstructor; eauto. rewrite ATPC; eauto. congruence.
-Qed.
+Admitted.
+
+End WITHINITSPRA.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
-  exists st2, Asm.initial_state tprog st2 /\ match_states st1 st2.
+  exists st2, Asm.initial_state tprog st2 /\ match_states Vnullptr Vnullptr st1 st2.
 Proof.
   intros. inversion H. unfold ge0 in *.
   econstructor; split.
@@ -888,16 +946,18 @@ Proof.
   apply Mem.extends_refl.
   split. reflexivity. simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
+  eapply parent_sp_type. apply Val.Vnullptr_has_type. constructor.
   intros. rewrite Regmap.gi. auto.
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
   unfold ge; rewrite H1. auto.
+  Unshelve. eauto.
 Qed.
 
 Lemma transf_final_states:
   forall st1 st2 r,
-  match_states st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
+  match_states Vnullptr Vnullptr st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
 Proof.
   intros. inv H0. inv H. constructor. auto.
   assert (r0 = AX).
@@ -913,7 +973,11 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  exact step_simulation.
+  intros. apply step_simulation; auto.
+  unfold Vnullptr; destruct Archi.ptr64; congruence.
+  unfold Vnullptr; destruct Archi.ptr64; congruence.
+  apply Val.Vnullptr_has_type.
+  apply Val.Vnullptr_has_type. 
 Qed.
 
 End PRESERVATION.

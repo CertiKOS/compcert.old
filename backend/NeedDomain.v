@@ -819,7 +819,9 @@ Let weak_valid_pointer_inj:
 Proof.
   unfold inject_id; intros. inv H. rewrite Ptrofs.add_zero.
   rewrite Mem.weak_valid_pointer_spec in *.
+  repeat rewrite Mem.weak_valid_pointer_spec in H0.
   rewrite ! Mem.valid_pointer_nonempty_perm in *.
+  repeat rewrite Mem.valid_pointer_nonempty_perm in H0.
   destruct H0; [left|right]; eauto.
 Qed.
 
@@ -874,7 +876,8 @@ Proof.
     destruct H0. inv H0; constructor; auto with na.
     inv H0; constructor; auto with na. inv H8; constructor; auto with na.
   }
-  exploit (@eval_operation_inj _ _ _ _ ge ge inject_id).
+  idtac.
+  exploit (eval_operation_inj ge ge (f := inject_id)).
   eassumption. auto. auto. auto.
   instantiate (1 := op). intros. apply val_inject_lessdef; auto.
   apply val_inject_lessdef. instantiate (1 := Vptr sp Ptrofs.zero). instantiate (1 := Vptr sp Ptrofs.zero). auto.

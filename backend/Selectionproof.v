@@ -126,6 +126,12 @@ Lemma senv_preserved:
   Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
 
+Lemma genv_next_preserved:
+  Genv.genv_next tge = Genv.genv_next ge.
+Proof.
+  apply senv_preserved.
+Qed.
+
 Lemma function_ptr_translated:
   forall (b: block) (f: Cminor.fundef),
   Genv.find_funct_ptr ge b = Some f ->
@@ -971,7 +977,8 @@ Proof.
   intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
-  econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor. eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto. apply sel_builtin_res_correct; auto.
 - (* Seq *)
   left; econstructor; split.
@@ -1050,14 +1057,16 @@ Proof.
   intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
-  econstructor. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
   exploit external_call_mem_extends; eauto.
   intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
-  econstructor. eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  econstructor. eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
   econstructor; eauto.
 - (* return *)
   apply match_call_cont_cont in MC. destruct MC as (cunit0 & hf0 & MC).

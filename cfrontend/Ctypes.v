@@ -1133,7 +1133,7 @@ Inductive fundef : Type :=
 - a proof that this environment is consistent with the definitions. *)
 
 Record program : Type := {
-  prog_defs: list (ident * globdef fundef type);
+  prog_defs: list (ident * option (globdef fundef type));
   prog_public: list ident;
   prog_main: ident;
   prog_types: list composite_definition;
@@ -1149,7 +1149,7 @@ Definition program_of_program (p: program) : AST.program fundef type :=
 Coercion program_of_program: program >-> AST.program.
 
 Program Definition make_program (types: list composite_definition)
-                                (defs: list (ident * globdef fundef type))
+                                (defs: list (ident * option (globdef fundef type)))
                                 (public: list ident)
                                 (main: ident) : res program :=
   match build_composite_env types with
