@@ -1615,101 +1615,101 @@ Proof.
 Qed.
 
 (* returns f1 augmented with f2, at offset delta *)
-Program Definition insert_frame_info delta (f1 f2: frame_info): option frame_info:=
-  if zle 0 delta
-  then if zlt (frame_size f2 + delta) (frame_size f1)
-       then
-         if disjoint_dec ({| seg_ofs := delta; seg_size := frame_size f2 |}::frame_link f1)
-         then
-           Some {|
-               frame_size := frame_size f1;
-               frame_link := frame_link f1 ++ (map (fun fl => {| seg_ofs := seg_ofs fl + delta; seg_size := seg_size fl |}) (frame_link f2));
-               frame_perm := fun o => if zle delta o && zlt o (frame_size f2 + delta) then frame_perm f2 (o - delta) else frame_perm f1 o
-             |}
-         else None
-       else None
-  else None.
-Next Obligation.
-  rewrite Forall_forall. intros x IN. rewrite in_app in IN.
-  destruct IN as [IN|IN].
-  generalize (frame_link_size f1). rewrite Forall_forall. eauto.
-  generalize (frame_link_size f2). rewrite Forall_forall. intros A.
-  rewrite in_map_iff in IN. destruct IN as (x0 & EQ & IN). subst. simpl. eauto.
-Qed.
-Next Obligation.
-  rewrite Forall_forall. intros x IN. rewrite in_app in IN.
-  destruct IN as [IN|IN]. generalize (frame_link_rng f1); eauto. rewrite Forall_forall; eauto.
-  rewrite in_map_iff in IN. destruct IN as (x0 & EQ & IN). subst. simpl in *. 
-  generalize (frame_link_rng f2); eauto. rewrite Forall_forall; eauto.
-  intros A o RNG.
-  specialize (A _ IN (o - delta)). trim A. omega.
-  omega.
-Qed.
-Next Obligation.
-  rewrite Forall_forall. intros x IN. rewrite in_app in IN. 
-  destruct IN as [IN|IN].
-  - (* link of original frame *)
-    intros i INS.
-    destr.
-    + apply zle_zlt in Heqb.
-      specialize (H2 i). trim H2. red. simpl. omega. exfalso; apply H2.
-      eapply in_segment_in_segments; eauto.
-    + generalize (frame_link_readonly f1). rewrite Forall_forall. eauto.
-  - (* link in new frame *)
-    rewrite in_map_iff in IN. destruct IN as (x0 & EQ & IN). subst. 
-    unfold in_segment. simpl.
-    intros i INS.
-    destr.
-    + apply zle_zlt in Heqb.
-      generalize (frame_link_readonly f2). rewrite Forall_forall. intros A.
-      eapply A. eauto. red. omega.
-    + generalize (frame_link_rng f2); rewrite Forall_forall; intro A.
-      specialize (A _ IN (i - delta)). trim A. omega.
-      assert ( ~ (delta <= i < frame_size f2 + delta)). rewrite <- zle_zlt. congruence. omega.
-Qed.
+(* Program Definition insert_frame_info delta (f1 f2: frame_info): option frame_info:= *)
+(*   if zle 0 delta *)
+(*   then if zlt (frame_size f2 + delta) (frame_size f1) *)
+(*        then *)
+(*          if disjoint_dec ({| seg_ofs := delta; seg_size := frame_size f2 |}::frame_link f1) *)
+(*          then *)
+(*            Some {| *)
+(*                frame_size := frame_size f1; *)
+(*                frame_link := frame_link f1 ++ (map (fun fl => {| seg_ofs := seg_ofs fl + delta; seg_size := seg_size fl |}) (frame_link f2)); *)
+(*                frame_perm := fun o => if zle delta o && zlt o (frame_size f2 + delta) then frame_perm f2 (o - delta) else frame_perm f1 o *)
+(*              |} *)
+(*          else None *)
+(*        else None *)
+(*   else None. *)
+(* Next Obligation. *)
+(*   rewrite Forall_forall. intros x IN. rewrite in_app in IN. *)
+(*   destruct IN as [IN|IN]. *)
+(*   generalize (frame_link_size f1). rewrite Forall_forall. eauto. *)
+(*   generalize (frame_link_size f2). rewrite Forall_forall. intros A. *)
+(*   rewrite in_map_iff in IN. destruct IN as (x0 & EQ & IN). subst. simpl. eauto. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   rewrite Forall_forall. intros x IN. rewrite in_app in IN. *)
+(*   destruct IN as [IN|IN]. generalize (frame_link_rng f1); eauto. rewrite Forall_forall; eauto. *)
+(*   rewrite in_map_iff in IN. destruct IN as (x0 & EQ & IN). subst. simpl in *.  *)
+(*   generalize (frame_link_rng f2); eauto. rewrite Forall_forall; eauto. *)
+(*   intros A o RNG. *)
+(*   specialize (A _ IN (o - delta)). trim A. omega. *)
+(*   omega. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   rewrite Forall_forall. intros x IN. rewrite in_app in IN.  *)
+(*   destruct IN as [IN|IN]. *)
+(*   - (* link of original frame *) *)
+(*     intros i INS. *)
+(*     destr. *)
+(*     + apply zle_zlt in Heqb. *)
+(*       specialize (H2 i). trim H2. red. simpl. omega. exfalso; apply H2. *)
+(*       eapply in_segment_in_segments; eauto. *)
+(*     + generalize (frame_link_readonly f1). rewrite Forall_forall. eauto. *)
+(*   - (* link in new frame *) *)
+(*     rewrite in_map_iff in IN. destruct IN as (x0 & EQ & IN). subst.  *)
+(*     unfold in_segment. simpl. *)
+(*     intros i INS. *)
+(*     destr. *)
+(*     + apply zle_zlt in Heqb. *)
+(*       generalize (frame_link_readonly f2). rewrite Forall_forall. intros A. *)
+(*       eapply A. eauto. red. omega. *)
+(*     + generalize (frame_link_rng f2); rewrite Forall_forall; intro A. *)
+(*       specialize (A _ IN (i - delta)). trim A. omega. *)
+(*       assert ( ~ (delta <= i < frame_size f2 + delta)). rewrite <- zle_zlt. congruence. omega. *)
+(* Qed. *)
 
-Lemma insert_frame_info_size:
-  forall delta f1 f2 f3,
-    insert_frame_info delta f1 f2 = Some f3 ->
-    frame_size f1 = frame_size f3.
-Proof.
-  unfold insert_frame_info. intros.
-  repeat destr_in H. reflexivity.
-Qed.
+(* Lemma insert_frame_info_size: *)
+(*   forall delta f1 f2 f3, *)
+(*     insert_frame_info delta f1 f2 = Some f3 -> *)
+(*     frame_size f1 = frame_size f3. *)
+(* Proof. *)
+(*   unfold insert_frame_info. intros. *)
+(*   repeat destr_in H. reflexivity. *)
+(* Qed. *)
 
-Program Definition update_top_stack_adt (m: mem) (newfi: frame_info) (delta : Z) : option mem :=
-  match stack_adt m with
-  | (bl, Some fi,sz)::r =>
-    match insert_frame_info delta fi newfi with
-      Some fi' =>
-      Some (mkmem
-              m.(mem_contents)
-                  m.(mem_access)
-                      m.(nextblock)
-                          m.(access_max) m.(nextblock_noaccess) m.(contents_default) 
-                          ((bl,Some fi',sz)::r) _ _ _ _ m.(mem_bounds) m.(mem_bounds_perm))
-    | _ => None
-    end
-  | _ => None
-  end.
-Next Obligation.
-  generalize (stack_valid m b). rewrite <- Heq_anonymous0. simpl. eauto.
-Qed.
-Next Obligation.
-  generalize (stack_norepet m). rewrite <- Heq_anonymous0.
-  inversion 1; constructor; auto.
-Qed.
-Next Obligation.
-  generalize (stack_perms m). rewrite <- Heq_anonymous0.
-  inversion 1; constructor; auto.
-  red. simpl; intros.
-  red in H2. simpl in H2. subst. eapply H2 in H5; eauto.
-  erewrite insert_frame_info_size in H5; eauto.
-Qed.
-Next Obligation.
-  generalize (stack_below_limit m). rewrite <- Heq_anonymous0.
-  simpl. auto.
-Qed.
+(* Program Definition update_top_stack_adt (m: mem) (newfi: frame_info) (delta : Z) : option mem := *)
+(*   match stack_adt m with *)
+(*   | (bl, Some fi,sz)::r => *)
+(*     match insert_frame_info delta fi newfi with *)
+(*       Some fi' => *)
+(*       Some (mkmem *)
+(*               m.(mem_contents) *)
+(*                   m.(mem_access) *)
+(*                       m.(nextblock) *)
+(*                           m.(access_max) m.(nextblock_noaccess) m.(contents_default)  *)
+(*                           ((bl,Some fi',sz)::r) _ _ _ _ m.(mem_bounds) m.(mem_bounds_perm)) *)
+(*     | _ => None *)
+(*     end *)
+(*   | _ => None *)
+(*   end. *)
+(* Next Obligation. *)
+(*   generalize (stack_valid m b). rewrite <- Heq_anonymous0. simpl. eauto. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   generalize (stack_norepet m). rewrite <- Heq_anonymous0. *)
+(*   inversion 1; constructor; auto. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   generalize (stack_perms m). rewrite <- Heq_anonymous0. *)
+(*   inversion 1; constructor; auto. *)
+(*   red. simpl; intros. *)
+(*   red in H2. simpl in H2. subst. eapply H2 in H5; eauto. *)
+(*   erewrite insert_frame_info_size in H5; eauto. *)
+(* Qed. *)
+(* Next Obligation. *)
+(*   generalize (stack_below_limit m). rewrite <- Heq_anonymous0. *)
+(*   simpl. auto. *)
+(* Qed. *)
 
 Local Instance memory_model_ops :
   MemoryModelOps mem.
@@ -1738,7 +1738,7 @@ Proof.
   exact record_stack_blocks_none.
   exact unrecord_stack_block.
   exact stack_limit.
-  exact update_top_stack_adt.
+  (* exact update_top_stack_adt. *)
 Defined.
 
 Section WITHINJPERM.
