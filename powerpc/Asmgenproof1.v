@@ -222,26 +222,25 @@ Ltac Simpl := repeat Simplif.
 
 (** Useful properties of pointer addition *)
 
-Lemma loadv_offset_ptr `{Mem.MemoryModelOps}:
+Lemma loadv_offset_ptr:
   forall chunk m a delta v,
   Mem.loadv chunk m (Val.offset_ptr a delta) = Some v ->
   Mem.loadv chunk m (Val.add a (Vint (Ptrofs.to_int delta))) = Some v.
 Proof.
-  intros. destruct a; try discriminate H0. simpl. rewrite Ptrofs.of_int_to_int by auto. assumption.
+  intros. destruct a; try discriminate H. simpl. rewrite Ptrofs.of_int_to_int by auto. assumption.
 Qed.
 
-Lemma storev_offset_ptr `{Mem.MemoryModelOps}:
+Lemma storev_offset_ptr:
   forall chunk m a delta v m',
   Mem.storev chunk m (Val.offset_ptr a delta) v = Some m' ->
   Mem.storev chunk m (Val.add a (Vint (Ptrofs.to_int delta))) v = Some m'.
 Proof.
-  intros. destruct a; try discriminate H0. simpl. rewrite Ptrofs.of_int_to_int by auto. assumption.
+  intros. destruct a; try discriminate H. simpl. rewrite Ptrofs.of_int_to_int by auto. assumption.
 Qed.
 
 (** * Correctness of PowerPC constructor functions *)
 
 Section CONSTRUCTORS.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable fn: function.
@@ -1487,7 +1486,7 @@ Transparent Val.add.
     f_equal. unfold rs3; Simpl. unfold rs3, rs2, rs1; Simpl.
     intros. unfold rs3, rs2, rs1; Simpl.
   intros [rs' [EX' AG']].
-  exists rs'. split. eapply exec_straight_trans with (rs5 := rs3) (m2 := m).
+  exists rs'. split. eapply exec_straight_trans with (rs2 := rs3) (m2 := m).
   apply exec_straight_three with rs1 m rs2 m; auto.
   simpl. unfold rs3. f_equal. f_equal. f_equal. rewrite gpr_or_zero_not_zero by auto.
   unfold rs2; Simpl. apply low_high_half_zero.

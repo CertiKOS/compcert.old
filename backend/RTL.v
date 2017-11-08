@@ -158,7 +158,7 @@ Inductive stackframe : Type :=
              (rs: regset),         (**r register state in calling function *)
       stackframe.
 
-Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
+Inductive state : Type :=
   | State:
       forall (stack: list stackframe) (**r call stack *)
              (f: function)            (**r current function *)
@@ -178,9 +178,6 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
              (v: val)                 (**r return value for the call *)
              (m: mem),                (**r memory state *)
       state.
-
-Section WITHEXTCALLS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -202,7 +199,7 @@ Definition find_function
   [st1] the initial state, [st2] the final state, and [t] the trace
   of system calls performed during this transition. *)
 
-Inductive step : state -> trace -> state -> Prop :=
+Inductive step: state -> trace -> state -> Prop :=
   | exec_Inop:
       forall s f sp pc rs m pc',
       (fn_code f)!pc = Some(Inop pc') ->
@@ -248,9 +245,8 @@ Inductive step : state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
-      forall BUILTIN_ENABLED : builtin_enabled ef,
-        step (State s f sp pc rs m)
-             t (State s f sp pc' (regmap_setres res vres rs) m')
+      step (State s f sp pc rs m)
+         t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
       forall s f sp pc rs m cond args ifso ifnot b pc',
       (fn_code f)!pc = Some(Icond cond args ifso ifnot) ->
@@ -360,8 +356,6 @@ Proof.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.
-
-End WITHEXTCALLS.
 
 (** * Operations on RTL abstract syntax *)
 

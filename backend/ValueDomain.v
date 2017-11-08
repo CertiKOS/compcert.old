@@ -49,9 +49,6 @@ Hint Extern 2 (_ <= _) => xomega : va.
 Hint Extern 2 (_ > _) => xomega : va.
 Hint Extern 2 (_ >= _) => xomega : va.
 
-Section WITHMEMORYMODEL.
-Context `{memory_model_prf: Mem.MemoryModel}.
-
 Section MATCH.
 
 Variable bc: block_classification.
@@ -4348,8 +4345,6 @@ Proof.
   - red; intros. eapply Mem.valid_block_inject_1. eapply inj_of_bc_valid; eauto. eauto.
 Qed.
 
-End WITHMEMORYMODEL.
-
 (** * Abstracting RTL register environments *)
 
 Module AVal <: SEMILATTICE_WITH_TOP.
@@ -4483,7 +4478,7 @@ Module VA <: SEMILATTICE.
     match x, y with
     | Bot, Bot => True
     | State ae1 am1, State ae2 am2 =>
-        AE.eq ae1 ae2 /\ forall `{memory_model_prf: Mem.MemoryModel} bc (m: mem), mmatch bc m am1 <-> mmatch bc m am2
+        AE.eq ae1 ae2 /\ forall bc m, mmatch bc m am1 <-> mmatch bc m am2
     | _, _ => False
     end.
 
@@ -4525,7 +4520,7 @@ Module VA <: SEMILATTICE.
     match x, y with
     | _, Bot => True
     | Bot, _ => False
-    | State ae1 am1, State ae2 am2 => AE.ge ae1 ae2 /\ forall `{memory_model_prf: Mem.MemoryModel} bc (m: mem), mmatch bc m am2 -> mmatch bc m am1
+    | State ae1 am1, State ae2 am2 => AE.ge ae1 ae2 /\ forall bc m, mmatch bc m am2 -> mmatch bc m am1
     end.
 
   Lemma ge_refl: forall x y, eq x y -> ge x y.

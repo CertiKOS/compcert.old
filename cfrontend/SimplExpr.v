@@ -97,11 +97,6 @@ Definition makeseq (l: list statement) : statement :=
 
 (** Smart constructor for [if ... then ... else]. *)
 
-(** NOTE: Here, we no longer need anything about the memory model,
-    by replacing (Mem.valid_block Mem.empty) with (fun _ => false).
-    See the Cop.SemCast class, and the sem_cast_unit instance.
- *)
-
 Fixpoint eval_simpl_expr (a: expr) : option val :=
   match a with
   | Econst_int n _ => Some(Vint n)
@@ -111,7 +106,7 @@ Fixpoint eval_simpl_expr (a: expr) : option val :=
   | Ecast b ty =>
       match eval_simpl_expr b with
       | None => None
-      | Some v => sem_cast v (typeof b) ty tt
+      | Some v => sem_cast v (typeof b) ty Mem.empty
       end
   | _ => None
   end.
@@ -119,7 +114,7 @@ Fixpoint eval_simpl_expr (a: expr) : option val :=
 Function makeif (a: expr) (s1 s2: statement) : statement :=
   match eval_simpl_expr a with
   | Some v =>
-      match bool_val v (typeof a) tt with
+      match bool_val v (typeof a) Mem.empty with
       | Some b => if b then s1 else s2
       | None   => Sifthenelse a s1 s2
       end

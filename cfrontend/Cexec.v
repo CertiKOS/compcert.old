@@ -85,9 +85,6 @@ Proof.
   destruct s; (left; congruence) || (right; congruence).
 Defined.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 (** * Events, volatile memory accesses, and external functions. *)
 
 Section EXEC.
@@ -406,34 +403,6 @@ Hypothesis do_external_function_complete:
   possible_trace w t w' ->
   do_external_function id sg ge w vargs m = Some(w', t, vres, m').
 
-Variable do_builtin_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
-
-Hypothesis do_builtin_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_builtin_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  builtin_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
-
-Hypothesis do_builtin_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  builtin_functions_sem id sg ge vargs m t vres m' ->
-  possible_trace w t w' ->
-  do_builtin_function id sg ge w vargs m = Some(w', t, vres, m').
-
-Variable do_runtime_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
-
-Hypothesis do_runtime_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_runtime_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  runtime_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
-
-Hypothesis do_runtime_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  runtime_functions_sem id sg ge vargs m t vres m' ->
-  possible_trace w t w' ->
-  do_runtime_function id sg ge w vargs m = Some(w', t, vres, m').
-
 Variable do_inline_assembly:
   string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
@@ -542,8 +511,8 @@ Definition do_external (ef: external_function):
        world -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
   | EF_external name sg => do_external_function name sg ge
-  | EF_builtin name sg => do_builtin_function name sg ge
-  | EF_runtime name sg => do_runtime_function name sg ge
+  | EF_builtin name sg => do_external_function name sg ge
+  | EF_runtime name sg => do_external_function name sg ge
   | EF_vload chunk => do_ef_volatile_load chunk
   | EF_vstore chunk => do_ef_volatile_store chunk
   | EF_malloc => do_ef_malloc
@@ -568,9 +537,9 @@ Proof with try congruence.
 (* EF_external *)
   eapply do_external_function_sound; eauto.
 (* EF_builtin *)
-  eapply do_builtin_function_sound; eauto.
+  eapply do_external_function_sound; eauto.
 (* EF_runtime *)
-  eapply do_runtime_function_sound; eauto.
+  eapply do_external_function_sound; eauto.
 (* EF_vload *)
   unfold do_ef_volatile_load. destruct vargs... destruct v... destruct vargs...
   mydestr. destruct p as [[w'' t''] v]; mydestr.
@@ -620,9 +589,9 @@ Proof.
 (* EF_external *)
   eapply do_external_function_complete; eauto.
 (* EF_builtin *)
-  eapply do_builtin_function_complete; eauto.
+  eapply do_external_function_complete; eauto.
 (* EF_runtime *)
-  eapply do_runtime_function_complete; eauto.
+  eapply do_external_function_complete; eauto.
 (* EF_vload *)
   inv H; unfold do_ef_volatile_load.
   exploit do_volatile_load_complete; eauto. intros EQ; rewrite EQ; auto.
@@ -712,16 +681,6 @@ Notation " 'check' A ; B" := (if A then B else stuck)
   : reducts_monad_scope.
 
 Local Open Scope reducts_monad_scope.
-
-Definition builtin_is_enabled (ef: external_function) :
-  {builtin_enabled ef} + {~ builtin_enabled ef}.
-Proof.
-  unfold builtin_enabled.
-  destruct ef; try (left; exact I).
-  destruct cc_enable_external_as_builtin.
-  left. exact I.
-  right; intro; assumption.
-Defined.
 
 Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
   match k, a with
@@ -908,13 +867,11 @@ Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
   | RV, Ebuiltin ef tyargs rargs ty =>
       match is_val_list rargs with
       | Some vtl =>
-        do vargs <- sem_cast_arguments vtl tyargs m;
-          if builtin_is_enabled ef then
-            match do_external ef w vargs m with
-            | None => stuck
-            | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
-            end
-          else stuck
+          do vargs <- sem_cast_arguments vtl tyargs m;
+          match do_external ef w vargs m with
+          | None => stuck
+          | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
+          end
       | _ =>
           incontext (fun x => Ebuiltin ef tyargs x ty) (step_exprlist rargs m)
       end
@@ -1020,10 +977,9 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
-    exprlist_all_values rargs ->
-    builtin_enabled ef /\
-    exists vargs t vres m' w',
-      cast_arguments m rargs tyargs vargs
+      exprlist_all_values rargs ->
+      exists vargs t vres m' w',
+         cast_arguments m rargs tyargs vargs
       /\ external_call ef ge vargs m t vres m'
       /\ possible_trace w t w'
   | _ => True
@@ -1055,7 +1011,7 @@ Proof.
   exists t; exists v1; exists w'; auto.
   exists t; exists v1; exists w'; auto.
   exists v; auto.
-  intros; split. apply BUILTIN_ENABLED. exists vargs; exists t; exists vres; exists m'; exists w'; auto.
+  intros; exists vargs; exists t; exists vres; exists m'; exists w'; auto.
 Qed.
 
 Lemma callred_invert:
@@ -1529,11 +1485,9 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (do_external ef w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
   exploit do_ef_external_sound; eauto. intros [EC PT].
-  destruct (builtin_is_enabled ef) eqn:?...
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
   eapply sem_cast_arguments_sound; eauto.
   exists w0; auto.
-  destruct (builtin_is_enabled ef) eqn:?...
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   assert (x = vargs).
     exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
@@ -1635,7 +1589,6 @@ Proof.
   inv H0. rewrite H; econstructor; eauto.
 (* builtin *)
   exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
-  destruct (builtin_is_enabled ef); try contradiction.
   exploit do_ef_external_complete; eauto. intros C.
   rewrite A. rewrite B. rewrite C. econstructor; eauto.
 Qed.
@@ -1885,7 +1838,7 @@ Proof.
   exploit imm_safe_imm_safe_t; eauto.
   intros [A | [C1 [a1 [t [a1' [m' [A [B [D E]]]]]]]]]. contradiction.
   right. red. exists t; econstructor; split; auto.
-  left. rewrite B. eapply step_rred with (C0 := fun x => C(C1 x)). eauto. eauto.
+  left. rewrite B. eapply step_rred with (C := fun x => C(C1 x)). eauto. eauto.
   left. left. eapply step_stuck; eauto.
 Qed.
 
@@ -2261,5 +2214,3 @@ Definition at_final_state (S: state): option int :=
   | Returnstate (Vint r) Kstop m => Some r
   | _ => None
   end.
-
-End WITHEXTERNALCALLS.

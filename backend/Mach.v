@@ -119,16 +119,11 @@ value of the return address that the Asm code generated later will
 store in the reserved location.
 *)
 
-Section WITHMEMORYMODELOPS.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
-
 Definition load_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) :=
   Mem.loadv (chunk_of_type ty) m (Val.offset_ptr sp ofs).
 
 Definition store_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) (v: val) :=
   Mem.storev (chunk_of_type ty) m (Val.offset_ptr sp ofs) v.
-
-End WITHMEMORYMODELOPS.
 
 Module RegEq.
   Definition t := mreg.
@@ -222,9 +217,6 @@ Definition find_function_ptr
 
 (** Extract the values of the arguments to an external call. *)
 
-Section WITHMEMORYMODELOPS2.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
-
 Inductive extcall_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
   | extcall_arg_reg: forall r,
       extcall_arg rs m sp (R r) (rs r)
@@ -245,7 +237,7 @@ Definition extcall_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg_pair rs m sp) (loc_arguments sg) args.
 
-End WITHMEMORYMODELOPS2.
+(** Mach execution states. *)
 
 (** Mach execution states. *)
 
@@ -257,7 +249,7 @@ Inductive stackframe: Type :=
              (c: code),       (**r program point in calling function *)
       stackframe.
 
-Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
+Inductive state: Type :=
   | State:
       forall (stack: list stackframe)  (**r call stack *)
              (f: block)                (**r pointer to current function *)
@@ -277,9 +269,6 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
              (rs: regset)              (**r register state *)
              (m: mem),                 (**r memory state *)
       state.
-
-Section WITHEXTERNALCALLSOPS.
-Context `{external_calls: ExternalCalls}.
 
 Section RELSEM.
 Variables init_sp init_ra: val.
@@ -366,7 +355,6 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
-      forall BUILTIN_ENABLED : builtin_enabled ef,
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
   | exec_Mgoto:
@@ -521,5 +509,3 @@ Lemma wf_initial:
 Proof.
   intros. inv H. fold ge. constructor. constructor.
 Qed.
-
-End WITHEXTERNALCALLSOPS.

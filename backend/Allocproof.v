@@ -1504,9 +1504,6 @@ Proof.
   unfold return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 Lemma loadv_int64_split:
   forall m a v,
   Mem.loadv Mint64 m a = Some v -> Archi.splitlong = true ->
@@ -1593,7 +1590,7 @@ Proof.
 - exploit IHlist_forall2; eauto. intros (vl' & A & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_builtin_args_satisf; eauto. intros (v1' & C & D).
-  exploit (eval_builtin_arg_lessdef (ge := ge) (e1 := ls) ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
   exists (v1'' :: vl'); split; constructor; auto. eapply Val.lessdef_trans; eauto.
 Qed.
 
@@ -1624,7 +1621,7 @@ Proof.
 + exploit IHlist_forall2; eauto. intros (vl' & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_debug_args_satisf; eauto. intros (v1' & C & D).
-  exploit (eval_builtin_arg_lessdef (ge := ge) (e1 := ls) ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
   exists (v1'' :: vl'); constructor; auto.
 + eauto.
 Qed.
@@ -2310,7 +2307,7 @@ Proof.
   econstructor. eexact F1'. eexact STORE1'. instantiate (1 := ls2). auto.
   eapply star_trans. eexact U.
   eapply star_two.
-  eapply exec_Lstore with (m'1 := m2'). eexact F2''. discriminate||exact STORE2'. eauto.
+  eapply exec_Lstore with (m' := m2'). eexact F2''. discriminate||exact STORE2'. eauto.
   constructor. eauto. eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf. eauto.
@@ -2389,7 +2386,7 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   instantiate (1 := ls2); auto.
-  auto. eapply star_right. eexact A3.
+  eapply star_right. eexact A3.
   econstructor.
   reflexivity. reflexivity. reflexivity. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
@@ -2570,5 +2567,3 @@ Proof.
 Qed.
 
 End PRESERVATION.
-
-End WITHEXTERNALCALLS.

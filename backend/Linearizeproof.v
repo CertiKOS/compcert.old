@@ -31,7 +31,6 @@ Proof.
 Qed.
 
 Section LINEARIZATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: LTL.program.
 Variable tprog: Linear.program.

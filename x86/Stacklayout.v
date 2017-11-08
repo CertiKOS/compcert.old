@@ -48,7 +48,6 @@ Definition make_env (b: bounds) : frame_env :=
      fe_used_callee_save := b.(used_callee_save) |}.
 
 Lemma frame_env_separated:
-  forall `{memory_model_prf: Mem.MemoryModel},
   forall b sp m P,
   let fe := make_env b in
   m |= range sp 0 (fe_stack_data fe) ** range sp (fe_stack_data fe + bound_stack_data b) (fe_size fe) ** P ->
@@ -100,7 +99,6 @@ Local Opaque Z.add Z.mul sepconj range.
 Qed.
 
 Lemma frame_env_separated':
-  forall `{memory_model_prf: Mem.MemoryModel},
   forall b ,
     let w := if Archi.ptr64 then 8 else 4 in
     let fe := make_env b in

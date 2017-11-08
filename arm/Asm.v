@@ -330,9 +330,6 @@ Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
   end.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 Section RELSEM.
 
 (** Looking up instructions in a code sequence by position. *)
@@ -366,13 +363,15 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
+Variable ge: genv.
+
 (** The semantics is purely small-step and defined as a function
   from the current state (a register set + a memory state)
   to either [Next rs' m'] where [rs'] and [m'] are the updated register
   set and memory state after execution of the instruction at [rs#PC],
   or [Stuck] if the processor is stuck. *)
 
-Inductive outcome {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
+Inductive outcome: Type :=
   | Next: regset -> mem -> outcome
   | Stuck: outcome.
 
@@ -408,8 +407,6 @@ Definition eval_shift_op (so: shift_op) (rs: regset) :=
   end.
 
 (** Auxiliaries for memory accesses *)
-
-Variable ge: genv.
 
 Definition exec_load (chunk: memory_chunk) (addr: val) (r: preg)
                      (rs: regset) (m: mem) :=
@@ -839,7 +836,7 @@ Definition loc_external_result (sg: signature) : rpair preg :=
 
 (** Execution of the instruction at [rs#PC]. *)
 
-Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
+Inductive state: Type :=
   | State: regset -> mem -> state.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -856,7 +853,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
-      external_call ef (fun _ => True) ge vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
@@ -865,7 +862,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall b ef args res rs m t rs' m',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      external_call ef (fun _ => True) ge args m t res m' ->
+      external_call ef ge args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res rs)#PC <- (rs IR14) ->
       step (State rs m) t (State rs' m').
@@ -950,8 +947,6 @@ Ltac Equalities :=
 (* final states *)
   inv H; inv H0. congruence.
 Qed.
-
-End WITHEXTERNALCALLS.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 

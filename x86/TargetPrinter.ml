@@ -395,8 +395,6 @@ module Target(System: SYSTEM):TARGET =
           fprintf oc "	flds	%a\n" addressing a
       | Pfstps_m(a) ->
           fprintf oc "	fstps	%a\n" addressing a
-      | Pxchg_rr(r1, r2) ->
-        fprintf oc "	xchgl	%a, %a\n" ireg r1 ireg r2
             (* Moves with conversion *)
       | Pmovb_mr(a, r1) ->
           fprintf oc "	movb	%a, %a\n" ireg8 r1 addressing a

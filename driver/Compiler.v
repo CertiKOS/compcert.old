@@ -328,8 +328,7 @@ Qed.
 *)
 
 Remark forward_simulation_identity:
-  forall {RETVAL: Type},
-  forall sem: _ RETVAL, forward_simulation sem sem.
+  forall sem, forward_simulation sem sem.
 Proof.
   intros. apply forward_simulation_step with (fun s1 s2 => s2 = s1); intros.
 - auto.
@@ -339,21 +338,13 @@ Proof.
 Qed.
 
 Lemma match_if_simulation:
-  forall {RETVAL: Type},
-  forall (A: Type) (sem: A -> semantics RETVAL) (flag: unit -> bool) (transf: A -> A -> Prop) (prog tprog: A),
+  forall (A: Type) (sem: A -> semantics) (flag: unit -> bool) (transf: A -> A -> Prop) (prog tprog: A),
   match_if flag transf prog tprog ->
   (forall p tp, transf p tp -> forward_simulation (sem p) (sem tp)) ->
   forward_simulation (sem prog) (sem tprog).
 Proof.
   intros. unfold match_if in *. destruct (flag tt). eauto. subst. apply forward_simulation_identity.
 Qed.
-
-Section WITHEXTERNALCALLS.
-Local Existing Instance Events.symbols_inject_instance.
-Context `{external_calls_prf: Events.ExternalCalls (symbols_inject_instance := Events.symbols_inject_instance) }.
-Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
-Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
-
 
 Theorem cstrategy_semantic_preservation:
   forall p tp,
@@ -393,7 +384,7 @@ Ltac DestructM :=
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. exact Renumberproof.transf_program_correct.
   eapply compose_forward_simulations.
-    eapply match_if_simulation. eassumption. eapply CSEproof.transf_program_correct; assumption.
+    eapply match_if_simulation. eassumption. exact CSEproof.transf_program_correct.
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. exact Deadcodeproof.transf_program_correct; eassumption.
   eapply compose_forward_simulations.
@@ -409,7 +400,7 @@ Ltac DestructM :=
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. exact Debugvarproof.transf_program_correct.
   eapply compose_forward_simulations.
-    eapply Stackingproof.transf_program_correct with (return_address_offset := Asmgenproof0.return_address_offset); try assumption.
+    eapply Stackingproof.transf_program_correct with (return_address_offset := Asmgenproof0.return_address_offset).
     exact Asmgenproof.return_address_exists.
     eassumption.
   eapply Asmgenproof.transf_program_correct; eassumption.
@@ -484,5 +475,3 @@ Proof.
   destruct H2 as (asm_program & P & Q).
   exists asm_program; split; auto. apply c_semantic_preservation; auto.
 Qed.
-
-End WITHEXTERNALCALLS.

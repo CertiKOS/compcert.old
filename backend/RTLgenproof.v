@@ -358,7 +358,6 @@ Proof.
 Qed.
 
 Section CORRECTNESS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: CminorSel.program.
 Variable tprog: RTL.program.
@@ -706,7 +705,6 @@ Lemma transl_expr_Ebuiltin_correct:
   eval_exprlist ge sp e m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge vl m E0 v m ->
-  forall BUILTIN_ENABLED: builtin_enabled ef,
   transl_expr_prop le (Ebuiltin ef al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -1360,8 +1358,7 @@ Proof.
   left; eapply plus_right. eapply star_trans. eexact A. eexact F. reflexivity.
   eapply exec_Istore with (a := vaddr'). eauto.
   rewrite <- H4. apply eval_addressing_preserved. exact symbols_preserved.
-  eauto.
-  traceEq.
+  eauto. traceEq.
   econstructor; eauto. constructor.
 
   (* call *)
@@ -1431,7 +1428,7 @@ Proof.
   intros [rs' [tm' [E [F [G [J K]]]]]].
   exploit transl_eval_builtin_args; eauto.
   intros (vargs' & U & V).
-  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs'#r) (fun r => rs'#r)); eauto.
+  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs'#r) (fun r => rs'#r)); eauto.
   intros (vargs'' & X & Y).
   assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
   edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
@@ -1440,7 +1437,7 @@ Proof.
   eapply exec_Ibuiltin. eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-  auto. traceEq.
+  traceEq.
   econstructor; eauto. constructor.
   eapply match_env_update_res; eauto.
 

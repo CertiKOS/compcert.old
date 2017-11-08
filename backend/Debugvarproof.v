@@ -285,7 +285,6 @@ Qed.
 (** * Semantic preservation *)
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: program.
 Variable tprog: program.
@@ -381,13 +380,13 @@ Proof.
   constructor. eexact E1. constructor.
   simpl; constructor.
   simpl; auto.
-  auto. traceEq.
+  traceEq.
 - eapply star_step; eauto.
   econstructor.
   constructor.
   simpl; constructor.
   simpl; auto.
-  auto. traceEq.
+  traceEq.
 Qed.
 
 (** Matching between program states. *)
@@ -455,7 +454,7 @@ Proof.
 - (* load *)
   econstructor; split.
   eapply plus_left.
-  eapply exec_Lload with (a0 := a).
+  eapply exec_Lload with (a := a).
   rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
   eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
@@ -463,7 +462,7 @@ Proof.
 - (* store *)
   econstructor; split.
   eapply plus_left.
-  eapply exec_Lstore with (a0 := a).
+  eapply exec_Lstore with (a := a).
   rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
   eauto. eauto.
   apply eval_add_delta_ranges. traceEq.

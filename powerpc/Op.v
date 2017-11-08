@@ -196,9 +196,6 @@ Global Opaque eq_condition eq_addressing eq_operation.
   error, e.g. integer division by zero.  [eval_condition] returns a boolean,
   [eval_operation] and [eval_addressing] return a value. *)
 
-Section WITHMEMORYMODELOPS.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
-
 Definition eval_condition (cond: condition) (vl: list val) (m: mem): option bool :=
   match cond, vl with
   | Ccomp c, v1 :: v2 :: nil => Val.cmp_bool c v1 v2
@@ -311,8 +308,6 @@ Definition eval_operation
   | Ocmp c, _ => Some(Val.of_optbool (eval_condition c vl m))
   | _, _ => None
   end.
-
-End WITHMEMORYMODELOPS.
 
 Definition eval_addressing
     (F V: Type) (genv: Genv.t F V) (sp: val)
@@ -476,7 +471,6 @@ Definition type_of_addressing (addr: addressing) : list typ :=
   by [type_of_operation]. *)
 
 Section SOUNDNESS.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable A V: Type.
 Variable genv: Genv.t A V.
@@ -627,9 +621,6 @@ Definition negate_condition (cond: condition): condition :=
   | Ccompluimm c n => Ccompluimm (negate_comparison c) n
   end.
 
-Section WITHMEMORYMODELOPS2.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
-
 Lemma eval_negate_condition:
   forall cond vl m,
   eval_condition (negate_condition cond) vl m = option_map negb (eval_condition cond vl m).
@@ -754,8 +745,6 @@ Proof.
   destruct c; simpl; auto; try discriminate.
 Qed.
 
-End WITHMEMORYMODELOPS2.
-
 (** Global variables mentioned in an operation or addressing mode *)
 
 Definition globals_operation (op: operation) : list ident :=
@@ -780,7 +769,6 @@ Definition globals_addressing (addr: addressing) : list ident :=
   assigns the same addresses to the same symbols. *)
 
 Section GENV_TRANSF.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable F1 F2 V1 V2: Type.
 Variable ge1: Genv.t F1 V1.
@@ -813,7 +801,6 @@ End GENV_TRANSF.
 (** Compatibility of the evaluation functions with value injections. *)
 
 Section EVAL_COMPAT.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
 
 Variable F1 F2 V1 V2: Type.
 Variable ge1: Genv.t F1 V1.
@@ -1025,7 +1012,6 @@ End EVAL_COMPAT.
 (** Compatibility of the evaluation functions with the ``is less defined'' relation over values. *)
 
 Section EVAL_LESSDEF.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable F V: Type.
 Variable genv: Genv.t F V.
@@ -1079,7 +1065,7 @@ Lemma eval_condition_lessdef:
   eval_condition cond vl1 m1 = Some b ->
   eval_condition cond vl2 m2 = Some b.
 Proof.
-  intros. eapply eval_condition_inj with (f := fun b => Some(b, 0)) (m3 := m1).
+  intros. eapply eval_condition_inj with (f := fun b => Some(b, 0)) (m1 := m1).
   apply valid_pointer_extends; auto.
   apply weak_valid_pointer_extends; auto.
   apply weak_valid_pointer_no_overflow_extends; auto.
@@ -1098,7 +1084,7 @@ Proof.
   assert (exists v2 : val,
           eval_operation genv sp op vl2 m2 = Some v2
           /\ Val.inject (fun b => Some(b, 0)) v1 v2).
-  eapply eval_operation_inj with (m3 := m1) (sp1 := sp).
+  eapply eval_operation_inj with (m1 := m1) (sp1 := sp).
   apply valid_pointer_extends; auto.
   apply weak_valid_pointer_extends; auto.
   apply weak_valid_pointer_no_overflow_extends; auto.
@@ -1131,7 +1117,6 @@ End EVAL_LESSDEF.
 (** Compatibility of the evaluation functions with memory injections. *)
 
 Section EVAL_INJECT.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable F V: Type.
 Variable genv: Genv.t F V.
@@ -1157,7 +1142,7 @@ Lemma eval_condition_inject:
   eval_condition cond vl1 m1 = Some b ->
   eval_condition cond vl2 m2 = Some b.
 Proof.
-  intros. eapply eval_condition_inj with (f0 := f) (m3 := m1); eauto.
+  intros. eapply eval_condition_inj with (f := f) (m1 := m1); eauto.
   intros; eapply Mem.valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
@@ -1190,7 +1175,7 @@ Lemma eval_operation_inject:
 Proof.
   intros.
   rewrite eval_shift_stack_operation. simpl.
-  eapply eval_operation_inj with (sp3 := Vptr sp1 Ptrofs.zero) (m3 := m1); eauto.
+  eapply eval_operation_inj with (sp1 := Vptr sp1 Ptrofs.zero) (m1 := m1); eauto.
   intros; eapply Mem.valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.

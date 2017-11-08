@@ -33,7 +33,6 @@ Proof.
 Qed.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: program.
 Variable tprog: program.
@@ -297,7 +296,6 @@ Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None).
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
   simpl. constructor.
-  auto.
 Qed.
 
 Lemma step_Sdebug_var:
@@ -310,7 +308,6 @@ Proof.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
   simpl. constructor.
-  auto.
 Qed.
 
 Lemma step_Sset_debug:
@@ -660,7 +657,7 @@ Proof.
   exists j; exists te; exists tm. simpl.
   split. constructor.
   split. auto. split. auto. split. auto.  split. auto.
-  split. intros. elim H2. eapply Mem.valid_block_inject_2; eauto.
+  split. intros. elim H2. eapply Mem.mi_mappedblocks; eauto.
   split. tauto. auto.
 
   (* inductive case *)
@@ -718,7 +715,7 @@ Proof.
     destruct (eq_block b b1). subst b. rewrite D in H1; inv H1.
     exploit (P id); auto. intros [X Y]. exists id; exists ty.
     rewrite X; rewrite Y. repeat rewrite PTree.gss. auto.
-    rewrite E in H1; auto. elim H3. eapply Mem.valid_block_inject_2; eauto.
+    rewrite E in H1; auto. elim H3. eapply Mem.mi_mappedblocks; eauto.
     eapply Mem.valid_new_block; eauto.
     eapply Q; eauto. unfold Mem.valid_block in *.
     exploit Mem.nextblock_alloc. eexact A. exploit Mem.alloc_result. eexact A.
@@ -1069,13 +1066,13 @@ Proof.
   exploit Mem.storebytes_mapped_inject; eauto. intros [tm' [C D]].
   exists tm'.
   split. eapply assign_loc_copy; try rewrite EQ1; try rewrite EQ2; eauto.
-  intros; clear D; eapply Mem.aligned_area_inject; eauto.
+  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  intros; clear D; eapply Mem.aligned_area_inject; eauto.
+  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  clear D. eapply Mem.disjoint_or_equal_inject; eauto.
+  eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto.
   split. auto.
@@ -2054,7 +2051,7 @@ Proof.
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit match_cont_find_funct; eauto. intros [tfd [P Q]].
   econstructor; split.
-  apply plus_one. eapply step_call with (fd0 := tfd).
+  apply plus_one. eapply step_call with (fd := tfd).
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
   erewrite type_of_fundef_preserved; eauto.
@@ -2091,7 +2088,7 @@ Proof.
 (* ifthenelse *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   econstructor; split.
-  apply plus_one. apply step_ifthenelse with (v2 := tv) (b0 := b). auto.
+  apply plus_one. apply step_ifthenelse with (v1 := tv) (b := b). auto.
   rewrite typeof_simpl_expr. eapply bool_val_inject; eauto.
   destruct b; econstructor; eauto with compat.
 

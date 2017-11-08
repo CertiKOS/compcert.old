@@ -479,7 +479,6 @@ Qed.
 (** * Correctness of the smart constructors for division and modulus *)
 
 Section CMCONSTRS.
-Context mem `{external_calls: ExternalCalls mem} `{!I64HelpersCorrect mem}.
 
 Variable prog: program.
 Variable hf: helper_functions.

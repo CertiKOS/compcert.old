@@ -136,9 +136,6 @@ Proof.
   destruct (ident_eq f f1); eauto.
 Qed.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 (** * Properties of the translation functions *)
 
 (** Transformation of expressions and statements. *)
@@ -421,9 +418,7 @@ Proof.
   destruct (Int64.eq i Int64.zero); auto.
 - (* pointer (64 bits) -> bool *)
   econstructor; eauto with cshm.
-  simpl. unfold Val.cmplu, Val.cmplu_bool.
-  rewrite Cop.weak_valid_pointer_eq in Heqb1.
-  unfold Mem.weak_valid_pointer in Heqb1.
+  simpl. unfold Val.cmplu, Val.cmplu_bool. unfold Mem.weak_valid_pointer in Heqb1.
   rewrite Heqb0, Heqb1. rewrite Int64.eq_true. reflexivity.
 - (* float -> bool *)
   econstructor; eauto with cshm.
@@ -460,7 +455,6 @@ Proof.
 - (* ptr 64 bits *)
   exists Vone; split.
   econstructor; eauto with cshm. simpl. unfold Val.cmplu, Val.cmplu_bool.
-  rewrite Cop.weak_valid_pointer_eq in Heqb0.
   unfold Mem.weak_valid_pointer in Heqb0. rewrite Heqb0, Heqb1, Int64.eq_true. reflexivity.
   constructor.
 - (* float *)
@@ -510,14 +504,12 @@ Proof.
 - econstructor; eauto with cshm. simpl. unfold Val.cmpu, Val.cmpu_bool, Int.cmpu.
   destruct (Int.eq i Int.zero); auto.
 - destruct Archi.ptr64 eqn:SF; inv SEM.
-  rewrite Cop.weak_valid_pointer_eq in H0.
   destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)) eqn:V; simpl in H0; inv H0.
   econstructor; eauto with cshm. simpl. unfold Val.cmpu, Val.cmpu_bool.
   unfold Mem.weak_valid_pointer in V. rewrite SF, V, Int.eq_true. auto.
 - econstructor; eauto with cshm. simpl. unfold Val.cmplu, Val.cmplu_bool, Int64.cmpu.
   destruct (Int64.eq i Int64.zero); auto.
 - destruct Archi.ptr64 eqn:SF; inv SEM.
-  rewrite Cop.weak_valid_pointer_eq in H0.
   destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)) eqn:V; simpl in H0; inv H0.
   econstructor; eauto with cshm. simpl. unfold Val.cmplu, Val.cmplu_bool.
   unfold Mem.weak_valid_pointer in V. rewrite SF, V, Int64.eq_true. auto.
@@ -851,7 +843,7 @@ Qed.
 
 Lemma make_cmp_ptr_correct:
   forall cmp e le m a va b vb v,
-  cmp_ptr (valid_pointer := Mem.valid_pointer) m cmp va vb = Some v ->
+  cmp_ptr m cmp va vb = Some v ->
   eval_expr ge e le m a va ->
   eval_expr ge e le m b vb ->
   eval_expr ge e le m (make_cmp_ptr cmp a b) v.
@@ -985,7 +977,6 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
-  auto.
 Qed.
 
 Lemma make_store_correct:
@@ -1585,7 +1576,6 @@ Proof.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
-  auto.
   eapply match_states_skip; eauto.
 
 - (* seq *)
@@ -1619,7 +1609,7 @@ Proof.
   exploit transl_expr_correct; eauto.
   intros [v [A B]].
   econstructor; split.
-  apply plus_one. apply step_ifthenelse with (v0 := v) (b0 := b); auto.
+  apply plus_one. apply step_ifthenelse with (v := v) (b := b); auto.
   destruct b; econstructor; eauto; constructor.
 
 - (* loop *)
@@ -1804,8 +1794,6 @@ Proof.
 Qed.
 
 End CORRECTNESS.
-
-End WITHEXTERNALCALLS.
 
 (** ** Commutation with linking *)
 

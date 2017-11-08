@@ -404,8 +404,7 @@ End REDUCE.
 Module Numbering.
   Definition t := numbering.
   Definition ge (n1 n2: numbering) : Prop :=
-    forall `{memory_model_prf: Mem.MemoryModel},
-    forall valu ge sp rs (m: mem),
+    forall valu ge sp rs m,
     numbering_holds valu ge sp rs m n2 ->
     numbering_holds valu ge sp rs m n1.
   Definition top := empty_numbering.

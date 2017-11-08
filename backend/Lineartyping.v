@@ -227,7 +227,7 @@ Proof.
 - auto.
 Qed.
 
-Inductive wt_state `{memory_model_ops: Mem.MemoryModelOps}: state -> Prop :=
+Inductive wt_state: state -> Prop :=
   | wt_regular_state: forall s f sp c rs m
         (WTSTK: wt_callstack s )
         (WTF: wt_function f = true)
@@ -247,9 +247,6 @@ Inductive wt_state `{memory_model_ops: Mem.MemoryModelOps}: state -> Prop :=
 End WITHINITLS.
 
 (** Preservation of state typing by transitions *)
-
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Section SOUNDNESS.
 
@@ -374,6 +371,7 @@ End SOUNDNESS.
 
 (** Properties of well-typed states that are used in [Stackingproof]. *)
 
+Section WITHINITLS'.
 Variable init_ls: locset.
 
 Lemma wt_state_getstack:
@@ -416,4 +414,4 @@ Proof.
   intros. inv H. apply WTRS.
 Qed.
 
-End WITHEXTERNALCALLS.
+End WITHINITLS'.

@@ -48,9 +48,6 @@ Set Implicit Arguments.
 
 (** Auxiliary function for initialization of global variables. *)
 
-Section WITHMEMORYMODELOPS.
-Context `{memory_model_ops: Mem.MemoryModelOps}.
-
 Function store_zeros (m: mem) (b: block) (p: Z) (n: Z) {wf (Zwf 0) n}: option mem :=
   if zle n 0 then Some m else
     match Mem.store Mint8unsigned m b p Vzero with
@@ -61,8 +58,6 @@ Proof.
   intros. red. omega.
   apply Zwf_well_founded.
 Qed.
-
-End WITHMEMORYMODELOPS.
 
 (* To avoid useless definitions of inductors in extracted code. *)
 Local Unset Elimination Schemes.
@@ -693,19 +688,11 @@ Definition to_senv (ge: t) : Senv.t :=
     ge.(genv_symb_range)
     (block_is_volatile_below ge).
 
-End GENV.
-
 (** * Construction of the initial memory state *)
-
-Section WITHMEMORYMODEL.
-Context `{memory_model_prf: Mem.MemoryModel}.
-
-Variable F: Type.  (**r The type of function descriptions *)
-Variable V: Type.  (**r The type of information attached to variables *)
 
 Section INITMEM.
 
-Variable ge: t F V.
+Variable ge: t.
 
 Definition store_init_data (m: mem) (b: block) (p: Z) (id: init_data) : option mem :=
   match id with
@@ -1266,7 +1253,7 @@ Proof.
   rewrite ! H. destruct a; intuition. red; intros; rewrite H; auto.
 Qed.
 
-Definition globals_initialized (g: t F V) (m: mem) :=
+Definition globals_initialized (g: t) (m: mem) :=
   forall b gd,
   find_def g b = Some gd ->
   match gd with
@@ -1409,7 +1396,7 @@ Proof.
   eapply IHgl; eauto.
 Qed.
 
-Definition globals_initialized_strong (g: t F V) (m: mem) :=
+Definition globals_initialized_strong (g: t) (m: mem) :=
   (forall b,
      find_def g b = None ->
      forall ofs k p, ~ Mem.perm m b ofs k p) /\
@@ -1495,7 +1482,7 @@ Lemma init_mem_genv_next: forall p m,
 Proof.
   unfold init_mem; intros.
   exploit alloc_globals_nextblock; eauto. rewrite Mem.nextblock_empty. intro.
-  generalize (genv_next_add_globals (prog_defs p) (empty_genv F V (prog_public p))).
+  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p))).
   fold (globalenv p). simpl genv_next. intros. congruence.
 Qed.
 
@@ -1592,7 +1579,7 @@ Qed.
 
 Section INITMEM_INJ.
 
-Variable ge: t F V.
+Variable ge: t.
 Variable thr: block.
 Hypothesis symb_inject: forall id b, find_symbol ge id = Some b -> Plt b thr.
 
@@ -1669,7 +1656,7 @@ Proof.
   eapply Mem.alloc_inject_neutral; eauto.
 Qed.
 
-Remark advance_next_le: forall gl x, Ple x (advance_next (F:=F) (V:=V) gl x).
+Remark advance_next_le: forall gl x, Ple x (advance_next gl x).
 Proof.
   induction gl; simpl; intros.
   apply Ple_refl.
@@ -1732,7 +1719,7 @@ Fixpoint init_data_list_aligned (p: Z) (il: list init_data) {struct il} : Prop :
 
 Section INITMEM_INVERSION.
 
-Variable ge: t F V.
+Variable ge: t.
 
 Lemma store_init_data_aligned:
   forall m b p i m',
@@ -1802,7 +1789,7 @@ Qed.
 
 Section INITMEM_EXISTS.
 
-Variable ge: t F V.
+Variable ge: t.
 
 Lemma store_zeros_exists:
   forall m b p n,
@@ -1910,7 +1897,7 @@ Proof.
   fold ge. rewrite A1. eapply IHl; eauto.
 Qed.
 
-End WITHMEMORYMODEL.
+End GENV.
 
 (** * Commutation with program transformations *)
 
@@ -2053,8 +2040,6 @@ Proof.
   inv H2; auto.
 Qed.
 
-Context `{memory_model_prf: Mem.MemoryModel}.
-
 Lemma store_init_data_list_match:
   forall idl m b ofs m',
   store_init_data_list (globalenv p) m b ofs idl = Some m' ->
@@ -2143,8 +2128,6 @@ Proof.
   intros. eapply (senv_match progmatch).
 Qed.
 
-Context `{memory_model_prf: Mem.MemoryModel}.
-
 Theorem init_mem_transf_partial:
   forall m, init_mem p = Some m -> init_mem tp = Some m.
 Proof.
@@ -2191,8 +2174,6 @@ Theorem senv_transf:
 Proof.
   intros. eapply (senv_match progmatch).
 Qed.
-
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Theorem init_mem_transf:
   forall m, init_mem p = Some m -> init_mem tp = Some m.

@@ -826,9 +826,6 @@ Proof.
   apply wt_regset_assign; auto.
 Qed.
 
-Section WITHEXTCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 Lemma wt_exec_Iop:
   forall (ge: genv) env f sp op args res s rs m v,
   wt_instr f env (Iop op args res s) ->
@@ -1010,4 +1007,3 @@ Qed.
 End SUBJECT_REDUCTION.
 
 
-End WITHEXTCALLS.

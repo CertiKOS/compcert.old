@@ -164,7 +164,6 @@ Definition eval_static_operation (op: operation) (vl: list aval): aval :=
   end.
 
 Section SOUNDNESS.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable bc: block_classification.
 Variable ge: genv.

@@ -108,7 +108,6 @@ Ltac TrivialExists :=
   end.
 
 Section SOUNDNESS.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable sp: block.

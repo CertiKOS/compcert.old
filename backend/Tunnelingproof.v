@@ -138,7 +138,6 @@ Qed.
 (** * Preservation of semantics *)
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
@@ -429,7 +428,7 @@ Proof.
   exploit eval_operation_lessdef. apply reglist_lessdef; eauto. eauto. eauto. 
   intros (tv & EV & LD).
   left; simpl; econstructor; split.
-  eapply exec_Lop with (v0 := tv); eauto.
+  eapply exec_Lop with (v := tv); eauto.
   rewrite <- EV. apply eval_operation_preserved. exact symbols_preserved.
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lload *)
@@ -438,7 +437,7 @@ Proof.
   exploit Mem.loadv_extends. eauto. eauto. eexact LD. 
   intros (tv & LOAD & LD').
   left; simpl; econstructor; split.
-  eapply exec_Lload with (a0 := ta).
+  eapply exec_Lload with (a := ta).
   rewrite <- EV. apply eval_addressing_preserved. exact symbols_preserved.
   eauto. eauto.
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
@@ -456,13 +455,13 @@ Proof.
   exploit Mem.storev_extends. eauto. eauto. eexact LD. apply LS.  
   intros (tm' & STORE & MEM').
   left; simpl; econstructor; split.
-  eapply exec_Lstore with (a0 := ta).
+  eapply exec_Lstore with (a := ta).
   rewrite <- EV. apply eval_addressing_preserved. exact symbols_preserved.
   eauto. eauto.
   econstructor; eauto using locmap_undef_regs_lessdef.
 - (* Lcall *)
   left; simpl; econstructor; split.
-  eapply exec_Lcall with (fd0 := tunnel_fundef fd); eauto.
+  eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto.
   rewrite sig_preserved. auto.
   econstructor; eauto.
@@ -471,7 +470,7 @@ Proof.
 - (* Ltailcall *)
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
-  eapply exec_Ltailcall with (fd0 := tunnel_fundef fd); eauto.
+  eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.

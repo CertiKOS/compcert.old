@@ -795,7 +795,6 @@ Definition default (x: nval) :=
   end.
 
 Section DEFAULT.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable sp: block.
@@ -810,8 +809,6 @@ Let valid_pointer_inj:
 Proof.
   unfold inject_id; intros. inv H. rewrite Ptrofs.add_zero.
   rewrite Mem.valid_pointer_nonempty_perm in *. eauto.
-  rewrite Mem.valid_pointer_nonempty_perm in H0.
-  eauto.
 Qed.
 
 Let weak_valid_pointer_inj:
@@ -856,7 +853,7 @@ Lemma default_needs_of_condition_sound:
   vagree_list args1 args2 nil ->
   eval_condition cond args2 m2 = Some b.
 Proof.
-  intros. apply eval_condition_inj with (f := inject_id) (m3 := m1) (vl1 := args1); auto.
+  intros. apply eval_condition_inj with (f := inject_id) (m1 := m1) (vl1 := args1); auto.
   apply val_inject_list_lessdef. apply lessdef_vagree_list. auto.
 Qed.
 

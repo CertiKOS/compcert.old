@@ -36,7 +36,6 @@ Qed.
 (** ** Semantic preservation *)
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: Csyntax.program.
 Variable tprog: Clight.program.
@@ -768,9 +767,7 @@ Qed.
 (** Semantics of smart constructors *)
 
 Remark sem_cast_deterministic:
-  forall {T1 valid_pointer1} {sem_cast_prf1: SemCast (T := T1) valid_pointer1},
-  forall {T2 valid_pointer2} {sem_cast_prf2: SemCast (T := T2) valid_pointer2},
-  forall v ty ty' (m1: T1) v1 (m2: T2) v2,
+  forall v ty ty' m1 v1 m2 v2,
   sem_cast v ty ty' m1 = Some v1 ->
   sem_cast v ty ty' m2 = Some v2 ->
   v1 = v2.
@@ -778,13 +775,13 @@ Proof.
   unfold sem_cast; intros. destruct (classify_cast ty ty'); try congruence.
 - destruct v; try congruence.
   destruct Archi.ptr64; try discriminate.
-  destruct (weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
-  destruct (weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
+  destruct (Mem.weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
+  destruct (Mem.weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
   auto.
 - destruct v; try congruence. 
   destruct (negb Archi.ptr64); try discriminate.
-  destruct (weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
-  destruct (weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
+  destruct (Mem.weak_valid_pointer m1 b (Ptrofs.unsigned i)); inv H.
+  destruct (Mem.weak_valid_pointer m2 b (Ptrofs.unsigned i)); inv H0.
   auto.
 Qed.
 
@@ -794,15 +791,21 @@ Lemma eval_simpl_expr_sound:
 Proof.
   induction 1; simpl; auto.
   destruct (eval_simpl_expr a); auto. subst.
-  destruct (sem_cast v1 (typeof a) ty tt) as [v'|] eqn:C; auto.
-  eapply sem_cast_deterministic with (m1 := tt); eauto.
+  destruct (sem_cast v1 (typeof a) ty Mem.empty) as [v'|] eqn:C; auto.
+  eapply sem_cast_deterministic; eauto.
   inv H; simpl; auto.
 Qed.
 
 Lemma static_bool_val_sound:
-  forall v t m b, bool_val v t tt = Some b -> bool_val v t m = Some b.
+  forall v t m b, bool_val v t Mem.empty = Some b -> bool_val v t m = Some b.
 Proof.
-  intros; eapply bool_val_unit_to_mem; eauto.
+  assert (A: forall b ofs, Mem.weak_valid_pointer Mem.empty b ofs = false).
+  { unfold Mem.weak_valid_pointer, Mem.valid_pointer, proj_sumbool; intros.
+    rewrite ! pred_dec_false by (apply Mem.perm_empty). auto. }  
+  intros until b; unfold bool_val.
+  destruct (classify_bool t); destruct v; destruct Archi.ptr64 eqn:SF; auto.
+- rewrite A; congruence.
+- simpl; rewrite A; congruence.
 Qed.
 
 Lemma step_makeif:
@@ -837,7 +840,7 @@ Proof.
   intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto. constructor.
-  simpl. econstructor; eauto. auto.
+  simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. constructor. eapply eval_Elvalue; eauto.
 Qed.
@@ -859,7 +862,7 @@ Proof.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto.
   econstructor; eauto. rewrite H3; eauto. constructor.
-  simpl. econstructor; eauto. auto.
+  simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. econstructor; eauto. congruence.
 Qed.
@@ -1414,8 +1417,7 @@ Qed.
 Lemma tr_val_gen:
   forall le dst v ty a tmp,
   typeof a = ty ->
-  (forall `{memory_model_ops: Mem.MemoryModelOps},
-    forall tge e le' m,
+  (forall tge e le' m,
       (forall id, In id tmp -> le'!id = le!id) ->
       eval_expr tge e le' m a v) ->
   tr_expr le dst (Csyntax.Eval v ty) (final dst a) a tmp.
@@ -2053,7 +2055,7 @@ Proof.
   exploit tr_top_val_for_val_inv; eauto. intros [A [B C]]. subst.
   econstructor; split.
   left. eapply plus_two. constructor.
-  apply step_ifthenelse with (v1 := v) (b0 := b); auto. traceEq.
+  apply step_ifthenelse with (v1 := v) (b := b); auto. traceEq.
   destruct b; econstructor; eauto.
 (* while *)
   inv H6. inv H1. econstructor; split.

@@ -447,12 +447,12 @@ let pp_program pp prog =
   reset_id ();
   let prog_vars,prog_funs = List.fold_left (fun (vars,funs) (ident,def) ->
     match def with
-    | Some (Gfun (Internal f)) ->
+    | Gfun (Internal f) ->
       if not (atom_is_iso_inline_definition ident) then
         vars,(ident,f)::funs
       else
         vars,funs
-    | Some (Gvar v) -> (ident,v)::vars,funs
+    | Gvar v -> (ident,v)::vars,funs
     | _ -> vars,funs) ([],[]) prog.prog_defs in
   pp_jobject_start pp;
   pp_jmember ~first:true pp "Global Variables" (pp_jarray pp_vardef) prog_vars;

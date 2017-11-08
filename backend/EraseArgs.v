@@ -12,9 +12,6 @@ Import Locations.
    and compiled in a C-style context
 *)
 
-Section WITHMEMORYMODEL.
-Context `{memory_model: Mem.MemoryModel}.
-
 Definition free_extcall_arg sp m e :=
   match e with
     | S Outgoing ofs ty =>
@@ -102,5 +99,3 @@ Proof.
   rewrite FREE_.
   eauto.
 Qed.
-
-End WITHMEMORYMODEL.

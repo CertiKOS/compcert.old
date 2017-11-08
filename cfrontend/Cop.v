@@ -220,21 +220,7 @@ Definition cast_single_long (si : signedness) (f: float32) : option int64 :=
   | Unsigned => Float32.to_longu f
   end.
 
-(* sem_cast used to depend on Mem.weak_valid_pointer;
-   however it is used in the actual syntactic translation of SimplExpr (yes,
-   not only in the proof.) To break this dependency on the memory model, we
-   introduce a simpler type class to parameterize over sem_cast. *)
-
-Class SemCast {T: Type} (valid_pointer: T -> block -> Z -> bool): Prop :=
-  {
-    weak_valid_pointer m b o :=
-      valid_pointer m b o || valid_pointer m b (o - 1)
-  }.
-
-Section WITHSEMCAST.
-Context `{sem_cast_prf: SemCast}.
-
-Definition sem_cast (v: val) (t1 t2: type) (m: T): option val :=
+Definition sem_cast (v: val) (t1 t2: type) (m: mem): option val :=
   match classify_cast t1 t2 with
   | cast_case_pointer =>
       match v with
@@ -302,7 +288,7 @@ Definition sem_cast (v: val) (t1 t2: type) (m: T): option val :=
           Some(Vint(if Int.eq n Int.zero then Int.zero else Int.one))
       | Vptr b ofs =>
           if Archi.ptr64 then None else
-          if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some Vone else None
+          if Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some Vone else None
       | _ => None
       end
   | cast_case_l2bool =>
@@ -311,7 +297,8 @@ Definition sem_cast (v: val) (t1 t2: type) (m: T): option val :=
           Some(Vint(if Int64.eq n Int64.zero then Int.zero else Int.one))
       | Vptr b ofs =>
           if negb Archi.ptr64 then None else
-            if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some Vone else None
+          if Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some Vone else None
+
       | _ => None
       end
   | cast_case_f2bool =>
@@ -414,14 +401,14 @@ Definition classify_bool (ty: type) : classify_bool_cases :=
   considered as true.  The integer zero (which also represents
   the null pointer) and the float 0.0 are false. *)
 
-Definition bool_val (v: val) (t: type) (m: T) : option bool :=
+Definition bool_val (v: val) (t: type) (m: mem) : option bool :=
   match classify_bool t with
   | bool_case_i =>
       match v with
       | Vint n => Some (negb (Int.eq n Int.zero))
       | Vptr b ofs =>
           if Archi.ptr64 then None else
-          if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some true else None
+          if Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some true else None
       | _ => None
       end
   | bool_case_l =>
@@ -429,7 +416,7 @@ Definition bool_val (v: val) (t: type) (m: T) : option bool :=
       | Vlong n => Some (negb (Int64.eq n Int64.zero))
       | Vptr b ofs =>
           if negb Archi.ptr64 then None else
-          if weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some true else None
+          if Mem.weak_valid_pointer m b (Ptrofs.unsigned ofs) then Some true else None
       | _ => None
       end
   | bool_case_f =>
@@ -449,7 +436,7 @@ Definition bool_val (v: val) (t: type) (m: T) : option bool :=
 
 (** *** Boolean negation *)
 
-Definition sem_notbool (v: val) (ty: type) (m: T): option val :=
+Definition sem_notbool (v: val) (ty: type) (m: mem): option val :=
   option_map (fun b => Val.of_bool (negb b)) (bool_val v ty m).
 
 (** *** Opposite and absolute value *)
@@ -602,7 +589,7 @@ Definition sem_binarith
     (sem_long: signedness -> int64 -> int64 -> option val)
     (sem_float: float -> float -> option val)
     (sem_single: float32 -> float32 -> option val)
-    (v1: val) (t1: type) (v2: val) (t2: type) (m: T): option val :=
+    (v1: val) (t1: type) (v2: val) (t2: type) (m: mem): option val :=
   let c := classify_binarith t1 t2 in
   let t := binarith_type c in
   match sem_cast v1 t1 t m with
@@ -685,7 +672,7 @@ Definition sem_add_ptr_long (cenv: composite_env) (ty: type) (v1 v2: val): optio
   | _,  _ => None
   end.
 
-Definition sem_add (cenv: composite_env) (v1:val) (t1:type) (v2: val) (t2:type) (m: T): option val :=
+Definition sem_add (cenv: composite_env) (v1:val) (t1:type) (v2: val) (t2:type) (m: mem): option val :=
   match classify_add t1 t2 with
   | add_case_pi ty si =>             (**r pointer plus integer *)
       sem_add_ptr_int cenv ty si v1 v2
@@ -720,7 +707,7 @@ Definition classify_sub (ty1: type) (ty2: type) :=
   | _, _ => sub_default
   end.
 
-Definition sem_sub (cenv: composite_env) (v1:val) (t1:type) (v2: val) (t2:type) (m:T): option val :=
+Definition sem_sub (cenv: composite_env) (v1:val) (t1:type) (v2: val) (t2:type) (m:mem): option val :=
   match classify_sub t1 t2 with
   | sub_case_pi ty si =>            (**r pointer minus integer *)
       match v1, v2 with
@@ -768,7 +755,7 @@ Definition sem_sub (cenv: composite_env) (v1:val) (t1:type) (v2: val) (t2:type) 
 
 (** *** Multiplication, division, modulus *)
 
-Definition sem_mul (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
+Definition sem_mul (v1:val) (t1:type) (v2: val) (t2:type) (m:mem) : option val :=
   sem_binarith
     (fun sg n1 n2 => Some(Vint(Int.mul n1 n2)))
     (fun sg n1 n2 => Some(Vlong(Int64.mul n1 n2)))
@@ -776,7 +763,7 @@ Definition sem_mul (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
     (fun n1 n2 => Some(Vsingle(Float32.mul n1 n2)))
     v1 t1 v2 t2 m.
 
-Definition sem_div (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
+Definition sem_div (v1:val) (t1:type) (v2: val) (t2:type) (m:mem) : option val :=
   sem_binarith
     (fun sg n1 n2 =>
       match sg with
@@ -802,7 +789,7 @@ Definition sem_div (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
     (fun n1 n2 => Some(Vsingle(Float32.div n1 n2)))
     v1 t1 v2 t2 m.
 
-Definition sem_mod (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
+Definition sem_mod (v1:val) (t1:type) (v2: val) (t2:type) (m:mem) : option val :=
   sem_binarith
     (fun sg n1 n2 =>
       match sg with
@@ -828,7 +815,7 @@ Definition sem_mod (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
     (fun n1 n2 => None)
     v1 t1 v2 t2 m.
 
-Definition sem_and (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
+Definition sem_and (v1:val) (t1:type) (v2: val) (t2:type) (m:mem) : option val :=
   sem_binarith
     (fun sg n1 n2 => Some(Vint(Int.and n1 n2)))
     (fun sg n1 n2 => Some(Vlong(Int64.and n1 n2)))
@@ -836,7 +823,7 @@ Definition sem_and (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
     (fun n1 n2 => None)
     v1 t1 v2 t2 m.
 
-Definition sem_or (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
+Definition sem_or (v1:val) (t1:type) (v2: val) (t2:type) (m:mem) : option val :=
   sem_binarith
     (fun sg n1 n2 => Some(Vint(Int.or n1 n2)))
     (fun sg n1 n2 => Some(Vlong(Int64.or n1 n2)))
@@ -844,7 +831,7 @@ Definition sem_or (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
     (fun n1 n2 => None)
     v1 t1 v2 t2 m.
 
-Definition sem_xor (v1:val) (t1:type) (v2: val) (t2:type) (m:T) : option val :=
+Definition sem_xor (v1:val) (t1:type) (v2: val) (t2:type) (m:mem) : option val :=
   sem_binarith
     (fun sg n1 n2 => Some(Vint(Int.xor n1 n2)))
     (fun sg n1 n2 => Some(Vlong(Int64.xor n1 n2)))
@@ -944,15 +931,15 @@ Definition classify_cmp (ty1: type) (ty2: type) :=
   | _, _ => cmp_default
   end.
 
-Definition cmp_ptr (m: T) (c: comparison) (v1 v2: val): option val :=
+Definition cmp_ptr (m: mem) (c: comparison) (v1 v2: val): option val :=
   option_map Val.of_bool
    (if Archi.ptr64
-    then Val.cmplu_bool (valid_pointer m) c v1 v2
-    else Val.cmpu_bool (valid_pointer m) c v1 v2).
+    then Val.cmplu_bool (Mem.valid_pointer m) c v1 v2
+    else Val.cmpu_bool (Mem.valid_pointer m) c v1 v2).
 
 Definition sem_cmp (c:comparison)
                   (v1: val) (t1: type) (v2: val) (t2: type)
-                  (m: T): option val :=
+                  (m: mem): option val :=
   match classify_cmp t1 t2 with
   | cmp_case_pp =>
       cmp_ptr m c v1 v2
@@ -1049,7 +1036,7 @@ Definition sem_switch_arg (v: val) (ty: type): option Z :=
 (** * Combined semantics of unary and binary operators *)
 
 Definition sem_unary_operation
-            (op: unary_operation) (v: val) (ty: type) (m: T): option val :=
+            (op: unary_operation) (v: val) (ty: type) (m: mem): option val :=
   match op with
   | Onotbool => sem_notbool v ty m
   | Onotint => sem_notint v ty
@@ -1061,7 +1048,7 @@ Definition sem_binary_operation
     (cenv: composite_env)
     (op: binary_operation)
     (v1: val) (t1: type) (v2: val) (t2:type)
-    (m: T): option val :=
+    (m: mem): option val :=
   match op with
   | Oadd => sem_add cenv v1 t1 v2 t2 m
   | Osub => sem_sub cenv v1 t1 v2 t2 m
@@ -1081,7 +1068,7 @@ Definition sem_binary_operation
   | Oge => sem_cmp Cge v1 t1 v2 t2 m
   end.
 
-Definition sem_incrdecr (cenv: composite_env) (id: incr_or_decr) (v: val) (ty: type) (m: T) :=
+Definition sem_incrdecr (cenv: composite_env) (id: incr_or_decr) (v: val) (ty: type) (m: mem) :=
   match id with
   | Incr => sem_add cenv v ty (Vint Int.one) type_int32s m
   | Decr => sem_sub cenv v ty (Vint Int.one) type_int32s m
@@ -1095,247 +1082,6 @@ Definition incrdecr_type (ty: type) :=
   | Tfloat sz a => Tfloat sz noattr
   | _ => Tvoid
   end.
-
-End WITHSEMCAST.
-
-Global Instance sem_cast_unit: SemCast (fun (_: unit) _ _ => false) := {}.
-
-Global Instance sem_cast_mem `{memory_model_ops: Mem.MemoryModelOps}:
-  SemCast Mem.valid_pointer
-  := {}.
-
-Section WITHMEMORYMODEL.
-Context `{memory_model_prf: Mem.MemoryModel}.
-
-Lemma weak_valid_pointer_eq:
-  weak_valid_pointer = Mem.weak_valid_pointer.
-Proof.
-  reflexivity.
-Qed.
-
-Lemma sem_cast_unit_to_mem (m: mem) (u: unit) v t1 t2 v':
-  sem_cast v t1 t2 u = Some v' ->
-  sem_cast v t1 t2 m = Some v'.
-Proof.
-  unfold sem_cast.
-  destruct (classify_cast t1 t2); auto.
-  destruct v; auto.
-  destruct Archi.ptr64; simpl;
-  congruence.
-Qed.
-
-Lemma bool_val_unit_to_mem (m: mem) (u: unit) v t v':
-  bool_val v t u = Some v' ->
-  bool_val v t m = Some v'.
-Proof.
-  unfold bool_val.
-  destruct (classify_bool t); auto.
-  destruct v; auto.
-  destruct Archi.ptr64; simpl; discriminate.
-Qed.
-
-Lemma sem_notbool_unit_to_mem (m: mem) (u: unit) v ty v':
-  sem_notbool v ty u = Some v' ->
-  sem_notbool v ty m = Some v'.
-Proof.
-  unfold sem_notbool.
-  destruct (bool_val v ty u) eqn:?; simpl; try discriminate. intro A; inv A.
-  erewrite bool_val_unit_to_mem; simpl; eauto.
-Qed.
-
-Lemma sem_binarith_unit_to_mem
-      (m: mem) (u: unit)
-      sem_int sem_long sem_float sem_single
-      v1 t1 v2 t2
-      v':
-  sem_binarith sem_int sem_long sem_float sem_single v1 t1 v2 t2 u = Some v' ->
-  sem_binarith sem_int sem_long sem_float sem_single v1 t1 v2 t2 m = Some v'.
-Proof.
-  unfold sem_binarith.
-  destruct (sem_cast v1 t1 _ u) eqn:CAST1; [ | discriminate ].
-  apply (sem_cast_unit_to_mem m) in CAST1.
-  rewrite CAST1; clear CAST1.
-  destruct (sem_cast v2 t2 _ u) eqn:CAST2; [ | discriminate ].
-  apply (sem_cast_unit_to_mem m) in CAST2.
-  rewrite CAST2; clear CAST2.
-  auto.
-Qed.
-
-Lemma sem_add_unit_to_mem
-      (m: mem) (u: unit)
-      cenv v1 t1 v2 t2 v':
-  sem_add cenv v1 t1 v2 t2 u = Some v' ->
-  sem_add cenv v1 t1 v2 t2 m = Some v'.
-Proof.
-  unfold sem_add.
-  destruct (classify_add t1 t2); auto.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_sub_unit_to_mem
-      (m: mem) (u: unit)
-      cenv v1 t1 v2 t2 v':
-  sem_sub cenv v1 t1 v2 t2 u = Some v' ->
-  sem_sub cenv v1 t1 v2 t2 m = Some v'.
-Proof.
-  unfold sem_sub.
-  destruct (classify_sub t1 t2); auto.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_mul_unit_to_mem
-      (m: mem) (u: unit)
-      v1 t1 v2 t2 v':
-  sem_mul v1 t1 v2 t2 u = Some v' ->
-  sem_mul v1 t1 v2 t2 m = Some v'.
-Proof.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_div_unit_to_mem
-      (m: mem) (u: unit)
-      v1 t1 v2 t2 v':
-  sem_div v1 t1 v2 t2 u = Some v' ->
-  sem_div v1 t1 v2 t2 m = Some v'.
-Proof.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_mod_unit_to_mem
-      (m: mem) (u: unit)
-      v1 t1 v2 t2 v':
-  sem_mod v1 t1 v2 t2 u = Some v' ->
-  sem_mod v1 t1 v2 t2 m = Some v'.
-Proof.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_and_unit_to_mem
-      (m: mem) (u: unit)
-      v1 t1 v2 t2 v':
-  sem_and v1 t1 v2 t2 u = Some v' ->
-  sem_and v1 t1 v2 t2 m = Some v'.
-Proof.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_or_unit_to_mem
-      (m: mem) (u: unit)
-      v1 t1 v2 t2 v':
-  sem_or v1 t1 v2 t2 u = Some v' ->
-  sem_or v1 t1 v2 t2 m = Some v'.
-Proof.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_xor_unit_to_mem
-      (m: mem) (u: unit)
-      v1 t1 v2 t2 v':
-  sem_xor v1 t1 v2 t2 u = Some v' ->
-  sem_xor v1 t1 v2 t2 m = Some v'.
-Proof.
-  apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma option_of_bool_cmpu_unit_to_mem
-      (m: mem)
-      c v1 v2 v':
-  option_map Val.of_bool
-             (Val.cmpu_bool (fun (_ : block) (_ : Z) => false) c v1 v2) =
-  Some v' ->
-  option_map Val.of_bool (Val.cmpu_bool (Mem.valid_pointer m) c v1 v2) =
-  Some v'.
-Proof.
-  destruct c; destruct v1; destruct v2; simpl; try discriminate; auto;
-  rewrite andb_comm; simpl; try discriminate;
-  destruct (eq_block _ _); discriminate.
-Qed.
-
-
-Lemma option_of_bool_cmplu_unit_to_mem
-      (m: mem)
-      c v1 v2 v':
-  option_map Val.of_bool
-             (Val.cmplu_bool (fun (_ : block) (_ : Z) => false) c v1 v2) =
-  Some v' ->
-  option_map Val.of_bool (Val.cmplu_bool (Mem.valid_pointer m) c v1 v2) =
-  Some v'.
-Proof.
-  destruct c; destruct v1; destruct v2; simpl; try discriminate; auto;
-  rewrite andb_comm; simpl; try discriminate;
-  destruct (eq_block _ _); discriminate.
-Qed.
-
-Lemma cmp_ptr_unit_to_mem:
-  forall u m c v1 v2 v',
-    cmp_ptr (T := unit) (valid_pointer := fun _ _ _ => false) u c v1 v2 = Some v' ->
-    cmp_ptr (T := mem) (valid_pointer := Mem.valid_pointer) m c v1 v2 = Some v'.
-Proof.
-  unfold cmp_ptr. intros u m c v1 v2 v'.
-  destruct Archi.ptr64.
-  apply option_of_bool_cmplu_unit_to_mem.
-  apply option_of_bool_cmpu_unit_to_mem.
-Qed.
-
-Lemma sem_cmp_unit_to_mem
-      (m: mem) (u: unit)
-      c
-      v1 t1 v2 t2
-      v':
-  sem_cmp c v1 t1 v2 t2 u = Some v' ->
-  sem_cmp c v1 t1 v2 t2 m = Some v'.
-Proof.
-  unfold sem_cmp.
-  destruct (classify_cmp t1 t2). 
-  + apply cmp_ptr_unit_to_mem.
-  + destruct v2; try congruence.
-    apply cmp_ptr_unit_to_mem.
-    destruct Archi.ptr64; auto; apply cmp_ptr_unit_to_mem.
-  + destruct v1; auto; apply cmp_ptr_unit_to_mem.
-  + destruct v2; auto; apply cmp_ptr_unit_to_mem.
-  + destruct v1; auto; apply cmp_ptr_unit_to_mem.
-  + apply sem_binarith_unit_to_mem.
-Qed.
-
-Lemma sem_unary_operation_unit_to_mem
-      (m: mem) (u: unit)
-      op v ty v':
-  sem_unary_operation op v ty u = Some v' ->
-  sem_unary_operation op v ty m = Some v'.
-Proof.
-  unfold sem_unary_operation.
-  destruct op; auto.
-  apply sem_notbool_unit_to_mem.
-Qed.
-
-Lemma sem_binary_operation_unit_to_mem
-      (m: mem) (u: unit)
-      cenv op v1 t1 v2 t2 v':
-  sem_binary_operation cenv op v1 t1 v2 t2 u = Some v' ->
-  sem_binary_operation cenv op v1 t1 v2 t2 m = Some v'.
-Proof.
-  unfold sem_binary_operation.
-  destruct op; eauto using sem_cmp_unit_to_mem.
-  + apply sem_add_unit_to_mem.
-  + apply sem_sub_unit_to_mem.
-  + apply sem_mul_unit_to_mem.
-  + apply sem_div_unit_to_mem.
-  + apply sem_mod_unit_to_mem.
-  + apply sem_and_unit_to_mem.
-  + apply sem_or_unit_to_mem.
-  + apply sem_xor_unit_to_mem.
-Qed.
-
-Lemma sem_incrdecr_unit_to_mem
-      (m: mem) (u: unit)
-      cenv id v ty v':
-  sem_incrdecr cenv id v ty u = Some v' ->
-  sem_incrdecr cenv id v ty m = Some v'.
-Proof.
-  destruct id.
-  + apply sem_add_unit_to_mem.
-  + apply sem_sub_unit_to_mem.
-Qed.
 
 (** * Compatibility with extensions and injections *)
 
@@ -1403,16 +1149,13 @@ Lemma sem_cast_inj:
   Val.inject f v1 tv1 ->
   exists tv, sem_cast tv1 ty1 ty m'= Some tv /\ Val.inject f v tv.
 Proof.
-  unfold sem_cast; intros v1 ty1 ty v tv1 SC VINJ;
-    destruct (classify_cast ty1 ty); inv VINJ; TrivialInject.
-  - econstructor; eauto.
-  - rewrite weak_valid_pointer_eq in * |- *.
-    erewrite weak_valid_pointer_inj by eauto. TrivialInject. 
-  - rewrite weak_valid_pointer_eq in * |- *.
-    erewrite weak_valid_pointer_inj by eauto. TrivialInject. 
-  - destruct (ident_eq id1 id2); TrivialInject. econstructor; eauto.
-  - destruct (ident_eq id1 id2); TrivialInject. econstructor; eauto.
-  - econstructor; eauto.
+  unfold sem_cast; intros; destruct (classify_cast ty1 ty); inv H0; TrivialInject.
+- econstructor; eauto.
+- erewrite weak_valid_pointer_inj by eauto. TrivialInject. 
+- erewrite weak_valid_pointer_inj by eauto. TrivialInject. 
+- destruct (ident_eq id1 id2); TrivialInject. econstructor; eauto.
+- destruct (ident_eq id1 id2); TrivialInject. econstructor; eauto.
+- econstructor; eauto.
 Qed.
 
 Lemma bool_val_inj:
@@ -1422,7 +1165,6 @@ Lemma bool_val_inj:
   bool_val tv ty m' = Some b.
 Proof.
   unfold bool_val; intros.
-  rewrite weak_valid_pointer_eq in * |- *.
   destruct (classify_bool ty); inv H0; try congruence.
   destruct Archi.ptr64; try discriminate.
   destruct (Mem.weak_valid_pointer m b1 (Ptrofs.unsigned ofs1)) eqn:VP; inv H.
@@ -1438,8 +1180,7 @@ Lemma sem_unary_operation_inj:
   Val.inject f v1 tv1 ->
   exists tv, sem_unary_operation op tv1 ty m' = Some tv /\ Val.inject f v tv.
 Proof.
-  unfold sem_unary_operation; intros.
-  destruct op; try rewrite weak_valid_pointer_eq in * |- *.
+  unfold sem_unary_operation; intros. destruct op.
 - (* notbool *)
   unfold sem_notbool in *. destruct (bool_val v1 ty m) as [b|] eqn:BV; simpl in H; inv H.
   erewrite bool_val_inj by eauto. simpl. TrivialInject.
@@ -1499,10 +1240,10 @@ Qed.
 
 Remark sem_cmp_ptr_inj:
   forall c v1 v2 v tv1 tv2,
-  cmp_ptr (valid_pointer := Mem.valid_pointer) m c v1 v2 = Some v ->
+  cmp_ptr m c v1 v2 = Some v ->
   Val.inject f v1 tv1 ->
   Val.inject f v2 tv2 ->
-  exists tv, cmp_ptr (valid_pointer := Mem.valid_pointer) m' c tv1 tv2 = Some tv /\ Val.inject f v tv.
+  exists tv, cmp_ptr m' c tv1 tv2 = Some tv /\ Val.inject f v tv.
 Proof.
   unfold cmp_ptr; intros. 
   remember (if Archi.ptr64
@@ -1697,8 +1438,7 @@ Lemma cast_bool_bool_val:
     unfold classify_bool; destruct t; simpl; auto. destruct i; auto.
   }
   unfold bool_val. rewrite A.
-  unfold sem_cast, classify_cast; remember Archi.ptr64 as ptr64; destruct t; simpl; auto; destruct v; auto;
-    try rewrite weak_valid_pointer_eq in * |- *.
+  unfold sem_cast, classify_cast; remember Archi.ptr64 as ptr64; destruct t; simpl; auto; destruct v; auto.
   destruct (Int.eq i0 Int.zero); auto.
   destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i0)); auto.
   destruct (Int64.eq i Int64.zero); auto.
@@ -1839,8 +1579,6 @@ Lemma cast_idempotent:
 Proof.
   intros. apply cast_val_casted. eapply cast_val_is_casted; eauto.
 Qed.
-
-End WITHMEMORYMODEL.
 
 (** Relation with the arithmetic conversions of ISO C99, section 6.3.1 *)
 

@@ -116,7 +116,7 @@ Inductive stackframe : Type :=
              (bb: bblock),      (**r continuation in calling function *)
       stackframe.
 
-Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
+Inductive state : Type :=
   | State:
       forall (stack: list stackframe) (**r call stack *)
              (f: function)            (**r function currently executing *)
@@ -145,9 +145,6 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps} : Type :=
              (m: mem),                (**r memory state *)
       state.
 
-
-Section WITHEXTERNALCALLSOPS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -235,9 +232,8 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
-      forall BUILTIN_ENABLED : builtin_enabled ef,
-        step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
-             t (Block s f sp bb rs' m')
+      step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
+         t (Block s f sp bb rs' m')
   | exec_Lbranch: forall s f sp pc bb rs m,
       step (Block s f sp (Lbranch pc :: bb) rs m)
         E0 (State s f sp pc rs m)
@@ -295,8 +291,6 @@ Inductive final_state: state -> int -> Prop :=
 
 Definition semantics (p: program) :=
   Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
-
-End WITHEXTERNALCALLSOPS.
 
 (** * Operations over LTL *)
 

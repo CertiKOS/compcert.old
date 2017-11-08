@@ -25,8 +25,6 @@ Local Open Scope string_scope.
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
 Section CMCONSTR.
-Context mem `{external_calls_prf: ExternalCalls mem}.
-Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: program.
 Variable hf: helper_functions.
@@ -333,7 +331,7 @@ Proof.
   { intros. replace (Ptrofs.repr n) with (Ptrofs.of_int64 (Int64.repr n)) by auto with ptrofs.
     apply Genv.shift_symbol_address_64; auto. }
   unfold addl. destruct Archi.splitlong eqn:SL.
-  apply SplitLongproof.eval_addl. eauto. apply Archi.splitlong_ptr32; auto.
+  apply SplitLongproof.eval_addl. apply Archi.splitlong_ptr32; auto.
   red; intros; destruct (addl_match a b); InvEval.
 - rewrite Val.addl_commut. apply eval_addlimm; auto.
 - apply eval_addlimm; auto.
@@ -355,7 +353,7 @@ Qed.
 Theorem eval_subl: binary_constructor_sound subl Val.subl.
 Proof.
   unfold subl. destruct Archi.splitlong eqn:SL.
-  apply SplitLongproof.eval_subl. eauto. apply Archi.splitlong_ptr32; auto.
+  apply SplitLongproof.eval_subl. apply Archi.splitlong_ptr32; auto.
   red; intros; destruct (subl_match a b); InvEval.
 - rewrite Val.subl_addl_opp. apply eval_addlimm; auto.
 - subst. rewrite Val.subl_addl_l. rewrite Val.subl_addl_r.

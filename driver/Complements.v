@@ -38,12 +38,6 @@ Require Import Errors.
   First, every behavior of the generated assembly code is matched by
   a behavior of the source C code. *)
 
-Section WITHEXTERNALCALLS.
-Local Existing Instance Events.symbols_inject_instance.
-Context `{external_calls_prf: Events.ExternalCalls (symbols_inject_instance := Events.symbols_inject_instance) }.
-Context {i64_helpers_correct_prf: SplitLongproof.I64HelpersCorrect mem}.
-Context `{memory_model_x_prf: !Unusedglobproof.Mem.MemoryModelX mem}.
-
 Theorem transf_c_program_preservation:
   forall p tp beh,
   transf_c_program p = OK tp ->
@@ -91,13 +85,13 @@ Proof.
   intuition auto.
   eapply forward_simulation_behavior_improves; eauto.
     apply (proj1 (cstrategy_semantic_preservation _ _ MATCH)).
-  exploit @backward_simulation_behavior_improves.
+  exploit backward_simulation_behavior_improves.
     apply (proj2 (cstrategy_semantic_preservation _ _ MATCH)).
     eauto.
   intros [beh1 [A B]]. exists beh1; split; auto. rewrite atomic_behaviors; auto.
   eapply forward_simulation_same_safe_behavior; eauto.
     apply (proj1 (cstrategy_semantic_preservation _ _ MATCH)).
-  exploit @backward_simulation_same_safe_behavior.
+  exploit backward_simulation_same_safe_behavior.
     apply (proj2 (cstrategy_semantic_preservation _ _ MATCH)).
     intros. rewrite <- atomic_behaviors in H2; eauto. eauto.
     intros. rewrite atomic_behaviors; auto.
@@ -140,7 +134,7 @@ Qed.
 
 Section SPECS_PRESERVED.
 
-Variable spec: program_behavior int -> Prop.
+Variable spec: program_behavior -> Prop.
 
 Hypothesis spec_stable:
   forall beh1 beh2, behavior_improves beh1 beh2 -> spec beh1 -> spec beh2.
@@ -163,7 +157,7 @@ End SPECS_PRESERVED.
 
 Section SAFETY_PRESERVED.
 
-Variable spec: program_behavior int -> Prop.
+Variable spec: program_behavior -> Prop.
 
 Hypothesis spec_safety:
   forall beh, spec beh -> not_wrong beh.
@@ -189,7 +183,7 @@ Section LIVENESS_PRESERVED.
 
 Variable spec: trace -> Prop.
 
-Definition liveness_spec_satisfied {RETVAL: Type} (b: program_behavior RETVAL) : Prop :=
+Definition liveness_spec_satisfied (b: program_behavior) : Prop :=
   exists t, behavior_prefix t b /\ spec t.
 
 Theorem transf_c_program_preserves_liveness_spec:
@@ -210,4 +204,3 @@ Qed.
 
 End LIVENESS_PRESERVED.
 
-End WITHEXTERNALCALLS.

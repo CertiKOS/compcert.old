@@ -23,22 +23,15 @@ Local Open Scope string_scope.
 
 (** * Axiomatization of the helper functions *)
 
-Definition external_implements
-           `{external_calls_ops: ExternalCallsOps}
-           (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
+Definition external_implements (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
   forall F V (ge: Genv.t F V) m,
   external_call (EF_runtime name sg) ge vargs m E0 vres m.
 
-Definition builtin_implements
-           `{external_calls_ops: ExternalCallsOps}
-           (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
+Definition builtin_implements (name: string) (sg: signature) (vargs: list val) (vres: val) : Prop :=
   forall F V (ge: Genv.t F V) m,
   external_call (EF_builtin name sg) ge vargs m E0 vres m.
 
-Class I64HelpersCorrect mem
-      `{external_calls_ops: ExternalCallsOps mem} : Prop :=
-  {
-    i64_helpers_correct :
+Axiom i64_helpers_correct :
     (forall x z, Val.longoffloat x = Some z -> external_implements "__i64_dtos" sig_f_l (x::nil) z)
  /\ (forall x z, Val.longuoffloat x = Some z -> external_implements "__i64_dtou" sig_f_l (x::nil) z)
  /\ (forall x z, Val.floatoflong x = Some z -> external_implements "__i64_stod" sig_l_f (x::nil) z)
@@ -57,8 +50,7 @@ Class I64HelpersCorrect mem
  /\ (forall x y, external_implements "__i64_shr" sig_li_l (x::y::nil) (Val.shrlu x y))
  /\ (forall x y, external_implements "__i64_sar" sig_li_l (x::y::nil) (Val.shrl x y))
  /\ (forall x y, external_implements "__i64_umulh" sig_ll_l (x::y::nil) (Val.mullhu x y))
- /\ (forall x y, external_implements "__i64_smulh" sig_ll_l (x::y::nil) (Val.mullhs x y))
-}.
+ /\ (forall x y, external_implements "__i64_smulh" sig_ll_l (x::y::nil) (Val.mullhs x y)).
 
 Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: ident) (name: string) (sg: signature) : Prop :=
   (prog_defmap p)!id = Some (Gfun (External (EF_runtime name sg))).
@@ -83,8 +75,6 @@ Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) 
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
 Section CMCONSTR.
-Context mem `{external_calls_prf: ExternalCalls mem}.
-Context `{i64_helpers_correct_prf: !I64HelpersCorrect mem}.
 
 Variable prog: program.
 Variable hf: helper_functions.
@@ -138,7 +128,6 @@ Remark eval_builtin_1:
   eval_expr ge sp e m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor. apply H0.
-  auto.
 Qed.
 
 Remark eval_builtin_2:
@@ -149,7 +138,6 @@ Remark eval_builtin_2:
   eval_expr ge sp e m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor. apply H1.
-  auto.
 Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=

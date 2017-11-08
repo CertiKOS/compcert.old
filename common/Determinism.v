@@ -172,7 +172,7 @@ Ltac possibleTraceInv :=
   | _ => idtac
   end.
 
-Definition possible_behavior {RETVAL: Type} (w: world) (b: program_behavior RETVAL) : Prop :=
+Definition possible_behavior (w: world) (b: program_behavior) : Prop :=
   match b with
   | Terminates t r => exists w', possible_trace w t w'
   | Diverges t => exists w', possible_trace w t w'
@@ -196,7 +196,7 @@ Qed.
 
 (** * Definition and properties of deterministic semantics *)
 
-Record sem_deterministic {RETVAL: Type} (L: semantics RETVAL) := mk_deterministic {
+Record sem_deterministic (L: semantics) := mk_deterministic {
   det_step: forall s0 t1 s1 t2 s2,
     Step L s0 t1 s1 -> Step L s0 t2 s2 -> s1 = s2 /\ t1 = t2;
   det_initial_state: forall s1 s2,
@@ -209,8 +209,7 @@ Record sem_deterministic {RETVAL: Type} (L: semantics RETVAL) := mk_deterministi
 
 Section DETERM_SEM.
 
-Context {RETVAL: Type}.
-Variable L: semantics RETVAL.
+Variable L: semantics.
 Hypothesis DET: sem_deterministic L.
 
 Ltac use_step_deterministic :=
@@ -424,7 +423,7 @@ Qed.
 
 (** Determinism for program executions *)
 
-Definition same_behaviors {RETVAL: Type} (beh1 beh2: program_behavior RETVAL) : Prop :=
+Definition same_behaviors (beh1 beh2: program_behavior) : Prop :=
   match beh1, beh2 with
   | Terminates t1 r1, Terminates t2 r2 => t1 = t2 /\ r1 = r2
   | Diverges t1, Diverges t2 => t1 = t2
@@ -506,16 +505,14 @@ End DETERM_SEM.
 
 Section WORLD_SEM.
 
-Context {RETVAL: Type}.
-Variable L: semantics RETVAL.
+Variable L: semantics.
 Variable initial_world: world.
 
 Notation "s #1" := (fst s) (at level 9, format "s '#1'") : pair_scope.
 Notation "s #2" := (snd s) (at level 9, format "s '#2'") : pair_scope.
 Local Open Scope pair_scope.
 
-Definition world_sem : semantics RETVAL := @Semantics_gen
-  _
+Definition world_sem : semantics := @Semantics_gen
   (state L * world)%type
   (genvtype L)
   (fun ge s t s' => step L ge s#1 t s'#1 /\ possible_trace s#2 t s'#2)

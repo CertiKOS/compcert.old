@@ -29,7 +29,6 @@ Require Csyntax.
 Require Ctyping.
 Require Clight.
 Require Compiler.
-Require Cexecimpl.
 Require Parser.
 Require Initializers.
 Require Int31.
@@ -55,7 +54,7 @@ Extraction Inline DecidableClass.Decidable_witness DecidableClass.decide
 Extraction Inline Wfsimpl.Fix Wfsimpl.Fixm.
 
 (* Memory - work around an extraction bug. *)
-Extraction NoInline Memimpl.Mem.valid_pointer.
+Extraction NoInline Memory.Mem.valid_pointer.
 
 (* Errors *)
 Extraction Inline Errors.bind Errors.bind2.
@@ -141,9 +140,6 @@ Extract Constant Int31.compare31 => "Camlcoq.Int31.compare".
 Extract Constant Int31.On => "0".
 Extract Constant Int31.In => "1".
 
-(* Cexecimpl *)
-Extract Constant Cexecimpl.do_external_function => "InterpExternals.do_external_function".
-
 (* Processor-specific extraction directives *)
 
 Load extractionMachdep.
@@ -167,8 +163,7 @@ Cd "extraction".
 
 Separate Extraction
    Compiler.transf_c_program Compiler.transf_cminor_program
-   Cexecimpl.do_initial_state Cexecimpl.do_step Cexecimpl.at_final_state
-   Cexecimpl.step_expr Cexecimpl.init_mem Cexecimpl.state
+   Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
    Ctypes.merge_attributes Ctypes.remove_attributes Ctypes.build_composite_env
    Initializers.transl_init Initializers.constval
    Csyntax.Eindex Csyntax.Epreincr

@@ -139,3 +139,4 @@ Definition transform_program (p: program) : res program :=
       else
         Error (msg "Unusedglob: reference to undefined global")
   end.
+

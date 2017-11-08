@@ -32,7 +32,6 @@ Proof.
 Qed.
 
 Section TRANSLATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: Csharpminor.program.
 Variable tprog: program.
@@ -115,8 +114,7 @@ Proof.
   induction fbl; simpl; intros until p.
   congruence.
   destruct a as [[b' lo] hi]. case_eq (Mem.free m b' lo hi); try congruence.
-  intros.
-  eapply IHfbl in H0; eauto. eapply Mem.perm_free_3; eauto.
+  intros. eauto with mem.
 Qed.
 
 Lemma nextblock_freelist:
@@ -143,7 +141,6 @@ Proof.
   caseEq (Mem.free m b' lo' hi'); try congruence.
   intros m1 FREE1 FREE2.
   destruct H0. inv H.
-  destruct external_calls_prf.
   eauto with mem.
   red; intros. eapply Mem.perm_free_3; eauto. exploit IHl; eauto.
 Qed.
@@ -2017,26 +2014,22 @@ Proof.
 
 (* skip seq *)
   monadInv TR. left.
-  revert enable_builtins_instance external_calls_prf.
-  dependent induction MK; subst.
+  dependent induction MK.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto.
   econstructor; split.
   apply plus_one. constructor.
   eapply match_state_seq; eauto.
-  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split. eapply plus_left. constructor. apply plus_star; eauto. traceEq.
   auto.
 (* skip block *)
   monadInv TR. left.
-  revert enable_builtins_instance external_calls_prf.
-  dependent induction MK; subst.
+  dependent induction MK.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto.
-  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split. eapply plus_left. constructor. apply plus_star; eauto. traceEq.
   auto.
@@ -2101,7 +2094,6 @@ Proof.
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  auto.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).
@@ -2149,39 +2141,32 @@ Opaque PTree.set.
 
 (* exit seq *)
   monadInv TR. left.
-  revert enable_builtins_instance external_calls_prf.
-  dependent induction MK; subst.
+  dependent induction MK.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto. simpl. auto.
-  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. eapply plus_left. constructor. apply plus_star; eauto. traceEq.
-  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. eapply plus_left.
   simpl. constructor. apply plus_star; eauto. traceEq.
 
 (* exit block 0 *)
   monadInv TR. left.
-  revert enable_builtins_instance external_calls_prf.
-  dependent induction MK; subst.
+  dependent induction MK.
   econstructor; split.
   simpl. apply plus_one. constructor.
   econstructor; eauto.
-  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. simpl.
   eapply plus_left. constructor. apply plus_star; eauto. traceEq.
 
 (* exit block n+1 *)
   monadInv TR. left.
-  revert enable_builtins_instance external_calls_prf.
-  dependent induction MK; subst.
+  dependent induction MK.
   econstructor; split.
   simpl. apply plus_one. constructor.
   econstructor; eauto. auto.
-  intros.
   exploit IHMK; eauto. intros [T2 [A B]].
   exists T2; split; auto. simpl.
   eapply plus_left. constructor. apply plus_star; eauto. traceEq.

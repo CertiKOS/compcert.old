@@ -50,8 +50,6 @@ Definition env := PTree.t (block * type). (* map variable -> location & type *)
 
 Definition empty_env: env := (PTree.empty (block * type)).
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Section SEMANTICS.
 
@@ -209,8 +207,7 @@ Variable e: env.
 
 (** Head reduction for l-values. *)
 
-Inductive lred {memory_model_ops: Mem.MemoryModelOps mem}
-: expr -> mem -> expr -> mem -> Prop :=
+Inductive lred: expr -> mem -> expr -> mem -> Prop :=
   | red_var_local: forall x ty m b,
       e!x = Some(b, ty) ->
       lred (Evar x ty) m
@@ -312,7 +309,6 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
       external_call ef ge vargs m t vres m' ->
-      forall BUILTIN_ENABLED: builtin_enabled ef,
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 
@@ -505,7 +501,7 @@ Definition is_call_cont (k: cont) : Prop :=
   the symmetrical transition from a function back to its caller
   ([Returnstate]). *)
 
-Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
+Inductive state: Type :=
   | State                               (**r execution of a statement *)
       (f: function)
       (s: statement)
@@ -752,7 +748,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (State f f.(fn_body) k e m2)
 
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef  ge vargs m t vres m' ->
       sstep (Callstate (External ef targs tres cc) vargs k m)
           t (Returnstate vres k m')
 
@@ -808,5 +804,3 @@ Proof.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.
-
-End WITHEXTERNALCALLS.

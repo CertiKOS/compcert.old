@@ -68,9 +68,6 @@ Proof.
   reflexivity.
 Qed.
 
-Section WITHMEMORYMODELOPS.
-Context  `{memory_model_ops: Mem.MemoryModelOps}.
-
 Inductive invar: state -> state -> Prop :=
 | invar_state
     stackh fh sph ch rsh mh
@@ -108,8 +105,6 @@ Inductive invar: state -> state -> Prop :=
       (Returnstate stackl rsl ml)
 .
 
-Context `{memory_model: !Mem.MemoryModel mem}.
-
 Global Instance invar_refl: Reflexive invar.
 Proof.
   red.
@@ -127,11 +122,6 @@ Proof.
     apply Mem.extends_refl.
   }
 Qed.
-
-End WITHMEMORYMODELOPS.
-
-Section WITHCONFIG.
-Context `{external_calls_prf: ExternalCalls}.
 
 Record state: Type := State
   {
@@ -226,5 +216,3 @@ reflexivity.
 eauto.
 reflexivity.
 Defined.
-
-End WITHCONFIG.

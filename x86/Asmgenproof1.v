@@ -83,10 +83,7 @@ Ltac Simplifs := repeat Simplif.
 
 (** * Correctness of x86-64 constructor functions *)
 
-Local Existing Instance mem_accessors_default.
-
 Section CONSTRUCTORS.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable fn: function.
@@ -263,9 +260,9 @@ Proof.
     rewrite Int64.add_zero; auto.
     rewrite Int64.add_zero; auto. }
   exists rs5; split.
-  eapply exec_straight_trans.
-  eapply exec_straight_two; reflexivity.
-  eapply exec_straight_two.
+  eapply exec_straight_trans with (rs2 := rs3).
+  eapply exec_straight_two with (rs2 := rs2); reflexivity.
+  eapply exec_straight_two with (rs2 := rs4).
   simpl. rewrite X. reflexivity. reflexivity. reflexivity. reflexivity.
   split. unfold rs5; Simplifs.
   intros. unfold rs5; Simplifs. unfold rs4; Simplifs. unfold rs3; Simplifs. unfold rs2; Simplifs.
@@ -1264,7 +1261,7 @@ Transparent destroyed_by_op.
   intros (nh & nl & d & q & r & A & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- (Vint nh))).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). simpl. rewrite A. reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). simpl. rewrite A. reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1276,7 +1273,7 @@ Transparent destroyed_by_op.
   intros (n & d & q & r & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- Vzero)).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1288,7 +1285,7 @@ Transparent destroyed_by_op.
   intros (nh & nl & d & q & r & A & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- (Vint nh))).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). simpl. rewrite A. reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). simpl. rewrite A. reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1300,7 +1297,7 @@ Transparent destroyed_by_op.
   intros (n & d & q & r & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- Vzero)).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1321,7 +1318,7 @@ Transparent destroyed_by_op.
   intros (nh & nl & d & q & r & A & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- (Vlong nh))).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). simpl. rewrite A. reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). simpl. rewrite A. reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1333,7 +1330,7 @@ Transparent destroyed_by_op.
   intros (n & d & q & r & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- (Vlong Int64.zero))).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1345,7 +1342,7 @@ Transparent destroyed_by_op.
   intros (nh & nl & d & q & r & A & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- (Vlong nh))).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). simpl. rewrite A. reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). simpl. rewrite A. reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.
@@ -1357,7 +1354,7 @@ Transparent destroyed_by_op.
   intros (n & d & q & r & B & C & D & E & F).
   set (rs1 := nextinstr_nf (rs#RDX <- (Vlong Int64.zero))).
   econstructor; split.
-  eapply exec_straight_two with (rs3 := rs1). reflexivity.
+  eapply exec_straight_two with (rs2 := rs1). reflexivity.
   simpl. change (rs1 RAX) with (rs RAX); rewrite B.
   change (rs1 RCX) with (rs RCX); rewrite C.
   rewrite D. reflexivity. auto. auto.

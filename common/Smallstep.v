@@ -473,16 +473,12 @@ End CLOSURES.
 
 (** The general form of a transition semantics. *)
 
-(** [CompCertX:test-compcert-param-final] We parameterize the semantics
-over the type of final return value. For whole programs, this shall be
-[int]. *)
-
-Record semantics (RETVAL: Type) : Type := Semantics_gen {
+Record semantics : Type := Semantics_gen {
   state: Type;
   genvtype: Type;
   step : genvtype -> state -> trace -> state -> Prop;
   initial_state: state -> Prop;
-  final_state: state -> RETVAL -> Prop;
+  final_state: state -> int -> Prop;
   globalenv: genvtype;
   symbolenv: Senv.t
 }.
@@ -490,10 +486,9 @@ Record semantics (RETVAL: Type) : Type := Semantics_gen {
 (** The form used in earlier CompCert versions, for backward compatibility. *)
 
 Definition Semantics {state funtype vartype: Type}
-                     {RETVAL: Type}
                      (step: Genv.t funtype vartype -> state -> trace -> state -> Prop)
                      (initial_state: state -> Prop)
-                     (final_state: state -> RETVAL -> Prop)
+                     (final_state: state -> int -> Prop)
                      (globalenv: Genv.t funtype vartype) :=
   {| state := state;
      genvtype := Genv.t funtype vartype;
@@ -518,7 +513,7 @@ Open Scope smallstep_scope.
 
 (** The general form of a forward simulation. *)
 
-Record fsim_properties {RETVAL: Type} (L1 L2: semantics RETVAL) (index: Type)
+Record fsim_properties (L1 L2: semantics) (index: Type)
                        (order: index -> index -> Prop)
                        (match_states: index -> state L1 -> state L2 -> Prop) : Prop := {
     fsim_order_wf: well_founded order;
@@ -538,28 +533,26 @@ Record fsim_properties {RETVAL: Type} (L1 L2: semantics RETVAL) (index: Type)
       forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id
   }.
 
-Arguments fsim_properties {_} _ _ _ _ _.
+Arguments fsim_properties: clear implicits.
 
-Inductive forward_simulation {RETVAL: Type} (L1 L2: semantics RETVAL) : Prop :=
+Inductive forward_simulation (L1 L2: semantics) : Prop :=
   Forward_simulation (index: Type)
                      (order: index -> index -> Prop)
                      (match_states: index -> state L1 -> state L2 -> Prop)
                      (props: fsim_properties L1 L2 index order match_states).
 
-Arguments Forward_simulation {RETVAL L1 L2 index} order match_states props.
+Arguments Forward_simulation {L1 L2 index} order match_states props.
 
 (** An alternate form of the simulation diagram *)
 
 Lemma fsim_simulation':
-  forall RETVAL: Type,
-  forall L1 L2: _ RETVAL,
-  forall index order match_states, fsim_properties L1 L2 index order match_states ->
+  forall L1 L2 index order match_states, fsim_properties L1 L2 index order match_states ->
   forall i s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states i s1 s2 ->
   (exists i', exists s2', Plus L2 s2 t s2' /\ match_states i' s1' s2')
   \/ (exists i', order i' i /\ t = E0 /\ match_states i' s1' s2).
 Proof.
-  intros. exploit @fsim_simulation; eauto.
+  intros. exploit fsim_simulation; eauto.
   intros [i' [s2' [A B]]]. intuition.
   left; exists i'; exists s2'; auto.
   inv H3.
@@ -573,9 +566,8 @@ Qed.
 
 Section FORWARD_SIMU_DIAGRAMS.
 
-Context {RETVAL: Type}.
-Variable L1: semantics RETVAL.
-Variable L2: semantics RETVAL.
+Variable L1: semantics.
+Variable L2: semantics.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
@@ -723,9 +715,7 @@ End FORWARD_SIMU_DIAGRAMS.
 
 Section SIMULATION_SEQUENCES.
 
-Context {RETVAL: Type}.
-Context (L1 L2: semantics RETVAL).
-Context index order match_states (S: fsim_properties L1 L2 index order match_states).
+Context L1 L2 index order match_states (S: fsim_properties L1 L2 index order match_states).
 
 Lemma simulation_star:
   forall s1 t s1', Star L1 s1 t s1' ->
@@ -734,7 +724,7 @@ Lemma simulation_star:
 Proof.
   induction 1; intros.
   exists i; exists s2; split; auto. apply star_refl.
-  exploit @fsim_simulation; eauto. intros [i' [s2' [A B]]].
+  exploit fsim_simulation; eauto. intros [i' [s2' [A B]]].
   exploit IHstar; eauto. intros [i'' [s2'' [C D]]].
   exists i''; exists s2''; split; auto. eapply star_trans; eauto.
   intuition auto. apply plus_star; auto.
@@ -794,10 +784,8 @@ End SIMULATION_SEQUENCES.
 (** ** Composing two forward simulations *)
 
 Lemma compose_forward_simulations:
-  forall {RETVAL: Type},
-  forall L1 L2 L3, forward_simulation (RETVAL := RETVAL) L1 L2 -> forward_simulation L2 L3 -> forward_simulation L1 L3.
+  forall L1 L2 L3, forward_simulation L1 L2 -> forward_simulation L2 L3 -> forward_simulation L1 L3.
 Proof.
-  intro RETVAL.
   intros L1 L2 L3 S12 S23.
   destruct S12 as [index order match_states props].
   destruct S23 as [index' order' match_states' props'].
@@ -822,7 +810,7 @@ Proof.
   intros. destruct H0 as [s3 [A B]]. destruct i as [i2 i1]; simpl in *.
   exploit (fsim_simulation' props); eauto. intros [[i1' [s3' [C D]]] | [i1' [C [D E]]]].
 + (* L2 makes one or several steps. *)
-  exploit @simulation_plus; eauto. intros [[i2' [s2' [P Q]]] | [i2' [P [Q R]]]].
+  exploit simulation_plus; eauto. intros [[i2' [s2' [P Q]]] | [i2' [P [Q R]]]].
 * (* L3 makes one or several steps *)
   exists (i2', i1'); exists s2'; split. auto. exists s3'; auto.
 * (* L3 makes no step *)
@@ -839,10 +827,10 @@ Qed.
 
 (** * Receptiveness and determinacy *)
 
-Definition single_events {RETVAL: Type} (L: semantics RETVAL) : Prop :=
+Definition single_events (L: semantics) : Prop :=
   forall s t s', Step L s t s' -> (length t <= 1)%nat.
 
-Record receptive {RETVAL: Type} (L: semantics RETVAL) : Prop :=
+Record receptive (L: semantics) : Prop :=
   Receptive {
     sr_receptive: forall s t1 s1 t2,
       Step L s t1 s1 -> match_traces (symbolenv L) t1 t2 -> exists s2, Step L s t2 s2;
@@ -850,7 +838,7 @@ Record receptive {RETVAL: Type} (L: semantics RETVAL) : Prop :=
       single_events L
   }.
 
-Record determinate {RETVAL: Type} (L: semantics RETVAL) : Prop :=
+Record determinate (L: semantics) : Prop :=
   Determinate {
     sd_determ: forall s t1 s1 t2 s2,
       Step L s t1 s1 -> Step L s t2 s2 ->
@@ -867,8 +855,7 @@ Record determinate {RETVAL: Type} (L: semantics RETVAL) : Prop :=
 
 Section DETERMINACY.
 
-Context {RETVAL: Type}.
-Variable L: semantics RETVAL.
+Variable L: semantics.
 Hypothesis DET: determinate L.
 
 Lemma sd_determ_1:
@@ -910,15 +897,14 @@ End DETERMINACY.
 
 (** * Backward simulations between two transition semantics. *)
 
-Definition safe {RETVAL: Type} (L: semantics RETVAL) (s: state L) : Prop :=
+Definition safe (L: semantics) (s: state L) : Prop :=
   forall s',
   Star L s E0 s' ->
   (exists r, final_state L s' r)
   \/ (exists t, exists s'', Step L s' t s'').
 
 Lemma star_safe:
-  forall {RETVAL: Type},
-  forall (L: semantics RETVAL) s s',
+  forall (L: semantics) s s',
   Star L s E0 s' -> safe L s -> safe L s'.
 Proof.
   intros; red; intros. apply H0. eapply star_trans; eauto.
@@ -926,8 +912,7 @@ Qed.
 
 (** The general form of a backward simulation. *)
 
-Record bsim_properties {RETVAL: Type}
-                       (L1 L2: semantics RETVAL) (index: Type)
+Record bsim_properties (L1 L2: semantics) (index: Type)
                        (order: index -> index -> Prop)
                        (match_states: index -> state L1 -> state L2 -> Prop) : Prop := {
     bsim_order_wf: well_founded order;
@@ -955,27 +940,26 @@ Record bsim_properties {RETVAL: Type}
       forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id
   }.
 
-Arguments bsim_properties {_} _ _ _ _ _.
+Arguments bsim_properties: clear implicits.
 
-Inductive backward_simulation {RETVAL: Type} (L1 L2: semantics RETVAL) : Prop :=
+Inductive backward_simulation (L1 L2: semantics) : Prop :=
   Backward_simulation (index: Type)
                       (order: index -> index -> Prop)
                       (match_states: index -> state L1 -> state L2 -> Prop)
                       (props: bsim_properties L1 L2 index order match_states).
 
-Arguments Backward_simulation {RETVAL L1 L2 index} order match_states props.
+Arguments Backward_simulation {L1 L2 index} order match_states props.
 
 (** An alternate form of the simulation diagram *)
 
 Lemma bsim_simulation':
-  forall RETVAL: Type,
-  forall (L1 L2: _ RETVAL) index order match_states, bsim_properties L1 L2 index order match_states ->
+  forall L1 L2 index order match_states, bsim_properties L1 L2 index order match_states ->
   forall i s2 t s2', Step L2 s2 t s2' ->
   forall s1, match_states i s1 s2 -> safe L1 s1 ->
   (exists i', exists s1', Plus L1 s1 t s1' /\ match_states i' s1' s2')
   \/ (exists i', order i' i /\ t = E0 /\ match_states i' s1 s2').
 Proof.
-  intros. exploit @bsim_simulation; eauto.
+  intros. exploit bsim_simulation; eauto.
   intros [i' [s1' [A B]]]. intuition.
   left; exists i'; exists s1'; auto.
   inv H4.
@@ -989,9 +973,8 @@ Qed.
 
 Section BACKWARD_SIMU_DIAGRAMS.
 
-Context {RETVAL: Type}.
-Variable L1: semantics RETVAL.
-Variable L2: semantics RETVAL.
+Variable L1: semantics.
+Variable L2: semantics.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
@@ -1043,8 +1026,7 @@ End BACKWARD_SIMU_DIAGRAMS.
 
 Section BACKWARD_SIMULATION_SEQUENCES.
 
-Context {RETVAL: Type}.
-Context (L1 L2: _ RETVAL) index order match_states (S: bsim_properties L1 L2 index order match_states).
+Context L1 L2 index order match_states (S: bsim_properties L1 L2 index order match_states).
 
 Lemma bsim_E0_star:
   forall s2 s2', Star L2 s2 E0 s2' ->
@@ -1055,7 +1037,7 @@ Proof.
 - (* base case *)
   intros. exists i; exists s1; split; auto. apply star_refl.
 - (* inductive case *)
-  intros. exploit @bsim_simulation; eauto. intros [i' [s1' [A B]]].
+  intros. exploit bsim_simulation; eauto. intros [i' [s1' [A B]]].
   assert (Star L1 s0 E0 s1'). intuition. apply plus_star; auto.
   exploit H0. eauto. eapply star_safe; eauto. intros [i'' [s1'' [C D]]].
   exists i''; exists s1''; split; auto. eapply star_trans; eauto.
@@ -1114,10 +1096,9 @@ End BACKWARD_SIMULATION_SEQUENCES.
 
 Section COMPOSE_BACKWARD_SIMULATIONS.
 
-Context {RETVAL: Type}.
-Variable L1: semantics RETVAL.
-Variable L2: semantics RETVAL.
-Variable L3: semantics RETVAL.
+Variable L1: semantics.
+Variable L2: semantics.
+Variable L3: semantics.
 Hypothesis L3_single_events: single_events L3.
 Context index order match_states (S12: bsim_properties L1 L2 index order match_states).
 Context index' order' match_states' (S23: bsim_properties L2 L3 index' order' match_states').
@@ -1163,7 +1144,7 @@ Proof.
   right; split. apply star_refl. left; auto.
   eapply bb_match_at; eauto.
 + (* 1.2 non-silent transitions *)
-  exploit @star_non_E0_split. apply plus_star; eauto. auto.
+  exploit star_non_E0_split. apply plus_star; eauto. auto.
   intros [s2x [s2y [P [Q R]]]].
   exploit (bsim_E0_star S12). eexact P. eauto. auto. intros [i1' [s1x [X Y]]].
   exploit (bsim_simulation' S12). eexact Q. eauto. eapply star_safe; eauto.
@@ -1209,12 +1190,10 @@ Qed.
 End COMPOSE_BACKWARD_SIMULATIONS.
 
 Lemma compose_backward_simulation:
-  forall RETVAL: Type,
-  forall L1 L2 L3: _ RETVAL,
+  forall L1 L2 L3,
   single_events L3 -> backward_simulation L1 L2 -> backward_simulation L2 L3 ->
   backward_simulation L1 L3.
 Proof.
-  intro RETVAL.
   intros L1 L2 L3 L3single S12 S23.
   destruct S12 as [index order match_states props].
   destruct S23 as [index' order' match_states' props'].
@@ -1254,7 +1233,7 @@ Qed.
 
 Section FORWARD_TO_BACKWARD.
 
-Context {RETVAL} (L1 L2: _ RETVAL) index order match_states (FS: fsim_properties L1 L2 index order match_states).
+Context L1 L2 index order match_states (FS: fsim_properties L1 L2 index order match_states).
 Hypothesis L1_receptive: receptive L1.
 Hypothesis L2_determinate: determinate L2.
 
@@ -1335,7 +1314,7 @@ Proof.
     eapply sd_determ_1; eauto.
   destruct (silent_or_not_silent t').
   subst. inv H1.
-  left; intuition. eapply sd_determ; eauto.
+  left; intuition. eapply sd_determ_2; eauto.
   destruct (silent_or_not_silent t'').
   subst. inv H1. elim H2; auto.
   right; intuition.
@@ -1455,7 +1434,7 @@ Proof.
   intros [i''' [s2''' [P Q]]]. inv P.
   (* Exploit determinacy *)
   exploit not_silent_length. eapply (sr_traces L1_receptive); eauto. intros [EQ | EQ].
-  subst t0. simpl in *. exploit @sd_determ_1. eauto. eexact STEP2. eexact H2.
+  subst t0. simpl in *. exploit sd_determ_1. eauto. eexact STEP2. eexact H2.
   intros. elim NOT2. inv H8. auto.
   subst t2. rewrite E0_right in *.
   assert (s4 = s2'). eapply sd_determ_2; eauto. subst s4.
@@ -1484,7 +1463,7 @@ Proof.
   exploit f2b_determinacy_star. eauto. eexact STEP2. auto. apply plus_star; eauto.
   intro R. inv R. congruence.
   exploit not_silent_length. eapply (sr_traces L1_receptive); eauto. intros [EQ | EQ].
-  subst. simpl in *. exploit @sd_determ_1. eauto. eexact STEP2. eexact H2.
+  subst. simpl in *. exploit sd_determ_1. eauto. eexact STEP2. eexact H2.
   intros. elim NOT2. inv H7; auto.
   subst. rewrite E0_right in *.
   assert (s3 = s2'). eapply sd_determ_2; eauto. subst s3.
@@ -1508,12 +1487,10 @@ End FORWARD_TO_BACKWARD.
 (** The backward simulation *)
 
 Lemma forward_to_backward_simulation:
-  forall {RETVAL: Type},
-  forall L1 L2: _ RETVAL,
+  forall L1 L2,
   forward_simulation L1 L2 -> receptive L1 -> determinate L2 ->
   backward_simulation L1 L2.
 Proof.
-  intro RETVAL.
   intros L1 L2 FS L1_receptive L2_determinate.
   destruct FS as [index order match_states FS].
   apply Backward_simulation with f2b_order (f2b_match_states L1 L2 match_states); constructor.
@@ -1528,7 +1505,7 @@ Proof.
   exists (F2BI_after O); exists s1; split; auto. econstructor; eauto.
 - (* final states *)
   intros. inv H.
-  exploit @f2b_progress; eauto. intros TRANS; inv TRANS.
+  exploit f2b_progress; eauto. intros TRANS; inv TRANS.
   assert (r0 = r) by (eapply (sd_final_determ L2_determinate); eauto). subst r0.
   exists s1'; auto.
   inv H4. exploit (sd_final_nostep L2_determinate); eauto. contradiction.
@@ -1536,7 +1513,7 @@ Proof.
   inv H2. exploit (sd_final_nostep L2_determinate); eauto. contradiction.
 - (* progress *)
   intros. inv H.
-  exploit @f2b_progress; eauto. intros TRANS; inv TRANS.
+  exploit f2b_progress; eauto. intros TRANS; inv TRANS.
   left; exists r; auto.
   inv H3. right; econstructor; econstructor; eauto.
   inv H4. congruence. right; econstructor; econstructor; eauto.
@@ -1549,14 +1526,13 @@ Qed.
 
 (** * Transforming a semantics into a single-event, equivalent semantics *)
 
-Definition well_behaved_traces {RETVAL: Type} (L: semantics RETVAL) : Prop :=
+Definition well_behaved_traces (L: semantics) : Prop :=
   forall s t s', Step L s t s' ->
   match t with nil => True | ev :: t' => output_trace t' end.
 
 Section ATOMIC.
 
-Context {RETVAL: Type}.
-Variable L: semantics RETVAL.
+Variable L: semantics.
 
 Hypothesis Lwb: well_behaved_traces L.
 
@@ -1571,7 +1547,7 @@ Inductive atomic_step (ge: genvtype L): (trace * state L) -> trace -> (trace * s
       output_trace (ev :: t) ->
       atomic_step ge (ev :: t, s) (ev :: nil) (t, s).
 
-Definition atomic : semantics RETVAL := {|
+Definition atomic : semantics := {|
   state := (trace * state L)%type;
   genvtype := genvtype L;
   step := atomic_step;
@@ -1588,9 +1564,8 @@ End ATOMIC.
 
 Section FACTOR_FORWARD_SIMULATION.
 
-Context {RETVAL: Type}.
-Variable L1: semantics RETVAL.
-Variable L2: semantics RETVAL.
+Variable L1: semantics.
+Variable L2: semantics.
 Context index order match_states (sim: fsim_properties L1 L2 index order match_states).
 Hypothesis L2single: single_events L2.
 
@@ -1653,12 +1628,10 @@ Qed.
 End FACTOR_FORWARD_SIMULATION.
 
 Theorem factor_forward_simulation:
-  forall {RETVAL: Type},
-  forall L1 L2: _ RETVAL,
+  forall L1 L2,
   forward_simulation L1 L2 -> single_events L2 ->
   forward_simulation (atomic L1) L2.
 Proof.
-  intro RETVAL.
   intros L1 L2 FS L2single.
   destruct FS as [index order match_states sim].
   apply Forward_simulation with order (ffs_match L1 L2 match_states); constructor.
@@ -1682,9 +1655,8 @@ Qed.
 
 Section FACTOR_BACKWARD_SIMULATION.
 
-Context {RETVAL: Type}.
-Variable L1: semantics RETVAL.
-Variable L2: semantics RETVAL.
+Variable L1: semantics.
+Variable L2: semantics.
 Context index order match_states (sim: bsim_properties L1 L2 index order match_states).
 Hypothesis L1single: single_events L1.
 Hypothesis L2wb: well_behaved_traces L2.
@@ -1716,14 +1688,14 @@ Proof.
   intros [i' [s1'' [A B]]].
   assert (C: Star L1 s1 (ev :: t) s1'').
     eapply star_trans. eauto. destruct A as [P | [P Q]]. apply plus_star; eauto. eauto. auto.
-  exploit @star_non_E0_split'; eauto. simpl. intros [s1x [P Q]].
+  exploit star_non_E0_split'; eauto. simpl. intros [s1x [P Q]].
   exists i'; exists s1x; split.
   left; auto.
   econstructor; eauto.
   exploit L2wb; eauto.
 - (* continue step *)
   inv H0. unfold E0 in H8; destruct H8; try congruence.
-  exploit @star_non_E0_split'; eauto. simpl. intros [s1x [P Q]].
+  exploit star_non_E0_split'; eauto. simpl. intros [s1x [P Q]].
   exists i; exists s1x; split. left; auto. econstructor; eauto. simpl in H0; tauto.
 Qed.
 
@@ -1751,12 +1723,10 @@ Qed.
 End FACTOR_BACKWARD_SIMULATION.
 
 Theorem factor_backward_simulation:
-  forall {RETVAL: Type},
-  forall L1 L2: _ RETVAL,
+  forall L1 L2,
   backward_simulation L1 L2 -> single_events L1 -> well_behaved_traces L2 ->
   backward_simulation L1 (atomic L2).
 Proof.
-  intro RETVAL.
   intros L1 L2 BS L1single L2wb.
   destruct BS as [index order match_states sim].
   apply Backward_simulation with order (fbs_match L1 L2 match_states); constructor.
@@ -1783,7 +1753,7 @@ Qed.
 
 (** Receptiveness of [atomic L]. *)
 
-Record strongly_receptive {RETVAL: Type} (L: semantics RETVAL) : Prop :=
+Record strongly_receptive (L: semantics) : Prop :=
   Strongly_receptive {
     ssr_receptive: forall s ev1 t1 s1 ev2,
       Step L s (ev1 :: t1) s1 ->
@@ -1794,8 +1764,7 @@ Record strongly_receptive {RETVAL: Type} (L: semantics RETVAL) : Prop :=
   }.
 
 Theorem atomic_receptive:
-  forall {RETVAL: Type},
-  forall (L: _ RETVAL), strongly_receptive L -> receptive (atomic L).
+  forall L, strongly_receptive L -> receptive (atomic L).
 Proof.
   intros. constructor; intros.
 (* receptive *)
@@ -1805,8 +1774,8 @@ Proof.
   (* start step *)
   assert (exists ev2, t2 = ev2 :: nil). inv H1; econstructor; eauto.
   destruct H0 as [ev2 EQ]; subst t2.
-  exploit @ssr_receptive; eauto. intros [s2 [t2 P]].
-  exploit @ssr_well_behaved. eauto. eexact P. simpl; intros Q.
+  exploit ssr_receptive; eauto. intros [s2 [t2 P]].
+  exploit ssr_well_behaved. eauto. eexact P. simpl; intros Q.
   exists (t2, s2). constructor; auto.
   (* continue step *)
   simpl in H2; destruct H2.
@@ -1820,15 +1789,15 @@ Qed.
 
 (** The general form of a big-step semantics *)
 
-Record bigstep_semantics (RETVAL: Type) : Type :=
+Record bigstep_semantics : Type :=
   Bigstep_semantics {
-    bigstep_terminates: trace -> RETVAL -> Prop;
+    bigstep_terminates: trace -> int -> Prop;
     bigstep_diverges: traceinf -> Prop
   }.
 
 (** Soundness with respect to a small-step semantics *)
 
-Record bigstep_sound {RETVAL: Type} (B: bigstep_semantics RETVAL) (L: semantics RETVAL) : Prop :=
+Record bigstep_sound (B: bigstep_semantics) (L: semantics) : Prop :=
   Bigstep_sound {
     bigstep_terminates_sound:
       forall t r,

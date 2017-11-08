@@ -104,7 +104,6 @@ Ltac Simpl := repeat Simplif.
 (** * Correctness of ARM constructor functions *)
 
 Section CONSTRUCTORS.
-Context `{memory_model_prf: Mem.MemoryModel}.
 
 Variable ge: genv.
 Variable fn: function.

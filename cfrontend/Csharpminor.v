@@ -146,7 +146,7 @@ Inductive cont: Type :=
 
 (** States *)
 
-Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
+Inductive state: Type :=
   | State:                      (**r Execution within a function *)
       forall (f: function)              (**r currently executing function  *)
              (s: stmt)                  (**r statement under consideration *)
@@ -260,9 +260,6 @@ Definition eval_constant (cst: constant) : option val :=
   end.
 
 Definition eval_unop := Cminor.eval_unop.
-
-Section WITHEXTERNALCALLSOPS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Definition eval_binop := Cminor.eval_binop.
 
@@ -396,7 +393,6 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e le m bl vargs ->
       external_call ef ge vargs m t vres m' ->
-      forall BUILTIN_ENABLED: builtin_enabled ef,
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
 
@@ -496,5 +492,3 @@ Inductive final_state: state -> int -> Prop :=
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
-
-End WITHEXTERNALCALLSOPS.

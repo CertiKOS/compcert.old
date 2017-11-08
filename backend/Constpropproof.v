@@ -35,7 +35,6 @@ Qed.
 End WITHROMEMFOR.
 
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: program.
 Variable tprog: program.
@@ -403,7 +402,7 @@ Proof.
      exists v',
         eval_operation ge (Vptr sp0 Ptrofs.zero) op' rs ## args' m = Some v' /\
         Val.lessdef v v').
-  { eapply op_strength_reduction_correct with (ae0 := ae); eauto with va. }
+  { eapply op_strength_reduction_correct with (ae := ae); eauto with va. }
   destruct (op_strength_reduction op args (aregs ae args)) as [op' args'].
   destruct OP as [v' [EV' LD']].
   assert (EV'': exists v'', eval_operation ge (Vptr sp0 Ptrofs.zero) op' rs'##args' m' = Some v'' /\ Val.lessdef v' v'').
@@ -491,7 +490,7 @@ Proof.
   rename pc'0 into pc. TransfInstr; intros.
 Opaque builtin_strength_reduction.
   exploit builtin_strength_reduction_correct; eauto. intros (vargs' & P & Q).
-  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs#r) (fun r => rs'#r)).
+  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)).
     apply REGS. eauto. eexact P.
   intros (vargs'' & U & V).
   exploit external_call_mem_extends; eauto.

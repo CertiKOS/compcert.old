@@ -74,9 +74,7 @@ Proof.
   try contradiction; try discriminate; econstructor; eauto.
 Qed.
 
-
 Section PRESERVATION.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
 
@@ -200,8 +198,6 @@ Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl
            /\ Val.inject j (ls (S sl ofs ty)) v;
   m_footprint := fun b ofs =>
     b = sp /\ pos <= ofs < pos + 4 * bound
-  ;
-  m_invar_weak := false
 |}.
 Next Obligation.
   intuition auto.
@@ -280,11 +276,7 @@ Proof.
   eapply valid_access_location; eauto.
   exists v''; auto.
 + apply (m_invar P) with m; auto.
-  cut (Mem.strong_unchanged_on (m_footprint P) m m').
-  {
-    destruct (m_invar_weak P); auto using Mem.strong_unchanged_on_weak.
-  }
-  eapply Mem.store_strong_unchanged_on; eauto.
+  eapply Mem.store_unchanged_on; eauto.
   intros i; rewrite size_type_chunk, typesize_typesize. intros; red; intros.
   eelim C; eauto. simpl. split; auto. omega.
 Qed.
@@ -341,13 +333,6 @@ Fixpoint contains_callee_saves (j: meminj) (sp: block) (pos: Z) (rl: list mreg) 
       contains (chunk_of_type ty) sp pos1 (fun v => Val.inject j (ls (R r)) v)
       ** contains_callee_saves j sp (pos1 + sz) rl ls
   end.
-
-Lemma contains_callee_saves_invar_weak rl :
-  forall j sp pos ls,
-    m_invar_weak (contains_callee_saves j sp pos rl ls) = false.
-Proof.
-  induction rl; simpl; auto.
-Qed.
 
 (** Record [massert_eqv] and [massert_imp] as relations so that they can be used by rewriting tactics. *)
 Local Add Relation massert massert_imp
@@ -408,14 +393,6 @@ Definition frame_contents (j: meminj) (sp: block) (ls ls0: locset) (parent retad
   mconj (frame_contents_1 j sp ls ls0 parent retaddr)
         (range sp 0 fe.(fe_stack_data) **
          range sp (fe.(fe_stack_data) + b.(bound_stack_data)) fe.(fe_size)).
-
-Lemma frame_contents_invar_weak j sp ls ls0 parent retaddr:
-  m_invar_weak (frame_contents j sp ls ls0 parent retaddr) = false.
-Proof.
-  simpl.
-  rewrite contains_callee_saves_invar_weak.
-  reflexivity.
-Qed.
 
 (** Accessing components of the frame. *)
 
@@ -1421,25 +1398,6 @@ Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach
   | _, _ => pure False
   end.
 
-Lemma stack_contents_invar_weak cs :
-  forall j cs' , m_invar_weak (stack_contents j cs cs') = false.
-Proof.
-  induction cs; destruct cs' ; simpl; auto.
-  + destruct a; auto.
-  + destruct a; auto.
-    destruct s; auto.
-    destruct sp0; auto.
-    match goal with
-        [ |- context [m_invar_weak (?U ** ?V)] ] =>
-        replace (m_invar_weak (U ** V))
-                with (m_invar_weak U || m_invar_weak V)
-          by reflexivity
-    end.
-    rewrite frame_contents_invar_weak.
-    simpl.
-    auto.
-Qed.
-
 (* [init_sg] is the signature of the outermost calling function. In the
 whole-program, this is the signature of the [main] function (see the
 match_states' definition at the very end of this file) *)
@@ -1449,31 +1407,29 @@ Variable init_sg: signature.
 (** [match_stacks] captures additional properties (not related to memory)
   of the Linear and Mach call stacks. *)
 
-
-Inductive match_stacks (j: meminj) :
+Inductive match_stacks (j: meminj):
   list Linear.stackframe -> list stackframe -> signature -> signature -> Prop :=
-| match_stacks_empty:
-    forall sg
-      (TP: tailcall_possible sg \/ sg = init_sg)
-      (BND: 4 * size_arguments sg <= Ptrofs.max_unsigned),
+  | match_stacks_empty:
+      forall sg
+        (TP: tailcall_possible sg \/ sg = init_sg)
+        (BND: 4 * size_arguments sg <= Ptrofs.max_unsigned),
       match_stacks j nil nil sg sg
-| match_stacks_cons:
-    forall f sp ls c cs fb sp' ra c' cs' sg trf
-      isg
-      (TAIL: is_tail c (Linear.fn_code f))
-      (FINDF: Genv.find_funct_ptr tge fb = Some (Internal trf))
-      (TRF: transf_function f = OK trf)
-      (TRC: transl_code (make_env (function_bounds f)) c = c')
-      (INJ: j sp = Some(sp', (fe_stack_data (make_env (function_bounds f)))))
-      (INJ_UNIQUE: forall b delta, j b = Some (sp', delta) -> b = sp)
-      (TY_RA: Val.has_type ra Tptr)
-      (AGL: agree_locs f ls (parent_locset init_ls cs))
-      (ARGS: forall ofs ty,
-          In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
-          slot_within_bounds (function_bounds f) Outgoing ofs ty)
-      (BND: 4 * size_arguments sg <= Ptrofs.max_unsigned)
-      (NOT_INIT: forall (b : block) (o : ptrofs), init_sp = Vptr b o -> b <> sp')
-      (STK: match_stacks j cs cs' (Linear.fn_sig f) isg),
+  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg trf
+        isg
+        (TAIL: is_tail c (Linear.fn_code f))
+        (FINDF: Genv.find_funct_ptr tge fb = Some (Internal trf))
+        (TRF: transf_function f = OK trf)
+        (TRC: transl_code (make_env (function_bounds f)) c = c')
+        (INJ: j sp = Some(sp', (fe_stack_data (make_env (function_bounds f)))))
+        (INJ_UNIQUE: forall b delta, j b = Some (sp', delta) -> b = sp)
+        (TY_RA: Val.has_type ra Tptr)
+        (AGL: agree_locs f ls (parent_locset init_ls cs))
+        (ARGS: forall ofs ty,
+            In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
+            slot_within_bounds (function_bounds f) Outgoing ofs ty)
+        (BND: 4 * size_arguments sg <= Ptrofs.max_unsigned)
+        (NOT_INIT: forall (b : block) (o : ptrofs), init_sp = Vptr b o -> b <> sp')
+        (STK: match_stacks j cs cs' (Linear.fn_sig f) isg),
       match_stacks j
                    (Linear.Stackframe f (Vptr sp Ptrofs.zero) ls c :: cs)
                    (Stackframe fb (Vptr sp' Ptrofs.zero) ra c' :: cs')
@@ -1619,6 +1575,27 @@ in [m]. This is instantiated with the locations of the arguments of the
 outermost caller ([main] in the whole-program setting). In practice, the memory
 [m] is that of the Mach memory state. *)
 
+Lemma perm_free m b lo hi m':
+  Mem.free m b lo hi = Some m' ->
+  forall b' o' k p,
+    Mem.perm m' b' o' k p <->
+    ((~ (b' = b /\ lo <= o' < hi)) /\ Mem.perm m b' o' k p).
+Proof.
+  intros H b' o' k p.
+  assert (~ (b' = b /\ lo <= o' < hi) -> Mem.perm m b' o' k p -> Mem.perm m' b' o' k p) as H0.
+  {
+    intro H0.
+    eapply Mem.perm_free_1; eauto.
+    destruct (peq b' b); try tauto.
+    subst.
+    intuition xomega.
+  }
+  assert (b' = b /\ lo <= o' < hi -> ~ Mem.perm m' b' o' k p) as H1.
+  destruct 1; subst; eapply Mem.perm_free_2; eauto.
+  generalize (Mem.perm_free_3 _ _ _ _ _ H b' o' k p).
+  tauto.
+Qed.
+
 Definition args_in_bounds sp l m :=
   exists m_, free_extcall_args sp m l = Some m_.
 
@@ -1657,9 +1634,9 @@ Proof.
   eapply IHl; try eassumption.
   inversion 1; subst b0 o_.
   intros o0 k p.
-  erewrite Mem.perm_free by eassumption.
+  erewrite perm_free by eassumption.
   intros H2.
-  erewrite Mem.perm_free by eassumption.
+  erewrite perm_free by eassumption.
   specialize (H _ _ (eq_refl _) o0 k p).
   tauto.
 Qed.
@@ -1697,7 +1674,7 @@ Proof.
   specialize (H0 _ _ H1).
   clear H1.
   intros H1.
-  erewrite Mem.perm_free by eassumption.
+  erewrite perm_free by eassumption.
   tauto.
 Qed.
 
@@ -1747,8 +1724,8 @@ Proof.
   eapply IHl; eauto.
   intros b0 o EQ of ty0 IN o' RNG k p PERM'.
   inv EQ.
-  erewrite Mem.perm_free by eassumption.
-  erewrite Mem.perm_free in PERM' by eassumption.
+  erewrite perm_free by eassumption.
+  erewrite perm_free in PERM' by eassumption.
   destruct PERM'; split; eauto.
 Qed.
 
@@ -1810,7 +1787,7 @@ Lemma args_always_in_bounds j m' sg_ ll lm sg  :
 Proof.
   inversion 1; subst; auto.
   simpl. intros _ SEP.
-  clear - external_calls_prf ARGS SEP TRF BND.
+  clear - ARGS SEP TRF BND.
   cut (forall l2 l1,
           regs_of_rpairs (loc_arguments sg) = l1 ++ l2 ->
           forall m',
@@ -1886,7 +1863,7 @@ Proof.
   }
 
   rewrite EQ in H2.
-  exploit (Mem.range_perm_free' m'0 sp' of (of + size_chunk (chunk_of_type ty))).
+  edestruct (Mem.range_perm_free m'0 sp' of (of + size_chunk (chunk_of_type ty))) as (m2 & Hm2).
   {
     red.
     intros ofs H3.
@@ -1920,7 +1897,6 @@ Proof.
       2: etransitivity. 2: apply H4. destruct (Archi.ptr64); omega.
       omega.
   }
-  destruct 1 as (m2 & Hm2).
   rewrite Hm2.
   eapply IHl2; clear IHl2.
   intros o ty0 H3 ofs H4 H5 H6.
@@ -2474,7 +2450,6 @@ Program Definition minit_args_mach j sg_ : massert :=
                        exists o', init_sp = Vptr b o' /\
                              let lo := Ptrofs.unsigned (Ptrofs.add o' (Ptrofs.repr (fe_ofs_arg + 4 * ofs))) in
                              lo <= o < lo + size_chunk (chunk_of_type ty);
-    m_invar_weak := false
   |}.
 Next Obligation.
   red; intros.
@@ -2531,7 +2506,7 @@ Proof.
   induction s; simpl; intros; auto. destruct a; auto.
   destruct sp; auto. destruct BS.
   repeat (refine (conj _ _)).
-  - intros. eapply H. rewrite Mem.perm_free in H1. 2: eauto. destruct H1; eauto.
+  - intros. eapply H. rewrite perm_free in H1. 2: eauto. destruct H1; eauto.
   - eapply IHs; eauto.
 Qed.
 
@@ -2930,6 +2905,47 @@ Section EVAL_BUILTIN_ARG_LESSDEF.
 
 End EVAL_BUILTIN_ARG_LESSDEF.
 
+Section EVAL_BUILTIN_ARG_LESSDEF''.
+
+  Variable A : Type.
+  Variables rs1 rs2 : A -> val.
+  Hypothesis rs_lessdef: forall a, Val.lessdef (rs1 a) (rs2 a).
+  Variables sp sp' : val.
+  Hypothesis sp_lessdef: Val.lessdef sp sp'.
+  Variable m : mem.
+
+
+  Lemma eval_builtin_arg_lessdef'':
+  forall arg v v'
+    (EBA: eval_builtin_arg ge rs1 sp m arg v)
+    (EBA': eval_builtin_arg ge rs2 sp' m arg v'),
+    Val.lessdef v v'.
+  Proof.
+    induction arg; intros; inv EBA; inv EBA'; subst; auto.
+    - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H2.
+      2: rewrite H3.
+      apply Val.offset_ptr_lessdef; auto.
+      intros (v2 & B & C). inv B. auto.
+    - intros; apply Val.offset_ptr_lessdef; auto.
+    - intros. exploit Mem.loadv_extends. apply Mem.extends_refl. apply H3.
+      2: rewrite H4. auto. intros (v2 & B & C). inv B. auto.
+    - apply Val.longofwords_lessdef. eauto. eauto.
+    - destruct Archi.ptr64; auto using Val.add_lessdef, Val.addl_lessdef.
+  Qed.
+
+  Lemma eval_builtin_args_lessdef'':
+    forall args vl vl'
+      (EBA: eval_builtin_args ge rs1 sp m args vl)
+      (EBA': eval_builtin_args ge rs2 sp' m args vl'),
+      Val.lessdef_list vl vl'.
+  Proof.
+    induction args; simpl; intros. inv EBA; inv EBA'. constructor.
+    inv EBA; inv EBA'. constructor; auto.
+    eapply eval_builtin_arg_lessdef''; eauto.
+  Qed.
+
+End EVAL_BUILTIN_ARG_LESSDEF''.
+
 Lemma init_args_incr:
   forall j j' sg m,
     inject_incr j j' ->
@@ -3275,7 +3291,7 @@ Proof.
          erewrite Mem.load_store_other. eauto. eauto.
          destruct (eq_block b1 b2); auto.
          assert (b0 = b1).
-         clear - H8 e INJ_INIT_SP HAMOA SP_NOT_INIT external_calls_prf. subst.
+         clear - H8 e INJ_INIT_SP HAMOA SP_NOT_INIT. subst.
          eapply HAMOA; eauto.
          subst b1. subst b0. assert (delta = 0) by congruence. subst delta.
          rewrite Ptrofs.add_zero in *.
@@ -3434,18 +3450,6 @@ Proof.
   }
   exploit (external_call_parallel_rule).
   3: eassumption.
-  {
-    repeat
-    match goal with
-        [ |- context [m_invar_weak (?U ** ?V)] ] =>
-        replace (m_invar_weak (U ** V))
-                with (m_invar_weak U || m_invar_weak V)
-          by reflexivity
-    end.
-    rewrite frame_contents_invar_weak.
-    rewrite stack_contents_invar_weak.
-    reflexivity.
-  }
   all: eauto.
   rename SEP into SEP_init; intros (j' & res' & m1' & EC & RES & SEP & INCR & ISEP).
   econstructor; split.
@@ -3522,7 +3526,7 @@ Proof.
          exploit Events.eval_builtin_args_lessdef. apply rs_lessdef. apply m_ext. eauto.
          intros (vl2 & EBA & LDL).
          eapply Val.lessdef_list_trans. eauto.
-         eapply Events.eval_builtin_args_lessdef'. 3: eauto. 3: eauto. all: eauto.
+         eapply eval_builtin_args_lessdef''. 3: eauto. 3: eauto. all: eauto.
     * apply frame_set_res. apply frame_undef_regs. apply frame_contents_incr with j; auto.
       rewrite sep_swap2. apply stack_contents_change_meminj with j; auto. rewrite sep_swap2.
       rewrite sep_swap23, sep_swap12.
@@ -3553,20 +3557,21 @@ Proof.
          intros (f' & vres'0 & m2'0 & EC3 & INJres & MINJres & UNCH' & UNCH3 & INCR2 & SEP2).
          exploit external_call_determ.
          eexact EC. eexact EC3. intuition subst.
-         revert HAMOA INJ_INIT_SP UNCH3 SEP_init IAOOB INCR. clear - external_calls_prf.
+         revert HAMOA INJ_INIT_SP UNCH3 SEP_init IAOOB INCR.
          red; intros.
-         exploit SEP_init. eauto. instantiate (1 := rs).
+         exploit SEP_init. eauto. instantiate (1 := rs2).
          intros (v & ea & inj); eexists; split; eauto.
          inv ea; constructor; eauto.
+         clear step H SEP.
          destruct init_sp eqn:?; simpl in *; try discriminate.
          unfold load_stack in *; simpl in *.
          eapply Mem.load_unchanged_on. eexact UNCH3. 2: eauto.
          red; red; intros.
          exploit IAOOB; eauto.
-         exploit HAMOA. eauto. apply INJ_INIT_SP. apply H1.
+         exploit HAMOA. eauto. apply INJ_INIT_SP. apply H8.
          intro. subst b0.
          assert (delta = 0) by congruence. subst delta.
-         rewrite Zminus_0_r in H2; eauto.
+         rewrite Zminus_0_r in H10; eauto.
       -- split. apply sep_proj2 in SEP. rewrite sep_comm in SEP. rewrite <- sep_assoc.  eauto.
          rewrite sep_swap23, sep_swap12 in SEP_init.
          apply mconj_proj2 in SEP_init.
@@ -3744,7 +3749,7 @@ Proof.
       intros (VB1 & VB2).
       eapply Mem.valid_block_inject_1 in H.
       2:   apply sep_proj2 in SEP; apply sep_proj1 in SEP; simpl in SEP ; eauto.
-      clear - VB1 H H1 external_calls_prf.
+      clear - VB1 H H1.
       unfold Mem.valid_block in *.
       exploit Mem.nextblock_alloc; eauto.
       exploit Mem.alloc_result; eauto. intros; subst.
@@ -3767,7 +3772,7 @@ Proof.
       {
         revert ISP'VALID.
         apply mconj_proj1 in SEP_init; apply sep_proj1 in SEP_init; simpl in SEP_init ; eauto.
-        clear - m_ext SEP_init memory_model_prf INJ_INIT_SP.
+        clear - m_ext SEP_init INJ_INIT_SP.
         destruct init_sp; simpl; auto. intros.
         rewrite Mem.valid_block_extends. 2: eauto.
         eapply Mem.valid_block_inject_1; eauto.
@@ -3779,7 +3784,7 @@ Proof.
       eapply init_args_in_bounds_perm.
       intros b o_ H o k p. apply PERMS. eauto.
     * apply mconj_proj1 in SEP_init; apply sep_proj1 in SEP_init; simpl in SEP_init ; eauto.
-      revert SEP_init INJ_INIT_SP A . clear - memory_model_prf.
+      revert SEP_init INJ_INIT_SP A . clear.
       intros; subst. inversion INJ_INIT_SP.
       eapply Mem.fresh_block_alloc in A. simpl in *.
       eapply Mem.valid_block_inject_2 in INJ_INIT_SP; eauto. congruence.
@@ -3793,7 +3798,7 @@ Proof.
       -- simpl.
          apply mconj_proj2 in SEP_init. apply sep_proj1 in SEP_init.
          eapply init_args_mach_unch; eauto. simpl.
-         revert ISP'VALID A. clear - external_calls_prf. destruct init_sp; simpl; try congruence.
+         revert ISP'VALID A. clear. destruct init_sp; simpl; try congruence.
          intros.
          eapply Mem.fresh_block_alloc in A. inv H. congruence.
          eapply init_args_incr; eauto.
@@ -3845,9 +3850,6 @@ Proof.
   rewrite <- sep_swap12 in SEP. apply mconj_proj1 in SEP.
   rewrite (sep_comm _ (globalenv_inject _ _)) in SEP.
   exploit external_call_parallel_rule; eauto.
-  {
-    rewrite stack_contents_invar_weak. reflexivity.
-  }
   intros (j' & res' & m1' & A & B & C & D & E).
   revert Hno_init_args.
   generalize (Linear2.state_invariant s1).
@@ -3949,7 +3951,7 @@ Proof.
        intros (f' & vres'0 & m2'0 & EC3 & INJres & MINJres & UNCH' & UNCH3 & INCR2 & SEP2).
        exploit external_call_determ.
        eexact A. eexact EC3. intuition subst.
-       revert HAMOA INJ_INIT_SP UNCH3 IAM Hno_init_args D. clear - external_calls_prf.
+       revert HAMOA INJ_INIT_SP UNCH3 IAM Hno_init_args D. clear.
        red; intros.
        exploit IAM. eauto. instantiate (1 := rs).
        intros (v & ea & inj); eexists; split; eauto.
@@ -4031,7 +4033,7 @@ Proof.
     rewrite Mem.nextblock_empty in p; xomega.
   - red. unfold Mem.flat_inj. intros b1.
     unfold Mem.valid_block. simpl.
-    rewrite Mem.nextblock_empty in *. intros. split; xomega.
+    intros. split; xomega.
   - rewrite Mem.nextblock_empty; xomega.
   - rewrite Mem.nextblock_empty; xomega.
   - red. red. discriminate.
@@ -4101,7 +4103,7 @@ Proof.
 - apply senv_preserved.
 - intros. exploit transf_initial_states; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.
-  apply wt_initial_state with (prog0 := prog); auto. exact wt_prog.
+  apply wt_initial_state with (prog := prog); auto. exact wt_prog.
   inv H. congruence.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros.

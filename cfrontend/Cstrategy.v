@@ -32,9 +32,6 @@ Require Import Cop.
 Require Import Csyntax.
 Require Import Csem.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 Section STRATEGY.
 
 Variable ge: genv.
@@ -378,7 +375,6 @@ Inductive estep: state -> trace -> state -> Prop :=
       leftcontext RV RV C ->
       eval_simple_list e m rargs tyargs vargs ->
       external_call ef ge vargs m t vres m' ->
-      forall BUILTIN_ENABLED: builtin_enabled ef,
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
 
@@ -575,7 +571,6 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
-      builtin_enabled ef /\
       exists vargs, exists t, exists vres, exists m',
          cast_arguments m rargs tyargs vargs
       /\ external_call ef ge vargs m t vres m'
@@ -608,7 +603,7 @@ Proof.
   exists t; exists v1; auto.
   exists t; exists v1; auto.
   exists v; auto.
-  intros. split; auto. exists vargs; exists t; exists vres; exists m'; auto.
+  intros. exists vargs; exists t; exists vres; exists m'; auto.
 Qed.
 
 Lemma callred_invert:
@@ -1194,7 +1189,7 @@ Proof.
   eapply plus_left.
   left; apply step_rred; auto. econstructor; eauto.
   eapply star_left.
-  left; apply step_rred with (C0 := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto. econstructor; eauto.
+  left; apply step_rred with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto. econstructor; eauto.
   apply star_one.
   left; apply step_rred; auto. econstructor; eauto.
   reflexivity. reflexivity. reflexivity. traceEq.
@@ -1207,14 +1202,14 @@ Proof.
   left; apply step_rred; auto. econstructor; eauto.
   destruct (sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m) as [v3|] eqn:?.
   eapply star_left.
-  left; apply step_rred with (C0 := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto. econstructor; eauto.
+  left; apply step_rred with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto. econstructor; eauto.
   apply star_one.
   left; eapply step_stuck; eauto.
   red; intros. exploit imm_safe_inv; eauto. simpl. intros [v4' [m' [t' [A [B D]]]]].
   rewrite B in H4. eelim H4; eauto.
   reflexivity.
   apply star_one.
-  left; eapply step_stuck with (C0 := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto.
+  left; eapply step_stuck with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto.
   red; intros. exploit imm_safe_inv; eauto. simpl. intros [v3 A]. congruence.
   reflexivity.
   reflexivity. traceEq.
@@ -1224,10 +1219,10 @@ Proof.
   eapply plus_left.
   left; apply step_rred; auto. econstructor; eauto.
   eapply star_left.
-  left; apply step_rred with (C0 := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; apply step_rred with (C := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
   econstructor. instantiate (1 := v2). destruct id; assumption.
   eapply star_left.
-  left; apply step_rred with (C0 := fun x => C (Ecomma x (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; apply step_rred with (C := fun x => C (Ecomma x (Eval v1 (typeof l)) (typeof l))); eauto.
   econstructor; eauto.
   apply star_one.
   left; apply step_rred; auto. econstructor; eauto.
@@ -1243,15 +1238,15 @@ Proof.
     destruct id; auto.
   destruct (sem_incrdecr ge id v1 (typeof l) m) as [v2|].
   eapply star_left.
-  left; apply step_rred with (C0 := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; apply step_rred with (C := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
   econstructor; eauto.
   apply star_one.
-  left; eapply step_stuck with (C0 := fun x => C (Ecomma x (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; eapply step_stuck with (C := fun x => C (Ecomma x (Eval v1 (typeof l)) (typeof l))); eauto.
   red; intros. exploit imm_safe_inv; eauto. simpl. intros [v3 [m' [t' [A [B D]]]]].
   rewrite B in H3. eelim H3; eauto.
   reflexivity.
   apply star_one.
-  left; eapply step_stuck with (C0 := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; eapply step_stuck with (C := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
   red; intros. exploit imm_safe_inv; eauto. simpl. intros [v2 A]. congruence.
   reflexivity.
   traceEq.
@@ -1387,7 +1382,7 @@ Proof.
   eapply safe_steps. eexact H.
   apply (eval_simple_list_steps f k e m rargs vl E C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [BUITIN_ENABLED [vargs [t [vres [m' [U V]]]]]].
+  intros [vargs [t [vres [m' [U V]]]]].
   econstructor; econstructor; eapply step_builtin; eauto.
   eapply can_eval_simple_list; eauto.
 (* paren *)
@@ -2913,7 +2908,7 @@ Proof.
   eapply forever_N_plus.
   eapply plus_left. right; constructor.
   eapply star_right. eapply eval_expression_to_steps; eauto.
-  right. eapply step_ifthenelse_2 with (b0 := b). auto.
+  right. eapply step_ifthenelse_2 with (b := b). auto.
   reflexivity. reflexivity.
   eapply COS; eauto. traceEq.
 (* return some *)
@@ -3066,5 +3061,3 @@ Proof.
   apply lt_wf.
   eapply evalinf_funcall_steps; eauto.
 Qed.
-
-End WITHEXTERNALCALLS.

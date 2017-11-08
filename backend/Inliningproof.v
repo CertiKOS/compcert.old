@@ -27,7 +27,6 @@ Proof.
 Qed.
 
 Section INLINING.
-Context `{external_calls_prf: ExternalCalls}.
 
 Variable prog: program.
 Variable tprog: program.
@@ -781,7 +780,6 @@ Lemma match_stacks_inside_store:
   match_stacks_inside F m1 m1' stk stk' f' ctx sp' rs'.
 Proof.
   intros.
-  destruct external_calls_prf.
   eapply match_stacks_inside_invariant; eauto with mem.
 Qed.
 
@@ -1297,7 +1295,7 @@ Proof.
     (* offset is representable *)
     instantiate (1 := dstk ctx). generalize (Zmax2 (fn_stacksize f) 0). omega.
     (* size of target block is representable *)
-    intros. right. destruct external_calls_prf; exploit SSZ2; eauto with mem. inv FB; omega.
+    intros. right. exploit SSZ2; eauto with mem. inv FB; omega.
     (* we have full permissions on sp' at and above dstk ctx *)
     intros. apply Mem.perm_cur. apply Mem.perm_implies with Freeable; auto with mem.
     eapply range_private_perms; eauto. xomega.
@@ -1331,7 +1329,7 @@ Proof.
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor.
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.

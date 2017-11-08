@@ -19,9 +19,6 @@ Require Import Initializers.
 
 Open Scope error_monad_scope.
 
-Section WITHEXTERNALCALLS.
-Context `{external_calls_prf: ExternalCalls}.
-
 Section SOUNDNESS.
 
 Variable ge: genv.
@@ -334,10 +331,7 @@ Definition inj (b: block) :=
 Lemma mem_empty_not_valid_pointer:
   forall b ofs, Mem.valid_pointer Mem.empty b ofs = false.
 Proof.
-  intros.
-  destruct (Mem.valid_pointer Mem.empty b ofs) eqn:VALID; auto.
-  exfalso.
-  apply Mem.valid_pointer_nonempty_perm in VALID.
+  intros. unfold Mem.valid_pointer. destruct (Mem.perm_dec Mem.empty b ofs Cur Nonempty); auto.
   eelim Mem.perm_empty; eauto.
 Qed.
 
@@ -355,8 +349,7 @@ Lemma sem_cast_match:
   Val.inject inj v1' v1 ->
   Val.inject inj v2' v2.
 Proof.
-  intros. unfold do_cast in H0. destruct (sem_cast v1' ty1 ty2 tt) as [v2''|] eqn:E; inv H0.
-  apply (sem_cast_unit_to_mem Mem.empty) in E.
+  intros. unfold do_cast in H0. destruct (sem_cast v1' ty1 ty2 Mem.empty) as [v2''|] eqn:E; inv H0.
   exploit (sem_cast_inj inj Mem.empty m).
   intros. rewrite mem_empty_not_weak_valid_pointer in H2. discriminate.
   eexact E. eauto.
@@ -365,13 +358,11 @@ Qed.
 
 Lemma bool_val_match:
   forall v ty b v' m,
-  bool_val v ty tt = Some b ->
+  bool_val v ty Mem.empty = Some b ->
   Val.inject inj v v' ->
   bool_val v' ty m = Some b.
 Proof.
-  intros.
-  apply (bool_val_unit_to_mem Mem.empty) in H.
-  eapply bool_val_inj; eauto. intros. rewrite mem_empty_not_weak_valid_pointer in H2; discriminate.
+  intros. eapply bool_val_inj; eauto. intros. rewrite mem_empty_not_weak_valid_pointer in H2; discriminate.
 Qed.
 
 (** Soundness of [constval] with respect to the big-step semantics *)
@@ -398,15 +389,13 @@ Proof.
   (* addrof *)
   eauto.
   (* unop *)
-  destruct (sem_unary_operation op x (typeof r1) tt) as [v1'|] eqn:E; inv EQ0.
-  apply (sem_unary_operation_unit_to_mem Mem.empty) in E.
+  destruct (sem_unary_operation op x (typeof r1) Mem.empty) as [v1'|] eqn:E; inv EQ0.
   exploit (sem_unary_operation_inj inj Mem.empty m).
   intros. rewrite mem_empty_not_weak_valid_pointer in H2; discriminate.
   eexact E. eauto.
   intros [v' [A B]]. congruence.
   (* binop *)
-  destruct (sem_binary_operation ge op x (typeof r1) x0 (typeof r2) tt) as [v1'|] eqn:E; inv EQ2.
-  apply (sem_binary_operation_unit_to_mem Mem.empty) in E.
+  destruct (sem_binary_operation ge op x (typeof r1) x0 (typeof r2) Mem.empty) as [v1'|] eqn:E; inv EQ2.
   exploit (sem_binary_operation_inj inj Mem.empty m).
   intros. rewrite mem_empty_not_valid_pointer in H3; discriminate.
   intros. rewrite mem_empty_not_weak_valid_pointer in H3; discriminate.
@@ -421,23 +410,23 @@ Proof.
   (* alignof *)
   auto.
   (* seqand *)
-  destruct (bool_val x (typeof r1) tt) as [b|] eqn:E; inv EQ2.
+  destruct (bool_val x (typeof r1) Mem.empty) as [b|] eqn:E; inv EQ2.
   exploit bool_val_match. eexact E. eauto. instantiate (1 := m). intros E'.
   assert (b = true) by congruence. subst b.
   eapply sem_cast_match; eauto.
-  destruct (bool_val x (typeof r1) tt) as [b|] eqn:E; inv EQ2.
+  destruct (bool_val x (typeof r1) Mem.empty) as [b|] eqn:E; inv EQ2.
   exploit bool_val_match. eexact E. eauto. instantiate (1 := m). intros E'.
   assert (b = false) by congruence. subst b. inv H2. auto.
   (* seqor *)
-  destruct (bool_val x (typeof r1) tt) as [b|] eqn:E; inv EQ2.
+  destruct (bool_val x (typeof r1) Mem.empty) as [b|] eqn:E; inv EQ2.
   exploit bool_val_match. eexact E. eauto. instantiate (1 := m). intros E'.
   assert (b = false) by congruence. subst b.
   eapply sem_cast_match; eauto.
-  destruct (bool_val x (typeof r1) tt) as [b|] eqn:E; inv EQ2.
+  destruct (bool_val x (typeof r1) Mem.empty) as [b|] eqn:E; inv EQ2.
   exploit bool_val_match. eexact E. eauto. instantiate (1 := m). intros E'.
   assert (b = true) by congruence. subst b. inv H2. auto.
   (* conditional *)
-  destruct (bool_val x (typeof r1) tt) as [b'|] eqn:E; inv EQ3.
+  destruct (bool_val x (typeof r1) Mem.empty) as [b'|] eqn:E; inv EQ3.
   exploit bool_val_match. eexact E. eauto. instantiate (1 := m). intros E'.
   assert (b' = b) by congruence. subst b'.
   destruct b; eapply sem_cast_match; eauto.
@@ -904,5 +893,3 @@ Proof.
   eapply build_composite_env_consistent. apply prog_comp_env_eq.
   eapply A; eauto. apply transl_init_spec; auto.
 Qed.
-
-End WITHEXTERNALCALLS.

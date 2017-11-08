@@ -221,7 +221,7 @@ Inductive cont: Type :=
 
 (** States *)
 
-Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
+Inductive state: Type :=
   | State:                      (**r Execution within a function *)
       forall (f: function)              (**r currently executing function  *)
              (s: stmt)                  (**r statement under consideration *)
@@ -241,9 +241,6 @@ Inductive state `{memory_model_ops: Mem.MemoryModelOps}: Type :=
              (k: cont)                  (**r what to do next *)
              (m: mem),                  (**r memory state *)
       state.
-
-Section WITHEXTCALLS.
-Context `{external_calls_prf: ExternalCalls}.
 
 Section RELSEM.
 
@@ -479,7 +476,6 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m bl vargs ->
       external_call ef ge vargs m t vres m' ->
-      forall BUILTIN_ENABLED : builtin_enabled ef,
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -698,7 +694,6 @@ with exec_stmt:
       eval_exprlist ge sp e m bl vargs ->
       external_call ef ge vargs m t vres m' ->
       e' = set_optvar optid vres e ->
-      forall BUILTIN_ENABLED : builtin_enabled ef,
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
       forall f sp e m a s1 s2 v b t e' m' out,
@@ -1173,5 +1168,3 @@ Proof.
 Qed.
 
 End BIGSTEP_TO_TRANSITION.
-
-End WITHEXTCALLS.
