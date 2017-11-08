@@ -53,7 +53,7 @@ Inductive match_reply (cc: callconv): world cc -> reply -> reply -> Prop :=
     match_reply_def cc w q1 q2 r1 r2 ->
     match_reply cc (mk_world cc w q1 q2 Hq) r1 r2.
 
-Lemma match_query_injective cc w q q1 q2:
+Lemma match_query_determ cc w q q1 q2:
   match_query cc w q q1 ->
   match_query cc w q q2 ->
   q2 = q1.

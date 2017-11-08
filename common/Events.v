@@ -1567,7 +1567,7 @@ Proof.
     edestruct (match_cc_extends id sg) as (w & Hq & Hr); eauto.
     exists w; intros t' Ht'.
     inv Ht'.
-    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_injective; subst.
+    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_determ; subst.
     destruct r2 as [vres' m2'].
     specialize (Hr _ _ _ _ H8).
     exists vres', m2'; intuition.
@@ -1579,7 +1579,7 @@ Proof.
     edestruct match_cc_inject as (w & Hq & Hr); eauto.
     exists w; intros t' Ht'.
     inv Ht'.
-    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_injective; subst.
+    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_determ; subst.
     destruct r2 as [vres' m2'].
     edestruct Hr as (f' & H'); eauto.
     exists f', vres', m2'; intuition.

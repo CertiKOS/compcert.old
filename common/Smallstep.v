@@ -746,7 +746,7 @@ Proof.
   edestruct (match_cc_id q) as (w & Hq & Hw).
   exists w; intros t' Ht'.
   inv Ht'.
-  assert (q = q2) by eauto using match_query_injective; subst.
+  assert (q = q2) by eauto using match_query_determ; subst.
   assert (r = r2) by eauto; subst.
   assumption.
 Qed.
