@@ -671,20 +671,22 @@ Inductive step: state -> trace -> state -> Prop :=
   corresponding to the invocation of the ``main'' function of the program
   without arguments and with an empty continuation. *)
 
-Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+Inductive initial_state (p: program): query li_c -> state -> Prop :=
+  | initial_state_intro: forall id b f targs tres tcc vargs m,
       let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+      Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil Kstop m0).
+      type_of_fundef f = Tfunction targs tres tcc ->
+      initial_state p
+        (id, signature_of_type targs tres tcc, vargs, m)
+        (Callstate f nil Kstop m).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
-Inductive final_state: state -> int -> Prop :=
+Inductive final_state: state -> reply li_c -> Prop :=
   | final_state_intro: forall r m,
-      final_state (Returnstate (Vint r) Kstop m) r.
+      final_state (Returnstate r Kstop m) (r, m).
 
 End SEMANTICS.
 
@@ -717,11 +719,11 @@ Definition step2 (ge: genv) := step ge (function_entry2).
 
 Definition semantics1 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step1 (initial_state p) final_state ge ge.
+  Semantics_gen li_c step1 (initial_state p) final_state ge ge.
 
 Definition semantics2 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step2 (initial_state p) final_state ge ge.
+  Semantics_gen li_c step2 (initial_state p) final_state ge ge.
 
 (** This semantics is receptive to changes in events. *)
 

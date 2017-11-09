@@ -1763,35 +1763,46 @@ Proof.
 Qed.
 
 Lemma transl_initial_states:
-  forall S, Clight.initial_state prog S ->
-  exists R, initial_state tprog R /\ match_states S R.
+  forall w q1 q2, match_query cc_id w q1 q2 ->
+  forall S, Clight.initial_state prog q1 S ->
+  exists R, initial_state tprog q2 R /\ match_states S R.
 Proof.
-  intros. inv H.
+  intros w q1 q Hq S HS.
+  apply match_query_cc_id in Hq; subst.
+  destruct HS.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  assert (D: Genv.find_symbol tge (AST.prog_main tprog) = Some b).
-  { destruct TRANSL as (P & Q & R). rewrite Q. rewrite symbols_preserved. auto. }
-  assert (E: funsig tf = signature_of_type Tnil type_int32s cc_default).
+  assert (D: Genv.find_symbol tge (str2ident id) = Some b).
+  { rewrite symbols_preserved. auto. }
+  assert (E: funsig tf = signature_of_type targs tres tcc).
   { eapply transl_fundef_sig2; eauto. }
   econstructor; split.
-  econstructor; eauto. apply (Genv.init_mem_match TRANSL). eauto.
+  rewrite <- E.
+  econstructor; eauto.
+  fold tge. rewrite genv_next_preserved; eauto.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
 Qed.
 
 Lemma transl_final_states:
-  forall S R r,
-  match_states S R -> Clight.final_state S r -> final_state R r.
+  forall w S R r1,
+  match_states S R -> Clight.final_state S r1 ->
+  exists r2, match_reply cc_id w r1 r2 /\ final_state R r2.
 Proof.
-  intros. inv H0. inv H. inv MK. constructor.
+  intros. inv H0. inv H. inv MK.
+  exists (r, m); split.
+  - apply match_reply_cc_id.
+  - constructor.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation cc_id (Clight.semantics2 prog) (Csharpminor.semantics tprog).
+  forward_simulation cc_id cc_id
+    (Clight.semantics2 prog)
+    (Csharpminor.semantics tprog).
 Proof.
-  eapply forward_simulation_plus.
+  eapply forward_simulation_plus with (match_states := fun _ => match_states).
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
-  eexact transl_step.
+  intros _; eexact transl_step.
 Qed.
 
 End CORRECTNESS.
