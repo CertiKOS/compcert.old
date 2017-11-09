@@ -16,6 +16,8 @@ Record language_interface :=
     dummy_query: query;
   }.
 
+Arguments dummy_query {_}.
+
 Definition li_c :=
   {|
     query := string * signature * list val * mem;
@@ -23,7 +25,24 @@ Definition li_c :=
     dummy_query := (EmptyString, signature_main, nil, Mem.empty);
   |}.
 
-Arguments dummy_query {_}.
+Definition li_wp :=
+  {|
+    query := unit;
+    reply := int;
+    dummy_query := tt;
+  |}.
+
+Definition li_empty :=
+  {|
+    query := unit;
+    reply := Empty_set;
+    dummy_query := tt;
+  |}.
+
+(** XXX temporary fix: external functions are identified with a [string],
+  but internal functions use [AST.ident]. To work around this
+  discrepancy, we introduce the following mapping. *)
+Parameter str2ident : string -> ident.
 
 (** * Calling conventions *)
 
@@ -124,6 +143,21 @@ Proof.
   - constructor.
   - inversion 1.
     congruence.
+Qed.
+
+Lemma match_query_cc_id {T} w q1 q2:
+  match_query (@cc_id T) w q1 q2 ->
+  q1 = q2.
+Proof.
+  destruct 1.
+  assumption.
+Qed.
+
+Lemma match_reply_cc_id {T} w r:
+  match_reply (@cc_id T) w r r.
+Proof.
+  destruct w.
+  repeat constructor.
 Qed.
 
 (** ** Extension passes *)

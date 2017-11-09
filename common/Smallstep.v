@@ -473,22 +473,22 @@ End CLOSURES.
 
 (** The general form of a transition semantics. *)
 
-Record semantics : Type := Semantics_gen {
+Record semantics T2: Type := Semantics_gen {
   state: Type;
   genvtype: Type;
   step : genvtype -> state -> trace -> state -> Prop;
-  initial_state: state -> Prop;
-  final_state: state -> int -> Prop;
+  initial_state: query T2 -> state -> Prop;
+  final_state: state -> reply T2 -> Prop;
   globalenv: genvtype;
   symbolenv: Senv.t
 }.
 
 (** The form used in earlier CompCert versions, for backward compatibility. *)
 
-Definition Semantics {state funtype vartype: Type}
+Definition Semantics B {state funtype vartype: Type}
                      (step: Genv.t funtype vartype -> state -> trace -> state -> Prop)
-                     (initial_state: state -> Prop)
-                     (final_state: state -> int -> Prop)
+                     (initial_state: query B -> state -> Prop)
+                     (final_state: state -> reply B -> Prop)
                      (globalenv: Genv.t funtype vartype) :=
   {| state := state;
      genvtype := Genv.t funtype vartype;
@@ -513,48 +513,57 @@ Open Scope smallstep_scope.
 
 (** The general form of a forward simulation. *)
 
-Record fsim_properties (cc: callconv li_c li_c) (L1 L2: semantics) (index: Type)
+Record fsim_properties {B1 B2} (ccA: callconv li_c li_c) (ccB: callconv B1 B2)
+                       (L1: semantics B1) (L2: semantics B2) (index: Type)
                        (order: index -> index -> Prop)
-                       (match_states: index -> state L1 -> state L2 -> Prop) : Prop := {
+                       (match_states: world ccB -> index -> state L1 -> state L2 -> Prop) : Prop := {
     fsim_order_wf: well_founded order;
     fsim_match_initial_states:
-      forall s1, initial_state L1 s1 ->
-      exists i, exists s2, initial_state L2 s2 /\ match_states i s1 s2;
+      forall w0 q1 q2, match_query ccB w0 q1 q2 ->
+      forall s1, initial_state L1 q1 s1 ->
+      exists i s2,
+        initial_state L2 q2 s2 /\
+        match_states w0 i s1 s2;
     fsim_match_final_states:
-      forall i s1 s2 r,
-      match_states i s1 s2 -> final_state L1 s1 r -> final_state L2 s2 r;
+      forall w0 i s1 s2 r1,
+        match_states w0 i s1 s2 ->
+        final_state L1 s1 r1 ->
+        exists r2,
+          match_reply ccB w0 r1 r2 /\
+          final_state L2 s2 r2;
     fsim_simulation:
-      forall s1 t s1', Step L1 s1 t s1' ->
-      forall i s2, match_states i s1 s2 ->
-      exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+      forall w0 s1 t s1', Step L1 s1 t s1' ->
+      forall i s2, match_states w0 i s1 s2 ->
+      exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
       exists i', exists s2',
          (Plus L2 s2 t' s2' \/ (Star L2 s2 t' s2' /\ order i' i))
-      /\ match_states i' s1' s2';
+      /\ match_states w0 i' s1' s2';
     fsim_public_preserved:
       forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id
   }.
 
-Arguments fsim_properties: clear implicits.
+Arguments fsim_properties {B1 B2} _ _ _ _ _ _ _.
 
-Inductive forward_simulation (cc: callconv li_c li_c) (L1 L2: semantics) : Prop :=
+Inductive forward_simulation {B1 B2} (ccA: callconv li_c li_c) (ccB: callconv B1 B2) (L1 L2: semantics _) : Prop :=
   Forward_simulation (index: Type)
                      (order: index -> index -> Prop)
-                     (match_states: index -> state L1 -> state L2 -> Prop)
-                     (props: fsim_properties cc L1 L2 index order match_states).
+                     (match_states: world ccB -> index -> state L1 -> state L2 -> Prop)
+                     (props: fsim_properties ccA ccB L1 L2 index order match_states).
 
-Arguments Forward_simulation {cc L1 L2 index} order match_states props.
+Arguments Forward_simulation {B1 B2 ccA ccB L1 L2 index} order match_states props.
 
 (** An alternate form of the simulation diagram *)
 
 Lemma fsim_simulation':
-  forall cc L1 L2 index order match_states, fsim_properties cc L1 L2 index order match_states ->
+  forall B1 B2 ccA ccB L1 L2 index order match_states,
+  @fsim_properties B1 B2 ccA ccB L1 L2 index order match_states ->
   forall i s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states i s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
-  (exists i', exists s2', Plus L2 s2 t' s2' /\ match_states i' s1' s2')
-  \/ (exists i', order i' i /\ t = E0 /\ match_states i' s1' s2).
+  forall w0 s2, match_states w0 i s1 s2 ->
+  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  (exists i', exists s2', Plus L2 s2 t' s2' /\ match_states w0 i' s1' s2')
+  \/ (exists i', order i' i /\ t = E0 /\ match_states w0 i' s1' s2).
 Proof.
-  intros. exploit fsim_simulation; eauto.
+  intros. exploit (@fsim_simulation B1 B2); eauto.
   intros [w Hw]. exists w. intros t' Ht'.
   edestruct Hw as [i' [s2' [A B]]]; eauto. intuition.
   left; exists i'; exists s2'; auto.
@@ -570,24 +579,31 @@ Qed.
 
 Section FORWARD_SIMU_DIAGRAMS.
 
-Variable cc: callconv li_c li_c.
-Variable L1: semantics.
-Variable L2: semantics.
+Variable B1 B2: language_interface.
+Variable ccA: callconv li_c li_c.
+Variable ccB: callconv B1 B2.
+Variable L1: semantics B1.
+Variable L2: semantics B2.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
 
-Variable match_states: state L1 -> state L2 -> Prop.
+Variable match_states: world ccB -> state L1 -> state L2 -> Prop.
 
 Hypothesis match_initial_states:
-  forall s1, initial_state L1 s1 ->
-  exists s2, initial_state L2 s2 /\ match_states s1 s2.
+  forall w q1 q2, match_query ccB w q1 q2 ->
+  forall s1, initial_state L1 q1 s1 ->
+  exists s2,
+    initial_state L2 q2 s2 /\
+    match_states w s1 s2.
 
 Hypothesis match_final_states:
-  forall s1 s2 r,
-  match_states s1 s2 ->
-  final_state L1 s1 r ->
-  final_state L2 s2 r.
+  forall w s1 s2 r1,
+  match_states w s1 s2 ->
+  final_state L1 s1 r1 ->
+  exists r2,
+    match_reply ccB w r1 r2 /\
+    final_state L2 s2 r2.
 
 (** Simulation when one transition in the first program
     corresponds to zero, one or several transitions in the second program.
@@ -605,16 +621,16 @@ Variable order: state L1 -> state L1 -> Prop.
 Hypothesis order_wf: well_founded order.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
+  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states w0 s1 s2 ->
+  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
   exists s2',
   (Plus L2 s2 t' s2' \/ (Star L2 s2 t' s2' /\ order s1' s1))
-  /\ match_states s1' s2'.
+  /\ match_states w0 s1' s2'.
 
-Lemma forward_simulation_star_wf: forward_simulation cc L1 L2.
+Lemma forward_simulation_star_wf: forward_simulation ccA ccB L1 L2.
 Proof.
-  apply Forward_simulation with order (fun idx s1 s2 => idx = s1 /\ match_states s1 s2);
+  apply Forward_simulation with order (fun w0 idx s1 s2 => idx = s1 /\ match_states w0 s1 s2);
   constructor.
 - auto.
 - intros. exploit match_initial_states; eauto. intros [s2 [A B]].
@@ -638,13 +654,13 @@ Section SIMULATION_STAR.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
-  (exists s2', Plus L2 s2 t' s2' /\ match_states s1' s2')
-  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
+  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states w0 s1 s2 ->
+  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  (exists s2', Plus L2 s2 t' s2' /\ match_states w0 s1' s2')
+  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
-Lemma forward_simulation_star: forward_simulation cc L1 L2.
+Lemma forward_simulation_star: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_star_wf with (ltof _ measure).
   apply well_founded_ltof.
@@ -664,12 +680,12 @@ End SIMULATION_STAR.
 Section SIMULATION_PLUS.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
-  exists s2', Plus L2 s2 t' s2' /\ match_states s1' s2'.
+  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states w0 s1 s2 ->
+  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists s2', Plus L2 s2 t' s2' /\ match_states w0 s1' s2'.
 
-Lemma forward_simulation_plus: forward_simulation cc L1 L2.
+Lemma forward_simulation_plus: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_star with (measure := fun _ => O).
   intros. exploit simulation; eauto.
@@ -684,12 +700,12 @@ End SIMULATION_PLUS.
 Section SIMULATION_STEP.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
-  exists s2', Step L2 s2 t' s2' /\ match_states s1' s2'.
+  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states w0 s1 s2 ->
+  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists s2', Step L2 s2 t' s2' /\ match_states w0 s1' s2'.
 
-Lemma forward_simulation_step: forward_simulation cc L1 L2.
+Lemma forward_simulation_step: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_plus.
   intros. exploit simulation; eauto.
@@ -711,13 +727,13 @@ Section SIMULATION_OPT.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall s1 t s1', Step L1 s1 t s1' ->
-  forall s2, match_states s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) cc w t t' ->
-  (exists s2', Step L2 s2 t' s2' /\ match_states s1' s2')
-  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states s1' s2)%nat.
+  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states w0 s1 s2 ->
+  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  (exists s2', Step L2 s2 t' s2' /\ match_states w0 s1' s2')
+  \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
-Lemma forward_simulation_opt: forward_simulation cc L1 L2.
+Lemma forward_simulation_opt: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_star with measure.
   intros. exploit simulation; eauto.
@@ -733,7 +749,7 @@ End FORWARD_SIMU_DIAGRAMS.
 
 (** The following tactics are useful to remove the [exists w, ...]
   part of the diagram whenever possible. For equality passes, we can
-  alwats drop it. In general, we can drop it whenever the source trace
+  always drop it. In general, we can drop it whenever the source trace
   is a stable event. *)
 
 Lemma stable_step_id ge t (P: trace -> Prop):
@@ -879,10 +895,10 @@ Qed.
 
 (** * Receptiveness and determinacy *)
 
-Definition single_events (L: semantics) : Prop :=
+Definition single_events {T'} (L: semantics T') : Prop :=
   forall s t s', Step L s t s' -> (length t <= 1)%nat.
 
-Record receptive (L: semantics) : Prop :=
+Record receptive {T'} (L: semantics T') : Prop :=
   Receptive {
     sr_receptive: forall s t1 s1 t2,
       Step L s t1 s1 -> match_traces (symbolenv L) t1 t2 -> exists s2, Step L s t2 s2;
@@ -890,15 +906,15 @@ Record receptive (L: semantics) : Prop :=
       single_events L
   }.
 
-Record determinate (L: semantics) : Prop :=
+Record determinate {T'} (L: semantics T') : Prop :=
   Determinate {
     sd_determ: forall s t1 s1 t2 s2,
       Step L s t1 s1 -> Step L s t2 s2 ->
       match_traces (symbolenv L) t1 t2 /\ (t1 = t2 -> s1 = s2);
     sd_traces:
       single_events L;
-    sd_initial_determ: forall s1 s2,
-      initial_state L s1 -> initial_state L s2 -> s1 = s2;
+    sd_initial_determ: forall q s1 s2,
+      initial_state L q s1 -> initial_state L q s2 -> s1 = s2;
     sd_final_nostep: forall s r,
       final_state L s r -> Nostep L s;
     sd_final_determ: forall s r1 r2,
@@ -907,7 +923,8 @@ Record determinate (L: semantics) : Prop :=
 
 Section DETERMINACY.
 
-Variable L: semantics.
+Variable T': language_interface.
+Variable L: semantics T'.
 Hypothesis DET: determinate L.
 
 Lemma sd_determ_1:
@@ -946,6 +963,8 @@ Proof.
 Qed.
 
 End DETERMINACY.
+
+(*
 
 (** * Backward simulations between two transition semantics. *)
 
@@ -1283,7 +1302,6 @@ Qed.
 
 (** ** Converting a forward simulation to a backward simulation *)
 
-(*
 Section FORWARD_TO_BACKWARD.
 
 Context L1 L2 index order match_states (FS: fsim_properties L1 L2 index order match_states).
@@ -1576,7 +1594,6 @@ Proof.
 - (* symbols preserved *)
   exact (fsim_public_preserved FS).
 Qed.
-*)
 
 (** * Transforming a semantics into a single-event, equivalent semantics *)
 
@@ -1616,7 +1633,6 @@ End ATOMIC.
 (** A forward simulation from a semantics [L1] to a single-event semantics [L2]
   can be "factored" into a forward simulation from [atomic L1] to [L2]. *)
 
-(*
 Section FACTOR_FORWARD_SIMULATION.
 
 Variable L1: semantics.
@@ -1805,7 +1821,6 @@ Proof.
 - (* symbols *)
   simpl. exact (bsim_public_preserved sim).
 Qed.
-*)
 
 (** Receptiveness of [atomic L]. *)
 
@@ -1841,27 +1856,29 @@ Proof.
   red. intros. inv H0; simpl; omega.
 Qed.
 
+*)
+
 (** * Connections with big-step semantics *)
 
 (** The general form of a big-step semantics *)
 
-Record bigstep_semantics : Type :=
+Record bigstep_semantics TB : Type :=
   Bigstep_semantics {
-    bigstep_terminates: trace -> int -> Prop;
-    bigstep_diverges: traceinf -> Prop
+    bigstep_terminates: query TB -> trace -> reply TB -> Prop;
+    bigstep_diverges: query TB -> traceinf -> Prop
   }.
 
 (** Soundness with respect to a small-step semantics *)
 
-Record bigstep_sound (B: bigstep_semantics) (L: semantics) : Prop :=
+Record bigstep_sound {TB} (B: bigstep_semantics TB) (L: semantics TB) : Prop :=
   Bigstep_sound {
     bigstep_terminates_sound:
-      forall t r,
-      bigstep_terminates B t r ->
-      exists s1, exists s2, initial_state L s1 /\ Star L s1 t s2 /\ final_state L s2 r;
+      forall q t r,
+      bigstep_terminates B q t r ->
+      exists s1, exists s2, initial_state L q s1 /\ Star L s1 t s2 /\ final_state L s2 r;
     bigstep_diverges_sound:
-      forall T,
-      bigstep_diverges B T ->
-      exists s1, initial_state L s1 /\ forever (step L) (globalenv L) s1 T
+      forall q T,
+      bigstep_diverges B q T ->
+      exists s1, initial_state L q s1 /\ forever (step L) (globalenv L) s1 T
 }.
 
