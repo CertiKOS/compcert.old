@@ -9,51 +9,64 @@ Require Import Globalenvs.
 
 (** * Semantic interface of languages *)
 
-Definition query: Type := string * signature * list val * mem.
-Definition reply: Type := val * mem.
+Record language_interface :=
+  mk_language_interface {
+    query: Type;
+    reply: Type;
+    dummy_query: query;
+  }.
 
-Definition dummy_query: query :=
-  (EmptyString, mksignature nil None cc_default, nil, Mem.empty).
+Definition li_c :=
+  {|
+    query := string * signature * list val * mem;
+    reply := val * mem;
+    dummy_query := (EmptyString, signature_main, nil, Mem.empty);
+  |}.
+
+Arguments dummy_query {_}.
 
 (** * Calling conventions *)
 
 (** ** Definition *)
 
-Record callconv :=
+Record callconv T1 T2 :=
   mk_callconv {
     world_def: Type;
     dummy_world_def: world_def;
     match_senv:
       world_def -> Senv.t -> Senv.t -> Prop;
     match_query_def:
-      world_def -> query -> query -> Prop;
+      world_def -> query T1 -> query T2 -> Prop;
     match_reply_def:
-      world_def -> query -> query -> reply -> reply -> Prop;
+      world_def -> query T1 -> query T2 -> reply T1 -> reply T2 -> Prop;
     match_dummy_query_def:
       match_query_def dummy_world_def dummy_query dummy_query;
   }.
 
-Record world (cc: callconv) :=
+Record world {T1 T2} (cc: callconv T1 T2) :=
   mk_world {
-    world_proj :> world_def cc;
-    world_query_l: query;
-    world_query_r: query;
-    world_match_query: match_query_def cc world_proj world_query_l world_query_r;
+    world_proj :> world_def T1 T2 cc;
+    world_query_l: query T1;
+    world_query_r: query T2;
+    world_match_query:
+      match_query_def T1 T2 cc world_proj world_query_l world_query_r;
   }.
 
-Program Definition dummy_world {cc: callconv}: world cc :=
-  mk_world cc _ _ _ (match_dummy_query_def cc).
+Arguments mk_world {T1 T2} cc _ _ _ _.
 
-Inductive match_query (cc: callconv): world cc -> query -> query -> Prop :=
+Program Definition dummy_world {T1 T2 cc}: world cc :=
+  mk_world cc _ _ _ (match_dummy_query_def T1 T2 cc).
+
+Inductive match_query {T1 T2} cc: world cc -> query T1 -> query T2 -> Prop :=
   match_query_intro w q1 q2 Hq:
     match_query cc (mk_world cc w q1 q2 Hq) q1 q2.
 
-Inductive match_reply (cc: callconv): world cc -> reply -> reply -> Prop :=
+Inductive match_reply {T1 T2} cc: world cc -> reply T1 -> reply T2 -> Prop :=
   match_reply_intro w q1 q2 r1 r2 Hq:
-    match_reply_def cc w q1 q2 r1 r2 ->
+    match_reply_def T1 T2 cc w q1 q2 r1 r2 ->
     match_reply cc (mk_world cc w q1 q2 Hq) r1 r2.
 
-Lemma match_query_determ cc w q q1 q2:
+Lemma match_query_determ {T1 T2} (cc: callconv T1 T2) w q q1 q2:
   match_query cc w q q1 ->
   match_query cc w q q2 ->
   q2 = q1.
@@ -83,14 +96,14 @@ Record extcall_step_valid sg (vargs: list val) m1 vres m2 :=
       Mem.unchanged_on (loc_not_writable m1) m1 m2;
   }.
 
-Definition extcall_valid (q: query) (r: reply) :=
+Definition extcall_valid (q: query li_c) (r: reply li_c) :=
   let '(id, sg, vargs, m) := q in
   let '(vres, m') := r in
   extcall_step_valid sg vargs m vres m'.
 
 (** ** Equality passes *)
 
-Program Definition cc_id :=
+Program Definition cc_id {T}: callconv T T :=
   {|
     world_def := unit;
     dummy_world_def := tt;
@@ -99,11 +112,11 @@ Program Definition cc_id :=
     match_reply_def w q1 q2 := eq;
   |}.
 
-Lemma match_cc_id q:
+Lemma match_cc_id {T} q:
   exists w,
-    match_query cc_id w q q /\
+    match_query (@cc_id T) w q q /\
     forall r1 r2,
-      match_reply cc_id w r1 r2 ->
+      match_reply (@cc_id T) w r1 r2 ->
       r1 = r2.
 Proof.
   exists (mk_world cc_id tt q q eq_refl).
@@ -118,7 +131,7 @@ Qed.
 Definition loc_out_of_bounds (m: mem) (b: block) (ofs: Z) : Prop :=
   ~Mem.perm m b ofs Max Nonempty.
 
-Program Definition cc_extends :=
+Program Definition cc_extends: callconv li_c li_c :=
   {|
     world_def := unit;
     dummy_world_def := tt;
@@ -152,7 +165,7 @@ Lemma match_cc_extends id sg vargs1 m1 vargs2 m2:
       Mem.unchanged_on (loc_out_of_bounds m1) m2 m2'.
 Proof.
   intros Hm Hvargs.
-  assert (Hq: match_query_def cc_extends tt (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
+  assert (Hq: match_query_def _ _ cc_extends tt (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
   {
     simpl.
     eauto.
@@ -191,7 +204,7 @@ Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
-Program Definition cc_inject :=
+Program Definition cc_inject: callconv li_c li_c :=
   {|
     world_def := meminj;
     dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
@@ -234,12 +247,12 @@ Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
         inject_separated f f' m1 m2.
 Proof.
   intros Hvargs Hm.
-  assert (Hq: match_query_def cc_inject f (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
+  assert (match_query_def _ _ cc_inject f (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
   {
     simpl.
     eauto.
   }
-  exists (mk_world cc_inject _ _ _ Hq).
+  exists (mk_world cc_inject _ _ _ H).
   split.
   - econstructor.
   - intros vres1 m1' vres2 m2' Hr.

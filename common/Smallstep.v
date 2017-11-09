@@ -513,7 +513,7 @@ Open Scope smallstep_scope.
 
 (** The general form of a forward simulation. *)
 
-Record fsim_properties (cc: callconv) (L1 L2: semantics) (index: Type)
+Record fsim_properties (cc: callconv li_c li_c) (L1 L2: semantics) (index: Type)
                        (order: index -> index -> Prop)
                        (match_states: index -> state L1 -> state L2 -> Prop) : Prop := {
     fsim_order_wf: well_founded order;
@@ -536,7 +536,7 @@ Record fsim_properties (cc: callconv) (L1 L2: semantics) (index: Type)
 
 Arguments fsim_properties: clear implicits.
 
-Inductive forward_simulation (cc: callconv) (L1 L2: semantics) : Prop :=
+Inductive forward_simulation (cc: callconv li_c li_c) (L1 L2: semantics) : Prop :=
   Forward_simulation (index: Type)
                      (order: index -> index -> Prop)
                      (match_states: index -> state L1 -> state L2 -> Prop)
@@ -570,7 +570,7 @@ Qed.
 
 Section FORWARD_SIMU_DIAGRAMS.
 
-Variable cc: callconv.
+Variable cc: callconv li_c li_c.
 Variable L1: semantics.
 Variable L2: semantics.
 

@@ -67,7 +67,7 @@ Inductive event: Type :=
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_annot: string -> list eventval -> event
-  | Event_extcall: query -> reply -> event.
+  | Event_extcall: query li_c -> reply li_c -> event.
 
 (** The dynamic semantics for programs collect traces of events.
   Traces are of two kinds: finite (type [trace]) or infinite (type [traceinf]). *)
@@ -485,7 +485,7 @@ End EVENTVAL_INJECT.
 Section MATCH_TRACES.
 
 Variable ge: Senv.t.
-Variable cc: callconv.
+Variable cc: callconv li_c li_c.
 Variable w: world cc.
 
 (** Matching between traces corresponding to single transitions.
@@ -654,7 +654,7 @@ Qed.
 Section MATCH_TRACES_INV.
 
 Variables ge1 ge2: Senv.t.
-Variable cc: callconv.
+Variable cc: callconv li_c li_c.
 Variable w: world cc.
 
 Hypothesis public_preserved:
