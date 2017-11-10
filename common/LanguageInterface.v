@@ -238,6 +238,8 @@ Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
+(** *** Rectangular diagram *)
+
 Program Definition cc_inject: callconv li_c li_c :=
   {|
     world_def := meminj;
@@ -292,4 +294,116 @@ Proof.
   - intros vres1 m1' vres2 m2' Hr.
     inv Hr.
     assumption.
+Qed.
+
+(** *** Triangular diagram *)
+
+(** The triangular diagram requires the initial memories and arguments
+  to be identical. They need to be "inject_neutral". *)
+
+Inductive cc_inject_triangle_mq: meminj -> query li_c -> query li_c -> Prop :=
+  cc_inject_triangle_mq_intro id sg vargs m:
+    Val.inject_list (Mem.flat_inj (Mem.nextblock m)) vargs vargs ->
+    Mem.inject_neutral (Mem.nextblock m) m ->
+    cc_inject_triangle_mq
+      (Mem.flat_inj (Mem.nextblock m))
+      (id, sg, vargs, m)
+      (id, sg, vargs, m).
+
+(** The execution is allowed to extend this self-injection, so that
+  the replies may be different. Note that there are no unmapped or
+  out-of-reach locations in the initial memory, so that the
+  [Mem.unchanged_on] constraints in [cc_inject] are automatically
+  satisfied in [cc_inject_triangle]. *)
+
+Program Definition cc_inject_triangle: callconv li_c li_c :=
+  {|
+    world_def := meminj;
+    dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
+    match_senv := symbols_inject;
+    match_query_def := cc_inject_triangle_mq;
+    match_reply_def f :=
+      fun '(vargs1, m1) '(vargs2, m2) '(vres1, m1') '(vres2, m2') =>
+        exists f',
+          Val.inject f' vres1 vres2 /\
+          Mem.inject f' m1' m2' /\
+          inject_incr f f' /\
+          inject_separated f f' m1 m2;
+  |}.
+Next Obligation.
+  rewrite <- Mem.nextblock_empty.
+  constructor; intuition.
+  apply Mem.empty_inject_neutral.
+Qed.
+
+Definition cc_inject_triangle_id (w: world cc_inject_triangle) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in id.
+
+Definition cc_inject_triangle_sg (w: world cc_inject_triangle) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in sg.
+
+Definition cc_inject_triangle_args (w: world cc_inject_triangle) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in vargs.
+
+Definition cc_inject_triangle_mem (w: world cc_inject_triangle) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in m.
+
+(** The following lemma and tactic are used in simulation proofs for
+  initial states, as a way to inverse the [match_query] hypothesis. *)
+
+Lemma match_query_cc_inject_triangle (P: _ -> _ -> _ -> _ -> _ -> _ -> Prop):
+  (forall id sg vargs m,
+    Val.inject_list (Mem.flat_inj (Mem.nextblock m)) vargs vargs ->
+    Mem.inject_neutral (Mem.nextblock m) m ->
+    P id sg vargs m (id, sg, vargs, m) (id, sg, vargs, m)) ->
+  (forall w q1 q2,
+    match_query cc_inject_triangle w q1 q2 ->
+    P (cc_inject_triangle_id w)
+      (cc_inject_triangle_sg w)
+      (cc_inject_triangle_args w)
+      (cc_inject_triangle_mem w)
+      q1 q2).
+Proof.
+  intros H w q1 q2 Hq.
+  destruct Hq.
+  destruct Hq.
+  apply H; auto.
+Qed.
+
+Ltac match_query_cc_inject_triangle :=
+  let w := fresh "w" in
+  let q1 := fresh "q1" in
+  let q2 := fresh "q2" in
+  let Hq := fresh "Hq" in
+  intros w q1 q2 Hq;
+  pattern
+    (cc_inject_triangle_id w),
+    (cc_inject_triangle_sg w),
+    (cc_inject_triangle_args w),
+    (cc_inject_triangle_mem w),
+    q1, q2;
+  revert w q1 q2 Hq;
+  apply match_query_cc_inject_triangle.
+
+(** The following lemma is used in simulation proofs for final states,
+  to show that corresponding replies are related. *)
+
+Lemma match_reply_cc_inject_triangle w f' vres1 m1' vres2 m2':
+  let m := cc_inject_triangle_mem w in
+  let f := Mem.flat_inj (Mem.nextblock m) in
+  Val.inject f' vres1 vres2 ->
+  Mem.inject f' m1' m2' ->
+  inject_incr f f' ->
+  inject_separated f f' m m ->
+  match_reply cc_inject_triangle w (vres1, m1') (vres2, m2').
+Proof.
+  intros.
+  subst m f.
+  destruct w as [f q1 q2 Hq].
+  destruct Hq as [id sg vargs m Hvargs Hm].
+  unfold cc_inject_triangle_mem in *.
+  simpl in *.
+  constructor.
+  simpl.
+  eauto 10.
 Qed.
