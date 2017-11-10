@@ -9,7 +9,7 @@ Require Import Globalenvs.
 
 (** * Semantic interface of languages *)
 
-Record language_interface :=
+Structure language_interface :=
   mk_language_interface {
     query: Type;
     reply: Type;
@@ -18,12 +18,24 @@ Record language_interface :=
 
 Arguments dummy_query {_}.
 
-Definition li_c :=
+(** ** Interface for C-like languages *)
+
+Record c_query :=
+  cq {
+    cq_id: string;
+    cq_sg: signature;
+    cq_args: list val;
+    cq_mem: mem;
+  }.
+
+Canonical Structure li_c :=
   {|
-    query := string * signature * list val * mem;
+    query := c_query;
     reply := val * mem;
-    dummy_query := (EmptyString, signature_main, nil, Mem.empty);
+    dummy_query := (cq EmptyString signature_main nil Mem.empty);
   |}.
+
+(** ** Miscellaneous interfaces *)
 
 Definition li_wp :=
   {|
@@ -65,13 +77,15 @@ Record callconv T1 T2 :=
 Record world {T1 T2} (cc: callconv T1 T2) :=
   mk_world {
     world_proj :> world_def T1 T2 cc;
-    world_query_l: query T1;
-    world_query_r: query T2;
+    world_q1: query T1;
+    world_q2: query T2;
     world_match_query:
-      match_query_def T1 T2 cc world_proj world_query_l world_query_r;
+      match_query_def T1 T2 cc world_proj world_q1 world_q2;
   }.
 
 Arguments mk_world {T1 T2} cc _ _ _ _.
+Arguments world_q1 {T1 T2 cc} _.
+Arguments world_q2 {T1 T2 cc} _.
 
 Program Definition dummy_world {T1 T2 cc}: world cc :=
   mk_world cc _ _ _ (match_dummy_query_def T1 T2 cc).
@@ -146,13 +160,13 @@ Program Definition cc_extends: callconv li_c li_c :=
     dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w :=
-      fun '(id1, sg1, vargs1, m1) '(id2, sg2, vargs2, m2) =>
+      fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
         id1 = id2 /\
         sg1 = sg2 /\
         Val.lessdef_list vargs1 vargs2 /\
         Mem.extends m1 m2;
     match_reply_def w :=
-      fun '(vargs1, m1) '(vargs2, m2) '(vres1, m1') '(vres2, m2') =>
+      fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
         Val.lessdef vres1 vres2 /\
         Mem.extends m1' m2' /\
         Mem.unchanged_on (loc_out_of_bounds m1) m2 m2';
@@ -166,7 +180,7 @@ Lemma match_cc_extends id sg vargs1 m1 vargs2 m2:
   Mem.extends m1 m2 ->
   Val.lessdef_list vargs1 vargs2 ->
   exists w,
-    match_query cc_extends w (id, sg, vargs1, m1) (id, sg, vargs2, m2) /\
+    match_query cc_extends w (cq id sg vargs1 m1) (cq id sg vargs2 m2) /\
     forall vres1 m1' vres2 m2',
       match_reply cc_extends w (vres1, m1') (vres2, m2') ->
       Val.lessdef vres1 vres2 /\
@@ -174,7 +188,7 @@ Lemma match_cc_extends id sg vargs1 m1 vargs2 m2:
       Mem.unchanged_on (loc_out_of_bounds m1) m2 m2'.
 Proof.
   intros Hm Hvargs.
-  assert (Hq: match_query_def _ _ cc_extends tt (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
+  assert (Hq: match_query_def _ _ cc_extends tt (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
   {
     simpl.
     eauto.
@@ -219,13 +233,13 @@ Program Definition cc_inject: callconv li_c li_c :=
     dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
     match_query_def f :=
-      fun '(id1, sg1, vargs1, m1) '(id2, sg2, vargs2, m2) =>
+      fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
         id1 = id2 /\
         sg1 = sg2 /\
         Val.inject_list f vargs1 vargs2 /\
         Mem.inject f m1 m2;
     match_reply_def f :=
-      fun '(vargs1, m1) '(vargs2, m2) '(vres1, m1') '(vres2, m2') =>
+      fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
         exists f',
           Val.inject f' vres1 vres2 /\
           Mem.inject f' m1' m2' /\
@@ -244,7 +258,7 @@ Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
   Val.inject_list f vargs1 vargs2 ->
   Mem.inject f m1 m2 ->
   exists w,
-    match_query cc_inject w (id, sg, vargs1, m1) (id, sg, vargs2, m2) /\
+    match_query cc_inject w (cq id sg vargs1 m1) (cq id sg vargs2 m2) /\
     forall vres1 m1' vres2 m2',
       match_reply cc_inject w (vres1, m1') (vres2, m2') ->
       exists f',
@@ -256,7 +270,7 @@ Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
         inject_separated f f' m1 m2.
 Proof.
   intros Hvargs Hm.
-  assert (match_query_def _ _ cc_inject f (id,sg,vargs1,m1) (id,sg,vargs2,m2)).
+  assert (match_query_def _ _ cc_inject f (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
   {
     simpl.
     eauto.
@@ -299,17 +313,10 @@ Qed.
   These components can be obtained from the outer world used in the
   simulation as follows. *)
 
-Definition cc_init_id {cc: callconv li_c li_c} (w: world cc) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in id.
-
-Definition cc_init_sg {cc: callconv li_c li_c} (w: world cc) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in sg.
-
-Definition cc_init_args {cc: callconv li_c li_c} (w: world cc) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in vargs.
-
-Definition cc_init_mem {cc: callconv li_c li_c} (w: world cc) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in m.
+Notation tr_id w := (cq_id (world_q1 w)).
+Notation tr_sg w := (cq_sg (world_q1 w)).
+Notation tr_args w := (cq_args (world_q1 w)).
+Notation tr_mem w := (cq_mem (world_q1 w)).
 
 (** *** Extensions *)
 
@@ -331,15 +338,15 @@ Program Definition cc_extends_triangle: callconv li_c li_c :=
 
 Lemma match_query_cc_extends_triangle (P: _ -> _ -> _ -> _ -> _ -> _ -> Prop):
   (forall id sg vargs m,
-    P id sg vargs m (id, sg, vargs, m) (id, sg, vargs, m)) ->
+    P id sg vargs m (cq id sg vargs m) (cq id sg vargs m)) ->
   (forall w q1 q2,
     match_query cc_extends_triangle w q1 q2 ->
-    P (cc_init_id w) (cc_init_sg w) (cc_init_args w) (cc_init_mem w) q1 q2).
+    P (tr_id w) (tr_sg w) (tr_args w) (tr_mem w) q1 q2).
 Proof.
   intros H w q1 q2 Hq.
   destruct Hq.
   destruct Hq.
-  destruct q1 as [[[? ?] ?] ?].
+  destruct q1.
   apply H; auto.
 Qed.
 
@@ -353,12 +360,9 @@ Lemma match_reply_cc_extends_triangle w vres1 m1' vres2 m2':
 Proof.
   intros.
   destruct w as [f q1 q2 Hq].
-  destruct Hq as [id sg vargs m Hvargs Hm].
-  unfold cc_init_mem in *.
-  simpl in *.
   constructor.
   simpl.
-  eauto 10.
+  auto.
 Qed.
 
 (** *** Injections *)
@@ -372,8 +376,8 @@ Inductive cc_inject_triangle_mq: meminj -> query li_c -> query li_c -> Prop :=
     Mem.inject_neutral (Mem.nextblock m) m ->
     cc_inject_triangle_mq
       (Mem.flat_inj (Mem.nextblock m))
-      (id, sg, vargs, m)
-      (id, sg, vargs, m).
+      (cq id sg vargs m)
+      (cq id sg vargs m).
 
 Program Definition cc_inject_triangle: callconv li_c li_c :=
   {|
@@ -382,7 +386,7 @@ Program Definition cc_inject_triangle: callconv li_c li_c :=
     match_senv := symbols_inject;
     match_query_def := cc_inject_triangle_mq;
     match_reply_def f :=
-      fun '(vargs1, m1) '(vargs2, m2) '(vres1, m1') '(vres2, m2') =>
+      fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
         exists f',
           Val.inject f' vres1 vres2 /\
           Mem.inject f' m1' m2' /\
@@ -403,10 +407,10 @@ Lemma match_query_cc_inject_triangle (P: _ -> _ -> _ -> _ -> _ -> _ -> Prop):
   (forall id sg vargs m,
     Val.inject_list (Mem.flat_inj (Mem.nextblock m)) vargs vargs ->
     Mem.inject_neutral (Mem.nextblock m) m ->
-    P id sg vargs m (id, sg, vargs, m) (id, sg, vargs, m)) ->
+    P id sg vargs m (cq id sg vargs m) (cq id sg vargs m)) ->
   (forall w q1 q2,
     match_query cc_inject_triangle w q1 q2 ->
-    P (cc_init_id w) (cc_init_sg w) (cc_init_args w) (cc_init_mem w) q1 q2).
+    P (tr_id w) (tr_sg w) (tr_args w) (tr_mem w) q1 q2).
 Proof.
   intros H w q1 q2 Hq.
   destruct Hq.
@@ -418,7 +422,7 @@ Qed.
   to show that corresponding replies are related. *)
 
 Lemma match_reply_cc_inject_triangle w f' vres1 m1' vres2 m2':
-  let m := cc_init_mem w in
+  let m := cq_mem (world_q1 w) in
   let f := Mem.flat_inj (Mem.nextblock m) in
   Val.inject f' vres1 vres2 ->
   Mem.inject f' m1' m2' ->
@@ -430,7 +434,6 @@ Proof.
   subst m f.
   destruct w as [f q1 q2 Hq].
   destruct Hq as [id sg vargs m Hvargs Hm].
-  unfold cc_init_mem in *.
   simpl in *.
   constructor.
   simpl.
@@ -448,7 +451,7 @@ Ltac inv_triangle_query :=
   let q2 := fresh "q2" in
   let Hq := fresh "Hq" in
   intros w q1 q2 Hq;
-  pattern (cc_init_id w),(cc_init_sg w),(cc_init_args w),(cc_init_mem w),q1,q2;
+  pattern (tr_id w), (tr_sg w), (tr_args w), (tr_mem w), q1, q2;
   revert w q1 q2 Hq;
   first
     [ apply match_query_cc_extends_triangle

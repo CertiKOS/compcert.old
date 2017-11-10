@@ -560,7 +560,7 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       Val.has_type_list vargs (sig_args (funsig f)) ->
-      initial_state p (id, funsig f, vargs, m) (Callstate f vargs Kstop m).
+      initial_state p (cq id (funsig f) vargs m) (Callstate f vargs Kstop m).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -842,7 +842,7 @@ Inductive bigstep_program_terminates (p: program):
       Genv.find_funct_ptr ge b = Some f ->
       Val.has_type_list vargs (sig_args (funsig f)) ->
       eval_funcall ge m0 f vargs t m r ->
-      bigstep_program_terminates p (id, funsig f, vargs, m0) t (r, m).
+      bigstep_program_terminates p (cq id (funsig f) vargs m0) t (r, m).
 
 Inductive bigstep_program_diverges (p: program):
   query li_c -> traceinf -> Prop :=
@@ -854,7 +854,7 @@ Inductive bigstep_program_diverges (p: program):
       Genv.find_funct_ptr ge b = Some f ->
       Val.has_type_list vargs (sig_args (funsig f)) ->
       evalinf_funcall ge m0 f vargs t ->
-      bigstep_program_diverges p (id, funsig f, vargs, m0) t.
+      bigstep_program_diverges p (cq id (funsig f) vargs m0) t.
 
 Definition bigstep_semantics (p: program) :=
   Bigstep_semantics li_c

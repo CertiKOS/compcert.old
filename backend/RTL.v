@@ -324,7 +324,7 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       Val.has_type_list vargs (sig_args (funsig f)) ->
-      initial_state p (id, funsig f, vargs, m) (Callstate nil f vargs m).
+      initial_state p (cq id (funsig f) vargs m) (Callstate nil f vargs m).
 
 (** A final state is a [Returnstate] with an empty call stack. *)
 

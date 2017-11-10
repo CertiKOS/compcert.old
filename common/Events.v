@@ -501,7 +501,7 @@ Record extcall_step_valid sg (vargs: list val) m1 vres m2 :=
   }.
 
 Definition extcall_valid (q: query li_c) (r: reply li_c) :=
-  let '(id, sg, vargs, m) := q in
+  let '(cq id sg vargs m) := q in
   let '(vres, m') := r in
   extcall_step_valid sg vargs m vres m'.
 
@@ -1566,7 +1566,7 @@ Qed.
 Inductive external_functions_sem id (sg: signature): extcall_sem :=
   external_funcions_sem_intro ge vargs m vres m':
     extcall_step_valid sg vargs m vres m' ->
-    external_functions_sem id sg ge vargs m (Event_extcall (id, sg, vargs, m) (vres, m') :: E0) vres m'.
+    external_functions_sem id sg ge vargs m (Event_extcall (cq id sg vargs m) (vres, m') :: E0) vres m'.
 
 Lemma external_functions_properties:
   forall id sg, extcall_properties (external_functions_sem id sg) sg.
@@ -1592,7 +1592,7 @@ Proof.
     edestruct (match_cc_extends id sg) as (w & Hq & Hr); eauto.
     exists w; intros t' Ht'.
     inv Ht'.
-    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_determ; subst.
+    assert (q2 = cq id sg vargs' m1') by eauto using match_query_determ; subst.
     destruct r2 as [vres' m2'].
     specialize (Hr _ _ _ _ H8).
     exists vres', m2'; intuition.
@@ -1604,7 +1604,7 @@ Proof.
     edestruct match_cc_inject as (w & Hq & Hr); eauto.
     exists w; intros t' Ht'.
     inv Ht'.
-    assert (q2 = (id,sg,vargs',m1')) by eauto using match_query_determ; subst.
+    assert (q2 = cq id sg vargs' m1') by eauto using match_query_determ; subst.
     destruct r2 as [vres' m2'].
     edestruct Hr as (f' & H'); eauto.
     exists f', vres', m2'; intuition.

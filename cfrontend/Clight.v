@@ -680,7 +680,7 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       type_of_fundef f = Tfunction targs tres tcc ->
       Val.has_type_list vargs (typlist_of_typelist targs) ->
       initial_state p
-        (id, signature_of_type targs tres tcc, vargs, m)
+        (cq id (signature_of_type targs tres tcc) vargs m)
         (Callstate f vargs Kstop m).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
