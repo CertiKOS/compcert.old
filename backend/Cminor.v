@@ -553,25 +553,24 @@ End RELSEM.
   corresponding to the invocation of the ``main'' function of the program
   without arguments and with an empty continuation. *)
 
-Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+Inductive initial_state (p: program): query li_c -> state -> Prop :=
+  | initial_state_intro: forall id b f vargs m,
       let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+      Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (id, funsig f, vargs, m) (Callstate f nil Kstop m).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
-Inductive final_state: state -> int -> Prop :=
+Inductive final_state: state -> reply li_c -> Prop :=
   | final_state_intro: forall r m,
-      final_state (Returnstate (Vint r) Kstop m) r.
+      final_state (Returnstate r Kstop m) (r, m).
 
 (** The corresponding small-step semantics. *)
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+  Semantics li_c step (initial_state p) final_state (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
@@ -832,30 +831,32 @@ End NATURALSEM.
 
 (** Big-step execution of a whole program *)
 
-Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
+Inductive bigstep_program_terminates (p: program):
+  query li_c -> trace -> reply li_c -> Prop :=
   | bigstep_program_terminates_intro:
-      forall b f m0 t m r,
+      forall id b f vargs m0 t m r,
       let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Ple (Genv.genv_next ge) (Mem.nextblock m0) ->
+      Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      eval_funcall ge m0 f nil t m (Vint r) ->
-      bigstep_program_terminates p t r.
+      eval_funcall ge m0 f nil t m r ->
+      bigstep_program_terminates p (id, funsig f, vargs, m0) t (r, m).
 
-Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
+Inductive bigstep_program_diverges (p: program):
+  query li_c -> traceinf -> Prop :=
   | bigstep_program_diverges_intro:
-      forall b f m0 t,
+      forall id b f vargs m0 t,
       let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Ple (Genv.genv_next ge) (Mem.nextblock m0) ->
+      Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
       evalinf_funcall ge m0 f nil t ->
-      bigstep_program_diverges p t.
+      bigstep_program_diverges p (id, funsig f, vargs, m0) t.
 
 Definition bigstep_semantics (p: program) :=
-  Bigstep_semantics (bigstep_program_terminates p) (bigstep_program_diverges p).
+  Bigstep_semantics li_c
+    (bigstep_program_terminates p)
+    (bigstep_program_diverges p).
 
 (** ** Correctness of the big-step semantics with respect to the transition semantics *)
 

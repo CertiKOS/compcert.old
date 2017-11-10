@@ -2269,79 +2269,68 @@ Qed.
 
 End WITHMEMINIT.
 
-(** [CompCertX:test-compcert-protect-stack-arg] For the whole-program
-setting, we have to embed the initial memory into a new
-[match_states'] predicate, which will be the new simulation
-relation. *)
-
-Inductive match_states'
-          (s: Csharpminor.state) (s': Cminor.state): Prop :=
-| match_states'_intro
-    m_init
-    (M_INIT: Genv.init_mem prog = Some m_init)    
-    (genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init))
-    (MATCH: match_states m_init s s')
-.
-
-Lemma match_globalenvs_init:
-  forall m,
-  Genv.init_mem prog = Some m ->
-  match_globalenvs m (Mem.flat_inj (Mem.nextblock m)) (Mem.nextblock m).
-Proof.
-  intros. constructor.
-  apply Ple_refl.
-  intros. unfold Mem.flat_inj. apply pred_dec_true; auto.
-  intros. unfold Mem.flat_inj in H0.
-  destruct (plt b1 (Mem.nextblock m)); congruence.
-  intros. eapply Genv.find_symbol_not_fresh; eauto.
-  intros. eapply Genv.find_funct_ptr_not_fresh; eauto.
-  intros. eapply Genv.find_var_info_not_fresh; eauto.
-Qed.
-
 Lemma transl_initial_states:
-  forall S, Csharpminor.initial_state prog S ->
-  exists R, Cminor.initial_state tprog R /\ match_states' S R.
+  forall w q1 q2, match_query cc_inject_triangle w q1 q2 ->
+  forall S, Csharpminor.initial_state prog q1 S ->
+  exists R,
+    Cminor.initial_state tprog q2 R /\
+    match_states (cc_inject_triangle_mem w) S R.
 Proof.
-  induction 1.
+  match_query_cc_inject_triangle.
+  intros id sg vargs m0 Hvargs Hm0 S HS.
+  inv HS.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   econstructor; split.
-  econstructor.
-  apply (Genv.init_mem_transf_partial TRANSL). eauto.
-  simpl. fold tge. rewrite symbols_preserved.
-  replace (prog_main tprog) with (prog_main prog). eexact H0.
-  symmetry. unfold transl_program in TRANSL.
-  eapply match_program_main; eauto. 
-  eexact FIND.
-  rewrite <- H2. apply sig_preserved; auto.
+  erewrite <- sig_preserved by eauto.
   econstructor; eauto.
-  unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
+  fold tge. rewrite genv_next_preserved. assumption.
+  fold tge. rewrite symbols_preserved. assumption.
   eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m0)) (cs := @nil frame) (cenv := PTree.empty Z).
   auto.
-  eapply Genv.initmem_inject; eauto.
-  apply mcs_nil with (Mem.nextblock m0). apply match_globalenvs_init; auto. xomega. xomega.
-  constructor. red; auto.
+  apply Mem.neutral_inject; eauto.
+  apply mcs_nil with (Mem.nextblock m0). econstructor.
+  apply Ple_refl.
+  unfold Mem.flat_inj. intros.
+  destruct (plt b0 (Mem.nextblock m0)); try contradiction. reflexivity.
+  unfold Mem.flat_inj. intros.
+  destruct (plt b1 (Mem.nextblock m0)); congruence.
+  intros. exploit Genv.genv_symb_range; eauto. unfold ge, ge0 in *. xomega.
+  intros. apply Genv.find_funct_ptr_iff in H. exploit Genv.genv_defs_range; eauto. unfold ge, ge0 in *. xomega.
+  intros. apply Genv.find_var_info_iff in H. exploit Genv.genv_defs_range; eauto. unfold ge, ge0 in *; xomega.
+  apply Ple_refl.
+  apply Ple_refl.
+  econstructor.
+  constructor.
   constructor.
 Qed.
 
 Lemma transl_final_states:
-  forall S R r,
-  match_states' S R -> Csharpminor.final_state S r -> Cminor.final_state R r.
+  forall w S R r1,
+  match_states (cc_inject_triangle_mem w) S R ->
+  Csharpminor.final_state S r1 ->
+  exists r2,
+    match_reply cc_inject_triangle w r1 r2 /\
+    Cminor.final_state R r2.
 Proof.
-  intros. inv H0. inv H. inv MATCH. inv MK. inv RESINJ. constructor.
-Qed.
+  intros. inv H0. inv H. inv MK. inv MCS.
+  exists (tv, tm). split.
+  - eapply match_reply_cc_inject_triangle; eauto.
+    eapply match_globalenvs_inject_incr; eassumption.
+    eapply match_globalenvs_inject_separated; eassumption.
+  - constructor.
+Qed. 
 
 Theorem transl_program_correct:
-  forward_simulation cc_inject (Csharpminor.semantics prog) (Cminor.semantics tprog).
+  forward_simulation cc_inject cc_inject_triangle
+    (Csharpminor.semantics prog)
+    (Cminor.semantics tprog).
 Proof.
-  eapply forward_simulation_star; eauto.
+  eapply forward_simulation_star with
+    (match_states := fun w => match_states (cc_inject_triangle_mem w)); eauto.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
-  instantiate (1 := measure).
-  intros. inv H0. exploit transl_step_correct; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw. destruct H0. destruct H0. left. esplit. split. eassumption. econstructor; eauto.
-  destruct H0. destruct H1. right. split; auto. split; auto. econstructor; eauto.
+  auto using transl_step_correct.
 Qed.
 
 End TRANSLATION.
