@@ -95,31 +95,6 @@ Proof.
   reflexivity.
 Qed.
 
-(** ** Expected properties of external call steps *)
-
-Definition loc_not_writable (m: mem) (b: block) (ofs: Z) : Prop :=
-  ~Mem.perm m b ofs Max Writable.
-
-Record extcall_step_valid sg (vargs: list val) m1 vres m2 :=
-  {
-    ecv_well_typed:
-      Val.has_type vres (proj_sig_res sg);
-    ecv_valid_block b:
-      Mem.valid_block m1 b ->
-      Mem.valid_block m2 b;
-    ecv_max_perm b ofs p:
-      Mem.valid_block m1 b ->
-      Mem.perm m2 b ofs Max p ->
-      Mem.perm m1 b ofs Max p;
-    ecv_readonly:
-      Mem.unchanged_on (loc_not_writable m1) m1 m2;
-  }.
-
-Definition extcall_valid (q: query li_c) (r: reply li_c) :=
-  let '(id, sg, vargs, m) := q in
-  let '(vres, m') := r in
-  extcall_step_valid sg vargs m vres m'.
-
 (** ** Equality passes *)
 
 Program Definition cc_id {T}: callconv T T :=
