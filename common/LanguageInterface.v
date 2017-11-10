@@ -296,10 +296,102 @@ Proof.
     assumption.
 Qed.
 
-(** *** Triangular diagram *)
+(** ** Triangular diagrams *)
 
-(** The triangular diagram requires the initial memories and arguments
-  to be identical. They need to be "inject_neutral". *)
+(** When proving simulation for initial and final states, we do not
+  use the rectangular diagrams of [cc_extends] and [cc_inject]
+  directly. Instead, we use triangular diagrams where initial states
+  are identical. The execution can still introduce an extension or
+  injection, so that final states may be different.
+
+  Because initial states are identical, there is no possibility for
+  the target program to modify regions that are present in the target
+  initial memory, but not in the source initial memory (for instance,
+  the caller's spilling locations. Consequently, the [Mem.unchanged]
+  constraints specified in [cc_extends] and [cc_inject] hold
+  automatically. This means the simulation relation does not need to
+  keep track of these invariants, which simplifies the proof
+  significantly.
+
+  The reason this is sufficient is that the triangular diagram is a
+  absorbed on the left by the rectangular diagram: for instance, if we
+  compose the triangular diagram for injection passes with a proof
+  that the target language is compatible with injections, and the
+  rectangular diagram can be recovered. *)
+
+(** *** Initial state accessors *)
+
+(** Following CompCertX, our simulation proofs are parametrized over
+  the components of the initial state (memory, arguments, etc.).
+  These components can be obtained from the outer world used in the
+  simulation as follows. *)
+
+Definition cc_init_id {cc: callconv li_c li_c} (w: world cc) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in id.
+
+Definition cc_init_sg {cc: callconv li_c li_c} (w: world cc) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in sg.
+
+Definition cc_init_args {cc: callconv li_c li_c} (w: world cc) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in vargs.
+
+Definition cc_init_mem {cc: callconv li_c li_c} (w: world cc) :=
+  let '(id, sg, vargs, m) := world_query_l _ w in m.
+
+(** *** Extensions *)
+
+Program Definition cc_extends_triangle: callconv li_c li_c :=
+  {|
+    world_def := unit;
+    dummy_world_def := tt;
+    match_senv w := eq;
+    match_query_def w := eq;
+    match_reply_def w :=
+      fun _ _ '(vres1, m1') '(vres2, m2') =>
+        Val.lessdef vres1 vres2 /\
+        Mem.extends m1' m2'
+  |}.
+
+(** The following lemma and tactic are used in simulation proofs for
+  initial states, as a way to inverse the [match_query] hypothesis.
+  See also the [inv_triangle_query] tactic below. *)
+
+Lemma match_query_cc_extends_triangle (P: _ -> _ -> _ -> _ -> _ -> _ -> Prop):
+  (forall id sg vargs m,
+    P id sg vargs m (id, sg, vargs, m) (id, sg, vargs, m)) ->
+  (forall w q1 q2,
+    match_query cc_extends_triangle w q1 q2 ->
+    P (cc_init_id w) (cc_init_sg w) (cc_init_args w) (cc_init_mem w) q1 q2).
+Proof.
+  intros H w q1 q2 Hq.
+  destruct Hq.
+  destruct Hq.
+  destruct q1 as [[[? ?] ?] ?].
+  apply H; auto.
+Qed.
+
+(** The following lemma is used in simulation proofs for final states,
+  to show that corresponding replies are related. *)
+
+Lemma match_reply_cc_extends_triangle w vres1 m1' vres2 m2':
+  Val.lessdef vres1 vres2 ->
+  Mem.extends m1' m2' ->
+  match_reply cc_extends_triangle w (vres1, m1') (vres2, m2').
+Proof.
+  intros.
+  destruct w as [f q1 q2 Hq].
+  destruct Hq as [id sg vargs m Hvargs Hm].
+  unfold cc_init_mem in *.
+  simpl in *.
+  constructor.
+  simpl.
+  eauto 10.
+Qed.
+
+(** *** Injections *)
+
+(** The triangular diagram for injections requires the initial
+  memories and arguments to be "inject_neutral". *)
 
 Inductive cc_inject_triangle_mq: meminj -> query li_c -> query li_c -> Prop :=
   cc_inject_triangle_mq_intro id sg vargs m:
@@ -309,12 +401,6 @@ Inductive cc_inject_triangle_mq: meminj -> query li_c -> query li_c -> Prop :=
       (Mem.flat_inj (Mem.nextblock m))
       (id, sg, vargs, m)
       (id, sg, vargs, m).
-
-(** The execution is allowed to extend this self-injection, so that
-  the replies may be different. Note that there are no unmapped or
-  out-of-reach locations in the initial memory, so that the
-  [Mem.unchanged_on] constraints in [cc_inject] are automatically
-  satisfied in [cc_inject_triangle]. *)
 
 Program Definition cc_inject_triangle: callconv li_c li_c :=
   {|
@@ -336,20 +422,9 @@ Next Obligation.
   apply Mem.empty_inject_neutral.
 Qed.
 
-Definition cc_inject_triangle_id (w: world cc_inject_triangle) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in id.
-
-Definition cc_inject_triangle_sg (w: world cc_inject_triangle) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in sg.
-
-Definition cc_inject_triangle_args (w: world cc_inject_triangle) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in vargs.
-
-Definition cc_inject_triangle_mem (w: world cc_inject_triangle) :=
-  let '(id, sg, vargs, m) := world_query_l _ w in m.
-
-(** The following lemma and tactic are used in simulation proofs for
-  initial states, as a way to inverse the [match_query] hypothesis. *)
+(** The following lemma is used to prove initial state simulations,
+  as a way to inverse the [match_query] hypothesis. See also the
+  [inv_triangle_query] tactic below. *)
 
 Lemma match_query_cc_inject_triangle (P: _ -> _ -> _ -> _ -> _ -> _ -> Prop):
   (forall id sg vargs m,
@@ -358,11 +433,7 @@ Lemma match_query_cc_inject_triangle (P: _ -> _ -> _ -> _ -> _ -> _ -> Prop):
     P id sg vargs m (id, sg, vargs, m) (id, sg, vargs, m)) ->
   (forall w q1 q2,
     match_query cc_inject_triangle w q1 q2 ->
-    P (cc_inject_triangle_id w)
-      (cc_inject_triangle_sg w)
-      (cc_inject_triangle_args w)
-      (cc_inject_triangle_mem w)
-      q1 q2).
+    P (cc_init_id w) (cc_init_sg w) (cc_init_args w) (cc_init_mem w) q1 q2).
 Proof.
   intros H w q1 q2 Hq.
   destruct Hq.
@@ -370,26 +441,11 @@ Proof.
   apply H; auto.
 Qed.
 
-Ltac match_query_cc_inject_triangle :=
-  let w := fresh "w" in
-  let q1 := fresh "q1" in
-  let q2 := fresh "q2" in
-  let Hq := fresh "Hq" in
-  intros w q1 q2 Hq;
-  pattern
-    (cc_inject_triangle_id w),
-    (cc_inject_triangle_sg w),
-    (cc_inject_triangle_args w),
-    (cc_inject_triangle_mem w),
-    q1, q2;
-  revert w q1 q2 Hq;
-  apply match_query_cc_inject_triangle.
-
 (** The following lemma is used in simulation proofs for final states,
   to show that corresponding replies are related. *)
 
 Lemma match_reply_cc_inject_triangle w f' vres1 m1' vres2 m2':
-  let m := cc_inject_triangle_mem w in
+  let m := cc_init_mem w in
   let f := Mem.flat_inj (Mem.nextblock m) in
   Val.inject f' vres1 vres2 ->
   Mem.inject f' m1' m2' ->
@@ -401,9 +457,26 @@ Proof.
   subst m f.
   destruct w as [f q1 q2 Hq].
   destruct Hq as [id sg vargs m Hvargs Hm].
-  unfold cc_inject_triangle_mem in *.
+  unfold cc_init_mem in *.
   simpl in *.
   constructor.
   simpl.
   eauto 10.
 Qed.
+
+(** *** Tactics *)
+
+(** This tactic is used to apply the relevant lemma at the beginning
+  of initial state simulation proofs. *)
+
+Ltac inv_triangle_query :=
+  let w := fresh "w" in
+  let q1 := fresh "q1" in
+  let q2 := fresh "q2" in
+  let Hq := fresh "Hq" in
+  intros w q1 q2 Hq;
+  pattern (cc_init_id w),(cc_init_sg w),(cc_init_args w),(cc_init_mem w),q1,q2;
+  revert w q1 q2 Hq;
+  first
+    [ apply match_query_cc_extends_triangle
+    | apply match_query_cc_inject_triangle ].

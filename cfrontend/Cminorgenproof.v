@@ -2274,9 +2274,9 @@ Lemma transl_initial_states:
   forall S, Csharpminor.initial_state prog q1 S ->
   exists R,
     Cminor.initial_state tprog q2 R /\
-    match_states (cc_inject_triangle_mem w) S R.
+    match_states (cc_init_mem w) S R.
 Proof.
-  match_query_cc_inject_triangle.
+  inv_triangle_query.
   intros id sg vargs m0 Hvargs Hm0 S HS.
   inv HS.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
@@ -2306,7 +2306,7 @@ Qed.
 
 Lemma transl_final_states:
   forall w S R r1,
-  match_states (cc_inject_triangle_mem w) S R ->
+  match_states (cc_init_mem w) S R ->
   Csharpminor.final_state S r1 ->
   exists r2,
     match_reply cc_inject_triangle w r1 r2 /\
@@ -2326,7 +2326,7 @@ Theorem transl_program_correct:
     (Cminor.semantics tprog).
 Proof.
   eapply forward_simulation_star with
-    (match_states := fun w => match_states (cc_inject_triangle_mem w)); eauto.
+    (match_states := fun w => match_states (cc_init_mem w)); eauto.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
