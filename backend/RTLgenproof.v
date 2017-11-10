@@ -1588,8 +1588,10 @@ Proof.
   fold tge. rewrite genv_next_preserved. assumption.
   fold tge. rewrite symbols_preserved. eassumption.
   eexact A.
+  erewrite sig_transl_function; eassumption.
   constructor. auto. constructor.
-  constructor. apply Mem.extends_refl.
+  clear; induction vargs; eauto.
+  apply Mem.extends_refl.
 Qed.
 
 Lemma transl_final_states:

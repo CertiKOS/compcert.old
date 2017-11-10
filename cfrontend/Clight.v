@@ -678,9 +678,10 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction targs tres tcc ->
+      Val.has_type_list vargs (typlist_of_typelist targs) ->
       initial_state p
         (id, signature_of_type targs tres tcc, vargs, m)
-        (Callstate f nil Kstop m).
+        (Callstate f vargs Kstop m).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 

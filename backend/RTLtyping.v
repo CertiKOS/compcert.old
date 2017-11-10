@@ -984,13 +984,13 @@ Proof.
   apply wt_regset_assign; auto. rewrite H10; auto.
 Qed.
 
-Lemma wt_initial_state:
-  forall S, initial_state p S -> wt_state (Some Tint) S.
+Lemma wt_initial_state id sg args m:
+  forall S, initial_state p (id, sg, args, m) S -> wt_state (sig_res sg) S.
 Proof.
-  intros. inv H. constructor. constructor. rewrite H3; auto.
+  intros. inv H. constructor. constructor. auto.
   pattern f. apply Genv.find_funct_ptr_prop with fundef unit p b.
-  exact wt_p. exact H2.
-  rewrite H3. constructor.
+  exact wt_p. exact H7.
+  assumption.
 Qed.
 
 Lemma wt_instr_inv:

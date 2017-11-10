@@ -1094,8 +1094,11 @@ Proof.
     + fold tge. rewrite genv_next_preserved. assumption.
     + fold tge. rewrite symbols_preserved. eassumption.
     + fold tge. assumption.
+    + erewrite sig_function_translated; eauto.
   }
-  econstructor; eauto. red; intros; constructor. apply Mem.extends_refl.
+  econstructor; eauto. red; intros; constructor.
+  clear; induction vargs0; eauto.
+  apply Mem.extends_refl.
 Qed.
 
 Lemma sel_final_states:

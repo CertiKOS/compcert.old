@@ -1779,6 +1779,7 @@ Proof.
   rewrite <- E.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved; eauto.
+  rewrite E. simpl. assumption.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
 Qed.
 

@@ -2285,6 +2285,7 @@ Proof.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved. assumption.
   fold tge. rewrite symbols_preserved. assumption.
+  erewrite sig_preserved; eauto.
   eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m0)) (cs := @nil frame) (cenv := PTree.empty Z).
   auto.
   apply Mem.neutral_inject; eauto.
@@ -2301,7 +2302,7 @@ Proof.
   apply Ple_refl.
   econstructor.
   constructor.
-  constructor.
+  assumption.
 Qed.
 
 Lemma transl_final_states:
