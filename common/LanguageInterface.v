@@ -109,7 +109,7 @@ Proof.
   reflexivity.
 Qed.
 
-(** ** Equality passes *)
+(** ** Identity *)
 
 Program Definition cc_id {T}: callconv T T :=
   {|
@@ -148,6 +148,89 @@ Proof.
   destruct w.
   repeat constructor.
 Qed.
+
+(** ** Composition *)
+
+Section COMPOSE.
+  Context {li1 li2 li3} (cc12: callconv li1 li2) (cc23: callconv li2 li3).
+
+  Program Definition cc_compose :=
+    {|
+      world_def := world_def _ _ cc12 * world_def _ _ cc23 * query li2;
+      dummy_world_def :=
+        (dummy_world_def _ _ cc12, dummy_world_def _ _ cc23, dummy_query);
+      match_senv w ge1 ge3 :=
+        exists ge2,
+          match_senv li1 li2 cc12 (fst (fst w)) ge1 ge2 /\
+          match_senv li2 li3 cc23 (snd (fst w)) ge2 ge3;
+      match_query_def w q1 q3 :=
+        let '(w12, w23, q2) := w in
+          match_query_def li1 li2 cc12 w12 q1 q2 /\
+          match_query_def li2 li3 cc23 w23 q2 q3;
+      match_reply_def w q1 q3 r1 r3 :=
+        let '(w12, w23, q2) := w in
+        exists r2,
+          match_reply_def li1 li2 cc12 w12 q1 q2 r1 r2 /\
+          match_reply_def li2 li3 cc23 w23 q2 q3 r2 r3;
+    |}.
+  Next Obligation.
+    eauto using match_dummy_query_def.
+  Qed.
+
+  Definition comp_fst (w: world cc_compose) :=
+    let '(mk_world (w12, w23, q2) q1 q3 (conj Hq12 Hq23)) := w in
+    mk_world cc12 w12 q1 q2 Hq12.
+
+  Definition comp_snd (w: world cc_compose) :=
+    let '(mk_world (w12, w23, q2) q1 q3 (conj Hq12 Hq23)) := w in
+    mk_world cc23 w23 q2 q3 Hq23.
+
+  Lemma match_query_cc_compose (P: _ -> _ -> _ -> _ -> Prop):
+    (forall w12 q1 q2, match_query cc12 w12 q1 q2 ->
+     forall w23 q2' q3, match_query cc23 w23 q2' q3 ->
+     q2' = q2 ->
+     P w12 w23 q1 q3) ->
+    (forall w q1 q3, match_query cc_compose w q1 q3 ->
+     P (comp_fst w) (comp_snd w) q1 q3).
+  Proof.
+    intros H w q1 q3 Hq.
+    destruct Hq as [w q1 q3 Hq].
+    destruct w as [[w12 w23] q2].
+    destruct Hq as [Hq12 Hq23].
+    assert (match_query cc12 (mk_world _ w12 q1 q2 Hq12) q1 q2) by constructor.
+    assert (match_query cc23 (mk_world _ w23 q2 q3 Hq23) q2 q3) by constructor.
+    simpl in *.
+    eauto.
+  Qed.
+
+  Lemma match_reply_cc_compose w r1 r2 r3:
+    match_reply cc12 (comp_fst w) r1 r2 ->
+    match_reply cc23 (comp_snd w) r2 r3 ->
+    match_reply cc_compose w r1 r3.
+  Proof.
+    intros H12 H23.
+    destruct w as [[[w12 w23] q2] q1 q3 [Hq12 Hq23]].
+    simpl in *.
+    inv H12.
+    inv H23.
+    constructor.
+    exists r2.
+    eauto.
+  Qed.
+End COMPOSE.
+
+Arguments comp_fst {li1 li2 li3 cc12 cc23} w.
+Arguments comp_snd {li1 li2 li3 cc12 cc23} w.
+
+Ltac inv_compose_query :=
+  let w := fresh "w" in
+  let q1 := fresh "q1" in
+  let q2 := fresh "q2" in
+  let Hq := fresh "Hq" in
+  intros w q1 q2 Hq;
+  pattern (comp_fst w), (comp_snd w), q1, q2;
+  revert w q1 q2 Hq;
+  apply match_query_cc_compose.
 
 (** ** Extension passes *)
 
