@@ -1574,37 +1574,45 @@ Proof.
 Qed.
 
 Lemma transl_initial_states:
-  forall S, CminorSel.initial_state prog S ->
-  exists R, RTL.initial_state tprog R /\ match_states S R.
+  forall w q1 q2, match_query cc_extends_triangle w q1 q2 ->
+  forall S, CminorSel.initial_state prog q1 S ->
+  exists R, RTL.initial_state tprog q2 R /\ match_states S R.
 Proof.
-  induction 1.
+  inv_triangle_query.
+  intros id sg vargs m S H.
+  inv H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
   econstructor; split.
-  econstructor. apply (Genv.init_mem_transf_partial TRANSL); eauto.
-  replace (prog_main tprog) with (prog_main prog). rewrite symbols_preserved; eauto.
-  symmetry; eapply match_program_main; eauto.
+  erewrite <- sig_transl_function by eauto.
+  econstructor.
+  fold tge. rewrite genv_next_preserved. assumption.
+  fold tge. rewrite symbols_preserved. eassumption.
   eexact A.
-  rewrite <- H2. apply sig_transl_function; auto.
   constructor. auto. constructor.
   constructor. apply Mem.extends_refl.
 Qed.
 
 Lemma transl_final_states:
-  forall S R r,
-  match_states S R -> CminorSel.final_state S r -> RTL.final_state R r.
+  forall w S R r1,
+  match_states S R -> CminorSel.final_state S r1 ->
+  exists r2, match_reply cc_extends_triangle w r1 r2 /\ RTL.final_state R r2.
 Proof.
-  intros. inv H0. inv H. inv MS. inv LD. constructor.
+  intros. inv H0. inv H. inv MS.
+  exists (tv, tm). split; auto using match_reply_cc_extends_triangle.
+  constructor.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation cc_extends (CminorSel.semantics prog) (RTL.semantics tprog).
+  forward_simulation cc_extends cc_extends_triangle
+    (CminorSel.semantics prog)
+    (RTL.semantics tprog).
 Proof.
-  eapply forward_simulation_star_wf with (order := lt_state).
+  eapply forward_simulation_star_wf with (match_states := fun _ => match_states) (order := lt_state).
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
   apply lt_state_wf.
-  exact transl_step_correct.
+  auto using transl_step_correct.
 Qed.
 
 End CORRECTNESS.
