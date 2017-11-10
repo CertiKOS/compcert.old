@@ -213,8 +213,6 @@ Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
-(** *** Rectangular diagram *)
-
 Program Definition cc_inject: callconv li_c li_c :=
   {|
     world_def := meminj;
