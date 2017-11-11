@@ -270,27 +270,25 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
-(** The state needs to keep track of the initial locset. *)
-
-Inductive step_with_ls ge: state * locset -> trace -> state * locset -> Prop :=
-  step_with_ls_intro ls s t s':
-    step ls ge s t s' ->
-    step_with_ls ge (s, ls) t (s', ls).
-
-Inductive initial_state (p: program): query li_locset -> state*locset -> Prop :=
+Inductive initial_state (p: program): query li_locset -> state -> Prop :=
   | initial_state_intro: forall id b f rs m,
       let ge := Genv.globalenv p in
       Ple (Genv.genv_next ge) (Mem.nextblock m) ->
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      initial_state p (lq id rs m) (Callstate nil f rs m, rs).
+      initial_state p (lq id rs m) (Callstate nil f rs m).
 
-Inductive final_state: state * locset -> reply li_locset -> Prop :=
-  | final_state_intro: forall rs m rs0,
-      final_state (Returnstate nil rs m, rs0) (rs, m).
+Inductive final_state: state -> reply li_locset -> Prop :=
+  | final_state_intro: forall rs m,
+      final_state (Returnstate nil rs m) (rs, m).
 
 Definition semantics (p: program) :=
-  Semantics li_locset step_with_ls (initial_state p) final_state (Genv.globalenv p).
+  Semantics_gen li_locset
+    (fun q => step (lq_rs q))
+    (initial_state p)
+    (fun _ => final_state)
+    (Genv.globalenv p)
+    (Genv.globalenv p).
 
 (** * Operations over LTL *)
 

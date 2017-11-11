@@ -2505,11 +2505,10 @@ End WITHINILS.
 
 Let cc := cc_compose cc_extends_triangle cc_locset.
 
-Let ms (w: world cc) s1 s2 :=
+Let ms (w: world cc) :=
   let rs := ls_rs (comp_snd w) in
   let sg := ls_sg (comp_snd w) in
-  match_states rs (sig_res sg) s1 (fst s2) /\
-  snd s2 = rs.
+  match_states rs (sig_res sg).
 
 Lemma initial_states_simulation:
   forall w q1 q2, match_query cc w q1 q2 ->
@@ -2525,11 +2524,10 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf rs m, rs); split.
+  exists (LTL.Callstate nil tf rs m); split.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved. assumption.
   rewrite symbols_preserved. assumption.
-  constructor; auto.
   constructor; auto.
   constructor. rewrite SIG; auto.
   rewrite SIG. clear. induction (map _ _); eauto.
@@ -2544,10 +2542,8 @@ Lemma final_states_simulation:
   RTL.final_state st1 r1 ->
   exists r2, match_reply cc w r1 r2 /\ LTL.final_state st2 r2.
 Proof.
-  intros w st1 [st2 rs0] r1 [Hst Hrs0] H.
-  simpl in *.
-  inv H. inv Hst. inv STACKS. inv H.
-  simpl in AG.
+  intros. inv H0. inv H. inv STACKS.
+  inv H. simpl in AG.
   exists (ls, m'). split.
   - eapply match_reply_cc_compose.
     + apply match_reply_cc_extends_triangle; eauto.
@@ -2588,25 +2584,13 @@ Proof.
   inv_locset_query. intros. inv H0.
   eapply wt_initial_state with (p := prog); eauto. exact wt_prog.
 - intros. destruct H. eapply final_states_simulation; eauto.
-- intros. destruct H0. destruct H1.
+- intros. destruct H0.
   exploit step_simulation; eauto.
   intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [s2' [A B]].
-  exists (s2', ls_rs (comp_snd w0)); split. simpl.
-  {
-    destruct s2 as [s2 rs]. simpl in *. subst.
-    revert A. generalize (ls_rs (comp_snd w0)). clear.
-    intros rs H.
-    pattern s2, t', s2'.
-    eapply plus_ind2; eauto; clear; intros.
-    + apply plus_one.
-      constructor; eauto.
-    + eapply plus_left'; eauto.
-      constructor; eauto.
-  }
-  split.
+  exists s2'; split. rewrite comp_snd_q2 in A. exact A. split.
   eapply subject_reduction; eauto. eexact wt_prog. eexact H.
-  constructor; auto.
+  auto.
 Qed.
 
 End PRESERVATION.

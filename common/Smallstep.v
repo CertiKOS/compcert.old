@@ -473,12 +473,12 @@ End CLOSURES.
 
 (** The general form of a transition semantics. *)
 
-Record semantics T2: Type := Semantics_gen {
+Record semantics B: Type := Semantics_gen {
   state: Type;
   genvtype: Type;
-  step : genvtype -> state -> trace -> state -> Prop;
-  initial_state: query T2 -> state -> Prop;
-  final_state: state -> reply T2 -> Prop;
+  step : query B -> genvtype -> state -> trace -> state -> Prop;
+  initial_state: query B -> state -> Prop;
+  final_state: query B -> state -> reply B -> Prop;
   globalenv: genvtype;
   symbolenv: Senv.t
 }.
@@ -486,28 +486,26 @@ Record semantics T2: Type := Semantics_gen {
 (** The form used in earlier CompCert versions, for backward compatibility. *)
 
 Definition Semantics B {state funtype vartype: Type}
-                     (step: Genv.t funtype vartype -> state -> trace -> state -> Prop)
-                     (initial_state: query B -> state -> Prop)
-                     (final_state: state -> reply B -> Prop)
-                     (globalenv: Genv.t funtype vartype) :=
+    (step: Genv.t funtype vartype -> state -> trace -> state -> Prop)
+    (initial_state: query B -> state -> Prop)
+    (final_state: state -> reply B -> Prop)
+    (globalenv: Genv.t funtype vartype) :=
   {| state := state;
      genvtype := Genv.t funtype vartype;
-     step := step;
+     step q := step;
      initial_state := initial_state;
-     final_state := final_state;
+     final_state q := final_state;
      globalenv := globalenv;
      symbolenv := Genv.to_senv globalenv |}.
 
 (** Handy notations. *)
 
-Notation " 'Step' L " := (step L (globalenv L)) (at level 1) : smallstep_scope.
-Notation " 'Star' L " := (star (step L) (globalenv L)) (at level 1) : smallstep_scope.
-Notation " 'Plus' L " := (plus (step L) (globalenv L)) (at level 1) : smallstep_scope.
-Notation " 'Forever_silent' L " := (forever_silent (step L) (globalenv L)) (at level 1) : smallstep_scope.
-Notation " 'Forever_reactive' L " := (forever_reactive (step L) (globalenv L)) (at level 1) : smallstep_scope.
-Notation " 'Nostep' L " := (nostep (step L) (globalenv L)) (at level 1) : smallstep_scope.
-
-Open Scope smallstep_scope.
+Notation Step L q := (step L q (globalenv L)).
+Notation Star L q := (star (step L q) (globalenv L)).
+Notation Plus L q := (plus (step L q) (globalenv L)).
+Notation Forever_silent L q := (forever_silent (step L q) (globalenv L)).
+Notation Forever_reactive L q := (forever_reactive (step L q) (globalenv L)).
+Notation Nostep L q := (nostep (step L q) (globalenv L)).
 
 (** * Forward simulations between two transition semantics. *)
 
@@ -527,16 +525,16 @@ Record fsim_properties {B1 B2} (ccA: callconv li_c li_c) (ccB: callconv B1 B2)
     fsim_match_final_states:
       forall w0 i s1 s2 r1,
         match_states w0 i s1 s2 ->
-        final_state L1 s1 r1 ->
+        final_state L1 (world_q1 w0) s1 r1 ->
         exists r2,
           match_reply ccB w0 r1 r2 /\
-          final_state L2 s2 r2;
+          final_state L2 (world_q2 w0) s2 r2;
     fsim_simulation:
-      forall w0 s1 t s1', Step L1 s1 t s1' ->
+      forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
       forall i s2, match_states w0 i s1 s2 ->
       exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
       exists i', exists s2',
-         (Plus L2 s2 t' s2' \/ (Star L2 s2 t' s2' /\ order i' i))
+         (Plus L2 (world_q2 w0) s2 t' s2' \/ (Star L2 (world_q2 w0) s2 t' s2' /\ order i' i))
       /\ match_states w0 i' s1' s2';
     fsim_public_preserved:
       forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id
@@ -557,10 +555,10 @@ Arguments Forward_simulation {B1 B2 ccA ccB L1 L2 index} order match_states prop
 Lemma fsim_simulation':
   forall B1 B2 ccA ccB L1 L2 index order match_states,
   @fsim_properties B1 B2 ccA ccB L1 L2 index order match_states ->
-  forall i s1 t s1', Step L1 s1 t s1' ->
-  forall w0 s2, match_states w0 i s1 s2 ->
+  forall w0 i s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
+  forall s2, match_states w0 i s1 s2 ->
   exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
-  (exists i', exists s2', Plus L2 s2 t' s2' /\ match_states w0 i' s1' s2')
+  (exists i', exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 i' s1' s2')
   \/ (exists i', order i' i /\ t = E0 /\ match_states w0 i' s1' s2).
 Proof.
   intros. exploit (@fsim_simulation B1 B2); eauto.
@@ -600,10 +598,10 @@ Hypothesis match_initial_states:
 Hypothesis match_final_states:
   forall w s1 s2 r1,
   match_states w s1 s2 ->
-  final_state L1 s1 r1 ->
+  final_state L1 (world_q1 w) s1 r1 ->
   exists r2,
     match_reply ccB w r1 r2 /\
-    final_state L2 s2 r2.
+    final_state L2 (world_q2 w) s2 r2.
 
 (** Simulation when one transition in the first program
     corresponds to zero, one or several transitions in the second program.
@@ -621,11 +619,11 @@ Variable order: state L1 -> state L1 -> Prop.
 Hypothesis order_wf: well_founded order.
 
 Hypothesis simulation:
-  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
   exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
   exists s2',
-  (Plus L2 s2 t' s2' \/ (Star L2 s2 t' s2' /\ order s1' s1))
+  (Plus L2 (world_q2 w0) s2 t' s2' \/ (Star L2 (world_q2 w0) s2 t' s2' /\ order s1' s1))
   /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_star_wf: forward_simulation ccA ccB L1 L2.
@@ -654,10 +652,10 @@ Section SIMULATION_STAR.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
   exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
-  (exists s2', Plus L2 s2 t' s2' /\ match_states w0 s1' s2')
+  (exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2')
   \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
 Lemma forward_simulation_star: forward_simulation ccA ccB L1 L2.
@@ -680,10 +678,10 @@ End SIMULATION_STAR.
 Section SIMULATION_PLUS.
 
 Hypothesis simulation:
-  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
   exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
-  exists s2', Plus L2 s2 t' s2' /\ match_states w0 s1' s2'.
+  exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_plus: forward_simulation ccA ccB L1 L2.
 Proof.
@@ -700,10 +698,10 @@ End SIMULATION_PLUS.
 Section SIMULATION_STEP.
 
 Hypothesis simulation:
-  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
   exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
-  exists s2', Step L2 s2 t' s2' /\ match_states w0 s1' s2'.
+  exists s2', Step L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_step: forward_simulation ccA ccB L1 L2.
 Proof.
@@ -727,10 +725,10 @@ Section SIMULATION_OPT.
 Variable measure: state L1 -> nat.
 
 Hypothesis simulation:
-  forall w0 s1 t s1', Step L1 s1 t s1' ->
+  forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
   exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
-  (exists s2', Step L2 s2 t' s2' /\ match_states w0 s1' s2')
+  (exists s2', Step L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2')
   \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
 Lemma forward_simulation_opt: forward_simulation ccA ccB L1 L2.
@@ -896,29 +894,29 @@ Qed.
 (** * Receptiveness and determinacy *)
 
 Definition single_events {T'} (L: semantics T') : Prop :=
-  forall s t s', Step L s t s' -> (length t <= 1)%nat.
+  forall q s t s', Step L q s t s' -> (length t <= 1)%nat.
 
 Record receptive {T'} (L: semantics T') : Prop :=
   Receptive {
-    sr_receptive: forall s t1 s1 t2,
-      Step L s t1 s1 -> match_traces (symbolenv L) t1 t2 -> exists s2, Step L s t2 s2;
+    sr_receptive: forall q s t1 s1 t2,
+      Step L q s t1 s1 -> match_traces (symbolenv L) t1 t2 -> exists s2, Step L q s t2 s2;
     sr_traces:
       single_events L
   }.
 
 Record determinate {T'} (L: semantics T') : Prop :=
   Determinate {
-    sd_determ: forall s t1 s1 t2 s2,
-      Step L s t1 s1 -> Step L s t2 s2 ->
+    sd_determ: forall q s t1 s1 t2 s2,
+      Step L q s t1 s1 -> Step L q s t2 s2 ->
       match_traces (symbolenv L) t1 t2 /\ (t1 = t2 -> s1 = s2);
     sd_traces:
       single_events L;
     sd_initial_determ: forall q s1 s2,
       initial_state L q s1 -> initial_state L q s2 -> s1 = s2;
-    sd_final_nostep: forall s r,
-      final_state L s r -> Nostep L s;
-    sd_final_determ: forall s r1 r2,
-      final_state L s r1 -> final_state L s r2 -> r1 = r2
+    sd_final_nostep: forall q s r,
+      final_state L q s r -> Nostep L q s;
+    sd_final_determ: forall q s r1 r2,
+      final_state L q s r1 -> final_state L q s r2 -> r1 = r2
   }.
 
 Section DETERMINACY.
@@ -928,22 +926,22 @@ Variable L: semantics T'.
 Hypothesis DET: determinate L.
 
 Lemma sd_determ_1:
-  forall s t1 s1 t2 s2,
-  Step L s t1 s1 -> Step L s t2 s2 -> match_traces (symbolenv L) t1 t2.
+  forall q s t1 s1 t2 s2,
+  Step L q s t1 s1 -> Step L q s t2 s2 -> match_traces (symbolenv L) t1 t2.
 Proof.
   intros. eapply sd_determ; eauto.
 Qed.
 
 Lemma sd_determ_2:
-  forall s t s1 s2,
-  Step L s t s1 -> Step L s t s2 -> s1 = s2.
+  forall q s t s1 s2,
+  Step L q s t s1 -> Step L q s t s2 -> s1 = s2.
 Proof.
   intros. eapply sd_determ; eauto.
 Qed.
 
 Lemma star_determinacy:
-  forall s t s', Star L s t s' ->
-  forall s'', Star L s t s'' -> Star L s' E0 s'' \/ Star L s'' E0 s'.
+  forall q s t s', Star L q s t s' ->
+  forall s'', Star L q s t s'' -> Star L q s' E0 s'' \/ Star L q s'' E0 s'.
 Proof.
   induction 1; intros.
   auto.
@@ -1875,10 +1873,10 @@ Record bigstep_sound {TB} (B: bigstep_semantics TB) (L: semantics TB) : Prop :=
     bigstep_terminates_sound:
       forall q t r,
       bigstep_terminates B q t r ->
-      exists s1, exists s2, initial_state L q s1 /\ Star L s1 t s2 /\ final_state L s2 r;
+      exists s1, exists s2, initial_state L q s1 /\ Star L q s1 t s2 /\ final_state L q s2 r;
     bigstep_diverges_sound:
       forall q T,
       bigstep_diverges B q T ->
-      exists s1, initial_state L q s1 /\ forever (step L) (globalenv L) s1 T
+      exists s1, initial_state L q s1 /\ forever (step L q) (globalenv L) s1 T
 }.
 

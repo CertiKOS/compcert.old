@@ -185,6 +185,20 @@ Section COMPOSE.
     let '(mk_world (w12, w23, q2) q1 q3 (conj Hq12 Hq23)) := w in
     mk_world cc23 w23 q2 q3 Hq23.
 
+  Lemma comp_fst_q1 (w: world cc_compose):
+    world_q1 (comp_fst w) = world_q1 w.
+  Proof.
+    destruct w as [[[w12 w23] q2] q1 q3 [Hq12 Hq23]].
+    reflexivity.
+  Qed.
+
+  Lemma comp_snd_q2 (w: world cc_compose):
+    world_q2 (comp_snd w) = world_q2 w.
+  Proof.
+    destruct w as [[[w12 w23] q2] q1 q3 [Hq12 Hq23]].
+    reflexivity.
+  Qed.
+
   Lemma match_query_cc_compose (P: _ -> _ -> _ -> _ -> Prop):
     (forall w12 q1 q2, match_query cc12 w12 q1 q2 ->
      forall w23 q2' q3, match_query cc23 w23 q2' q3 ->

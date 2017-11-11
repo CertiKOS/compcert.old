@@ -1803,7 +1803,7 @@ Proof.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
-  intros _; eexact transl_step.
+  eauto using transl_step.
 Qed.
 
 End CORRECTNESS.
