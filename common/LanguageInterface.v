@@ -120,6 +120,12 @@ Program Definition cc_id {T}: callconv T T :=
     match_reply_def w q1 q2 := eq;
   |}.
 
+Lemma cc_id_q {li} (w: world (@cc_id li)):
+  world_q1 w = world_q2 w.
+Proof.
+  destruct w; assumption.
+Qed.
+
 Lemma match_cc_id {T} q:
   exists w,
     match_query (@cc_id T) w q q /\

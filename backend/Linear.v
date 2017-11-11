@@ -252,19 +252,22 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
-Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+Inductive initial_state (p: program): query li_locset -> state -> Prop :=
+  | initial_state_intro: forall id b f rs m,
       let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+      Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      initial_state p (Callstate nil f (Locmap.init Vundef) m0).
+      initial_state p (lq id rs m) (Callstate nil f rs m).
 
-Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m retcode,
-      Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
-      final_state (Returnstate nil rs m) retcode.
+Inductive final_state: state -> reply li_locset -> Prop :=
+  | final_state_intro: forall rs m,
+      final_state (Returnstate nil rs m) (rs, m).
 
 Definition semantics (p: program) :=
-  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
+  Semantics_gen li_locset
+    (fun q => step (lq_rs q))
+    (initial_state p)
+    (fun _ => final_state)
+    (Genv.globalenv p)
+    (Genv.globalenv p).

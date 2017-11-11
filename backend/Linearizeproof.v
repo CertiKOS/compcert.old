@@ -17,6 +17,7 @@ Require Import Coqlib Maps Ordered Errors Lattice Kildall Integers.
 Require Import AST Linking.
 Require Import Values Memory Events Globalenvs Smallstep.
 Require Import Op Locations LTL Linear.
+Require Import Conventions.
 Require Import Linearize.
 
 Module NodesetFacts := FSetFacts.Facts(Nodeset).
@@ -718,36 +719,40 @@ Proof.
 Qed.
 
 Lemma transf_initial_states:
-  forall st1, LTL.initial_state prog st1 ->
-  exists st2, Linear.initial_state tprog st2 /\ match_states st1 st2.
+  forall w q1 q2, match_query (@cc_id li_locset) w q1 q2 ->
+  forall st1, LTL.initial_state prog q1 st1 ->
+  exists st2, Linear.initial_state tprog q2 st2 /\ match_states st1 st2.
 Proof.
+  intros w q1 q Hq. apply match_query_cc_id in Hq. subst.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
-  econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
-  rewrite (match_program_main TRANSF).
+  exists (Callstate nil tf rs m); split.
+  econstructor; eauto.
+  fold tge. rewrite genv_next_preserved; eauto.
   rewrite symbols_preserved. eauto.
-  rewrite <- H3. apply sig_preserved. auto.
   constructor. constructor. auto.
 Qed.
 
 Lemma transf_final_states:
-  forall st1 st2 r,
-  match_states st1 st2 -> LTL.final_state st1 r -> Linear.final_state st2 r.
+  forall w st1 st2 r1, match_states st1 st2 -> LTL.final_state st1 r1 ->
+  exists r2, match_reply cc_id w r1 r2 /\ Linear.final_state st2 r2.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H4. eexists. split.
+  apply match_reply_cc_id.
+  econstructor; eauto.
 Qed.
 
 End WITHINITLS.
 
 Theorem transf_program_correct:
-  forward_simulation cc_id (LTL.semantics prog) (Linear.semantics tprog).
+  forward_simulation cc_id cc_id (LTL.semantics prog) (Linear.semantics tprog).
 Proof.
-  eapply forward_simulation_star.
+  eapply forward_simulation_star with (match_states := fun _ => match_states).
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  apply transf_step_correct.
+  setoid_rewrite cc_id_q. simpl in *.
+  eauto 10 using transf_step_correct.
 Qed.
 
 End LINEARIZATION.
