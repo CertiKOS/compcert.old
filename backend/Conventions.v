@@ -103,3 +103,122 @@ Proof.
   generalize (loc_arguments_bounded _ _ _ H0).
   generalize (typesize_pos ty). omega.
 Qed.
+
+(** * Calling convention *)
+
+Require Import LanguageInterface.
+Require Import String.
+Require Import Values.
+Require Import Memory.
+
+(** Languages with [locset]s (currently LTL and Linear) use the
+  following interface and calling convention. *)
+
+Record locset_query :=
+  lq {
+    lq_id: string;
+    lq_rs: Locmap.t;
+    lq_mem: mem;
+  }.
+
+Canonical Structure li_locset: language_interface :=
+  {|
+    query := locset_query;
+    reply := Locmap.t * mem;
+    dummy_query := (lq EmptyString (Locmap.init Vundef) Mem.empty);
+  |}.
+
+(** We now define the calling convention between C and locset languages. *)
+
+Definition callee_save_loc (l: loc) :=
+  match l with
+  | R r => is_callee_save r = true
+  | S sl ofs ty => sl <> Outgoing
+  end.
+
+Definition agree_callee_save (ls1 ls2: Locmap.t) : Prop :=
+  forall l, callee_save_loc l -> ls1 l = ls2 l.
+
+Program Definition cc_locset: callconv li_c li_locset :=
+  {|
+    world_def := unit;
+    dummy_world_def := tt;
+    match_senv w := eq;
+    match_query_def w :=
+      fun '(cq id1 sg args m1) '(lq id2 rs m2) =>
+        id1 = id2 /\
+        args = map (fun p => Locmap.getpair p rs) (loc_arguments sg) /\
+        m1 = m2;
+    match_reply_def w :=
+      fun '(cq _ sg _ _) '(lq _ rs _) '(res, m1) '(rs', m2) =>
+        agree_callee_save rs rs' /\
+        Locmap.getpair (map_rpair R (loc_result sg)) rs' = res /\
+        m1 = m2;
+  |}.
+
+Notation ls_id w := (cq_id (world_q1 w)).
+Notation ls_sg w := (cq_sg (world_q1 w)).
+Notation ls_args w := (cq_args (world_q1 w)).
+Notation ls_rs w := (lq_rs (world_q2 w)).
+Notation ls_mem w := (cq_mem (world_q1 w)).
+
+Lemma match_query_cc_locset (P: _->_->_->_->_->_->_-> Prop):
+  (forall id sg args rs m,
+   args = map (fun p => Locmap.getpair p rs) (loc_arguments sg) ->
+   P id sg args rs m (cq id sg args m) (lq id rs m)) ->
+  (forall w q1 q2, match_query cc_locset w q1 q2 ->
+   P (ls_id w) (ls_sg w) (ls_args w) (ls_rs w) (ls_mem w) q1 q2).
+Proof.
+  intros H w q1 q2 Hq.
+  destruct Hq as [w q1 q2 Hq].
+  destruct q1 as [id1 sg args m1], q2 as [id2 rs m2].
+  destruct Hq as (Hid & Hargs & Hm).
+  simpl in *; subst.
+  eauto.
+Qed.
+
+Lemma match_reply_cc_locset w vres rs' m':
+  agree_callee_save (ls_rs w) rs' ->
+  Locmap.getpair (map_rpair R (loc_result (ls_sg w))) rs' = vres ->
+  match_reply cc_locset w (vres, m') (rs', m').
+Proof.
+  intros H.
+  destruct w as [w q1 q2 Hq].
+  destruct q1 as [id1 sg1 vargs m1], q2 as [id2 rs m2].
+  destruct Hq as (Hid & Hargs & Hm).
+  simpl in *.
+  constructor. split; eauto.
+Qed.
+
+Ltac inv_locset_query :=
+  let w := fresh "w" in
+  let q1 := fresh "q1" in
+  let q2 := fresh "q2" in
+  let Hq := fresh "Hq" in
+  intros w q1 q2 Hq;
+  pattern (ls_id w), (ls_sg w), (ls_args w), (ls_rs w), (ls_mem w), q1, q2;
+  revert w q1 q2 Hq;
+  apply match_query_cc_locset.
+
+(* XXX may be needed later
+Lemma locmap_setpair_getpair p ls l:
+  Val.lessdef
+    (Locmap.get l (Locmap.setpair p (Locmap.getpair (map_rpair R p) ls) ls))
+    (Locmap.get l ls).
+Proof.
+  unfold Locmap.setpair, Locmap.getpair.
+  destruct p; simpl.
+  - destruct (Loc.eq (R r) l); subst.
+    + setoid_rewrite Locmap.gss; eauto.
+    + setoid_rewrite Locmap.gso; eauto.
+      simpl. destruct l; eauto; congruence.
+  - destruct (Loc.eq (R rlo) l); subst.
+    + setoid_rewrite Locmap.gss; eauto.
+      apply val_loword_longofwords.
+    + setoid_rewrite Locmap.gso; eauto.
+      * destruct (Loc.eq (R rhi) l); subst.
+        setoid_rewrite Locmap.gss. apply val_hiword_longofwords.
+        setoid_rewrite Locmap.gso; eauto. destruct l; simpl; eauto; congruence.
+      * destruct l; simpl; eauto; congruence.
+Qed.
+*)

@@ -270,27 +270,27 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
-(** Execution of a whole program boils down to invoking its main
-  function.  The result of the program is the return value of the
-  main function, to be found in the machine register dictated
-  by the calling conventions. *)
+(** The state needs to keep track of the initial locset. *)
 
-Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+Inductive step_with_ls ge: state * locset -> trace -> state * locset -> Prop :=
+  step_with_ls_intro ls s t s':
+    step ls ge s t s' ->
+    step_with_ls ge (s, ls) t (s', ls).
+
+Inductive initial_state (p: program): query li_locset -> state*locset -> Prop :=
+  | initial_state_intro: forall id b f rs m,
       let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some b ->
+      Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+      Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
-      funsig f = signature_main ->
-      initial_state p (Callstate nil f (Locmap.init Vundef) m0).
+      initial_state p (lq id rs m) (Callstate nil f rs m, rs).
 
-Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m retcode,
-      Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
-      final_state (Returnstate nil rs m) retcode.
+Inductive final_state: state * locset -> reply li_locset -> Prop :=
+  | final_state_intro: forall rs m rs0,
+      final_state (Returnstate nil rs m, rs0) (rs, m).
 
 Definition semantics (p: program) :=
-  Semantics (step (Locmap.init Vundef)) (initial_state p) final_state (Genv.globalenv p).
+  Semantics li_locset step_with_ls (initial_state p) final_state (Genv.globalenv p).
 
 (** * Operations over LTL *)
 

@@ -1316,15 +1316,6 @@ Proof.
   eauto.
 Qed.
 
-Definition callee_save_loc (l: loc) :=
-  match l with
-  | R r => is_callee_save r = true
-  | S sl ofs ty => sl <> Outgoing
-  end.
-
-Definition agree_callee_save (ls1 ls2: locset) : Prop :=
-  forall l, callee_save_loc l -> ls1 l = ls2 l.
-
 Lemma return_regs_agree_callee_save:
   forall caller callee,
   agree_callee_save caller (return_regs caller callee).
@@ -2512,34 +2503,58 @@ Qed.
 
 End WITHINILS.
 
+Let cc := cc_compose cc_extends_triangle cc_locset.
+
+Let ms (w: world cc) s1 s2 :=
+  let rs := ls_rs (comp_snd w) in
+  let sg := ls_sg (comp_snd w) in
+  match_states rs (sig_res sg) s1 (fst s2) /\
+  snd s2 = rs.
+
 Lemma initial_states_simulation:
-  forall st1, RTL.initial_state prog st1 ->
-  exists st2, LTL.initial_state tprog st2 /\ match_states (Locmap.init Vundef) (Some Tint) st1 st2.
+  forall w q1 q2, match_query cc w q1 q2 ->
+  forall st1, RTL.initial_state prog q1 st1 ->
+  exists st2,
+    LTL.initial_state tprog q2 st2 /\
+    ms w st1 st2.
 Proof.
+  unfold ms.
+  inv_compose_query.
+  inv_triangle_query. intros id sg args m.
+  inv_locset_query. intros id' sg' args' rs m' Hargs Hw. inv Hw.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf (Locmap.init Vundef) m0); split.
+  exists (LTL.Callstate nil tf rs m, rs); split.
   econstructor; eauto.
-  eapply (Genv.init_mem_transf_partial TRANSF); eauto.
-  rewrite symbols_preserved.
-  rewrite (match_program_main TRANSF).  auto.
-  congruence.
+  fold tge. rewrite genv_next_preserved. assumption.
+  rewrite symbols_preserved. assumption.
   constructor; auto.
-  constructor. rewrite SIG; rewrite H3; auto.
-  rewrite SIG, H3, loc_arguments_main. auto.
+  constructor; auto.
+  constructor. rewrite SIG; auto.
+  rewrite SIG. clear. induction (map _ _); eauto.
   red; auto.
   apply Mem.extends_refl.
-  rewrite SIG, H3. constructor.
+  rewrite SIG. assumption.
 Qed.
 
 Lemma final_states_simulation:
-  forall st1 st2 r,
-  match_states (Locmap.init Vundef) (Some Tint) st1 st2 -> RTL.final_state st1 r -> LTL.final_state st2 r.
+  forall w st1 st2 r1,
+  ms w st1 st2 ->
+  RTL.final_state st1 r1 ->
+  exists r2, match_reply cc w r1 r2 /\ LTL.final_state st2 r2.
 Proof.
-  intros. inv H0. inv H. inv STACKS.
-  econstructor. rewrite <- (loc_result_exten sg). inv RES; auto.
-  inv H. rewrite H1. reflexivity.
+  intros w st1 [st2 rs0] r1 [Hst Hrs0] H.
+  simpl in *.
+  inv H. inv Hst. inv STACKS. inv H.
+  simpl in AG.
+  exists (ls, m'). split.
+  - eapply match_reply_cc_compose.
+    + apply match_reply_cc_extends_triangle; eauto.
+    + apply match_reply_cc_locset; eauto.
+      unfold loc_result, loc_result_32, loc_result_64.
+      destruct Archi.ptr64; rewrite H1; reflexivity.
+  - constructor.
 Qed.
 
 Lemma wt_prog: wt_program prog.
@@ -2558,22 +2573,40 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation cc_extends (RTL.semantics prog) (LTL.semantics tprog).
+  forward_simulation cc_extends cc (RTL.semantics prog) (LTL.semantics tprog).
 Proof.
-  set (ms := fun s s' => wt_state (Some Tint) s /\ match_states (Locmap.init Vundef) (Some Tint) s s').
-  eapply forward_simulation_plus with (match_states := ms).
+  eapply forward_simulation_plus with
+    (match_states :=
+       fun w s s' =>
+         wt_state (sig_res (ls_sg (comp_snd w))) s /\ ms w s s').
 - apply senv_preserved.
 - intros. exploit initial_states_simulation; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.
-  apply wt_initial_state with (p := prog); auto. exact wt_prog.
+  clear A B. revert w q1 q2 H H0.
+  inv_compose_query.
+  inv_triangle_query. intros until m.
+  inv_locset_query. intros. inv H0.
+  eapply wt_initial_state with (p := prog); eauto. exact wt_prog.
 - intros. destruct H. eapply final_states_simulation; eauto.
-- intros. destruct H0.
+- intros. destruct H0. destruct H1.
   exploit step_simulation; eauto.
   intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [s2' [A B]].
-  exists s2'; split. exact A. split.
+  exists (s2', ls_rs (comp_snd w0)); split. simpl.
+  {
+    destruct s2 as [s2 rs]. simpl in *. subst.
+    revert A. generalize (ls_rs (comp_snd w0)). clear.
+    intros rs H.
+    pattern s2, t', s2'.
+    eapply plus_ind2; eauto; clear; intros.
+    + apply plus_one.
+      constructor; eauto.
+    + eapply plus_left'; eauto.
+      constructor; eauto.
+  }
+  split.
   eapply subject_reduction; eauto. eexact wt_prog. eexact H.
-  auto.
+  constructor; auto.
 Qed.
 
 End PRESERVATION.
