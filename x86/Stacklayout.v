@@ -98,42 +98,6 @@ Local Opaque Z.add Z.mul sepconj range.
   exact H.
 Qed.
 
-Lemma frame_env_separated':
-  forall b ,
-    let w := if Archi.ptr64 then 8 else 4 in
-    let fe := make_env b in
-     let olink := align (4 * bound_outgoing b) w in
-     let ocs := olink + w in
-     let ol := align (size_callee_save_area b ocs) 8 in
-     let ostkdata := align (ol + 4 * bound_local b) 8 in
-     let oretaddr := align (ostkdata + bound_stack_data b) w in
-     0 <= olink
-  /\ olink + w <= ocs
-  /\ ocs <= size_callee_save_area b ocs
-  /\ size_callee_save_area b ocs <= ol
-  /\ ol + 4 * bound_local b <= ostkdata
-  /\ ostkdata + bound_stack_data b <= oretaddr
-  /\ olink <= fe_stack_data fe.
-Proof.
-Local Opaque Z.add Z.mul sepconj range fe_stack_data.
-intros; simpl.
-generalize b.(bound_local_pos) b.(bound_outgoing_pos) b.(bound_stack_data_pos); intros.
-replace (size_chunk Mptr) with w by (rewrite size_chunk_Mptr; auto).
-assert (0 < w) by (unfold w; destruct Archi.ptr64; omega).
-generalize b.(bound_local_pos) b.(bound_outgoing_pos) b.(bound_stack_data_pos); intros.
-assert (0 <= 4 * b.(bound_outgoing)) by omega.
-assert (4 * b.(bound_outgoing) <= olink) by (apply align_le; omega).
-assert (olink + w <= ocs) by (unfold ocs; omega).
-assert (ocs <= size_callee_save_area b ocs) by (apply size_callee_save_area_incr). 
-assert (size_callee_save_area b ocs <= ol) by (apply align_le; omega).
-assert (ol + 4 * b.(bound_local) <= ostkdata) by (apply align_le; omega).
-assert (ostkdata + bound_stack_data b <= oretaddr) by (apply align_le; omega).
-repeat split; auto.
-omega.
-Local Transparent fe_stack_data.
-simpl. fold w. fold olink. fold ocs. fold ol. fold ostkdata. omega.
-Qed.
-
 Lemma frame_env_range:
   forall b,
   let fe := make_env b in

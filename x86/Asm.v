@@ -14,7 +14,7 @@
 
 Require Import Coqlib Maps.
 Require Import AST Integers Floats Values Memory Events Globalenvs Smallstep.
-Require Import Locations Stacklayout Conventions EraseArgs.
+Require Import Locations Stacklayout Conventions.
 
 (** * Abstract syntax *)
 
@@ -1109,12 +1109,6 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (External ef) ->
       extcall_arguments rs m (ef_sig ef) args ->
       forall (* CompCertX: BEGIN additional conditions for calling convention *)
-        (STACK:
-           exists m_,
-             free_extcall_args (rs RSP) m (regs_of_rpairs (Conventions1.loc_arguments (ef_sig ef))) = Some m_ /\
-             exists t_ res'_ m'_,
-               external_call ef ge args m_ t_ res'_ m'_
-        )
         (SP_TYPE: Val.has_type (rs RSP) Tptr)
         (RA_TYPE: Val.has_type (rs RA) Tptr)
         (SP_NOT_VUNDEF: rs RSP <> Vundef)
