@@ -149,12 +149,6 @@ Proof.
   unfold return_regs. destruct l; auto. destruct (is_callee_save r); auto.
 Qed.
 
-Lemma wt_init:
-  wt_locset (Locmap.init Vundef).
-Proof.
-  red; intros. unfold Locmap.init. red; auto.
-Qed.
-
 Lemma wt_setpair:
   forall sg v rs,
   Val.has_type v (proj_sig_res sg) ->
@@ -357,14 +351,14 @@ Qed.
 
 End WITHINITLS.
 
-Theorem wt_initial_state:
-  forall S, initial_state prog S -> wt_state (Locmap.init Vundef) S.
+Theorem wt_initial_state q:
+  forall S, initial_state prog q S -> wt_state (lq_rs q) S.
 Proof.
   induction 1. econstructor. constructor.
-  apply wt_init.
+  assumption.
   unfold ge0 in H1. exploit Genv.find_funct_ptr_inversion; eauto.
-  intros [id IN]. eapply wt_prog; eauto.
-  apply wt_init.
+  intros [id' IN]. eapply wt_prog; eauto.
+  assumption.
 Qed.
 
 End SOUNDNESS.

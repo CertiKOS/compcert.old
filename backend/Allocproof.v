@@ -2520,7 +2520,7 @@ Proof.
   unfold ms.
   inv_compose_query.
   inv_triangle_query. intros id sg args m.
-  inv_locset_query. intros id' sg' args' rs m' Hargs Hw. inv Hw.
+  inv_locset_query. intros id' sg' args' rs m' Hargs Hwt Hw. inv Hw.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
@@ -2581,7 +2581,7 @@ Proof.
   clear A B. revert w q1 q2 H H0.
   inv_compose_query.
   inv_triangle_query. intros until m.
-  inv_locset_query. intros. inv H0.
+  inv_locset_query. intros. inv H1.
   eapply wt_initial_state with (p := prog); eauto. exact wt_prog.
 - intros. destruct H. eapply final_states_simulation; eauto.
 - intros. destruct H0.
