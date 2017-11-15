@@ -521,27 +521,27 @@ Variable w: world cc.
 Inductive match_events_query: trace -> trace -> Prop :=
   | match_events_query_E0:
       match_events_query nil nil
-  | match_events_query_syscall id args res1 res2:
+  | match_events_query_syscall id args res1 res2 t1 t2:
       match_events_query
-        (Event_syscall id args res1 :: nil)
-        (Event_syscall id args res2 :: nil)
-  | match_events_query_vload chunk id ofs res1 res2:
+        (Event_syscall id args res1 :: t1)
+        (Event_syscall id args res2 :: t2)
+  | match_events_query_vload chunk id ofs res1 res2 t1 t2:
       match_events_query
-        (Event_vload chunk id ofs res1 :: nil)
-        (Event_vload chunk id ofs res2 :: nil)
-  | match_events_query_vstore chunk id ofs arg:
+        (Event_vload chunk id ofs res1 :: t1)
+        (Event_vload chunk id ofs res2 :: t2)
+  | match_events_query_vstore chunk id ofs arg t1 t2:
       match_events_query
-        (Event_vstore chunk id ofs arg :: nil)
-        (Event_vstore chunk id ofs arg :: nil)
-  | match_events_query_annot id args:
+        (Event_vstore chunk id ofs arg :: t1)
+        (Event_vstore chunk id ofs arg :: t2)
+  | match_events_query_annot id args t1 t2:
       match_events_query
-        (Event_annot id args :: nil)
-        (Event_annot id args :: nil)
-  | match_events_query_extcall q1 q2 r1 r2:
+        (Event_annot id args :: t1)
+        (Event_annot id args :: t2)
+  | match_events_query_extcall q1 q2 r1 r2 t1 t2:
       match_query cc w q1 q2 ->
       match_events_query
-        (Event_extcall q1 r1 :: nil)
-        (Event_extcall q2 r2 :: nil).
+        (Event_extcall q1 r1 :: t1)
+        (Event_extcall q2 r2 :: t2).
 
 Inductive match_events: trace -> trace -> Prop :=
   | match_events_E0:
@@ -779,7 +779,8 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
     Val.lessdef_list vargs vargs' ->
-    exists w, forall t', match_events cc_extends w t t' ->
+    exists w, (exists t', match_events_query cc_extends w t t') /\
+    forall t', match_events cc_extends w t t' ->
     exists vres', exists m2',
        sem ge vargs' m1' t' vres' m2'
     /\ Val.lessdef vres vres'
@@ -794,7 +795,8 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge1 vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
-    exists w, forall t', match_events cc_inject w t t' ->
+    exists w, (exists t', match_events_query cc_inject w t t') /\
+    forall t', match_events cc_inject w t t' ->
     exists f', exists vres', exists m2',
        sem ge2 vargs' m1' t' vres' m2'
     /\ Val.inject f' vres vres'
@@ -825,13 +827,17 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 Lemma stable_step cc t (P: world cc -> trace -> Prop):
   stable_event t ->
   P dummy_world t ->
-  exists w, forall t', match_events cc w t t' -> P w t'.
+  exists w, (exists t', match_events_query cc w t t') /\
+  forall t', match_events cc w t t' -> P w t'.
 Proof.
   intros Ht H.
-  exists dummy_world.
-  intros t' Ht'.
-  apply match_stable_event_corefl in Ht'; eauto.
-  congruence.
+  exists dummy_world; split.
+  - exists t.
+    apply match_events_subrel_query.
+    apply match_stable_event_refl; eauto.
+  - intros t' Ht'.
+    apply match_stable_event_corefl in Ht'; eauto.
+    congruence.
 Qed.
 
 (** ** Semantics of volatile loads *)
@@ -1565,7 +1571,12 @@ Proof.
   - intros.
     destruct H.
     edestruct (match_cc_extends id sg) as (w & Hq & Hr); eauto.
-    exists w; intros t' Ht'.
+    exists w; split.
+    {
+      exists (Event_extcall (cq id sg vargs' m1') (Vundef, m1') :: nil).
+      constructor; eauto.
+    }
+    intros t' Ht'.
     inv Ht'.
     assert (q2 = cq id sg vargs' m1') by eauto using match_query_determ; subst.
     destruct r2 as [vres' m2'].
@@ -1577,7 +1588,12 @@ Proof.
   - intros.
     destruct H0.
     edestruct match_cc_inject as (w & Hq & Hr); eauto.
-    exists w; intros t' Ht'.
+    exists w; split.
+    {
+      exists (Event_extcall (cq id sg vargs' m1') (Vundef, m1') :: nil).
+      constructor; eauto.
+    }
+    intros t' Ht'.
     inv Ht'.
     assert (q2 = cq id sg vargs' m1') by eauto using match_query_determ; subst.
     destruct r2 as [vres' m2'].
@@ -1693,7 +1709,8 @@ Lemma external_call_mem_inject:
   external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
-  exists w, forall t', match_events cc_inject w t t' ->
+  exists w, (exists t', match_events_query cc_inject w t t') /\
+  forall t', match_events cc_inject w t t' ->
   exists f', exists vres', exists m2',
      external_call ef ge vargs' m1' t' vres' m2'
     /\ Val.inject f' vres vres'

@@ -532,7 +532,8 @@ Record fsim_properties {B1 B2} (ccA: callconv li_c li_c) (ccB: callconv B1 B2)
     fsim_simulation:
       forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
       forall i s2, match_states w0 i s1 s2 ->
-      exists w, forall t', match_events ccA w t t' ->
+      exists w, (exists t', match_events_query ccA w t t') /\
+      forall t', match_events ccA w t t' ->
       exists i', exists s2',
          (Plus L2 (world_q2 w0) s2 t' s2' \/ (Star L2 (world_q2 w0) s2 t' s2' /\ order i' i))
       /\ match_states w0 i' s1' s2';
@@ -557,12 +558,13 @@ Lemma fsim_simulation':
   @fsim_properties B1 B2 ccA ccB L1 L2 index order match_states ->
   forall w0 i s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 i s1 s2 ->
-  exists w, forall t', match_events ccA w t t' ->
+  exists w, (exists t', match_events_query ccA w t t') /\
+  forall t', match_events ccA w t t' ->
   (exists i', exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 i' s1' s2')
   \/ (exists i', order i' i /\ t = E0 /\ match_states w0 i' s1' s2).
 Proof.
   intros. exploit (@fsim_simulation B1 B2); eauto.
-  intros [w Hw]. exists w. intros t' Ht'.
+  intros (w & Hwq & Hw). exists w; split; eauto. intros t' Ht'.
   edestruct Hw as [i' [s2' [A B]]]; eauto. intuition.
   left; exists i'; exists s2'; auto.
   inv H3.
@@ -621,7 +623,8 @@ Hypothesis order_wf: well_founded order.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events ccA w t t' ->
+  exists w, (exists t', match_events_query ccA w t t') /\
+  forall t', match_events ccA w t t' ->
   exists s2',
   (Plus L2 (world_q2 w0) s2 t' s2' \/ (Star L2 (world_q2 w0) s2 t' s2' /\ order s1' s1))
   /\ match_states w0 s1' s2'.
@@ -635,7 +638,8 @@ Proof.
     exists s1; exists s2; auto.
 - intros. destruct H. eapply match_final_states; eauto.
 - intros. destruct H0. subst i. exploit simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [s2' [A B]].
   exists s1'; exists s2'; intuition auto.
 - auto.
@@ -654,7 +658,8 @@ Variable measure: state L1 -> nat.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events ccA w t t' ->
+  exists w, (exists t', match_events_query ccA w t t') /\
+  forall t', match_events ccA w t t' ->
   (exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2')
   \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
@@ -663,7 +668,8 @@ Proof.
   apply forward_simulation_star_wf with (ltof _ measure).
   apply well_founded_ltof.
   intros. exploit simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [[s2' [A B]] | [A [B C]]].
   exists s2'; auto.
   subst t; inv Ht'.
@@ -680,14 +686,15 @@ Section SIMULATION_PLUS.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events ccA w t t' ->
+  exists w, (exists t', match_events_query ccA w t t') /\
+  forall t', match_events ccA w t t' ->
   exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_plus: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_star with (measure := fun _ => O).
   intros. exploit simulation; eauto.
-  intros [w Hw]; eauto.
+  intros (w & Hwq & Hw); eauto.
 Qed.
 
 End SIMULATION_PLUS.
@@ -700,14 +707,16 @@ Section SIMULATION_STEP.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events ccA w t t' ->
+  exists w, (exists t', match_events_query ccA w t t') /\
+  forall t', match_events ccA w t t' ->
   exists s2', Step L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_step: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_plus.
   intros. exploit simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [s2' [A B]].
   exists s2'; split; auto. apply plus_one; auto.
 Qed.
@@ -727,7 +736,8 @@ Variable measure: state L1 -> nat.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events ccA w t t' ->
+  exists w, (exists t', match_events_query ccA w t t') /\
+  forall t', match_events ccA w t t' ->
   (exists s2', Step L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2')
   \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
@@ -735,7 +745,8 @@ Lemma forward_simulation_opt: forward_simulation ccA ccB L1 L2.
 Proof.
   apply forward_simulation_star with measure.
   intros. exploit simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [[s2' [A B]] | [A [B C]]].
   left; exists s2'; split; auto. apply plus_one; auto.
   right; auto.
@@ -752,13 +763,18 @@ End FORWARD_SIMU_DIAGRAMS.
 
 Lemma stable_step_id t (P: trace -> Prop):
   P t ->
-  exists w, forall t', match_events cc_id w t t' -> P t'.
+  exists w, (exists t', match_events_query cc_id w t t') /\
+  forall t', match_events cc_id w t t' -> P t'.
 Proof.
   intros H.
-  destruct t as [ | [ | | | | q r]];
-    try (exists dummy_world; inversion 1; congruence).
+  destruct t as [ | [ | | | | q r]] eqn:Ht;
+    try (exists dummy_world; split;
+            [ exists t; subst; constructor
+            | inversion 1; congruence]).
   edestruct (match_cc_id q) as (w & Hq & Hw).
-  exists w; intros t' Ht'.
+  exists w.
+  split. { exists t; subst; constructor; eauto. }
+  intros t' Ht'.
   inv Ht'.
   assert (q = q2) by eauto using match_query_determ; subst.
   assert (r = r2) by eauto; subst.
