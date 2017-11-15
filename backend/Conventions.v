@@ -112,11 +112,15 @@ Require Import Values.
 Require Import Memory.
 
 (** Languages with [locset]s (currently LTL and Linear) use the
-  following interface and calling convention. *)
+  following interface and calling convention. We need to keep the
+  signature until Linear because it determines the stack layout used
+  by the Linear to Mach calling convention to map locations to memory
+  addresses. *)
 
 Record locset_query :=
   lq {
     lq_id: string;
+    lq_sg: signature;
     lq_rs: Locmap.t;
     lq_mem: mem;
   }.
@@ -125,7 +129,7 @@ Canonical Structure li_locset: language_interface :=
   {|
     query := locset_query;
     reply := Locmap.t * mem;
-    dummy_query := (lq EmptyString (Locmap.init Vundef) Mem.empty);
+    dummy_query := lq EmptyString signature_main (Locmap.init Vundef) Mem.empty;
   |}.
 
 (** We now define the calling convention between C and locset languages. *)
@@ -145,13 +149,14 @@ Program Definition cc_locset: callconv li_c li_locset :=
     dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w :=
-      fun '(cq id1 sg args m1) '(lq id2 rs m2) =>
+      fun '(cq id1 sg1 args m1) '(lq id2 sg2 rs m2) =>
         id1 = id2 /\
-        args = map (fun p => Locmap.getpair p rs) (loc_arguments sg) /\
+        sg1 = sg2 /\
+        args = map (fun p => Locmap.getpair p rs) (loc_arguments sg1) /\
         m1 = m2 /\
         (forall l, Val.has_type (rs l) (Loc.type l));
     match_reply_def w :=
-      fun '(cq _ sg _ _) '(lq _ rs _) '(res, m1) '(rs', m2) =>
+      fun '(cq _ sg _ _) '(lq _ _ rs _) '(res, m1) '(rs', m2) =>
         agree_callee_save rs rs' /\
         Locmap.getpair (map_rpair R (loc_result sg)) rs' = res /\
         m1 = m2;
@@ -167,14 +172,14 @@ Lemma match_query_cc_locset (P: _->_->_->_->_->_->_-> Prop):
   (forall id sg args rs m,
    args = map (fun p => Locmap.getpair p rs) (loc_arguments sg) ->
    (forall l, Val.has_type (rs l) (Loc.type l)) ->
-   P id sg args rs m (cq id sg args m) (lq id rs m)) ->
+   P id sg args rs m (cq id sg args m) (lq id sg rs m)) ->
   (forall w q1 q2, match_query cc_locset w q1 q2 ->
    P (ls_id w) (ls_sg w) (ls_args w) (ls_rs w) (ls_mem w) q1 q2).
 Proof.
   intros H w q1 q2 Hq.
   destruct Hq as [w q1 q2 Hq].
   destruct q1 as [id1 sg args m1], q2 as [id2 rs m2].
-  destruct Hq as (Hid & Hargs & Hm & Hwt).
+  destruct Hq as (Hid & Hsg & Hargs & Hm & Hwt).
   simpl in *; subst.
   eauto.
 Qed.

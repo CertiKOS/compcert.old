@@ -259,7 +259,7 @@ Inductive initial_state (p: program): query li_locset -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       (forall l, Val.has_type (rs l) (Loc.type l)) ->
-      initial_state p (lq id rs m) (Callstate nil f rs m).
+      initial_state p (lq id (funsig f) rs m) (Callstate nil f rs m).
 
 Inductive final_state: state -> reply li_locset -> Prop :=
   | final_state_intro: forall rs m,

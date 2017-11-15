@@ -2532,6 +2532,7 @@ Proof.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
   exists (LTL.Callstate nil tf rs m); split.
+  rewrite <- SIG.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved. assumption.
   rewrite symbols_preserved. assumption.

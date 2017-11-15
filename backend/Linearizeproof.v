@@ -728,6 +728,7 @@ Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
   exists (Callstate nil tf rs m); split.
+  erewrite <- sig_preserved by eauto.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved; eauto.
   rewrite symbols_preserved. eauto.
