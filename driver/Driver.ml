@@ -10,6 +10,8 @@
 (*                                                                     *)
 (* *********************************************************************)
 
+open RSAsmToElf
+open Elf
 open Printf
 open Commandline
 open Clflags
@@ -18,6 +20,7 @@ open Driveraux
 open Frontend
 open Assembler
 open Linker
+
 
 let dump_options = ref false
 
@@ -49,26 +52,42 @@ let compile_c_ast sourcename csyntax ofile =
   set_dest Regalloc.destination_alloctrace option_dalloctrace ".alloctrace";
   set_dest PrintLTL.destination option_dltl ".ltl";
   set_dest PrintMach.destination option_dmach ".mach";
-  (* Convert to Asm *)
-  let asm =
-    match Compiler.apply_partial
-               (Compiler.transf_c_program csyntax)
-               Asmexpand.expand_program with
-    | Errors.OK asm ->
-        asm
-    | Errors.Error msg ->
-        eprintf "%s: %a" sourcename print_error msg;
-        exit 2 in
-  (* Dump Asm in binary and JSON format *)
-  if !option_sdump then begin
-    let sf = output_filename sourcename ".c" !sdump_suffix in
-    let csf = Filename.concat !sdump_folder sf in
-    dump_jasm asm sourcename csf
-  end;
-  (* Print Asm in text form *)
-  let oc = open_out ofile in
-  PrintAsm.print_program oc asm;
-  close_out oc
+  if !option_machine_code then
+  begin
+    let asm =
+      match (Compiler.transf_c_program_ex csyntax) with
+      | Errors.OK asm ->
+          asm
+      | Errors.Error msg ->
+          eprintf "%s: %a" sourcename print_error msg;
+          exit 2 in
+    (* Create an ELF file from the RockSalt Asm program *)
+    let elf_file = gen_elf asm in
+    (* Write the ELF file *)
+    write_elf ofile elf_file
+  end
+  else begin
+    (* Convert to Asm *)
+    let asm =
+      match Compiler.apply_partial
+                 (Compiler.transf_c_program csyntax)
+                 Asmexpand.expand_program with
+      | Errors.OK asm ->
+          asm
+      | Errors.Error msg ->
+          eprintf "%s: %a" sourcename print_error msg;
+          exit 2 in
+    (* Dump Asm in binary and JSON format *)
+    if !option_sdump then begin
+      let sf = output_filename sourcename ".c" !sdump_suffix in
+      let csf = Filename.concat !sdump_folder sf in
+      dump_jasm asm sourcename csf
+    end;
+    (* Print Asm in text form *)
+    let oc = open_out ofile in
+    PrintAsm.print_program oc asm;
+    close_out oc
+  end
 
 (* From C source to asm *)
 
@@ -105,7 +124,20 @@ let compile_cminor_file ifile ofile =
            eprintf "File %s, type-checking error:\n%s"
                    ifile msg;
            exit 2 in
-  (* Convert to Asm *)
+  if ! option_machine_code then
+  begin let asm =
+    match (Compiler.transf_cminor_program_ex cm) with
+    | Errors.OK asm ->
+        asm
+    | Errors.Error msg ->
+        eprintf "%s: %a" ifile print_error msg;
+        exit 2 in
+  (* Create an ELF file from the RockSalt Asm program *)
+  let elf_file = gen_elf asm in
+  (* Write the ELF file *)
+  write_elf ofile elf_file end
+  else begin
+ (* Convert to Asm *)
   let asm =
     match Compiler.apply_partial
                (Compiler.transf_cminor_program cm)
@@ -119,6 +151,7 @@ let compile_cminor_file ifile ofile =
   let oc = open_out ofile in
   PrintAsm.print_program oc asm;
   close_out oc
+  end
 
 (* Processing of a .c file *)
 
@@ -152,11 +185,15 @@ let process_c_file sourcename =
           if !option_dasm
           then output_filename sourcename ".c" ".s"
           else Filename.temp_file "compcert" ".s" in
-        compile_c_file sourcename preproname asmname;
-        if not !option_dprepro then
-          safe_remove preproname;
         let objname = output_filename ~final: !option_c sourcename ".c" ".o" in
-        assemble asmname objname;
+        if ! option_machine_code then begin
+          compile_c_file sourcename preproname objname;
+        end else begin
+           compile_c_file sourcename preproname asmname;
+           if not !option_dprepro then
+            safe_remove preproname;
+            assemble asmname objname;
+        end;
         if not !option_dasm then safe_remove asmname;
         objname
       end in
@@ -515,6 +552,7 @@ let cmdline_actions =
   (* GCC compatibility: .h files can be preprocessed with -E *)
   Suffix ".h", Self (fun s ->
       push_action process_h_file s; incr num_source_files; incr num_input_files);
+  Exact "-machinecode", Set option_machine_code
   ]
 
 let _ =
@@ -556,7 +594,7 @@ let _ =
         exit 2
       end;
     let linker_args = time "Total compilation time" perform_actions () in
-    if (not nolink) && linker_args <> [] then begin
+    if (not nolink) && linker_args <> [] && (not !option_machine_code) then begin
       linker (output_filename_default "a.out") linker_args
     end;
    if  Cerrors.check_errors () then exit 2

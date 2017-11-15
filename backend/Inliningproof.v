@@ -1043,7 +1043,9 @@ Fixpoint compat_frameinj_rec (g: frameinj) (l: list nat) n j :=
     compat_frameinj_rec g r (n + a)%nat (S j)
   end.
 
-Definition compat_frameinj g l := compat_frameinj_rec g l 0 0.
+Variable linit : list nat.
+
+Definition compat_frameinj g l := compat_frameinj_rec g (l ++ linit) 0 0.
 
 Lemma compat_frameinj_rec_spec:
   forall g l o j,
@@ -1160,7 +1162,7 @@ Qed.
 
 
 Inductive match_stack_adt : list (option (block)) -> stack_adt -> Prop :=
-| match_nil: match_stack_adt nil nil
+| match_nil s: match_stack_adt nil s
 | match_cons:
     forall sfl s sz sp,
       match_stack_adt sfl s ->
@@ -1286,10 +1288,18 @@ Qed.
 
 Lemma match_stack_adt_noframe:
   forall x y, match_stack_adt x y ->
+         nodup y ->
          forall f, In f y ->
+              forall b, in_frame f b -> In (Some b) x ->
               frame_adt_info f = None.
 Proof.
-  induction 1; simpl; intros; eauto. easy. destruct H0. subst. reflexivity. eauto.
+  induction 1; simpl; intros ND f INF b INFR INL; eauto. easy.
+  destruct INF. subst. reflexivity.
+  inv ND.
+  specialize (IHmatch_stack_adt H3 _ H0 _ INFR).
+  destruct INL; eauto. inv H1.
+  specialize (H4 _ (or_introl eq_refl)).
+  exfalso; apply H4. eapply in_frames_in_frame; eauto.
 Qed.
 
 Lemma match_stack_adt_free:
@@ -1805,6 +1815,7 @@ Proof.
     replace (ofs + delta' - delta') with ofs by omega.
     apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
     intros. erewrite match_stack_adt_noframe in H9; eauto. congruence.
+    apply Mem.stack_norepet. simpl; auto.
   intros [F' [A [B [C D]]]].
   destruct (stack_top_frame_at_position (Mem.stack_adt m'0) sp') as (f0 & FAP & INF).
   red; inv MS2. simpl. auto.
@@ -1925,7 +1936,7 @@ Inductive match_states'
     m_init
     (M_INIT: Genv.init_mem prog = Some m_init)    
     (genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init))
-    (MATCH: match_states m_init s s')
+    (MATCH: match_states m_init nil s s')
 .
 
 Lemma transf_initial_states:
