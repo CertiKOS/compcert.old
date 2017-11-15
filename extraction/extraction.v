@@ -19,7 +19,7 @@ Require Floats.
 Require SelectLong.
 Require Selection.
 Require RTLgen.
-(* Require Inlining. *)
+Require Inlining.
 Require ValueDomain.
 (* Require Tailcall. *)
 Require Allocation.
@@ -78,8 +78,8 @@ Extract Constant RTLgen.more_likely => "RTLgenaux.more_likely".
 Extraction Inline RTLgen.ret RTLgen.error RTLgen.bind RTLgen.bind2.
 
 (* Inlining *)
-(* Extract Inlined Constant Inlining.should_inline => "Inliningaux.should_inline". *)
-(* Extraction Inline Inlining.ret Inlining.bind. *)
+Extract Inlined Constant Inlining.should_inline => "Inliningaux.should_inline".
+Extraction Inline Inlining.ret Inlining.bind.
 
 (* Allocation *)
 Extract Constant Allocation.regalloc => "Regalloc.regalloc".
@@ -102,6 +102,8 @@ Extract Constant Compopts.generate_float_constants =>
   "fun _ -> !Clflags.option_ffloatconstprop >= 2".
 Extract Constant Compopts.optim_tailcalls =>
   "fun _ -> !Clflags.option_ftailcalls".
+Extract Constant Compopts.optim_inlining =>
+  "fun _ -> !Clflags.option_finlining".
 Extract Constant Compopts.optim_constprop =>
   "fun _ -> !Clflags.option_fconstprop".
 Extract Constant Compopts.optim_CSE =>

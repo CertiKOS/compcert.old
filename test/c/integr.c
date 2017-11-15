@@ -1,12 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-static double square(double x)
+static inline double square(double x)
 {
   return x * x;
 }
 
-static double integr(double (*f)(double), double low, double high, int n)
+static inline double integr(double (*f)(double), double low, double high, int n)
 {
   double h, x, s;
   int i;

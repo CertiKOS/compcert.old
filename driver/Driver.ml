@@ -368,7 +368,7 @@ let language_support_options = [
 ]
 
 let optimization_options = [
-  option_ftailcalls; option_fconstprop; option_fcse; option_fredundancy
+  option_finlining; option_ftailcalls; option_fconstprop; option_fcse; option_fredundancy
 ]
 
 let set_all opts () = List.iter (fun r -> r := true) opts
@@ -481,6 +481,7 @@ let cmdline_actions =
   @ f_opt "inline-asm" option_finline_asm
 (* Optimization options *)
   @ f_opt "tailcalls" option_ftailcalls
+  @ f_opt "inlining" option_finlining
   @ f_opt "const-prop" option_fconstprop
   @ f_opt "cse" option_fcse
   @ f_opt "redundancy" option_fredundancy

@@ -284,7 +284,7 @@ void planetpv (double epoch[2], int np, double pv[2][3])
 //---------------------------------------------------------------------------
 // Computes RA, Declination, and distance from a state vector returned by
 // planetpv.
-void radecdist(double state[2][3], double rdd[3])
+void inline radecdist(double state[2][3], double rdd[3])
 {
     // distance
     rdd[2] = sqrt(state[0][0] * state[0][0] + state[0][1] * state[0][1] + state[0][2] * state[0][2]);

@@ -18,7 +18,7 @@ void quicksort(int lo, int hi, int base[])
   }
 }
 
-int cmpint(const void * i, const void * j)
+inline int cmpint(const void * i, const void * j)
 {
   int vi = *((int *) i);
   int vj = *((int *) j);

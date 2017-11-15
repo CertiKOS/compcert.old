@@ -61,14 +61,14 @@ void melt_data(int *data1,int *data2) /* melts 2 _data's into the first one. */
     }
 }
 
-int equal_data(int *data1,int *data2) /* check if both _data's are equal */
+inline int equal_data(int *data1,int *data2) /* check if both _data's are equal */
 {
   int counter = ncol;
   while ((counter --) && (data1[counter] == data2[counter]));
   return (counter < 0);
 }
 
-int valid_data(int *data) /* checks if the play could ever be achieved. */
+inline int valid_data(int *data) /* checks if the play could ever be achieved. */
 {
   int low;      /* var to hold the current height */
   int counter = 0;
@@ -103,7 +103,7 @@ void dump_play(struct _play *play) /* and for the entire game tree */
     }
 }
 
-int get_value(int *data) /* get the value (0 or 1) for a specific _data */
+inline int get_value(int *data) /* get the value (0 or 1) for a specific _data */
 {
   struct _play *search;
   search = game_tree; /* start at the begginig */
@@ -151,7 +151,7 @@ void show_play(struct _play *play) /* to diplay the whole tree */
     }
 }
 
-int in_wanted(int *data) /* checks if the current _data is in the wanted list */
+inline int in_wanted(int *data) /* checks if the current _data is in the wanted list */
 {
   struct _list *current;
   current = wanted; /* start at the begginig */
@@ -296,7 +296,7 @@ void make_wanted(int *data) /* makes up the list of positions from the full boar
   wanted = current;
 }
 
-int *get_good_move(struct _list *list) /* gets the first good move from a _list */
+inline int *get_good_move(struct _list *list) /* gets the first good move from a _list */
 {
   if (list == NULL) return NULL; /* if list is NULL, say so */
       /* until end-of-list or a good one is found */
@@ -306,7 +306,7 @@ int *get_good_move(struct _list *list) /* gets the first good move from a _list 
   return copy_data(list -> data); /* return the value */
 }
 
-int *get_winning_move(struct _play *play) /* just scans for the first good move */
+inline int *get_winning_move(struct _play *play) /* just scans for the first good move */
                                           /* in the last _list of a _play. This */
 {                                         /* is the full board */
   int *temp;

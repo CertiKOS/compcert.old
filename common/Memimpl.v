@@ -8490,6 +8490,8 @@ Proof.
   intros; eapply record_stack_blocks_intro; eauto.
   intros; eapply record_stack_block_right; eauto.
   intros; eapply record_stack_block_det; eauto.
+  simpl; intros; eapply mext_length_stack; eauto.
+  simpl; intros; eapply stack_norepet.
 Qed.
 
 End Mem.

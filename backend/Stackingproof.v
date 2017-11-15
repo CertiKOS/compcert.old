@@ -2507,7 +2507,7 @@ Definition list_prefix (l1: list (option frame_info * block)) (l2 : list frame_a
 Definition init_sp_has_stackinfo (m: mem) : Prop :=
   match init_sp with
     Vptr b i1 =>
-    exists fi, get_frame_info (Mem.stack_adt m) b = Some fi
+    exists fi z, In (b::nil, Some fi, z) (Mem.stack_adt m)
           /\ (forall o,
                 Ptrofs.unsigned i1 + fe_ofs_arg <= o < Ptrofs.unsigned i1 + 4 * size_arguments init_sg ->
                 frame_private fi o
@@ -2705,16 +2705,27 @@ Proof.
         unfold block_prop in *;
      rewtac.
   - constructor; auto.
-  - rewrite H3; rewtac. 
+  - edestruct Mem.unrecord_stack_adt; eauto. rewrite <- H10, H12 in MSISHS.
+    destruct MSISHS as (fi & z & IN & RNGpriv & ARGS).
+    exists fi, z; split; eauto.
+    simpl in IN. destruct IN; auto.
+    rewrite <- H10, H12 in ISP'NST. subst. exfalso; apply ISP'NST.
+    red; simpl. auto.
   - xomega.
-  - rewrite H2; rewtac.
+  - edestruct Mem.unrecord_stack_adt; eauto. rewrite <- H9, H11 in *.
+    destruct MSISHS as (fi & z & IN & RNGpriv & ARGS).
+    exists fi, z; split; eauto.
+    simpl in IN. destruct IN; auto.
+    subst. exfalso; apply ISP'NST.
+    red; simpl. auto.
   - red in ISP'VALID. xomega.
   - unfold is_stack_top.
     simpl. intuition. subst b.
     eapply Mem.fresh_block_alloc; eauto.
-  - simpl. destruct eq_block; eauto.
-    subst.
-    exfalso; eapply Mem.fresh_block_alloc; eauto.
+  - edestruct Mem.record_stack_blocks_stack_adt; eauto. 
+    destruct MSISHS as (fi & z & IN & RNGpriv & ARGS).
+    exists fi, z; split; eauto.
+    simpl; auto.
   - xomega.
   - intros. intro. subst.
     eapply Mem.fresh_block_alloc; eauto.
@@ -3393,8 +3404,10 @@ Proof.
         intro NPSA.
         unfold init_sp_has_stackinfo in MSISHS.
         rewrite Heqv0 in *.
-        destruct MSISHS as (fi & MSI1 & MSI2 & MSI4).
-        rewrite MSI1 in NPSA.
+        destruct MSISHS as (fi & z & MSI1 & MSI2 & MSI4).
+        erewrite get_assoc_intro in NPSA. 3: eauto. 3: red; simpl; auto.
+        2: apply Mem.stack_norepet.
+        simpl in NPSA. 
         specialize (NPSA i0).
         trim (NPSA). omega.
         red in NPSA. erewrite MSI2 in NPSA; eauto. congruence.
@@ -3737,8 +3750,9 @@ Proof.
          inv MACH.
          red in  MSISHS.
          rewrite Heqv0 in MSISHS. simpl in MSISHS.
-         destruct MSISHS as (fi & MSI1 & MSI2 & MSI4).
-         unfold public_stack_access in C3. rewrite MSI1 in C3.
+         destruct MSISHS as (fi & z & MSI1 & MSI2 & MSI4).
+         unfold public_stack_access in C3.
+         erewrite get_assoc_intro in C3. 3: eauto. 3: red; simpl; auto. simpl in C3.
          destruct C3 as [C3 | C3]; try congruence.
          simpl in ISP'NST. exfalso; apply ISP'NST. apply C3.
          destruct (match_stacks_is_init_sg _ _ _ _ _ STACKS).
@@ -3787,6 +3801,7 @@ Proof.
          rewrite MSI4. 
          destruct (chunk_of_type ty); simpl; omega.
          eapply in_stack_slot_bounds; eauto.
+         apply Mem.stack_norepet.
       -- apply mconj_proj2 in SEP_init.
          apply sep_swap23 in SEP_init. destruct SEP_init as (A1 & A2 & A3).
          revert A3. auto.
@@ -4001,7 +4016,8 @@ Proof.
          inv MACH.
          unfold init_sp_has_stackinfo in MSISHS.
          rewrite Heqv0 in *.
-         destruct MSISHS as (fi & MSI1 & MSI2 &  MSI4). rewrite MSI1 in NPSA.
+         destruct MSISHS as (fi & z & MSI1 & MSI2 &  MSI4).
+         erewrite get_assoc_intro in NPSA. 3: eauto. 3: red; simpl; auto. 2: apply Mem.stack_norepet.
          specialize (NPSA i0).
          trim (NPSA). omega.
          red in NPSA. erewrite MSI2 in NPSA. congruence.

@@ -1703,6 +1703,7 @@ for [unchanged_on]. *)
    forall thr m fi m',
      inject_neutral thr m ->
      record_stack_blocks m fi m' ->
+     Forall (fun b => Plt b thr) (frame_blocks fi) ->
      inject_neutral thr m';
 
  (* Properties of unrecord_stack_block *)
@@ -1893,6 +1894,15 @@ for [unchanged_on]. *)
      record_stack_blocks m f m1 ->
      record_stack_blocks m f m2 ->
      m1 = m2;
+
+ extends_same_length_stack:
+   forall {injperm: InjectPerm} m1 m2,
+     extends m1 m2 ->
+     length (stack_adt m2) = length (stack_adt m1);
+
+ stack_norepet:
+   forall m, nodup (Mem.stack_adt m);
+
 }.
 
 Section WITHMEMORYMODEL.

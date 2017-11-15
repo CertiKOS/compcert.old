@@ -413,7 +413,7 @@ Section WITHINITSPRA.
         (AG: agree ms (Vptr sp Ptrofs.zero) rs)
         (AXP: ep = true -> rs#RAX = parent_sp init_sp s)
         (MATCHFRAMES: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m))
-        (SAMEADT: list_forall2 (fun f1 f2 => f1 = f2) (Mem.stack_adt m) (Mem.stack_adt m')),
+        (SAMEADT: (Mem.stack_adt m) = (Mem.stack_adt m')),
       match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms m)
                    (Asm.State rs m')
   | match_states_call:
@@ -424,7 +424,7 @@ Section WITHINITSPRA.
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra init_ra s)
         (MATCHFRAMES: list_prefix match_stackframe_frame_adt ms_init ms_nil s (Mem.stack_adt m))
-        (SAMEADT: list_forall2 (fun f1 f2 => f1 = f2) (Mem.stack_adt m) (Mem.stack_adt m')),
+        (SAMEADT: (Mem.stack_adt m) = (Mem.stack_adt m')),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
@@ -435,7 +435,7 @@ Section WITHINITSPRA.
         (RA_VUNDEF: rs RA = Vundef)
         (ATPC: rs PC = parent_ra init_ra s)
         (MATCHFRAMES: list_prefix match_stackframe_frame_adt ms_init ms_nil s (Mem.stack_adt m))
-        (SAMEADT: list_forall2 (fun f1 f2 => f1 = f2) (Mem.stack_adt m) (Mem.stack_adt m')),
+        (SAMEADT: (Mem.stack_adt m) = (Mem.stack_adt m')),
       match_states (Mach.Returnstate s ms m)
                    (Asm.State rs m').
 
@@ -451,7 +451,7 @@ Lemma exec_straight_steps:
     /\ agree ms2 (Vptr sp Ptrofs.zero) rs2
     /\ (it1_is_parent ep i = true -> rs2#RAX = parent_sp init_sp s)) ->
   forall (LF2: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m2))
-                     (SAMEADT: list_forall2 (fun f1 f2 => f1 = f2) (Mem.stack_adt m2) (Mem.stack_adt m2')),
+                     (SAMEADT: (Mem.stack_adt m2) = (Mem.stack_adt m2')),
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms2 m2) st'.
@@ -477,7 +477,7 @@ Lemma exec_straight_steps_goto:
     /\ agree ms2 (Vptr sp Ptrofs.zero) rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tge tf lbl rs2 m2') ->
   forall (LF2:   list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c' :: s) (Mem.stack_adt m2))
-    (SAMEADT: list_forall2 (fun f1 f2 => f1 = f2) (Mem.stack_adt m2) (Mem.stack_adt m2')),
+    (SAMEADT: (Mem.stack_adt m2) = (Mem.stack_adt m2')),
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c' ms2 m2) st'.
@@ -668,11 +668,11 @@ Inductive asm_no_none: state -> Prop :=
   Lemma check_top_frame_ok:
     forall fb stk ra c s m m' f ,
       list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb stk ra c :: s) (Mem.stack_adt m) ->
-      list_forall2 (fun f1 f2 => f1 = f2) (Mem.stack_adt m) (Mem.stack_adt m') ->
-      Forall (fun x => match x with
-                      (_,Some _, _) => True
-                    | (_,None, _) => False
-                    end) (Mem.stack_adt m') ->
+      (Mem.stack_adt m) = (Mem.stack_adt m') ->
+      (* Forall (fun x => match x with *)
+      (*                 (_,Some _, _) => True *)
+      (*               | (_,None, _) => False *)
+      (*               end) (Mem.stack_adt m') -> *)
       Mem.extends m m' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       (forall b o, init_sp = Vptr b o -> o = Ptrofs.zero) ->
@@ -680,25 +680,18 @@ Inductive asm_no_none: state -> Prop :=
   Proof.
     clear - memory_model_prf init_sp_not_vundef.
     unfold check_top_frame.
-    intros fb stk ra c s m m' f MATCHFRAMES SAMEADT NONONE MEXT FIND PTRZERO.
+    intros fb stk ra c s m m' f MATCHFRAMES SAMEADT (* NONONE *) MEXT FIND PTRZERO.
     inv MATCHFRAMES.
     generalize (Mem.extends_stack_adt _ _ MEXT).
-    rewrite <- H. intro A.
-    destr.
-    {
-      inv A. exploit (stack_inject_frames O). constructor; simpl; auto.
-      unfold flat_frameinj. simpl. eauto.
-      intros (f2 & A & B). inv A. simpl in H0. congruence.
-    }
-    inv NONONE. destruct f0, p.
-    destruct o; destruct H2. 
-    
+    rewrite <- H. 
+    rewrite <- SAMEADT.
+    intro A. rewrite <- H. destruct b, p.    
     Ltac clean:=
       repeat match goal with
                H : _ /\ _ |- _ => destruct H; subst
              | H: True |- _ => clear H
              end.
-    red in PAB. destruct b, p. destruct o. 2: inv PAB.
+    red in PAB. destr. 
     clean.
     exploit (stack_inject_frames _ _ _ _ _ A O); eauto.
     constructor; simpl; auto.
@@ -712,18 +705,18 @@ Inductive asm_no_none: state -> Prop :=
     specialize (frame_inject_frame _ H0 _ _ eq_refl).
     specialize (H2 _ FIND).
     destruct H2 as (SEQ & LEQ & REQ & OTHER).
-    rewrite <- H in SAMEADT. inv SAMEADT. simpl in H5. inv H5.
+    rewrite <- H in H4. inv H4. simpl in *.
     rewrite SEQ, LEQ , REQ.
     rewrite <- ! andb_assoc. rewrite OTHER.
-    destruct (in_dec peq stk l0). 2: exfalso; apply n; auto. 
+    destruct (in_dec peq stk l). 2: exfalso; apply n; auto. 
     simpl. rewrite ! if_zeq.
     inv LPrec.
     + simpl. destruct (init_sp) eqn:?; auto.
       edestruct PNIL; eauto.
     + simpl. red in PINIT.
       destruct init_sp eqn:?; auto.
-      specialize (PINIT _ _ eq_refl). inv H7.
-      rewrite PINIT. destr.  apply andb_false_iff in Heqb0.
+      specialize (PINIT _ _ eq_refl). rewrite PINIT. 
+      destr.  apply andb_false_iff in Heqb0.
       destruct Heqb0. simpl in H1. destr_in H1. discriminate. 
       specialize (PTRZERO _ _ eq_refl). subst. discriminate.
     + simpl. 
@@ -731,7 +724,7 @@ Inductive asm_no_none: state -> Prop :=
       destruct a, b, p.
       destruct o; try easy.
       destruct PAB as (? & ? & PAB). subst.
-      inv H7. simpl. destr.
+      simpl. destr.
       apply andb_false_iff in Heqb.
       destruct Heqb. destruct (in_dec peq sp l2). discriminate. exfalso; apply n. auto. 
       discriminate.
@@ -740,11 +733,11 @@ Inductive asm_no_none: state -> Prop :=
   
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1') (ANN: asm_no_none S1'),
+  forall S1' (MS: match_states S1 S1') (* (ANN: asm_no_none S1') *),
   (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
-  induction 1; intros; inv MS; inv ANN.
+  induction 1; intros; inv MS(* ; inv ANN *).
 
 - (* Mlabel *)
   left; eapply exec_straight_steps; eauto; intros.
@@ -1296,7 +1289,7 @@ Transparent destroyed_at_function_entry.
 
   erewrite (Mem.record_stack_blocks_stack_adt _ _ m1_). 2: eauto.
   erewrite (Mem.record_stack_blocks_stack_adt _ _ m1''). 2: eauto.
-  constructor; auto.
+  f_equal; auto.
   erewrite (Mem.store_stack_blocks _ _ _ _ _ m3). 2: simpl in * ; eauto.
   erewrite (Mem.store_stack_blocks _ _ _ _ _ m3'). 2: simpl in * ; eauto.
   erewrite (Mem.store_stack_blocks _ _ _ _ _ m2). 2: simpl in * ; eauto.
@@ -1359,7 +1352,7 @@ Qed.
 End WITHINITSPRA.
 
 Let match_states v1 v2 s1 s2 :=
-  match_states v1 v2 s1 s2 /\ asm_no_none s2.
+  match_states v1 v2 s1 s2.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
@@ -1373,7 +1366,6 @@ Proof.
     with (Vptr fb Ptrofs.zero).
   econstructor; eauto.
   econstructor; eauto.
-  constructor.
   apply Mem.extends_refl.
   split. reflexivity. simpl. 
   unfold Vnullptr; destruct Archi.ptr64; congruence.
@@ -1382,8 +1374,6 @@ Proof.
   destruct (Mem.stack_adt m0). constructor.
   red; intros. inv H3.
   constructor. red; simpl; intros. inv H3.
-  erewrite Genv.init_mem_stack_adt; eauto.  constructor.
-  econstructor. erewrite Genv.init_mem_stack_adt; eauto. 
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.
@@ -1395,7 +1385,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states Vnullptr Vnullptr st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H0. constructor. auto.
+  intros. inv H0. inv H. constructor. auto.
   assert (r0 = AX).
   { unfold loc_result in H1; destruct Archi.ptr64; compute in H1; congruence. }
   subst r0.
@@ -1429,15 +1419,15 @@ Proof.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
-  intros. inv H0.
-  eapply step_simulation in H1; eauto.
-  destruct H1 as [[s2' [PLUS MS]]|[MLT [ TE0  MS]]]; [left|right]; eauto.
-  - eexists; split; eauto. constructor; auto.
-    eapply plus_preserves.
-    eapply step_asm_no_none; eauto. eauto.
-    eauto.
-  - split; auto. split; auto.
-    constructor; auto.
+  intros.
+  eapply step_simulation in H0; eauto. 
+  (* destruct H1 as [[s2' [PLUS MS]]|[MLT [ TE0  MS]]]; [left|right]; eauto. *)
+  (* - eexists; split; eauto. constructor; auto. *)
+  (*   eapply plus_preserves. *)
+  (*   eapply step_asm_no_none; eauto. eauto. *)
+  (*   eauto. *)
+  (* - split; auto. split; auto. *)
+  (*   constructor; auto. *)
   - unfold Vnullptr; destruct Archi.ptr64; congruence.
   - unfold Vnullptr; destruct Archi.ptr64; congruence.
   - apply Val.Vnullptr_has_type.
