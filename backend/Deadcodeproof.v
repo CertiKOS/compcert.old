@@ -732,7 +732,8 @@ Qed.
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   exists S2', step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
 
@@ -1067,7 +1068,8 @@ Ltac UseTransfer :=
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   exploit external_call_mem_extends; eauto 2 with na.
   eapply magree_extends; eauto. intros. apply nlive_all.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (v' & tm' & P & Q & R & S).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
@@ -1119,7 +1121,8 @@ Ltac UseTransfer :=
 
 - (* external function *)
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (res' & tm' & A & B & C & D).
   simpl in FUN. inv FUN.
   econstructor; split.
@@ -1180,7 +1183,8 @@ Proof.
 - simpl; intros. destruct H0.
   assert (sound_state prog s1') by (eapply sound_step; eauto).
   fold ge; fold tge. exploit step_simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [st2' [A B]].
   exists st2'; auto.
 Qed.

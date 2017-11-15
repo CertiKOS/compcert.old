@@ -243,7 +243,8 @@ Variable init_ls: locset.
 Theorem transf_step_correct:
   forall s1 t s2, step init_ls ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  exists w, forall t', match_events cc_id w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_id w t t' ->
   (exists s2', step init_ls tge s1' t' s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.

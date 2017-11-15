@@ -483,7 +483,8 @@ Hypothesis init_ra_type: Val.has_type init_ra Tptr.
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   (exists S2', plus step tge S1' t' S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
@@ -685,7 +686,8 @@ Opaque loadind.
   generalize (transf_function_no_overflow _ _ H3); intro NOOV.
   exploit builtin_args_match; eauto. intros [vargs' [P Q]].
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [vres' [m2' [A [B [C D]]]]].
   left. econstructor; split. apply plus_one.
   eapply exec_step_builtin. eauto. eauto.
@@ -880,7 +882,8 @@ Transparent destroyed_at_function_entry.
   exploit extcall_arguments_match; eauto.
   intros [args' [C D]].
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [res' [m2' [P [Q [R S]]]]].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.

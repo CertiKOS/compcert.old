@@ -403,7 +403,8 @@ Qed.
 Lemma tunnel_step_correct:
   forall st1 t st2, step init_ls ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   (exists st2', step init_ls tge st1' t' st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
@@ -478,7 +479,8 @@ Proof.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
@@ -525,7 +527,8 @@ Proof.
   simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef.
 - (* external function *)
   exploit external_call_mem_extends; eauto using locmap_getpairs_lessdef.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.

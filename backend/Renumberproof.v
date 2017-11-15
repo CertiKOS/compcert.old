@@ -164,7 +164,8 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
   forall S1', match_states S1 S1' ->
-  exists w, forall t', match_events cc_id w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_id w t t' ->
   exists S2', RTL.step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros S1' MS; inv MS; stable_step; try TR_AT.

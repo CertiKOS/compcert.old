@@ -824,7 +824,8 @@ Lemma external_call_inject:
   external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
-  exists w, forall t', match_events cc_inject w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_inject w t t' ->
   exists f', exists vres', exists m2',
     external_call ef tge vargs' m1' t' vres' m2'
     /\ Val.inject f' vres vres'
@@ -927,7 +928,8 @@ Qed.
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists w, forall t', match_events cc_inject w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_inject w t t' ->
   exists S2', step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS; try stable_step.
@@ -1020,7 +1022,8 @@ Proof.
   intros (vargs' & P & Q).
   exploit external_call_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (j' & tv & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
@@ -1076,7 +1079,8 @@ Proof.
 - (* external function *)
   exploit external_call_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (j' & tres & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_function_external; eauto.

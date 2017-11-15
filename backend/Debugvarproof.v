@@ -433,7 +433,8 @@ Qed.
 Theorem transf_step_correct:
   forall s1 t s2, step init_ls ge s1 t s2 ->
   forall ts1 (MS: match_states s1 ts1),
-  exists w, forall t', match_events cc_id w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_id w t t' ->
   exists ts2, plus (step init_ls) tge ts1 t' ts2 /\ match_states s2 ts2.
 Proof.
   induction 1; intros ts1 MS; stable_step; inv MS; try (inv TRC).

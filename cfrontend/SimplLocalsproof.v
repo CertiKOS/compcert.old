@@ -2002,7 +2002,8 @@ End FIND_LABEL.
 Lemma step_simulation:
   forall S1 t S2, step1 ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists w, forall t', match_events cc_inject w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_inject w t t' ->
   exists S2', plus step2 tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
   induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS); try stable_step.
@@ -2225,7 +2226,8 @@ Proof.
   monadInv TRFD. inv FUNTY.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
   eapply match_cont_globalenv. eexact (MCONT VSet.empty).
-  intros [w Hw]. exists w. intros t' Ht'.
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'.
   edestruct Hw as [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]]; eauto.
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.

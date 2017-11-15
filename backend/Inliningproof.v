@@ -1023,7 +1023,8 @@ Theorem step_simulation:
   forall S1 t S2,
   step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists w, forall t', match_events cc_inject w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_inject w t t' ->
   (exists S2', plus step tge S1' t' S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
@@ -1173,7 +1174,8 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
@@ -1327,7 +1329,8 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
@@ -1440,7 +1443,8 @@ Proof.
   eexact transf_final_states.
   instantiate (1 := measure). intros. inv H0.
   exploit step_simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw.
    destruct H0. destruct H0. left. esplit. split. eassumption. econstructor; eauto.
   destruct H0. destruct H1. right. split. assumption. split. assumption. econstructor; eauto.

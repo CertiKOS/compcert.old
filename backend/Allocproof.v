@@ -1629,7 +1629,8 @@ Lemma add_equations_builtin_eval:
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
   external_call ef ge vargs m1 t vres m2 ->
   satisf rs ls e1 /\
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
   /\ external_call ef ge vargs' m1' t' vres' m2'
@@ -1639,7 +1640,8 @@ Proof.
   intros.
   assert (DEFAULT: add_equations_builtin_args env args args' e1 = Some e2 ->
     satisf rs ls e1 /\
-    exists w, forall t', match_events cc_extends w t t' ->
+    exists w, (exists t', match_events_query _ w t t') /\
+    forall t', match_events cc_extends w t t' ->
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
     /\ external_call ef ge vargs' m1' t' vres' m2'
@@ -1650,7 +1652,8 @@ Proof.
     exploit add_equations_builtin_args_lessdef; eauto.
     intros (vargs' & A & B).
     exploit external_call_mem_extends; eauto.
-    intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+    intros (w & Hwq & Hw). exists w; split; eauto.
+    intros t' Ht'. specialize (Hw t' Ht').
     destruct Hw as (vres' & m2' & C & D & E & F).
     exists vargs', vres', m2'; auto.
   }
@@ -1660,6 +1663,7 @@ Proof.
   intros (vargs' & A).
   simpl in H4; inv H4.
   exists dummy_world.
+  split. { exists E0; constructor. }
   exists vargs', Vundef, m1'. inv H4. intuition auto. simpl. constructor.
 Qed.
 
@@ -2005,7 +2009,8 @@ Qed.
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 -> wt_state restype S1 ->
   forall S1', match_states S1 S1' ->
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   exists S2', plus (LTL.step init_ls) tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros WT S1' MS; inv MS; try UseShape; try stable_step.
@@ -2368,7 +2373,8 @@ Proof.
 (* builtin *)
 - exploit (exec_moves mv1); eauto. intros [ls1 [A1 B1]].
   exploit add_equations_builtin_eval; eauto.
-  intros (C & w & Hw). exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (C & w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as (vargs' & vres' & m'' & D & E & F & G).
   assert (WTRS': wt_regset env (regmap_setres res vres rs)) by (eapply wt_exec_Ibuiltin; eauto).
   set (ls2 := Locmap.setres res' vres' (undef_regs (destroyed_by_builtin ef) ls1)).
@@ -2472,7 +2478,8 @@ Proof.
 
 (* external function *)
 - exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [v' [m'' [F [G [J K]]]]].
   simpl in FUN; inv FUN.
   econstructor; split.
@@ -2586,7 +2593,8 @@ Proof.
 - intros. destruct H. eapply final_states_simulation; eauto.
 - intros. destruct H0.
   exploit step_simulation; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [s2' [A B]].
   exists s2'; split. rewrite comp_snd_q2 in A. exact A. split.
   eapply subject_reduction; eauto. eexact wt_prog. eexact H.

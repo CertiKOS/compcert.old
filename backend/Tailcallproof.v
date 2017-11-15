@@ -405,7 +405,8 @@ Ltac EliminatedInstr :=
 Lemma transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   (exists s2', step tge s1' t' s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
@@ -491,7 +492,8 @@ Proof.
   exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & P & Q).
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [v' [m'1 [A [B [C D]]]]].
   left. exists (State s' (transf_function f) (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res v' rs') m'1); split.
   eapply exec_Ibuiltin; eauto.
@@ -553,7 +555,8 @@ Proof.
 
 - (* external call *)
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [res' [m2' [A [B [C D]]]]].
   left. exists (Returnstate s' res' m2'); split.
   simpl. econstructor; eauto.

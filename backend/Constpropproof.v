@@ -366,7 +366,8 @@ Lemma transf_step_correct:
   forall s1 t s2,
   step ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  exists w, forall t', match_events cc_extends w t t' ->
+  exists w, (exists t', match_events_query _ w t t') /\
+  forall t', match_events cc_extends w t t' ->
   (exists n2, exists s2', step tge s1' t' s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.
@@ -495,7 +496,8 @@ Opaque builtin_strength_reduction.
     apply REGS. eauto. eexact P.
   intros (vargs'' & U & V).
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [v' [m2' [A [B [C D]]]]].
   left; econstructor; econstructor; split.
   eapply exec_Ibuiltin; eauto.
@@ -560,7 +562,8 @@ Opaque builtin_strength_reduction.
 
 - (* external function *)
   exploit external_call_mem_extends; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [v' [m2' [A [B [C D]]]]].
   simpl. left; econstructor; econstructor; split.
   eapply exec_function_external; eauto.
@@ -619,7 +622,8 @@ Proof.
   assert (sound_state prog s1') by (eapply sound_step; eauto).
   fold ge; fold tge.
   exploit transf_step_correct; eauto.
-  intros [w Hw]. exists w; intros t' Ht'. specialize (Hw t' Ht').
+  intros (w & Hwq & Hw). exists w; split; eauto.
+  intros t' Ht'. specialize (Hw t' Ht').
   destruct Hw as [ [n2 [s2' [A B]]] | [n2 [A [B C]]]].
   exists n2; exists s2'; split; auto. left; apply plus_one; auto.
   exists n2; exists s2; split; auto. right; split; auto.
