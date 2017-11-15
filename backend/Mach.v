@@ -418,21 +418,41 @@ Inductive step: state -> trace -> state -> Prop :=
 
 End RELSEM.
 
-Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall fb m0,
-      let ge := Genv.globalenv p in
-      Genv.init_mem p = Some m0 ->
-      Genv.find_symbol ge p.(prog_main) = Some fb ->
-      initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
+Record mach_query :=
+  mq {
+    mq_id: String.string;
+    mq_sp: val;
+    mq_ra: val;
+    mq_rs: regset;
+    mq_mem: mem;
+  }.
 
-Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m r retcode,
-      loc_result signature_main = One r ->
-      rs r = Vint retcode ->
-      final_state (Returnstate nil rs m) retcode.
+Definition li_mach: language_interface :=
+  {|
+    query := mach_query;
+    reply := regset * mem;
+    dummy_query :=
+      mq String.EmptyString Vundef Vundef (Regmap.init Vundef) Mem.empty;
+  |}.
+
+Inductive initial_state (p: program): query li_mach -> state -> Prop :=
+  | initial_state_intro: forall id fb sp ra rs m,
+      let ge := Genv.globalenv p in
+      Ple (Genv.genv_next ge) (Mem.nextblock m) ->
+      Genv.find_symbol ge (str2ident id) = Some fb ->
+      initial_state p (mq id sp ra rs m) (Callstate nil fb rs m).
+
+Inductive final_state: state -> reply li_mach -> Prop :=
+  | final_state_intro: forall rs m ,
+      final_state (Returnstate nil rs m) (rs, m).
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
-  Semantics (step Vnullptr Vnullptr rao) (initial_state p) final_state (Genv.globalenv p).
+  Semantics_gen li_mach
+    (fun q => step (mq_sp q) (mq_ra q) rao)
+    (initial_state p)
+    (fun _ => final_state)
+    (Genv.globalenv p)
+    (Genv.globalenv p).
 
 (** * Leaf functions *)
 
@@ -496,7 +516,7 @@ Qed.
 End WF_STATES.
 
 Lemma wf_initial:
-  forall p S, initial_state p S -> wf_state (Genv.globalenv p) S.
+  forall p q S, initial_state p q S -> wf_state (Genv.globalenv p) S.
 Proof.
   intros. inv H. fold ge. constructor. constructor.
 Qed.
