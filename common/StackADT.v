@@ -825,16 +825,6 @@ predicate that represents the permissions for the source memory [m1] in which
           exists f2,
             frame_at_pos s2 i2 f2 /\ 
             frame_inject' f m f1 f2;
-      stack_inject_compat:
-        forall b1 b2 delta,
-          f b1 = Some (b2, delta) ->
-          forall i1 f1,
-            frame_at_pos s1 i1 f1 ->
-            in_frame f1 b1 ->
-            exists i2 f2,
-              frame_at_pos s2 i2 f2 /\
-              in_frame f2 b2 /\
-              g i1 = Some i2;
       stack_inject_not_in_frames:
         forall b1 b2 delta f2 fi,
           f b1 = Some (b2, delta) ->
@@ -850,8 +840,6 @@ predicate that represents the permissions for the source memory [m1] in which
         forall i j, g i = Some j -> i < length s1 /\ j < length s2;
       stack_inject_exists_l:
         forall i, i < length s1 -> exists j, g i = Some j;
-      (* stack_inject_exists_r: *)
-      (*   forall j, j < length s2 -> exists i, g i = Some j; *)
       stack_inject_pack:
         forall i j, g i = Some j -> j <= i;
       stack_inject_sizes:
@@ -862,6 +850,38 @@ predicate that represents the permissions for the source memory [m1] in which
           (forall i, g i = Some i2 -> i <= i1) ->
           (frame_adt_size f2 <= frame_adt_size f1)%Z;
     }.
+
+  Lemma frame_at_pos_lt:
+    forall s n f,
+      frame_at_pos s n f ->
+      n < length s.
+  Proof.
+    intros s n f FAP; inv FAP.
+    apply nth_error_Some. congruence.
+  Qed.
+
+  Lemma stack_inject_compat:
+    forall f g P s1 s2,
+      stack_inject f g P s1 s2 ->
+    forall b1 b2 delta,
+      f b1 = Some (b2, delta) ->
+      forall i1 f1,
+        frame_at_pos s1 i1 f1 ->
+        in_frame f1 b1 ->
+        exists i2 f2,
+          frame_at_pos s2 i2 f2 /\
+          in_frame f2 b2 /\
+          g i1 = Some i2.
+  Proof.
+    intros f g P s1 s2 SI b1 b2 delta FB i1 f1 FAP IN.
+    exploit frame_at_pos_lt. eauto. intro LT.
+    exploit stack_inject_exists_l. eauto. eauto. intros (j & GI1).
+    exploit stack_inject_frames. eauto. eauto. eauto.
+    intros (f2 & FAP2 & FI).
+    exists j, f2; split; auto. split; auto.
+    destruct FI. rewrite Forall_forall in *.
+    eapply frame_inject_inj0; eauto.
+  Qed.
 
   (* Definition stack_injection f m s1 s2 : Prop := *)
   (*   exists g, *)
@@ -905,9 +925,9 @@ predicate that represents the permissions for the source memory [m1] in which
         in_frame f2 b2 /\
         frame_inject' f m f1 f2.
   Proof.
-    destruct 1; intros f1 b1 b2 delta IFR FB IFS.
+    inversion 1; intros f1 b1 b2 delta IFR FB IFS.
     eapply in_frame_at_pos in IFS. destruct IFS as (n & FAP).
-    exploit stack_inject_compat0; eauto.
+    exploit stack_inject_compat; eauto.
     intros (i2 & f2 & FAP2 & IF2 & GN).
     destruct (stack_inject_frames0 _ _ _ FAP GN) as (f2' & FAP2' & IFR2).
     assert (f2 = f2') by (eapply frame_at_same_pos; eauto). subst.
@@ -1023,14 +1043,6 @@ predicate that represents the permissions for the source memory [m1] in which
     inv H1. simpl; auto.
   Qed.
 
-  Lemma frame_at_pos_lt:
-    forall s n f,
-      frame_at_pos s n f ->
-      n < length s.
-  Proof.
-    intros s n f FAP; inv FAP.
-    apply nth_error_Some. congruence.
-  Qed.
 
   Lemma stack_inject_is_stack_top:
     forall f g m s1 s2,
@@ -1421,7 +1433,7 @@ predicate that represents the permissions for the source memory [m1] in which
   Lemma compose_frameinj_smallest:
     forall g g' i1 i3,
       frameinj_preserves_order g ->
-      frameinj_preserves_order g' ->
+      (* frameinj_preserves_order g' -> *)
       (forall j k, g' j = Some k -> exists i, g i = Some j) ->
       compose_frameinj g g' i1 = Some i3 ->
       (forall i, compose_frameinj g g' i = Some i3 -> i <= i1) ->
@@ -1431,7 +1443,7 @@ predicate that represents the permissions for the source memory [m1] in which
         (forall i, g' i = Some i3 -> i <= i2).
   Proof.
     unfold compose_frameinj.
-    intros g g' i1 i3 FPO FPO' COMP CINJ LATEST.
+    intros g g' i1 i3 FPO COMP CINJ LATEST.
     destruct (g i1) as [i2|] eqn:GI1; try congruence.
     exists i2; split; auto. split; auto.
     assert (LATE1: (forall i, g i = Some i2 -> (i <= i1))).
@@ -1564,7 +1576,7 @@ predicate that represents the permissions for the source memory [m1] in which
         stack_inject (compose_meminj f f') (compose_frameinj g g') m1 l1 l3.
   Proof.
     intros f f' g g' m1 l1 l2 SI1 SURJ m2 l3 SI2 ND2 ND3 PERM FAP.
-    destruct SI1, SI2.
+    inversion SI1; inversion SI2.
     split.
     - eapply frameinj_preserves_order_compose; eauto.
     - intros i1 f1 i3 FAP1 CFI.
@@ -1574,13 +1586,6 @@ predicate that represents the permissions for the source memory [m1] in which
       exists f3; split; auto.
       eapply frame_inject_compose; eauto.
       rewrite Forall_forall in FAP; eapply FAP; eauto. eapply frame_at_pos_In; eauto.
-    - unfold compose_meminj.
-      intros b1 b2 delta FB i1 f1 FAP1 IFR1.
-      repeat destr_in FB.
-      edestruct stack_inject_compat0 as (i2 & f2 & FAP2 & IFR2 & GI12); eauto.
-      edestruct stack_inject_compat1 as (i3 & f3 & FAP3 & IFR3 & GI23); eauto.
-      exists i3, f3; split; eauto. split; auto.
-      unfold compose_frameinj. rewrite GI12. auto.
     - intros b1 b3 delta f3 fi CINJ NIN1 INS3 INF3 FINFO3 o k p PERMS IPC.
       unfold compose_meminj in CINJ.
       destruct (f b1) as [[b2 delta1]|] eqn:FB1; try congruence.
@@ -1589,8 +1594,8 @@ predicate that represents the permissions for the source memory [m1] in which
       destruct (in_frames_dec l2 b2).
       + destruct (in_frames_in_frame_ex _ _ i) as (f2 & INS2 & INF2).
         destruct (in_frame_at_pos _ _ INS2) as (n2 & FAP2).
-        exploit stack_inject_compat1; eauto. intros (i3 & f3' & FAP3 & IFR3 & G').
-        exploit stack_inject_frames1; eauto. intros (f3'' & FAP3' & FI23).
+        exploit stack_inject_compat; eauto. intros (i3 & f3' & FAP3 & IFR3 & G').
+        exploit stack_inject_frames; eauto. intros (f3'' & FAP3' & FI23).
         assert (f3' = f3''). inv FAP3; inv FAP3'; congruence. subst.
         assert (f3 = f3''). apply nodup_nodup' in ND3. eapply ND3; eauto. eapply frame_at_pos_In; eauto. subst.
         destruct FI23. red in frame_inject_frame0.
@@ -2209,9 +2214,7 @@ predicate that represents the permissions for the source memory [m1] in which
   Proof.
     constructor.
     - red. congruence.
-    - congruence.
-    - intros b1 b2 delta FB i1 f1 FAP IFR.
-      inv FAP. simpl in H. rewrite nth_error_nil in H; congruence.
+    -  congruence.
     - simpl. congruence.
     - congruence.
     - simpl; intros; omega.
@@ -2697,6 +2700,91 @@ predicate that represents the permissions for the source memory [m1] in which
     f_equal; omega.
   Qed.
 
+  Lemma stack_inject_id:
+    forall p s,
+      stack_inject inject_id (flat_frameinj (length s)) p s s.
+  Proof.
+    intros; unfold flat_frameinj; constructor.
+    - red. intros i1 i2. repeat destr.
+    - intros. destr_in H0; inv H0. 
+      exists f1. intuition.
+      apply inject_frame_id.
+    - inversion 1; eauto. intros; exfalso; apply H0. eapply in_frames_in_frame; eauto.
+    - intros i j H; destr_in H; inv H.
+    - intros. exists i; destr.
+    - intros i j H; destr_in H; inv H. omega.
+    - intros i1 i2 f1 f2 FAP1 FAP2 H; repeat destr_in H.
+      assert (f1 = f2) by (eapply frame_at_same_pos; eauto). subst. omega.
+  Qed.
+
+
+(** The following shows how to transport a stack injection when more blocks get
+injected. We have an hypothesis about those new blocks. Namely, they are not
+part of the source stack, and if the block they're injected to is part of the
+stack, then the corresponding locations have the public stack permission. The
+typical case when a new block is not in the stack but the target block they
+inject to is already in is Inlining, where the parent function clearly already
+exists and is already on the stack when the block for the callee is allocated.
+Another scenario is generation of single-stack-block Asm, where the unique stack
+block is also present and part of the stack when the 'source' blocks get
+allocated. *)
+
+Lemma stack_inject_incr:
+  forall f f' g (p: block -> Z -> perm_kind -> permission -> Prop)  s1 s2,
+    inject_incr f f' ->
+    (forall b b' delta,
+        f b = None ->
+        f' b = Some (b', delta) ->
+        ~ in_frames s1 b
+        /\ forall f2 fi,
+            In f2 s2 ->
+            in_frame f2 b' ->
+            frame_adt_info f2 = Some fi ->
+            forall o k pp,
+              p b o k pp ->
+              inject_perm_condition pp ->
+              frame_public fi (o + delta)) ->
+    stack_inject f g p s1 s2 ->
+    stack_inject f' g p s1 s2.
+Proof.
+  intros f f' g p s1 s2 INCR NEW SI.
+  inversion SI; constructor; eauto.
+  - intros i1 f1 i2 FAP GI.
+    exploit stack_inject_frames; eauto.
+    intros (f2 & FP & FI).
+    exists f2; intuition.
+    eapply frame_inject_incr; eauto.
+    intros b b' delta NONE SOME IFR.
+    eapply NEW in SOME; eauto. destruct SOME as (NIN & _) ; eapply NIN. eapply in_frames_in_frame; eauto.
+    eapply frame_at_pos_In; eauto.
+  - intros b1 b2 delta f2 fi SOME NIFR INS INF FINFO o k p0 P IPC.
+    destruct (f b1) as [[b2' delta']|] eqn:FB.
+    exploit INCR. eauto. rewrite SOME. inversion 1; subst.
+    eauto.
+    generalize (NEW _ _ _ FB SOME). intros (NIN1 & NIN2); eapply NIN2; eauto.
+Qed.
+
+Lemma stack_injection_incr:
+  forall f f' g (p: block -> Z -> perm_kind -> permission -> Prop) s1 s2,
+    inject_incr f f' ->
+    (forall b b' delta,
+        f b = None ->
+        f' b = Some (b', delta) ->
+        ~ in_frames s1 b
+        /\ forall f2 fi,
+            In f2 s2 ->
+            in_frame f2 b' ->
+            frame_adt_info f2 = Some fi ->
+            forall o k pp,
+              p b o k pp ->
+              inject_perm_condition pp ->
+              frame_public fi (o + delta)) ->
+    stack_inject f g p s1 s2 ->
+    stack_inject f' g p s1 s2.
+Proof.
+  intros f f' g p s1 s2 H H0 SI.
+  eapply stack_inject_incr; eauto.
+Qed.
 
 
 End INJ.
