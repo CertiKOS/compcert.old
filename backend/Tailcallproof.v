@@ -405,7 +405,7 @@ Ltac EliminatedInstr :=
 Lemma transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   (exists s2', step tge s1' t' s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.

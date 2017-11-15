@@ -366,7 +366,7 @@ Lemma transf_step_correct:
   forall s1 t s2,
   step ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   (exists n2, exists s2', step tge s1' t' s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.

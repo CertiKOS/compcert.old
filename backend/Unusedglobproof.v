@@ -824,7 +824,7 @@ Lemma external_call_inject:
   external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
-  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists w, forall t', match_events cc_inject w t t' ->
   exists f', exists vres', exists m2',
     external_call ef tge vargs' m1' t' vres' m2'
     /\ Val.inject f' vres vres'
@@ -927,7 +927,7 @@ Qed.
 Theorem step_simulation:
   forall S1 t S2, step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists w, forall t', match_events cc_inject w t t' ->
   exists S2', step tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS; try stable_step.

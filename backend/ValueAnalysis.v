@@ -1076,7 +1076,7 @@ Proof.
   intros.
   exploit external_call_mem_inject; eauto.
   intros [w Hw].
-  assert (Ht: match_events ge cc_inject w t t) by admit. (* need lemma: extcall of self-injecting produces self-injecting trace. *)
+  assert (Ht: match_events cc_inject w t t) by admit. (* need lemma: extcall of self-injecting produces self-injecting trace. *)
   specialize (Hw t Ht).
   destruct Hw as [? [? [? [? [? [? [? [? [? ?]]]]]]]]]; eauto 8.
   eapply external_call_readonly; eauto.

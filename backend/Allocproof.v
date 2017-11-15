@@ -1629,7 +1629,7 @@ Lemma add_equations_builtin_eval:
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
   external_call ef ge vargs m1 t vres m2 ->
   satisf rs ls e1 /\
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
   /\ external_call ef ge vargs' m1' t' vres' m2'
@@ -1639,7 +1639,7 @@ Proof.
   intros.
   assert (DEFAULT: add_equations_builtin_args env args args' e1 = Some e2 ->
     satisf rs ls e1 /\
-    exists w, forall t', match_events ge cc_extends w t t' ->
+    exists w, forall t', match_events cc_extends w t t' ->
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
     /\ external_call ef ge vargs' m1' t' vres' m2'
@@ -2005,7 +2005,7 @@ Qed.
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 -> wt_state restype S1 ->
   forall S1', match_states S1 S1' ->
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   exists S2', plus (LTL.step init_ls) tge S1' t' S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros WT S1' MS; inv MS; try UseShape; try stable_step.

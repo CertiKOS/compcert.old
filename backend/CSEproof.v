@@ -989,7 +989,7 @@ Ltac TransfInstr :=
 Lemma transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1') (SOUND: sound_state prog s1),
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   exists s2', step tge s1' t' s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros; inv MS; try stable_step; try (TransfInstr; intro C).

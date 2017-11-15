@@ -901,7 +901,7 @@ Definition measure (s: Cminor.state) : nat :=
 Lemma sel_step_correct:
   forall S1 t S2, Cminor.step ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   (exists T2, step tge T1 t' T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.

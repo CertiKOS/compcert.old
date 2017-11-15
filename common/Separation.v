@@ -852,7 +852,7 @@ Lemma external_call_parallel_rule:
   external_call ef ge vargs1 m1 t vres1 m1' ->
   m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
-  exists w, forall t2, match_events ge cc_inject w t t2 ->
+  exists w, forall t2, match_events cc_inject w t t2 ->
   exists j' vres2 m2',
      external_call ef ge vargs2 m2 t2 vres2 m2'
   /\ Val.inject j' vres1 vres2

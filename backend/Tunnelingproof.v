@@ -403,7 +403,7 @@ Qed.
 Lemma tunnel_step_correct:
   forall st1 t st2, step init_ls ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   (exists st2', step init_ls tge st1' t' st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.

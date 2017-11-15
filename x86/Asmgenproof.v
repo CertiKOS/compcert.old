@@ -483,7 +483,7 @@ Hypothesis init_ra_type: Val.has_type init_ra Tptr.
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   (exists S2', plus step tge S1' t' S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.

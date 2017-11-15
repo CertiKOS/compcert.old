@@ -1531,7 +1531,7 @@ Qed.
 Lemma transl_step:
   forall S1 t S2, Clight.step2 ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists w, forall t', match_events ge cc_id w t t' ->
+  exists w, forall t', match_events cc_id w t t' ->
   exists T2, plus step tge T1 t' T2 /\ match_states S2 T2.
 Proof.
   induction 1; intros T1 MST; inv MST; try stable_step.

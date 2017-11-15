@@ -2007,7 +2007,7 @@ Definition measure (S: Csharpminor.state) : nat :=
 Lemma transl_step_correct:
   forall S1 t S2, Csharpminor.step ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists w, forall t', match_events ge cc_inject w t t' ->
+  exists w, forall t', match_events cc_inject w t t' ->
   (exists T2, plus step tge T1 t' T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.

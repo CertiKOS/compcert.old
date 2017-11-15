@@ -711,7 +711,7 @@ Proof.
   exploit H0; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
   exploit external_call_mem_extends; eauto.
   intros [w Hw].
-  specialize (Hw E0 (match_events_E0 _ _)).
+  specialize (Hw E0 (match_events_E0 _)).
   destruct Hw as [v' [tm2 [A [B [C DE]]]]].
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
@@ -745,7 +745,7 @@ Proof.
   exploit H3; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
   exploit external_call_mem_extends; eauto.
   intros [w Hw].
-  specialize (Hw E0 (match_events_E0 _ _)).
+  specialize (Hw E0 (match_events_E0 _)).
   destruct Hw as [v' [tm2 [A [B [C DE]]]]].
   exploit function_ptr_translated; eauto. simpl. intros [tf [P Q]]. inv Q.
   exists (rs1#rd <- v'); exists tm2.
@@ -1309,7 +1309,7 @@ Qed.
 Theorem transl_step_correct:
   forall S1 t S2, CminorSel.step ge S1 t S2 ->
   forall R1, match_states S1 R1 ->
-  exists w, forall t', match_events ge cc_extends w t t' ->
+  exists w, forall t', match_events cc_extends w t t' ->
   exists R2,
   (plus RTL.step tge R1 t' R2 \/ (star RTL.step tge R1 t' R2 /\ lt_state S2 S1))
   /\ match_states S2 R2.

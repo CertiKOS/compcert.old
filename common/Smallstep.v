@@ -532,7 +532,7 @@ Record fsim_properties {B1 B2} (ccA: callconv li_c li_c) (ccB: callconv B1 B2)
     fsim_simulation:
       forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
       forall i s2, match_states w0 i s1 s2 ->
-      exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+      exists w, forall t', match_events ccA w t t' ->
       exists i', exists s2',
          (Plus L2 (world_q2 w0) s2 t' s2' \/ (Star L2 (world_q2 w0) s2 t' s2' /\ order i' i))
       /\ match_states w0 i' s1' s2';
@@ -557,7 +557,7 @@ Lemma fsim_simulation':
   @fsim_properties B1 B2 ccA ccB L1 L2 index order match_states ->
   forall w0 i s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 i s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists w, forall t', match_events ccA w t t' ->
   (exists i', exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 i' s1' s2')
   \/ (exists i', order i' i /\ t = E0 /\ match_states w0 i' s1' s2).
 Proof.
@@ -621,7 +621,7 @@ Hypothesis order_wf: well_founded order.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists w, forall t', match_events ccA w t t' ->
   exists s2',
   (Plus L2 (world_q2 w0) s2 t' s2' \/ (Star L2 (world_q2 w0) s2 t' s2' /\ order s1' s1))
   /\ match_states w0 s1' s2'.
@@ -654,7 +654,7 @@ Variable measure: state L1 -> nat.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists w, forall t', match_events ccA w t t' ->
   (exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2')
   \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
@@ -680,7 +680,7 @@ Section SIMULATION_PLUS.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists w, forall t', match_events ccA w t t' ->
   exists s2', Plus L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_plus: forward_simulation ccA ccB L1 L2.
@@ -700,7 +700,7 @@ Section SIMULATION_STEP.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists w, forall t', match_events ccA w t t' ->
   exists s2', Step L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2'.
 
 Lemma forward_simulation_step: forward_simulation ccA ccB L1 L2.
@@ -727,7 +727,7 @@ Variable measure: state L1 -> nat.
 Hypothesis simulation:
   forall w0 s1 t s1', Step L1 (world_q1 w0) s1 t s1' ->
   forall s2, match_states w0 s1 s2 ->
-  exists w, forall t', match_events (symbolenv L1) ccA w t t' ->
+  exists w, forall t', match_events ccA w t t' ->
   (exists s2', Step L2 (world_q2 w0) s2 t' s2' /\ match_states w0 s1' s2')
   \/ (measure s1' < measure s1 /\ t = E0 /\ match_states w0 s1' s2)%nat.
 
@@ -750,9 +750,9 @@ End FORWARD_SIMU_DIAGRAMS.
   always drop it. In general, we can drop it whenever the source trace
   is a stable event. *)
 
-Lemma stable_step_id ge t (P: trace -> Prop):
+Lemma stable_step_id t (P: trace -> Prop):
   P t ->
-  exists w, forall t', match_events ge cc_id w t t' -> P t'.
+  exists w, forall t', match_events cc_id w t t' -> P t'.
 Proof.
   intros H.
   destruct t as [ | [ | | | | q r]];
