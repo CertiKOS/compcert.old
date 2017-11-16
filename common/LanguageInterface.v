@@ -84,6 +84,7 @@ Record world {T1 T2} (cc: callconv T1 T2) :=
   }.
 
 Arguments mk_world {T1 T2} cc _ _ _ _.
+Arguments world_proj {T1 T2 cc} _.
 Arguments world_q1 {T1 T2 cc} _.
 Arguments world_q2 {T1 T2 cc} _.
 

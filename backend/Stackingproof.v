@@ -1417,12 +1417,18 @@ End FRAME_PROPERTIES.
 
 (** * Call stack invariants *)
 
+(** Initial memory states and injection *)
+
+Let init_f := world_proj w.
+Let init_m1 := lq_mem (world_q1 w).
+Let init_m2 := mq_mem (world_q2 w).
+
 (** This is the memory assertion that captures the contents of the stack frames
   mentioned in the call stacks. *)
 
 Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach.stackframe) : massert :=
   match cs, cs' with
-  | nil, nil => pure True
+  | nil, nil => munchanged (loc_out_of_reach init_f init_m1) init_m2
   | Linear.Stackframe f _ ls c :: cs, Mach.Stackframe fb (Vptr sp' _) ra c' :: cs' =>
       frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs')
       ** stack_contents j cs cs'
@@ -2275,8 +2281,10 @@ Proof.
   eapply match_states_call with (j := j); eauto.
   constructor; eauto.
   red; simpl; auto.
-  simpl stack_contents. rewrite sep_pure. split; auto. split;[|split].
-  simpl. assumption.
+  simpl stack_contents.
+  rewrite <- sep_assoc_1.
+  split;[|split].
+  apply minjection_intro; assumption.
   simpl. admit. (* globalenv_inject *)
   (*
   simpl. exists (Mem.nextblock m); split. apply Ple_refl.
@@ -2301,11 +2309,12 @@ Proof.
   exists (rs1, m').
   split; constructor.
   simpl.
-  destruct SEP as (_ & (Hm' & Hge & Hm'_ge) & _).
+  destruct SEP as (UNCH & (Hm' & Hge & Hm'_ge) & _).
   clear TP.
-  exists j; intuition.
+  exists j0; intuition.
   - admit. (* unchanged on unmapped *)
-  - admit. (* unchanged on out-of-reach *)
+  - eapply Mem.unchanged_on_implies; eauto.
+    simpl. eauto.
   - admit. (* injection increases *)
   - admit. (* injection separated *)
 Admitted.

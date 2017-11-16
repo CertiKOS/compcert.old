@@ -605,6 +605,19 @@ Proof.
   intros. destruct H, H0. split; apply mconj_morph_1; auto.
 Qed.
 
+(** A memory area identical to that of another memory. *)
+
+Program Definition munchanged P m: massert :=
+  let P' b ofs := P b ofs /\ Mem.valid_block m b in
+  {|
+    m_pred := Mem.unchanged_on P' m;
+    m_footprint := P';
+    m_invar := Mem.unchanged_on_trans P' m;
+  |}.
+Next Obligation.
+  eapply Mem.valid_block_unchanged_on; eauto.
+Qed.
+
 (** The image of a memory injection *)
 
 Program Definition minjection (j: meminj) (m0: mem) : massert := {|
@@ -633,6 +646,14 @@ Next Obligation.
 Qed.
 Next Obligation.
   eapply Mem.valid_block_inject_2; eauto.
+Qed.
+
+Lemma minjection_intro f m1 m2:
+  Mem.inject f m1 m2 ->
+  m2 |= munchanged (loc_out_of_reach f m1) m2 ** minjection f m1.
+Proof.
+  simpl. intuition.
+  clear. firstorder.
 Qed.
 
 Lemma loadv_parallel_rule:
