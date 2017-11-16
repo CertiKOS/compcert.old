@@ -878,6 +878,7 @@ Lemma external_call_parallel_rule:
   exists j' vres2 m2',
      external_call ef ge vargs2 m2 t2 vres2 m2'
   /\ Val.inject j' vres1 vres2
+  /\ Mem.unchanged_on (loc_unmapped j) m1 m1'
   /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
   /\ inject_separated j j' m1 m2.

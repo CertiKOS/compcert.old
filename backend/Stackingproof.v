@@ -1886,6 +1886,72 @@ Qed.
 
 End BUILTIN_ARGUMENTS.
 
+(** Preservation of injection invariants: we need to show that the
+  current state is a successor of the initial state, per the
+  invariants of the injection calling convention. For the target
+  memory, the [stack_contents] assertion keeps track of the fact that
+  out-of-reach locations have not been modified. *)
+
+Lemma stack_contents_out_of_reach f cs cs' m2 P:
+  m2 |= stack_contents f cs cs' ** P ->
+  Mem.unchanged_on (loc_out_of_reach init_f init_m1) init_m2 m2.
+Proof.
+  intros (STACK & _ & _); clear P.
+  revert cs' STACK.
+  induction cs; simpl; intros.
+  - destruct cs'; try contradiction; simpl in STACK.
+    eapply Mem.unchanged_on_implies; eauto.
+    simpl; eauto.
+  - destruct a, cs'; try contradiction.
+    destruct s, sp0; try contradiction.
+    apply sep_proj2 in STACK.
+    eauto.
+Qed.
+
+(** For the source memory, we use the following invariant. *)
+
+Record source_injection_invariant f m1 :=
+  {
+    ii_incr: inject_incr init_f f;
+    ii_injsep: inject_separated init_f f init_m1 init_m2;
+    ii_unmapped: Mem.unchanged_on (loc_unmapped init_f) init_m1 m1;
+  }.
+
+Lemma source_injection_invariant_step f m1 m2 f' m1' cs cs' P:
+  source_injection_invariant f m1 ->
+  inject_incr f f' ->
+  inject_separated f f' m1 m2 ->
+  Mem.unchanged_on (loc_unmapped f) m1 m1' ->
+  m2 |= stack_contents f cs cs' ** P ->
+  source_injection_invariant f' m1'.
+Proof.
+  intros [INCR INJSEP UNCH] INCR' INJSEP' UNCH' SEP.
+  constructor.
+  - eapply inject_incr_trans; eauto.
+  - intros b1 b2 delta Hbi Hb'.
+    destruct (f b1) as [[fb2 delta']|] eqn:Hb.
+    + assert (fb2 = b2) by (apply INCR' in Hb; congruence); subst.
+      eapply INJSEP; eauto.
+    + assert (~ Mem.valid_block m1 b1 /\ ~ Mem.valid_block m2 b2) as [H1 H2]
+        by (eapply INJSEP'; eauto).
+      split; intros H.
+      eapply H1, Mem.valid_block_unchanged_on; eauto.
+      eapply H2, Mem.valid_block_unchanged_on; eauto.
+      eapply stack_contents_out_of_reach; eauto.
+  - eapply Mem.unchanged_on_implies with (P := loc_unmapped f).
+    + eapply Mem.unchanged_on_trans with (m2 := m1); eauto.
+      eapply Mem.unchanged_on_implies; eauto.
+      unfold loc_unmapped.
+      intros b _. specialize (INCR b).
+      destruct (init_f b) as [[b2 delta] | ]; eauto.
+      erewrite INCR; eauto.
+    + unfold loc_unmapped.
+      intros b _ Hb Hb1.
+      destruct (f b) as [[b2 delta] | ] eqn:Hb2; eauto.
+      exfalso.
+      destruct (INJSEP b b2 delta); eauto.
+Qed.
+
 (** [CompCertX:test-compcert-protect-stack-arg] We have to prove that
 the memory injection introduced by the compilation pass is independent
 of the initial memory i.e. it does not inject new blocks into blocks
@@ -1922,6 +1988,7 @@ the global environment. *)
 Inductive match_states: Linear.state -> Mach.state -> Prop :=
   | match_states_intro:
       forall cs f isg sp c ls m cs' fb sp' rs m' j tf
+        (SINV: source_injection_invariant j m)
         (STACKS: match_stacks j cs cs' f.(Linear.fn_sig) isg)
         (TRANSL: transf_function f = OK tf)
         (FIND: Genv.find_funct_ptr tge fb = Some (Internal tf))
@@ -1937,6 +2004,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
       forall cs f isg ls m cs' fb rs m' j tf
+        (SINV: source_injection_invariant j m)
         (STACKS: match_stacks j cs cs' (Linear.funsig f) isg)
         (TRANSL: transf_fundef f = OK tf)
         (FIND: Genv.find_funct_ptr tge fb = Some tf)
@@ -1949,6 +2017,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
                    (Mach.Callstate cs' fb rs m')
   | match_states_return:
       forall cs ls m cs' rs m' j sg isg
+        (SINV: source_injection_invariant j m)
         (STACKS: match_stacks j cs cs' sg isg)
         (AGREGS: agree_regs j ls rs)
         (AGLOCS: agree_callee_save ls (parent_locset cs))
@@ -2034,10 +2103,10 @@ Proof.
   apply plus_one. destruct sl; try discriminate.
     econstructor. eexact STORE. eauto.
     econstructor. eexact STORE. eauto.
-  econstructor. eauto. eauto. eauto.
+  econstructor; eauto.
   apply agree_regs_set_slot. apply agree_regs_undef_regs. auto.
   apply agree_locs_set_slot. apply agree_locs_undef_locs. auto. apply destroyed_by_setstack_caller_save. auto.
-  eauto. eauto with coqlib. eauto.
+  eauto with coqlib.
 
 - (* Lop *)
   assert (exists v',
@@ -2094,10 +2163,18 @@ Proof.
   apply plus_one. econstructor.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
   eexact C. eauto.
-  econstructor. eauto. eauto. eauto.
+  econstructor; eauto.
+  {
+    destruct SEP as (_ & SEP & _).
+    eapply source_injection_invariant_step; eauto.
+    - congruence.
+    - destruct a; try discriminate. simpl in H0. inv B.
+      eapply Mem.store_unchanged_on; eauto.
+      congruence.
+  }
   rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.
   apply agree_locs_undef_locs. auto. apply destroyed_by_store_caller_save.
-  auto. eauto with coqlib.
+  eauto with coqlib.
   eapply frame_undef_regs; eauto.
 
 - (* Lcall *)
@@ -2129,6 +2206,12 @@ Proof.
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto. traceEq.
   econstructor; eauto.
+  {
+    eapply source_injection_invariant_step; eauto.
+    - congruence.
+    - eapply Mem.free_unchanged_on; eauto.
+      unfold loc_unmapped; intros _ _. congruence.
+  }
   apply match_stacks_change_sig with (Linear.fn_sig f); eauto.
   apply zero_size_arguments_tailcall_possible. eapply wt_state_tailcall; eauto.
 
@@ -2139,17 +2222,22 @@ Proof.
     eauto. rewrite <- forallb_forall. eapply wt_state_builtin; eauto.
     exact BND2.
   intros [vargs' [P Q]].
+  pose proof SEP as SEP'.
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
   intros (w' & Hwq & Hw). exists w'; split; eauto.
   intros t' Ht'. specialize (Hw t' Ht').
-  clear SEP; destruct Hw as (j' & res' & m1' & EC & RES & SEP & INCR & ISEP).
+  clear SEP; destruct Hw as (j' & res' & m1' & EC & RES & U & SEP & INCR & ISEP).
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eapply match_states_intro with (j := j'); eauto with coqlib.
+  {
+    destruct SEP' as (_ & ? & _).
+    eapply source_injection_invariant_step with (m1' := m'); eauto.
+  }
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_res; auto. apply agree_regs_undef_regs; auto. eapply agree_regs_inject_incr; eauto.
   apply agree_locs_set_res; auto. apply agree_locs_undef_regs; auto.
@@ -2174,22 +2262,15 @@ Proof.
   apply plus_one. eapply exec_Mcond_true; eauto.
   eapply eval_condition_inject with (m1 := m). eapply agree_reglist; eauto. apply sep_pick3 in SEP; exact SEP. auto.
   eapply transl_find_label; eauto.
-  econstructor. eauto. eauto. eauto.
-  apply agree_regs_undef_regs; auto.
-  apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
-  auto.
+  econstructor; eauto.
   eapply find_label_tail; eauto.
-  apply frame_undef_regs; auto.
 
 - (* Lcond, false *)
   econstructor; split.
   apply plus_one. eapply exec_Mcond_false; eauto.
   eapply eval_condition_inject with (m1 := m). eapply agree_reglist; eauto. apply sep_pick3 in SEP; exact SEP. auto.
-  econstructor. eauto. eauto. eauto.
-  apply agree_regs_undef_regs; auto.
-  apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
-  auto. eauto with coqlib.
-  apply frame_undef_regs; auto.
+  econstructor; eauto.
+  eauto with coqlib.
 
 - (* Ljumptable *)
   assert (rs0 arg = Vint n).
@@ -2197,11 +2278,10 @@ Proof.
   econstructor; split.
   apply plus_one; eapply exec_Mjumptable; eauto.
   apply transl_find_label; eauto.
-  econstructor. eauto. eauto. eauto.
+  econstructor; eauto.
   apply agree_regs_undef_regs; auto.
   apply agree_locs_undef_locs. auto. apply destroyed_by_jumptable_caller_save.
   auto. eapply find_label_tail; eauto.
-  apply frame_undef_regs; auto.
 
 - (* Lreturn *)
   rewrite (sep_swap (stack_contents j s cs')) in SEP.
@@ -2210,12 +2290,20 @@ Proof.
   econstructor; split.
   eapply plus_right. eexact D. econstructor; eauto. traceEq.
   econstructor; eauto.
+  {
+    destruct G as (_ & ? & _).
+    eapply source_injection_invariant_step; eauto.
+    - congruence.
+    - eapply Mem.free_unchanged_on; eauto.
+      congruence.
+  }
   rewrite sep_swap; exact G.
 
 - (* internal function *)
   revert TRANSL. unfold transf_fundef, transf_partial_fundef.
   destruct (transf_function f) as [tfn|] eqn:TRANSL; simpl; try congruence.
   intros EQ; inversion EQ; clear EQ; subst tf.
+  pose proof SEP as SEP'.
   rewrite sep_comm, sep_assoc in SEP.
   exploit function_prologue_correct; eauto.
   red; intros; eapply wt_callstate_wt_regs; eauto.
@@ -2230,21 +2318,27 @@ Proof.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
   eexact D. traceEq.
   eapply match_states_intro with (j := j'); eauto with coqlib.
+  {
+    eapply source_injection_invariant_step; eauto.
+    - eapply Mem.alloc_unchanged_on; eauto.
+  }
   eapply match_stacks_change_meminj; eauto.
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.
   exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
+  pose proof SEP as SEP'.
   rewrite sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
   intros (w' & Hwq & Hw). exists w'; split; eauto.
   intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as (j' & res' & m1' & A & B & C & D & E).
+  destruct Hw as (j' & res' & m1' & A & B & C & D & E & F).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eapply match_states_return with (j := j').
+  eapply source_injection_invariant_step; eauto.
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_inject_incr with j; auto. auto.
   apply agree_callee_save_set_result; auto.
@@ -2279,6 +2373,11 @@ Proof.
   rewrite symbols_preserved. eauto.
   rename w0 into j.
   eapply match_states_call with (j := j); eauto.
+  {
+    constructor; simpl; eauto.
+    - congruence.
+    - apply Mem.unchanged_on_refl.
+  }
   constructor; eauto.
   red; simpl; auto.
   simpl stack_contents.
@@ -2305,19 +2404,18 @@ Proof.
   destruct w as [j [id1 sg ls m1] [id sp ra rs m2] Hq].
   destruct Hq as (Hid & Hrs & Hm & Hsp & Hra & Hargs); subst.
   intros. inv H0. inv H. inv STACKS.
-  simpl in *.
+  destruct SINV as [INCR INJSEP UNCH].
+  cbn -[m_pred] in *.
   exists (rs1, m').
   split; constructor.
   simpl.
-  destruct SEP as (UNCH & (Hm' & Hge & Hm'_ge) & _).
+  destruct SEP as (UNCH' & (Hm' & Hge & Hm'_ge) & _).
   clear TP.
   exists j0; intuition.
-  - admit. (* unchanged on unmapped *)
-  - eapply Mem.unchanged_on_implies; eauto.
-    simpl. eauto.
-  - admit. (* injection increases *)
-  - admit. (* injection separated *)
-Admitted.
+  eapply Mem.unchanged_on_implies.
+  exact UNCH'.
+  simpl. eauto.
+Qed.
 
 Lemma wt_prog:
   forall i fd, In (i, Some (Gfun fd)) prog.(prog_defs) -> wt_fundef fd.
