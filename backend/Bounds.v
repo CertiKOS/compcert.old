@@ -466,7 +466,7 @@ Qed.
 
 Record frame_env : Type := mk_frame_env {
   fe_size: Z;
-  fe_ofs_link: Z;
+  (* fe_ofs_link: Z; *)
   fe_ofs_retaddr: Z;
   fe_ofs_local: Z;
   fe_ofs_callee_save: Z;

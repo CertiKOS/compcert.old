@@ -28,10 +28,12 @@ Section WITHMEMORYMODEL.
 
   Definition is_unchanged (i: instruction) :=
     match i with
-      Pallocframe _ _ _ 
-    | Pfreeframe _ _ _ => false
+      Pallocframe _ _  
+    | Pfreeframe _ _  => false
     | _ => true
     end.
+
+  Variable init_sp: val.
 
   (** Instructions other than [Pallocframe] and [Pfreeframe] do not modify the
       content of the RSP register. We prove that Asm programs resulting from the
@@ -40,7 +42,7 @@ Section WITHMEMORYMODEL.
   Definition asm_instr_no_rsp (i : Asm.instruction) : Prop :=
     is_unchanged i = true ->
     forall {F V} (ge: _ F V) rs1 m1 rs2 m2 f,
-      Asm.exec_instr ge f i rs1 m1 = Next rs2 m2 ->
+      Asm.exec_instr init_sp ge f i rs1 m1 = Next rs2 m2 ->
       rs2 # RSP = rs1 # RSP.
 
   Definition asm_code_no_rsp (c : Asm.code) : Prop :=
@@ -383,8 +385,10 @@ Section WITHMEMORYMODEL.
     - destr_in EQ.
       eapply loadind_no_change_rsp; eauto.
       monadInv EQ.
-      eapply loadind_no_change_rsp. 2: eauto.
-      eapply loadind_no_change_rsp; eauto.
+      eapply loadind_no_change_rsp in EQ2. 2: eauto.
+      apply asm_code_no_rsp_cons; auto.
+      red; simpl; intros.
+      repeat destr_in H3; solve_rs.
     - unfold Asmgen.transl_op in EQ.
       repeat destr_in EQ.
       eapply mk_move_nochange_rsp; eauto.
@@ -590,7 +594,7 @@ Section WITHMEMORYMODEL.
   Definition asm_instr_no_stack (i : Asm.instruction) : Prop :=
     is_unchanged i = true ->
     forall F V (ge: _ F V) rs1 m1 rs2 m2 f,
-      Asm.exec_instr ge f i rs1 m1 = Next rs2 m2 ->
+      Asm.exec_instr init_sp ge f i rs1 m1 = Next rs2 m2 ->
       Mem.stack_adt m2 = Mem.stack_adt m1 /\ (forall b o k p, Mem.perm m2 b o k p <-> Mem.perm m1 b o k p).
 
 
@@ -645,7 +649,7 @@ Section WITHMEMORYMODEL.
 
   Definition asm_instr_nb_fw i:=
     forall F V (ge: _ F V) f rs1 m1 rs2 m2,
-      Asm.exec_instr ge f i rs1 m1 = Next rs2 m2 ->
+      Asm.exec_instr init_sp ge f i rs1 m1 = Next rs2 m2 ->
       Ple (Mem.nextblock m1) (Mem.nextblock m2).
 
   Definition asm_code_nb_fw c :=
@@ -702,6 +706,7 @@ Section WITHMEMORYMODEL.
       edestruct Mem.unrecord_stack_block_mem_unchanged. simpl; eauto.
       rewrite H0.
       rewrite (Mem.nextblock_free _ _ _ _ _ Heqo1). apply Ple_refl.
+    - repeat destr_in H1; apply Ple_refl.
   Qed.
 
 

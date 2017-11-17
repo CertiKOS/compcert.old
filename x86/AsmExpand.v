@@ -15,14 +15,14 @@ Definition linear_addr reg ofs :=
 
 Definition expand_instr (i: instruction) : list instruction :=
   match i with
-  | Pallocframe fi ofs_ra ofs_link =>
+  | Pallocframe fi ofs_ra (* ofs_link *) =>
     let sz := (sp_adjustment_32 (frame_size fi)) in
-    let addr1 := linear_addr RSP (sz+4) in
-    let addr2 := linear_addr RSP (Ptrofs.unsigned ofs_link) in
-    [Psubl_ri RSP (Int.repr sz);
-     Pleal RAX addr1;
-     Pmovl_mr addr2 RAX]
-  | Pfreeframe sz ofs_ra ofs_link => 
+    (* let addr1 := linear_addr RSP (sz+4) in *)
+    (* let addr2 := linear_addr RSP (Ptrofs.unsigned ofs_link) in *)
+    [Psubl_ri RSP (Int.repr sz)(* ; *)
+     (* Pleal RAX addr1; *)
+     (* Pmovl_mr addr2 RAX *)]
+  | Pfreeframe sz ofs_ra (* ofs_link *) => 
     let sz := (sp_adjustment_32 sz) in
     [Paddl_ri RSP (Int.repr sz)]
   | _ => [i]

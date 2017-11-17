@@ -78,11 +78,15 @@ Proof.
   omega.
 Qed.
 
+Section WITHINITSPRA.
+
+Variables init_sp init_ra: val.
+
 Lemma exec_straight_exec:
   forall fb f c ep tf tc c' rs m rs' m',
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
-  exec_straight tge tf tc rs m c' rs' m' ->
-  plus step tge (State rs m) E0 (State rs' m').
+  exec_straight init_sp tge tf tc rs m c' rs' m' ->
+  plus (step init_sp) tge (State rs m) E0 (State rs' m').
 Proof.
   intros. inv H.
   eapply exec_straight_steps_1; eauto.
@@ -94,7 +98,7 @@ Lemma exec_straight_at:
   forall fb f c ep tf tc c' ep' tc' rs m rs' m',
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   transl_code f c' ep' = OK tc' ->
-  exec_straight tge tf tc rs m tc' rs' m' ->
+  exec_straight init_sp tge tf tc rs m tc' rs' m' ->
   transl_code_at_pc ge (rs' PC) fb f c' ep' tf tc'.
 Proof.
   intros. inv H.
@@ -257,7 +261,7 @@ Opaque loadind.
   eapply loadind_label; eauto.
   eapply storeind_label; eauto.
   eapply loadind_label; eauto.
-  eapply tail_nolabel_trans; eapply loadind_label; eauto.
+  eapply tail_nolabel_trans. eapply loadind_label; eauto. TailNoLabel.
   eapply transl_op_label; eauto.
   eapply transl_load_label; eauto.
   eapply transl_store_label; eauto.
@@ -368,20 +372,16 @@ Qed.
 - Mach register values and PPC register values agree.
 *)
 
-Section WITHINITSPRA.
-
-  Variables init_sp init_ra: val.
-
   Definition match_stackframe_frame_adt s (f: frame_adt):=
     match s, f with
       Stackframe fn sp _ _, (l, Some fi, n) =>
-      In sp l /\ n = frame_size fi /\
+      l = sp :: nil /\ n = frame_size fi /\
       forall f, Genv.find_funct_ptr ge fn = Some (Internal f) ->
-           frame_size fi = Mach.fn_stacksize f /\
-           range_eqb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\
-           range_eqb (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\
-           (Forall_dec _ (fun fl => zeq (Ptrofs.unsigned (fn_link_ofs f)) (seg_ofs fl)) (frame_link fi))
-             && disjointb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) = true
+           frame_size fi = Mach.fn_stacksize f
+           (* range_eqb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\ *)
+           (* range_eqb (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\ *)
+           (* (Forall_dec _ (fun fl => zeq (Ptrofs.unsigned (fn_link_ofs f)) (seg_ofs fl)) (frame_link fi)) *)
+           (*   && disjointb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) = true *)
 
     | _, _ => False
     end.
@@ -447,13 +447,13 @@ Lemma exec_straight_steps:
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
-       exec_straight tge tf c rs1 m1' k rs2 m2'
+       exec_straight init_sp tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 (Vptr sp Ptrofs.zero) rs2
     /\ (it1_is_parent ep i = true -> rs2#RAX = parent_sp init_sp s)) ->
   forall (LF2: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m2))
                      (SAMEADT: (Mem.stack_adt m2) = (Mem.stack_adt m2')),
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus (step init_sp) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms2 m2) st'.
 Proof.
   intros. inversion H2. subst. monadInv H7.
@@ -473,13 +473,13 @@ Lemma exec_straight_steps_goto:
   it1_is_parent ep i = false ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
-       exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
+       exec_straight init_sp tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 (Vptr sp Ptrofs.zero) rs2
-    /\ exec_instr tge tf jmp rs2 m2' = goto_label tge tf lbl rs2 m2') ->
+    /\ exec_instr init_sp tge tf jmp rs2 m2' = goto_label tge tf lbl rs2 m2') ->
   forall (LF2:   list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c' :: s) (Mem.stack_adt m2))
     (SAMEADT: (Mem.stack_adt m2) = (Mem.stack_adt m2')),
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus (step init_sp) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c' ms2 m2) st'.
 Proof.
   intros s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c' H H0 H1 H2 H3 H4 H5.
@@ -532,8 +532,7 @@ Hypothesis init_sp_ofs_zero:
 Hypothesis frame_size_correct:
   forall fb f,
     Genv.find_funct_ptr ge fb = Some (Internal f) ->
-    frame_size (Mach.fn_frame f) = fn_stacksize f /\
-    Forall (fun fl => Ptrofs.unsigned (fn_link_ofs f) = (seg_ofs fl)) (frame_link (Mach.fn_frame f)).
+    frame_size (Mach.fn_frame f) = fn_stacksize f.
 
 Lemma agree_undef_regs_parallel:
   forall l sp rs rs0,
@@ -603,7 +602,7 @@ Inductive asm_no_none: state -> Prop :=
 
   Lemma step_asm_no_none:
     forall s1 t s2,
-      step tge s1 t s2 ->
+      step init_sp tge s1 t s2 ->
       asm_no_none s1 ->
       asm_no_none s2.
   Proof.
@@ -676,7 +675,7 @@ Inductive asm_no_none: state -> Prop :=
       Mem.extends m m' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       (forall b o, init_sp = Vptr b o -> o = Ptrofs.zero) ->
-      check_top_frame m' stk (fn_stacksize f) (parent_sp init_sp s) (f.(fn_link_ofs)) (f.(fn_retaddr_ofs)) = true.
+      check_top_frame m' stk (fn_stacksize f) (parent_sp init_sp s) = true.
   Proof.
     clear - memory_model_prf init_sp_not_vundef.
     unfold check_top_frame.
@@ -704,17 +703,15 @@ Inductive asm_no_none: state -> Prop :=
     rewrite Forall_forall in frame_inject_frame.
     specialize (frame_inject_frame _ H0 _ _ eq_refl).
     specialize (H2 _ FIND).
-    destruct H2 as (SEQ & LEQ & REQ & OTHER).
+    rename H2 into SEQ.
     rewrite <- H in H4. inv H4. simpl in *.
-    rewrite SEQ, LEQ , REQ.
-    rewrite <- ! andb_assoc. rewrite OTHER.
+    rewrite SEQ.
+    rewrite <- ! andb_assoc. 
     destruct (in_dec peq stk l). 2: exfalso; apply n; auto. 
-    simpl. rewrite ! if_zeq.
+    simpl. rewrite ! if_zeq, ! if_zeq'.
     inv LPrec.
-    + simpl. destruct (init_sp) eqn:?; auto.
-      edestruct PNIL; eauto.
-    + simpl. red in PINIT.
-      destruct init_sp eqn:?; auto.
+    + simpl. destr. 
+    + simpl. red in PINIT. destr.
       specialize (PINIT _ _ eq_refl). rewrite PINIT. 
       destr.  apply andb_false_iff in Heqb0.
       destruct Heqb0. simpl in H1. destr_in H1. discriminate. 
@@ -734,7 +731,7 @@ Inductive asm_no_none: state -> Prop :=
 Theorem step_simulation:
   forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1') (* (ANN: asm_no_none S1') *),
-  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
+  (exists S2', plus (step init_sp) tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
   induction 1; intros; inv MS(* ; inv ANN *).
@@ -782,10 +779,10 @@ Local Transparent destroyed_by_setstack.
   assert (f0 = f) by congruence; subst f0.
   unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto.
-  intros [parent' [A B]]. rewrite (sp_val _ _ _ AG) in A.
-  exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'.
-  exploit Mem.loadv_extends. eauto. eexact H1. auto.
-  intros [v' [C D]].
+  intros [ra' [A B]]. (* rewrite (sp_val _ _ _ AG) in A. *)
+  (* exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'. *)
+  (* exploit Mem.loadv_extends. eauto. eexact H1. auto. *)
+  (* intros [v' [C D]]. *)
 Opaque loadind.
   left; eapply exec_straight_steps; eauto; intros.
   assert (DIFF: negb (mreg_eq dst AX) = true -> IR RAX <> preg_of dst).
@@ -802,11 +799,50 @@ Opaque loadind.
   simpl; intros. rewrite R; auto.
 (* RAX does not contain parent *)
   monadInv TR.
-  exploit loadind_correct. eexact EQ0. eauto. intros [rs1 [P [Q R]]]. simpl in Q.
-  exploit loadind_correct. eexact EQ. instantiate (2 := rs1). rewrite Q. eauto.
-  intros [rs2 [S [T U]]].
-  exists rs2; split. eapply exec_straight_trans; eauto.
-  split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto.
+
+
+  Lemma load_parent_pointer_correct:
+    forall (ge: genv) fn (rd: ireg) x m1 (rs1: regset) s fb sp c bisp,
+      init_sp = Vptr bisp Ptrofs.zero ->
+      list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m1) ->
+      exists rs2,
+      exec_straight init_sp ge fn (Pload_parent_pointer rd :: x) rs1 m1 x rs2 m1 /\
+      rs2 rd = parent_sp init_sp s /\ forall r, data_preg r = true -> r <> rd -> rs2 r = rs1 r.
+  Proof.
+    clear.
+    intros.
+    exists (nextinstr (rs1#rd <- (match parent_pointer m1 with Some b => Vptr b Ptrofs.zero | None => init_sp end))). split; [|split].
+    - constructor. simpl. destr. rewrite nextinstr_pc. rewrite Pregmap.gso. auto. congruence.
+    - rewrite nextinstr_inv by congruence.
+      rewrite Pregmap.gss. unfold parent_pointer.
+      inv H0. inversion LPrec. subst s l2. reflexivity.
+      subst s l2. 
+      + destruct a,p. simpl. destruct l; auto. destruct l; auto. red in PINIT.
+        specialize (PINIT _ _ H). simpl in PINIT.  inversion PINIT. subst b0. auto.
+      + subst s l2. destruct b0,p. simpl. destruct a. red in PAB0.
+        destr_in PAB0. destruct PAB0.
+        destr.
+        repeat destr_in Heqo1. clear H. inv Heqo1. simpl in H0. intuition congruence.
+        destr_in Heqo1. simpl in H0; easy.
+        destr_in Heqo1. simpl in H0; easy. 
+        inversion PAB. destr.  destruct l; auto. destruct l; auto. red in PINIT.
+        specialize (PINIT _ _ H). simpl in PINIT.  inversion PINIT. subst b0. auto.
+      + 
+
+  Qed.
+
+  exploit loadind_correct. eexact EQ.
+  (* (match parent_pointer m with Some b => Vptr b Ptrofs.zero | None => init_sp end) *)
+  instantiate (2 := rs0#RAX <- (parent_sp init_sp s)).
+  rewrite Pregmap.gss.
+  eauto. intros [rs1 [P [Q R]]]. simpl in Q.
+  (* exploit loadind_correct. eexact EQ. instantiate (2 := rs1). rewrite Q. eauto. *)
+  (* intros [rs2 [S [T U]]]. *)
+  (* exists rs2; *)
+  + split.
+    * eapply exec_straight_trans; eauto.
+      constructor. simpl.
+      split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto.
   simpl; intros. rewrite U; auto.
   eapply msfa_ext_code; eauto.
 

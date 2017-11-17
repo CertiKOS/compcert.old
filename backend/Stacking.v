@@ -182,7 +182,7 @@ Definition transf_function (f: Linear.function) : res Mach.function :=
          f.(Linear.fn_sig)
          (transl_body f fe)
          fe.(fe_size)
-         (Ptrofs.repr fe.(fe_ofs_link))
+         (* (Ptrofs.repr fe.(fe_ofs_link)) *)
          (Ptrofs.repr fe.(fe_ofs_retaddr))
          (frame_of_frame_env (function_bounds f))
        ).

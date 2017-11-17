@@ -74,7 +74,7 @@ Record function: Type := mkfunction
   { fn_sig: signature;
     fn_code: code;
     fn_stacksize: Z;
-    fn_link_ofs: ptrofs;
+    (* fn_link_ofs: ptrofs; *)
     fn_retaddr_ofs: ptrofs;
     fn_frame: frame_info;
   }.
@@ -297,13 +297,13 @@ Variable return_address_offset: function -> code -> ptrofs -> Prop.
 Variable ge: genv.
 
 Definition check_alloc_frame (f: frame_info) (fn: function) :=
-  (forall o,
-      Ptrofs.unsigned (fn_link_ofs fn) <= o < Ptrofs.unsigned (fn_link_ofs fn) + size_chunk Mptr \/
-      Ptrofs.unsigned (fn_retaddr_ofs fn) <= o < Ptrofs.unsigned (fn_retaddr_ofs fn) + size_chunk Mptr ->
-      frame_readonly f o) /\
-  disjointb  (Ptrofs.unsigned (fn_link_ofs fn)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs fn)) (size_chunk Mptr) = true /\
-  0 <= (frame_size f) /\
-  exists fl, frame_link f = fl :: nil /\ seg_ofs fl = Ptrofs.unsigned (fn_link_ofs fn).
+  (* (forall o, *)
+  (*     Ptrofs.unsigned (fn_link_ofs fn) <= o < Ptrofs.unsigned (fn_link_ofs fn) + size_chunk Mptr \/ *)
+  (*     Ptrofs.unsigned (fn_retaddr_ofs fn) <= o < Ptrofs.unsigned (fn_retaddr_ofs fn) + size_chunk Mptr -> *)
+  (*     frame_readonly f o) /\ *)
+  (* disjointb  (Ptrofs.unsigned (fn_link_ofs fn)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs fn)) (size_chunk Mptr) = true /\ *)
+  0 <= (frame_size f) (* /\ *)
+  (* exists fl, frame_link f = fl :: nil /\ seg_ofs fl = Ptrofs.unsigned (fn_link_ofs fn) *).
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -324,7 +324,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mgetparam:
       forall s fb f sp ofs ty dst c rs m v rs',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+      (* load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
       load_stack m (parent_sp s) ty ofs = Some v ->
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
@@ -361,7 +361,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb stk soff sig ros c rs m f f' m_ m',
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+      (* load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m_ ->
       Mem.unrecord_stack_block m_ = Some m' ->
@@ -407,20 +407,20 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mreturn:
       forall s fb stk soff c rs m f m_ m',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
+      (* load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) -> *)
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk (Ptrofs.unsigned soff) (Ptrofs.unsigned soff + f.(fn_stacksize)) = Some m_ ->
       Mem.unrecord_stack_block m_ = Some m' ->
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s rs m')
   | exec_function_internal:
-      forall s fb rs m f m1 m1_ m2 m3 stk rs',
+      forall s fb rs m f m1 m1_ m3 stk rs',
         Genv.find_funct_ptr ge fb = Some (Internal f) ->
         check_alloc_frame (fn_frame f) f  ->
       Mem.alloc m 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
-      store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
-      store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
+      (* store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 -> *)
+      store_stack m1 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
       Mem.record_stack_blocks m3 (stk::nil, Some (fn_frame f),fn_stacksize f) m1_ ->
       rs' = undef_regs destroyed_at_function_entry rs ->
       step (Callstate s fb rs m)

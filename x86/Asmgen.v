@@ -662,7 +662,8 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
         loadind RAX ofs ty dst k
       else
         (do k1 <- loadind RAX ofs ty dst k;
-         loadind RSP f.(fn_link_ofs) Tptr AX k1)
+           OK (Pload_parent_pointer RAX :: k1)
+           (* loadind RSP f.(fn_link_ofs) Tptr AX k1 *))
   | Mop op args res =>
       transl_op op args res k
   | Mload chunk addr args dst =>
@@ -675,10 +676,10 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       OK (Pcall_s symb sig :: k)
   | Mtailcall sig (inl reg) =>
       do r <- ireg_of reg;
-      OK (Pfreeframe (StackADT.frame_size (f.(Mach.fn_frame))) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
+      OK (Pfreeframe (StackADT.frame_size (f.(Mach.fn_frame))) f.(fn_retaddr_ofs)  ::
           Pjmp_r r sig :: k)
   | Mtailcall sig (inr symb) =>
-      OK (Pfreeframe (StackADT.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
+      OK (Pfreeframe (StackADT.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs)  ::
           Pjmp_s symb sig :: k)
   | Mlabel lbl =>
       OK(Plabel lbl :: k)
@@ -689,7 +690,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
   | Mjumptable arg tbl =>
       do r <- ireg_of arg; OK (Pjmptbl r tbl :: k)
   | Mreturn =>
-      OK (Pfreeframe (StackADT.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs) f.(fn_link_ofs) ::
+      OK (Pfreeframe (StackADT.frame_size (Mach.fn_frame f)) f.(fn_retaddr_ofs)  ::
           Pret :: k)
   | Mbuiltin ef args res =>
       OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) args) (map_builtin_res preg_of res) :: k)
@@ -738,7 +739,7 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (axp: boo
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
   OK (mkfunction f.(Mach.fn_sig)
-                     (Pallocframe f.(Mach.fn_frame) f.(fn_retaddr_ofs) f.(fn_link_ofs) :: c)
+                     (Pallocframe f.(Mach.fn_frame) f.(fn_retaddr_ofs) :: c)
                      (f.(Mach.fn_frame))).
 
 Definition transf_function (f: Mach.function) : res Asm.function :=
