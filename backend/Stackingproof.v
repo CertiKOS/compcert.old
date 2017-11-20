@@ -40,31 +40,12 @@ Qed.
   to a stack location in the target memory state should be out of
   reach with respect to the memory injection. *)
 
-(*
-(* [init_args_mach] states that the locations of the arguments of function with
-signature [sg] can be retrieved in [m'] (a Mach memory state) and agree with the
-locset [init_ls].*)
-
-Definition init_args_mach j sg m' :=
-  forall sl of ty,
-    List.In (Locations.S sl of ty) (regs_of_rpairs (loc_arguments sg)) ->
-    forall rs,
-    exists v,
-      extcall_arg rs m' (mq_sp (world_q2 w)) (S sl of ty) v /\
-      Val.inject j (lq_rs (world_q1 w) (S sl of ty)) v.
-
-  exists v : val,
-    extcall_arg rs m' (mq_sp (world_q2 w)) (S Outgoing pos ty) v /\
-    Val.inject j (lq_rs (world_q1 w) (S Outgoing pos ty)) v
-
-*)
-
-Inductive arguments_out_of_reach sg f m1: val -> Prop :=
-  arguments_out_of_reach_intro sp ofs:
-    (forall k,
-        0 <= k < 4 * size_arguments sg ->
-        loc_out_of_reach f m1 sp (ofs + k)) ->
-    arguments_out_of_reach sg f m1 (Vptr sp (Ptrofs.repr ofs)).
+Definition arguments_out_of_reach sg j m1 sp :=
+  forall ofs ty sb sofs i,
+    In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
+    Val.offset_ptr sp (Ptrofs.repr (offset_arg ofs)) = Vptr sb sofs ->
+    0 <= i < 4 * typesize ty ->
+    loc_out_of_reach j m1 sb (Ptrofs.unsigned sofs + i).
 
 Program Definition cc_stacking: callconv li_locset li_mach :=
   {|
@@ -78,9 +59,7 @@ Program Definition cc_stacking: callconv li_locset li_mach :=
         Mem.inject f m1 m2 /\
         Val.has_type sp Tptr /\
         Val.has_type ra Tptr /\
-        (*
         arguments_out_of_reach sg f m1 sp /\
-         *)
         forall ofs ty,
           In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
           exists v2,
@@ -100,6 +79,7 @@ Next Obligation.
   intuition.
   - apply (Mem.neutral_inject Mem.empty).
     apply Mem.empty_inject_neutral.
+  - discriminate.
 Qed.
 
 (** * Basic properties of the translation *)
@@ -161,14 +141,14 @@ Section WITHINIT.
 
 Variable (w: world cc_stacking).
 
-Let step :=
-  Mach.step (mq_sp (world_q2 w)) (mq_ra (world_q2 w)) return_address_offset.
-Let parent_locset :=
-  parent_locset (lq_rs (world_q1 w)).
-Let parent_sp :=
-  parent_sp (mq_sp (world_q2 w)).
-Let parent_ra :=
-  parent_ra (mq_ra (world_q2 w)).
+Let init_ls := lq_rs (world_q1 w).
+Let init_sp := mq_sp (world_q2 w).
+Let init_ra := mq_ra (world_q2 w).
+
+Let step := Mach.step init_sp init_ra return_address_offset.
+Let parent_locset := parent_locset init_ls.
+Let parent_sp := parent_sp init_sp.
+Let parent_ra := parent_ra init_ra.
 
 Section FRAME_PROPERTIES.
 
@@ -1716,6 +1696,36 @@ Qed.
 
 (** Preservation of the arguments to an external call. *)
 
+Lemma frame_get_init_arg m ty ofs:
+  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments init_sg)) ->
+  Mem.unchanged_on (loc_out_of_reach init_f init_m1) init_m2 m ->
+  exists v,
+     load_stack m init_sp ty (Ptrofs.repr (offset_arg ofs)) = Some v
+  /\ Val.inject init_f (init_ls (S Outgoing ofs ty)) v.
+Proof.
+  subst init_sp init_f init_m1 init_m2 init_sg.
+  clear.
+  destruct w as [j0 [? sg ls0 m1] [id sp0 ra0 rs0 m2] Hq].
+  simpl in *.
+  destruct Hq as (? & Hrs0 & _ & _ & _ & Hoor & Hargs); subst.
+  intros Hin_args Hunch.
+  edestruct Hargs as (v & Hvarg & Hv); eauto.
+  exists v; intuition.
+  inv Hvarg.
+  fold (offset_arg ofs) in *.
+  destruct sp0 as [ | | | | | sb sofs]; try discriminate.
+  cbn -[Z.mul offset_arg] in *.
+  pose (p := Ptrofs.unsigned (Ptrofs.add sofs (Ptrofs.repr (offset_arg ofs)))).
+  fold p in H2 |- *.
+  eapply Mem.load_unchanged_on; eauto.
+  intros i Hi.
+  replace i with (p + (i - p)) by omega.
+  eapply Hoor; eauto.
+  rewrite <- typesize_typesize.
+  rewrite <- size_type_chunk.
+  omega.
+Qed.
+
 (** General case *)
 
 Section EXTERNAL_ARGUMENTS.
@@ -1726,6 +1736,7 @@ Variable cs': list stackframe.
 Variable sg: signature.
 Variables bound bound': block.
 Variable isg: signature.
+Hypothesis INCR: inject_incr init_f j.
 Hypothesis MS: match_stacks j cs cs' sg isg.
 Variable ls: locset.
 Variable rs: regset.
@@ -1747,11 +1758,16 @@ Proof.
   inv MS.
   + destruct TP as [TP|TP].
     * elim (TP _ H).
-    * subst isg. simpl in *.
-      red in AGCS. rewrite AGCS; auto.
-      destruct w as [f [id1 sg0 rs1 m1] [id2 sp0 ra0 rs2 m2] Hq]; simpl in *.
-      decompose [and] Hq.
-      admit. (** XXX from out_of_reach -> unchanged invariant *)
+    * subst isg.
+      edestruct frame_get_init_arg as (v & Hlv & Hiv); eauto.
+      -- simpl in SEP.
+         eapply Mem.unchanged_on_implies; eauto.
+         simpl.
+         tauto.
+      -- exists v.
+         red in AGCS. rewrite AGCS; auto.
+         split; eauto.
+         constructor; eauto.
   + simpl in SEP. simpl.
     assert (slot_valid f Outgoing pos ty = true).
     { destruct H0. unfold slot_valid, proj_sumbool.
@@ -1760,7 +1776,7 @@ Proof.
     exploit frame_get_outgoing; eauto. intros (v & A & B).
     exists v; split.
     constructor. exact A. red in AGCS. rewrite AGCS; auto.
-Admitted.
+Qed.
 
 Lemma transl_external_argument_2:
   forall p,
@@ -2058,7 +2074,25 @@ Proof.
   exploit incoming_slot_in_parameters; eauto. intros IN_ARGS.
   inversion STACKS; clear STACKS.
 * destruct TP as [TP | ISG]. { elim (TP _ IN_ARGS). }
-  admit. (* Lgetstack, read query arguments *)
+  subst.
+  edestruct frame_get_init_arg as (v & Hvls & Hvinj); eauto.
+  {
+    rewrite ISG in IN_ARGS.
+    eassumption.
+  }
+  {
+    destruct SEP as (_ & (SEP & _ & _) & _). simpl in SEP.
+    eapply Mem.unchanged_on_implies; eauto.
+    simpl; tauto.
+  }
+  econstructor; split.
+  apply plus_one. eapply exec_Mgetparam; eauto.
+  rewrite (unfold_transf_function _ _ TRANSL). unfold fn_link_ofs.
+  eapply frame_get_parent. eexact SEP.
+  econstructor; eauto with coqlib. econstructor; eauto.
+  apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
+  erewrite agree_incoming by eauto. eauto using val_inject_incr, ii_incr.
+  apply agree_locs_set_reg; auto. apply agree_locs_undef_locs; auto.
 * subst s cs'.
   exploit frame_get_outgoing.
   apply sep_proj2 in SEP. simpl in SEP. rewrite sep_assoc in SEP. eexact SEP.
@@ -2327,6 +2361,7 @@ Proof.
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.
+  pose proof (ii_incr _ _ SINV).
   exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   pose proof SEP as SEP'.
   rewrite sep_comm, sep_assoc in SEP.
@@ -2352,7 +2387,7 @@ Proof.
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
-Admitted.
+Qed.
 
 End WITHINIT.
 
