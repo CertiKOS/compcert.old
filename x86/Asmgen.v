@@ -662,7 +662,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
         loadind RAX ofs ty dst k
       else
         (do k1 <- loadind RAX ofs ty dst k;
-           OK (Pload_parent_pointer RAX :: k1)
+           OK (Pload_parent_pointer RAX (StackADT.frame_size (Mach.fn_frame f)) :: k1)
            (* loadind RSP f.(fn_link_ofs) Tptr AX k1 *))
   | Mop op args res =>
       transl_op op args res k

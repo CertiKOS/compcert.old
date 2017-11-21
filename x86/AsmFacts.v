@@ -29,11 +29,11 @@ Section WITHMEMORYMODEL.
   Definition is_unchanged (i: instruction) :=
     match i with
       Pallocframe _ _  
-    | Pfreeframe _ _  => false
+    | Pfreeframe _ _
+    | Pload_parent_pointer _ _ => false
     | _ => true
     end.
 
-  Variable init_sp: val.
 
   (** Instructions other than [Pallocframe] and [Pfreeframe] do not modify the
       content of the RSP register. We prove that Asm programs resulting from the
@@ -41,8 +41,8 @@ Section WITHMEMORYMODEL.
 
   Definition asm_instr_no_rsp (i : Asm.instruction) : Prop :=
     is_unchanged i = true ->
-    forall {F V} (ge: _ F V) rs1 m1 rs2 m2 f,
-      Asm.exec_instr init_sp ge f i rs1 m1 = Next rs2 m2 ->
+    forall {F V} (ge: _ F V) rs1 m1 rs2 m2 f isp,
+      Asm.exec_instr isp ge f i rs1 m1 = Next rs2 m2 ->
       rs2 # RSP = rs1 # RSP.
 
   Definition asm_code_no_rsp (c : Asm.code) : Prop :=
@@ -226,34 +226,34 @@ Section WITHMEMORYMODEL.
     - destruct c. simpl in *.
       destruct B; subst; auto; red; intros; simpl in H1; solve_rs.
       simpl in B. destr_in B.
-      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
       simpl in B. destr_in B.
-      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
       simpl in B. destr_in B.
-      red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
     - destruct c.
       simpl in B.
-      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
       simpl in B.
-      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
       simpl in B.
-      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
-      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f EI; simpl in EI; solve_rs.
+      destruct B; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
+      destruct H0; subst; auto. red. intros IU F V ge rs1 m1 rs2 m2 f isp EI; simpl in EI; solve_rs.
   Qed.
 
   Lemma asmgen_transl_cond_rsp:
@@ -593,8 +593,8 @@ Section WITHMEMORYMODEL.
 
   Definition asm_instr_no_stack (i : Asm.instruction) : Prop :=
     is_unchanged i = true ->
-    forall F V (ge: _ F V) rs1 m1 rs2 m2 f,
-      Asm.exec_instr init_sp ge f i rs1 m1 = Next rs2 m2 ->
+    forall F V (ge: _ F V) rs1 m1 rs2 m2 f isp,
+      Asm.exec_instr isp ge f i rs1 m1 = Next rs2 m2 ->
       Mem.stack_adt m2 = Mem.stack_adt m1 /\ (forall b o k p, Mem.perm m2 b o k p <-> Mem.perm m1 b o k p).
 
 
@@ -634,7 +634,7 @@ Section WITHMEMORYMODEL.
   Lemma asmgen_no_change_stack i:
     asm_instr_no_stack i.
   Proof.
-    red; intros IU F V ge0 rs1 m1 rs2 m2 f EI.
+    red; intros IU F V ge0 rs1 m1 rs2 m2 f isp EI.
     destruct i;
       simpl in IU; try discriminate; 
         simpl in EI; inv EI;
@@ -648,8 +648,8 @@ Section WITHMEMORYMODEL.
 
 
   Definition asm_instr_nb_fw i:=
-    forall F V (ge: _ F V) f rs1 m1 rs2 m2,
-      Asm.exec_instr init_sp ge f i rs1 m1 = Next rs2 m2 ->
+    forall F V (ge: _ F V) f rs1 m1 rs2 m2 isp,
+      Asm.exec_instr isp ge f i rs1 m1 = Next rs2 m2 ->
       Ple (Mem.nextblock m1) (Mem.nextblock m2).
 
   Definition asm_code_nb_fw c :=
@@ -681,7 +681,7 @@ Section WITHMEMORYMODEL.
   Lemma asmgen_nextblock_forward i:
     asm_instr_nb_fw i.
   Proof.
-    red. intros F V ge f rs1 m1 rs2 m2 EI.
+    red. intros F V ge f rs1 m1 rs2 m2 isp EI.
     destruct i; simpl in EI; inv EI; try (apply Ple_refl);
       first [now eapply exec_load_nb; eauto
             | now (eapply exec_store_nb; eauto)
@@ -702,11 +702,11 @@ Section WITHMEMORYMODEL.
       apply Mem.do_stores_nextblock in STORES. rewrite STORES.
       rewrite (Mem.nextblock_alloc _ _ _ _ _ ALLOC).
       xomega.
-    - repeat destr_in H1.
+    - repeat (destr_in H1; [idtac]). inv H1.
       edestruct Mem.unrecord_stack_block_mem_unchanged. simpl; eauto.
       rewrite H0.
-      rewrite (Mem.nextblock_free _ _ _ _ _ Heqo1). apply Ple_refl.
-    - repeat destr_in H1; apply Ple_refl.
+      rewrite (Mem.nextblock_free _ _ _ _ _ Heqo0). apply Ple_refl.
+    - repeat destr_in H1. apply Ple_refl.
   Qed.
 
 
