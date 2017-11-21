@@ -44,8 +44,7 @@ known to be the size of a pointer. *)
 
 Inductive stack_permission: Type :=
   Public
-| Private
-| Readonly.
+| Private.
 
 Definition stack_perm_eq: forall (p1 p2: stack_permission), {p1=p2} + {p1 <> p2}.
 Proof.
@@ -55,19 +54,11 @@ Qed.
 Record frame_info :=
   {
     frame_size: Z;
-    frame_link: list segment;
     frame_perm: Z -> stack_permission;
-    frame_link_size:
-      Forall (fun fl => seg_size fl = size_chunk Mptr) frame_link;
-    frame_link_rng:
-      Forall (fun fl => forall o, seg_ofs fl <= o < seg_ofs fl + seg_size fl -> 0 <= o < frame_size) frame_link;
-    frame_link_readonly:
-      Forall (fun fl => forall i, in_segment i fl -> frame_perm i = Readonly) frame_link;
   }.
 
 Definition frame_public f o := frame_perm f o = Public.
 Definition frame_private f o := frame_perm f o = Private.
-Definition frame_readonly f o := frame_perm f o = Readonly.
 
 Definition frame_public_dec: forall f o, {frame_public f o} + {~ frame_public f o}.
 Proof.
@@ -77,11 +68,6 @@ Qed.
 Definition frame_private_dec: forall f o, {frame_private f o} + {~ frame_private f o}.
 Proof.
   unfold frame_private; intros; apply stack_perm_eq.
-Qed.
-
-Definition frame_readonly_dec: forall f o, {frame_readonly f o} + {~ frame_readonly f o}.
-Proof.
-  unfold frame_readonly; intros; apply stack_perm_eq.
 Qed.
 
 (** We define empty segments and frames for the sole purpose of being able to
@@ -97,8 +83,7 @@ Definition empty_segment : segment :=
 Program Definition empty_frame   : frame_info :=
   {|
     frame_size := 0;
-    frame_link:= nil;
-    frame_perm o := Readonly;
+    frame_perm o := Public;
   |}.
 
 Fixpoint range_Z (o: Z) (n: nat) : list Z :=
@@ -227,18 +212,18 @@ Csharpminor. *)
 (* | frame_with_info: block -> option frame_info -> frame_adt *)
 (* | frame_without_info: list block -> frame_adt. *)
 
-Definition frame_adt : Type := list block * option frame_info * Z.
+Definition frame_adt : Type := list (block * frame_info) * Z.
 
 Definition stack_adt := list frame_adt.
 
 Definition frame_blocks (f: frame_adt) :=
-  let '(bl,_,_) := f in bl.
+  let '(bl,_) := f in (map fst bl).
 
-Definition frame_adt_info (f: frame_adt) :=
-  let '(_,fi,_) := f in fi.
+(* Definition frame_adt_info (f: frame_adt) := *)
+(*   let '(_,fi,_) := f in fi. *)
 
 Definition frame_adt_size (f: frame_adt) :=
-  let '(_,_,x) := f in x.
+  let '(_,x) := f in x.
 
 (** We model our stack of frames as a [list (option frame_adt * Z)]. The obvious
 definition would probably be [list frame_adt]. Let us explain why we differ.
@@ -277,11 +262,28 @@ in a list of blocks ([frame_without_info]) or in a [frame_with_info] with no
 abstract information attached. In the other case, i.e. when [b] is in a
 [frame_with_info] with some information [fi] attached, it returns [Some fi]. *)
 
-Fixpoint get_assoc (l: list frame_adt) (a: block) : option frame_info :=
-  match l with
-    nil => None
-  | (bl,fi,z)::r => if in_dec eq_block a bl then fi else get_assoc r a
-  end.
+Section ASSOC.
+  Variables A B: Type.
+
+  Variable Aeq: forall (a1 a2: A), {a1=a2}+{a1<>a2}.
+
+  Fixpoint get_assoc (l: list (A*B)) (b: A) : option B :=
+    match l with
+      nil => None
+    | (k,v)::r => if Aeq k b then Some v else get_assoc r b
+    end.
+
+  Lemma get_assoc_in_fst:
+    forall (l: list (A*B)) b r,
+      get_assoc l b = Some r ->
+      In b (map fst l).
+  Proof.
+    induction l; simpl; intros; eauto. inv H.
+    repeat destr_in H. simpl. right.
+    eauto.
+  Qed.
+
+End ASSOC.
 
 Definition in_frame (f: frame_adt) (a: block) : Prop :=
   In a (frame_blocks f).
@@ -305,6 +307,14 @@ Proof.
   destruct (in_frame_dec a b); auto.
   destruct (IHl b); eauto. right; intros [A|A]; auto.
 Defined.
+
+Fixpoint get_assoc_stack (l: list frame_adt) (a: block) : option frame_info :=
+  match l with
+    nil => None
+  | fr::r => if in_frame_dec fr a then
+              get_assoc _ _ peq (fst fr) a
+            else get_assoc_stack r a
+  end.
 
 Class InjectPerm :=
   {
@@ -339,8 +349,6 @@ predicate that represents the permissions for the source memory [m1] in which
 
   Definition stack_perm_le (sp1 sp2: stack_permission) :=
     match sp1, sp2 with
-      Readonly, _ => True
-    | Private, Readonly => False
     | Private, _ => True
     | Public, Public => True
     | Public, _ => False
@@ -373,7 +381,6 @@ predicate that represents the permissions for the source memory [m1] in which
 
   Record shift_frame delta fi fi' :=
     {
-      (* shift_link: list_forall2 (fun fl1 fl2 => shift_segment delta fl1 fl2) (frame_link fi) (frame_link fi'); *)
       shift_perm: forall o, 0 <= o < frame_size fi -> stack_perm_le (frame_perm fi o) (frame_perm fi' (o + delta));
       shift_size:
         forall o, 0 <= o < frame_size fi -> 0 <= o + delta < frame_size fi';
@@ -407,40 +414,45 @@ predicate that represents the permissions for the source memory [m1] in which
 
   Hint Resolve shift_option_frame_id.
 
-  Definition frame_inject_frame_def (f: meminj) (P: block -> Z -> perm_kind -> permission -> Prop) f1 f2 :=
+  Definition frame_inject_frame_def (f: meminj) (f1 f2: frame_adt) :=
     Forall
-      (fun b1 =>
+      (fun bfi =>
+         let '(b1,fi) := bfi in
          forall b2 delta,
            f b1 = Some (b2, delta) ->
-           match (frame_adt_info f1, frame_adt_info f2) with
-           | (None, None) => True
-           | (Some fi, None) => False
-           | (None, Some fi) =>
-             forall o  k p,
-               P b1 o k p ->
-               inject_perm_condition p ->
-               0 <= o + delta < frame_size fi /\ frame_public fi (o + delta)
-           | (Some fi, Some fi') =>
+           exists fi',
+             get_assoc _ _ peq (fst f2) b2 = Some fi' /\
              shift_frame delta fi fi'
-           end)
-      (frame_blocks f1).
+           )
+      (fst f1).
 
-  Record frame_inject' {injperm: InjectPerm} f (P: block -> Z -> perm_kind -> permission -> Prop) (f1 f2: frame_adt) :=
-    {
-      frame_inject_inj:
-        Forall (fun b1 =>
-                  forall b2 delta,
-                    f b1 = Some (b2, delta) ->
-                    In b2 (frame_blocks f2))
-               (frame_blocks f1);
-      frame_inject_frame:
-        frame_inject_frame_def f P f1 f2;
-    }.
+  Definition frame_inject' f (f1 f2: frame_adt) :=
+    frame_inject_frame_def f f1 f2.
+
+  Lemma test:
+    forall f f1 f2,
+      frame_inject_frame_def f f1 f2 ->
+      Forall (fun b1 =>
+                forall b2 delta,
+                  f b1 = Some (b2, delta) ->
+                  In b2 (frame_blocks f2))
+             (frame_blocks f1).
+  Proof.
+    unfold frame_inject_frame_def.
+    intros f f1 f2. rewrite ! Forall_forall.
+    intros REC x INF1 b2 delta FX.
+    destruct f1, f2; simpl in *.
+    rewrite in_map_iff in INF1. destruct INF1 as (x0 & EQ & IN). subst.
+    destruct x0. simpl in *.
+    specialize (REC _ IN). simpl in REC.
+    specialize (REC _ _ FX). destruct REC as (fi' & ASS & SHIFT).
+    eapply get_assoc_in_fst; eauto.
+  Qed.
 
   Lemma not_in_frames_get_assoc:
     forall l b,
       ~ in_frames l b ->
-      get_assoc l b = None.
+      get_assoc_stack l b = None.
   Proof.
     induction l; simpl; intros; eauto.
     repeat destr. eauto. 
@@ -452,18 +464,15 @@ predicate that represents the permissions for the source memory [m1] in which
   Fixpoint size_stack (l: list frame_adt) : Z :=
     match l with
       nil => 0
-    | (_,_,n)::r => size_stack r + align (Z.max 0 n) 8
+    | (_,n)::r => size_stack r + align (Z.max 0 n) 8
     end.
 
-
-  Lemma inject_frame_id m a:
-    frame_inject' inject_id m a a.
+  Lemma inject_frame_id a:
+    frame_inject' inject_id a a.
   Proof.
-    destruct a, p; try (econstructor; inversion 1; tauto).
-    econstructor.
-    - apply Forall_forall. inversion 2; subst. auto.
-    - apply Forall_forall. inversion 2; subst.
-      simpl. destr. eauto.
+    destruct a; try (econstructor; inversion 1; tauto).
+    apply Forall_forall. simpl. destruct x. inversion 2; subst.
+    
   Qed.
 
   Lemma frame_inject_incr:
