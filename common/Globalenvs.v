@@ -1899,10 +1899,8 @@ Proof.
 - apply IHo. red; intros. eapply Mem.perm_store_1; eauto. apply PERM. omega.
   unfold stack_access, public_stack_access in *; intros. 
   erewrite Mem.store_get_frame_info by eauto.
-  erewrite Mem.store_is_stack_top; eauto.
-  destruct NPSA. intuition. right; split; auto.
-  destruct H.
-  destruct (get_frame_info (Mem.stack_adt m) b); auto.
+  right.
+  destruct NPSA. intuition. destr. 
   eapply in_stack_data_inside ; eauto; try omega.
   erewrite Mem.store_is_stack_top; eauto.
 - destruct (Mem.valid_access_store m Mint8unsigned b p Vzero) as (m' & STORE).

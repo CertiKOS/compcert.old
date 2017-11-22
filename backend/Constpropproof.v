@@ -605,7 +605,8 @@ Opaque builtin_strength_reduction.
     eapply Mem.fresh_block_alloc in INF; eauto.
   }
   {
-    constructor; auto; simpl; congruence.
+    simpl. constructor; auto; simpl.
+    intros; eapply Mem.perm_alloc_3. eauto. eauto.
   }
   intros (m2'' & C & D).
   simpl. unfold transf_function.

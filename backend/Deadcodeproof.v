@@ -922,7 +922,8 @@ Ltac UseTransfer :=
     eapply Mem.fresh_block_alloc in INF; eauto.
   }
   {
-    constructor; auto; simpl; congruence.
+    constructor; simpl; auto.
+    eapply Mem.perm_alloc_3; eauto.
   }
   intros (tm'' & C & D).
   econstructor; split.

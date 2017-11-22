@@ -699,11 +699,16 @@ End SEMANTICS.
 
 (** The two semantics for function parameters.  First, parameters as local variables. *)
 
+Definition blocks_with_info (ge:genv) (e: env) : list (block * frame_info) :=
+  map (fun x => let '(b, lo, hi) := x in (b,{| frame_size := hi; frame_perm := fun o => Public |})) (blocks_of_env ge e).
+
 Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m': mem) (sz: Z) : Prop :=
-  | function_entry1_intro: forall m1 m1',
+  | function_entry1_intro: forall m1 m1' fa,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env ge e)), None, sz) m1' ->
+      frame_adt_blocks fa = blocks_with_info ge e ->
+      frame_adt_size fa = sz ->
+      Mem.record_stack_blocks m1 fa m1' ->
       bind_parameters ge e m1' f.(fn_params) vargs m' ->
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m' sz.
@@ -713,12 +718,14 @@ Definition step1 fsr (ge: genv) := step fsr ge (function_entry1).
 (** Second, parameters as temporaries. *)
 
 Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m1': mem) (sz: Z) : Prop :=
-  | function_entry2_intro m': 
+  | function_entry2_intro fa m': 
       list_norepet (var_names f.(fn_vars)) ->
       list_norepet (var_names f.(fn_params)) ->
       list_disjoint (var_names f.(fn_params)) (var_names f.(fn_temps)) ->
       alloc_variables ge empty_env m f.(fn_vars) e m' ->
-      Mem.record_stack_blocks m' (map fst (map fst (blocks_of_env ge e)), None, sz) m1' ->
+      frame_adt_blocks fa = blocks_with_info ge e ->
+      frame_adt_size fa = sz ->
+      Mem.record_stack_blocks m' fa m1' ->
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m1' sz.
 

@@ -1313,12 +1313,6 @@ Next Obligation.
   eapply do_stores_stack_adt in Heq_anonymous. simpl in *. congruence.
 Qed.
 
-Lemma norepet_1:
-  forall {A:Type} (a:A),
-    list_norepet (a::nil).
-Proof.
-  repeat constructor. easy.
-Qed.
 
 Inductive push_frame_spec: mem -> frame_info -> list (memory_chunk * ptrofs * val) -> mem -> block -> Prop :=
   pfs_intro:

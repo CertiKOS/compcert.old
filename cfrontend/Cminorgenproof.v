@@ -905,6 +905,7 @@ Proof.
     replace (sz - 0) with sz by omega. auto.
     intros. eapply SEP2. eauto with coqlib. eexact CENV. eauto. eauto. omega.
     intros; exfalso; apply NIN; eapply in_frames_in_frame; eauto.
+    eapply in_frame_blocks_in_frame; eauto.
   intros [f2 [A [B [C D]]]].
   exploit (IHalloc_variables f2); eauto.
     red; intros. eapply COMPAT. auto with coqlib.
@@ -2356,38 +2357,96 @@ Opaque PTree.set.
   intros [f2 [MCS2 [MINJ2 [INCR2 SEP2]]]].
   exploit Mem.record_stack_blocks_inject_parallel. exact MINJ2.
   8: eauto.
-  instantiate (1 := (sp::nil, None, sz)).
+  instantiate (1 := make_singleton_frame_adt sp (fn_stackspace tf) (frame_adt_size fa)).
   {
+    red; red. rewrite H3. simpl.
+    rewrite Forall_forall. intros b IN.
+    unfold blocks_with_info in IN.
+    rewrite in_map_iff in IN. destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
+    inv MCS2.
+    apply in_blocks_of_env_inv in IN. destruct IN as [id0 [EID LO0]].
+    exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H7.
+    intros b2 delta0 FB. simpl in *. rewrite FB in H11. inv H11.
+    eexists; split. 
+    rewrite peq_true. eauto.
+    split; simpl; intros; auto.
+    
+    eapply Mem.perm_alloc_3.
+    eauto.
+    eapply Mem.perm_inject. apply FB. eauto.
+
+    Lemma alloc_variables_perm_1:
+      forall e1 m1 vars e2 m2,
+        alloc_variables e1 m1 vars e2 m2 ->
+        forall b o k p,
+          Mem.perm m1 b o k p ->
+          Mem.perm m2 b o k p.
+    Proof.
+      induction 1; simpl; intros b o k p P. auto.
+      eapply IHalloc_variables.
+      eapply Mem.perm_alloc_1; eauto.
+    Qed.
+
+
+    Lemma alloc_variables_not_in_vars:
+      forall e1 m1 vars e2 m2,
+        alloc_variables e1 m1 vars e2 m2 ->
+        forall id,
+          ~ In id (map fst vars) ->
+          e1 ! id = e2 ! id.
+    Proof.
+      induction 1; simpl; intros id0 NIN. auto.
+      destruct (peq id0 id). subst. intuition congruence.
+      erewrite <- IHalloc_variables; auto. rewrite PTree.gso. auto. auto.
+    Qed.
+
+    Lemma alloc_variables_perm:
+      forall e1 m1 vars e2 m2,
+        alloc_variables e1 m1 vars e2 m2 ->
+        list_norepet (map fst vars) ->
+        forall id b hi,
+          e1 ! id = None ->
+          e2 ! id = Some (b,hi) ->
+          Mem.range_perm m2 b 0 hi Max Freeable.
+    Proof.
+      induction 1; simpl; intros LNR id0 b hi E1 E2.
+      congruence.
+      inv LNR.
+      destruct (peq id id0). subst.
+      - erewrite <- alloc_variables_not_in_vars in E2; eauto.
+        rewrite PTree.gss in E2; inv E2.
+        red; intros. eapply alloc_variables_perm_1. eauto.
+        eapply Mem.perm_alloc_2; eauto.
+      - eapply IHalloc_variables; eauto. rewrite PTree.gso; auto.
+    Qed.
+
+    eapply alloc_variables_perm. eauto. eauto. apply PTree.gempty. eauto. auto.
     constructor.
-    - simpl. rewrite Forall_forall. intros b IN.
-      rewrite map_map, in_map_iff in IN. destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
-      inv MCS2.
-      apply in_blocks_of_env_inv in IN. destruct IN as [id0 [EID LO0]].
-      exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H6.
-      intros b2 delta0 FB. rewrite FB in H10. inv H10. eauto.
-    - apply Forall_forall; simpl. auto.
   }
   {
-    intros. unfold in_frame; simpl. intros [A|[]]. subst.
-    erewrite Mem.alloc_stack_blocks in H5; eauto.
-    eapply Mem.in_frames_valid in H5. eapply Mem.fresh_block_alloc in H5; eauto.
+    intros b INF. unfold in_frame; simpl. intros [A|[]]. subst.
+    erewrite Mem.alloc_stack_blocks in INF; eauto.
+    eapply Mem.in_frames_valid in INF. eapply Mem.fresh_block_alloc in INF; eauto.
   }
   {
     red; unfold in_frame; simpl. intros b [A|[]]; subst.
     eapply Mem.valid_new_block. eauto.
   }
   {
-    simpl; congruence.
+    simpl. intros b fi [A|[]]; inv A. simpl.
+    eapply Mem.perm_alloc_3; eauto.
   }
   {
     simpl. 
     intros b0 b' delta FB.
-    unfold in_frame; simpl. rewrite ! map_map, ! in_map_iff.
+    unfold in_frame; simpl. rewrite H3.
+    unfold blocks_with_info. rewrite ! map_map, ! in_map_iff.
     split; intros IN.
     destruct IN as [[[bb0 lo] hi] [EQ'  IN]]. simpl in *; subst.
     inv MCS2.
     apply in_blocks_of_env_inv in IN. destruct IN as [id0 [EID LO0]].
-    exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H6. rewrite FB in H10. inv H10. eauto.
+    exploit me_vars. eauto. rewrite EID.  intro A; inv A. inv H7.
+    rewrite FB in H11. inv H11. eauto.
     destruct IN; try easy. subst.
     inv MCS2. inv MENV. eapply me_inv0 in FB. destruct FB as (id0 & szz & EID).
     eexists; split. 2: eapply in_blocks_of_env. reflexivity. eauto.
@@ -2399,19 +2458,19 @@ Opaque PTree.set.
   apply plus_one. econstructor; simpl; eauto.
   econstructor. eexact TRBODY. eauto. eexact INJ3.
   rewrite (Mem.record_stack_block_nextblock _ _ _ RSB).
-  rewrite (Mem.record_stack_block_nextblock _ _ _ H3).
+  rewrite (Mem.record_stack_block_nextblock _ _ _ H5).
   eapply match_callstack_record; eauto.
   inv MK; simpl in ISCC; contradiction || econstructor; eauto.
   eapply frameinj_order_strict_push; eauto.
   {
     simpl.
-    red; intros.
+    red; intros j LT.
     destruct (Nat.eq_dec j O). subst. exists O; destr.
-    destruct (SURJ (pred j)). erewrite Mem.record_stack_blocks_stack_adt in H5. 2: eauto.
-    simpl in H5. erewrite Mem.alloc_stack_blocks in H5. 2: eauto. omega.
+    destruct (SURJ (pred j)). erewrite Mem.record_stack_blocks_stack_adt in LT. 2: eauto.
+    simpl in LT. erewrite Mem.alloc_stack_blocks in LT. 2: eauto. omega.
     exists (S x). destr.
     replace (pred (Datatypes.S x)) with x by omega.
-    rewrite H6. simpl. f_equal. omega.
+    rewrite H4. simpl. f_equal. omega.
   }
   
 (* external call *)

@@ -1165,7 +1165,8 @@ Proof.
     eapply Mem.fresh_block_alloc in INF; eauto.
   }
   {
-    constructor; auto; simpl; congruence.
+    constructor; auto; simpl.
+    eapply Mem.perm_alloc_3; eauto.
   }
   intros (m2'' & C & D).
   left; econstructor; split.

@@ -372,24 +372,19 @@ Qed.
 - Mach register values and PPC register values agree.
 *)
 
-  Definition match_stackframe_frame_adt s (f: frame_adt):=
-    match s, f with
-      Stackframe fn sp _ _, (l, Some fi, n) =>
-      l = sp :: nil /\ n = frame_size fi /\
-      forall f, Genv.find_funct_ptr ge fn = Some (Internal f) ->
-           frame_size fi = Mach.fn_stacksize f
-           (* range_eqb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\ *)
-           (* range_eqb (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) = true /\ *)
-           (* (Forall_dec _ (fun fl => zeq (Ptrofs.unsigned (fn_link_ofs f)) (seg_ofs fl)) (frame_link fi)) *)
-           (*   && disjointb (Ptrofs.unsigned (fn_link_ofs f)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs f)) (size_chunk Mptr) = true *)
-
-    | _, _ => False
+  Definition match_stackframe_frame_adt s (fr: frame_adt):=
+    match s with
+      Stackframe fn sp _ _ =>
+      exists fi, frame_adt_blocks fr = (sp,fi) :: nil
+                 /\ frame_adt_size fr = frame_size fi
+                 /\ forall f, Genv.find_funct_ptr ge fn = Some (Internal f) ->
+                              frame_size fi = Mach.fn_stacksize f
     end.
 
   Definition ms_init (f: frame_adt) :=
-    exists b, 
+    exists b fi, 
       init_sp = Vptr b Ptrofs.zero /\
-      frame_blocks f = b :: nil.
+      frame_adt_blocks f = (b,fi) :: nil.
 
   Definition ms_nil :=
     forall b o, init_sp = Vptr b o -> False.
@@ -419,8 +414,9 @@ Qed.
         (MATCHFRAMES: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m))
         (ISP_INFO: forall (b : block) (o : ptrofs),
             init_sp = Vptr b o ->
-            exists oo n, In (b :: nil, oo, n) (Mem.stack_adt m') /\
-                    oo <> None)
+            exists fr fi,
+              frame_adt_blocks fr = (b,fi)::nil
+              /\ In fr (Mem.stack_adt m'))
         (SAMEADT: (Mem.stack_adt m) = (Mem.stack_adt m')),
       match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms m)
                    (Asm.State rs m')
@@ -435,8 +431,9 @@ Qed.
         (SAMEADT: (Mem.stack_adt m) = (Mem.stack_adt m'))
         (ISP_INFO: forall (b : block) (o : ptrofs),
             init_sp = Vptr b o ->
-            exists oo n, In (b :: nil, oo, n) (Mem.stack_adt m') /\
-                    oo <> None),
+            exists fr fi,
+              frame_adt_blocks fr = (b,fi)::nil
+              /\ In fr (Mem.stack_adt m')),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
@@ -450,8 +447,9 @@ Qed.
         (SAMEADT: (Mem.stack_adt m) = (Mem.stack_adt m'))
         (ISP_INFO: forall (b : block) (o : ptrofs),
             init_sp = Vptr b o ->
-            exists oo n, In (b :: nil, oo, n) (Mem.stack_adt m') /\
-                    oo <> None),
+            exists fr fi,
+              frame_adt_blocks fr = (b,fi)::nil
+              /\ In fr (Mem.stack_adt m')),
       match_states (Mach.Returnstate s ms m)
                    (Asm.State rs m').
 
@@ -470,8 +468,9 @@ Lemma exec_straight_steps:
     (SAMEADT: (Mem.stack_adt m2) = (Mem.stack_adt m2'))
     (ISP_INFO: forall (b : block) (o : ptrofs),
         init_sp = Vptr b o ->
-        exists oo n, In (b :: nil, oo, n) (Mem.stack_adt m2') /\
-                oo <> None),
+            exists fr fi,
+              frame_adt_blocks fr = (b,fi)::nil
+              /\ In fr (Mem.stack_adt m2')),
   exists st',
   plus (step init_sp) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c ms2 m2) st'.
@@ -500,8 +499,9 @@ Lemma exec_straight_steps_goto:
       (SAMEADT: (Mem.stack_adt m2) = (Mem.stack_adt m2'))
       (ISP_INFO: forall (b : block) (o : ptrofs),
           init_sp = Vptr b o ->
-          exists oo n, In (b :: nil, oo, n) (Mem.stack_adt m2') /\
-                  oo <> None),
+            exists fr fi,
+              frame_adt_blocks fr = (b,fi)::nil
+              /\ In fr (Mem.stack_adt m2')),
   exists st',
   plus (step init_sp) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb (Vptr sp Ptrofs.zero) c' ms2 m2) st'.
@@ -604,14 +604,14 @@ Proof.
   inversion 1; constructor; auto.
 Qed.
 
-Inductive asm_no_none: state -> Prop :=
-| ann_intro:
-    forall rs m
-      (NONONE: Forall (fun x => match x with
-                               (_,None,n) => False
-                             |  _ => True
-                             end) (Mem.stack_adt m)),
-      asm_no_none (State rs m).
+(* Inductive asm_no_none: state -> Prop := *)
+(* | ann_intro: *)
+(*     forall rs m *)
+(*       (NONONE: Forall (fun x => match x with *)
+(*                                (_,None,n) => False *)
+(*                              |  _ => True *)
+(*                              end) (Mem.stack_adt m)), *)
+(*       asm_no_none (State rs m). *)
 
   Lemma exec_store_stack:
     forall F V (ge: _ F V) k m1 a rs1 rs l rs2 m2,
@@ -644,35 +644,35 @@ Inductive asm_no_none: state -> Prop :=
   Qed.
 
 
-  Lemma step_asm_no_none:
-    forall s1 t s2,
-      step init_sp tge s1 t s2 ->
-      asm_no_none s1 ->
-      asm_no_none s2.
-  Proof.
-    inversion 1.
-    - subst. inversion 1; constructor.
-      destruct i; simpl in H3; inv H3;
-        first [ assumption
-              | now (erewrite exec_load_stack; eauto)
-              | now (erewrite exec_store_stack; eauto)
-              | now (repeat destr_in H8; erewrite goto_label_stack; eauto)
-              | now (repeat destr_in H8)
-              | idtac ].
-      + repeat destr_in H8.
-        edestruct Mem.push_frame_alloc_record as (m2 & ALLOC & m3 & STORES & RSB). eauto.
-        erewrite Mem.record_stack_blocks_stack_adt. 2: eauto.
-        erewrite Mem.do_stores_stack_adt. 2: eauto.
-        erewrite Mem.alloc_stack_blocks; eauto.
-      + repeat (destr_in H8; [idtac]). inv H8.
-        erewrite <- Mem.free_stack_blocks in NONONE. 2: eauto.
-        destruct (Mem.unrecord_stack_adt _ _ Heqo1) as (bb & EQ).
-        rewrite EQ in NONONE. inv NONONE; auto.
-    - subst. inversion 1; subst; constructor.
-      erewrite <- external_call_stack_blocks; eauto.
-    - subst. inversion 1; subst; constructor.
-      erewrite <- external_call_stack_blocks; eauto.
-  Qed.
+  (* Lemma step_asm_no_none: *)
+  (*   forall s1 t s2, *)
+  (*     step init_sp tge s1 t s2 -> *)
+  (*     asm_no_none s1 -> *)
+  (*     asm_no_none s2. *)
+  (* Proof. *)
+  (*   inversion 1. *)
+  (*   - subst. inversion 1; constructor. *)
+  (*     destruct i; simpl in H3; inv H3; *)
+  (*       first [ assumption *)
+  (*             | now (erewrite exec_load_stack; eauto) *)
+  (*             | now (erewrite exec_store_stack; eauto) *)
+  (*             | now (repeat destr_in H8; erewrite goto_label_stack; eauto) *)
+  (*             | now (repeat destr_in H8) *)
+  (*             | idtac ]. *)
+  (*     + repeat destr_in H8. *)
+  (*       edestruct Mem.push_frame_alloc_record as (m2 & ALLOC & m3 & STORES & RSB). eauto. *)
+  (*       erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. *)
+  (*       erewrite Mem.do_stores_stack_adt. 2: eauto. *)
+  (*       erewrite Mem.alloc_stack_blocks; eauto. *)
+  (*     + repeat (destr_in H8; [idtac]). inv H8. *)
+  (*       erewrite <- Mem.free_stack_blocks in NONONE. 2: eauto. *)
+  (*       destruct (Mem.unrecord_stack_adt _ _ Heqo1) as (bb & EQ). *)
+  (*       rewrite EQ in NONONE. inv NONONE; auto. *)
+  (*   - subst. inversion 1; subst; constructor. *)
+  (*     erewrite <- external_call_stack_blocks; eauto. *)
+  (*   - subst. inversion 1; subst; constructor. *)
+  (*     erewrite <- external_call_stack_blocks; eauto. *)
+  (* Qed. *)
 
   Lemma if_zeq:
     forall {T} a P (A B : T),
@@ -787,18 +787,18 @@ Inductive asm_no_none: state -> Prop :=
     unfold parent_pointer.
     inv H. inv LPrec.
     + reflexivity.
-    + destruct a,p.  simpl. destr. repeat destr_in Heqo0.
+    + destruct a.  simpl. destr. repeat destr_in Heqo.
       red in PINIT.
-      destruct PINIT as (bisp & EQ & FB); auto. inv FB. auto.
-    + simpl. destruct a. destruct b0, p.
-      red in PAB0.
-      destr_in PAB0. destruct PAB0. subst. auto.
+      destruct PINIT as (bisp & frisp & EQ & FB); auto. inv FB. auto.
+    + simpl. destruct a. destruct b0.
+      simpl. red in PAB0. destruct PAB0 as (fi & EQblocks & EQsize & FIND). simpl in *.
+      subst. auto.
   Qed.
 
   Lemma parent_pointer_correct':
     forall m1 s fb sp c
       (INITSP_NOTPTR: (~ exists b o, init_sp = Vptr b o) -> init_sp = Vnullptr)
-      (INITSP_NONONE: forall b o oo n, In (b::nil, oo, n) (Mem.stack_adt m1) -> init_sp = Vptr b o -> oo <> None)
+      (* (INITSP_NONONE: forall b o oo n, In (b::nil, oo, n) (Mem.stack_adt m1) -> init_sp = Vptr b o -> oo <> None) *)
       (LP: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m1)),
       parent_sp init_sp s = match parent_pointer m1 with
                               Some (b,_) => Vptr b Ptrofs.zero
@@ -811,15 +811,14 @@ Inductive asm_no_none: state -> Prop :=
     inv LP. inv LPrec.
     + red in PNIL. simpl.
       apply INITSP_NOTPTR. intros (b0 & o & EQ). eapply PNIL; eauto.
-    + destruct a,p.  simpl. 
+    + 
       red in PINIT.
-      destruct PINIT as (bisp & EQ & FB); auto. rewrite EQ. simpl in FB. subst.
-      rewrite <- H in INITSP_NONONE.
-      specialize (INITSP_NONONE _ _ _ _ (or_intror (or_introl eq_refl)) eq_refl).
-      destruct o. auto. congruence.
-    + simpl. destruct a. destruct b0, p.
-      red in PAB0.
-      destr_in PAB0. destruct PAB0; subst; auto.
+      destruct PINIT as (bisp & frisp & EQ & FB); auto. rewrite FB.
+      simpl. auto. 
+    + red in PAB0.
+      destruct a.
+      destruct PAB0 as (fi & blocks & size & FIND). rewrite blocks.
+      reflexivity.
   Qed.
 
   Lemma check_alloc_frame_correct:
@@ -839,31 +838,36 @@ Inductive asm_no_none: state -> Prop :=
       (MATCHFRAMES: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb stk sp c :: s) (Mem.stack_adt m'0))
       (ISP_INFO: forall (b : block) (o : ptrofs),
           init_sp = Vptr b o ->
-          exists (oo : option frame_info) (n : Z), In (b :: nil, oo, n) (Mem.stack_adt m'0) /\ oo <> None)
+          exists fr fi, frame_adt_blocks fr = (b,fi)::nil /\ In fr (Mem.stack_adt m'0))
       (FREE: Mem.free m'0 b lo hi = Some m2_)
       (UNRECORD : Mem.unrecord_stack_block m2_ = Some m2')
       b o
       (ISPEQ: init_sp = Vptr b o),
-    exists (oo : option frame_info) (n : Z), In (b :: nil, oo, n) (Mem.stack_adt m2') /\ oo <> None.
+    exists fr fi, frame_adt_blocks fr = (b,fi)::nil /\ In fr (Mem.stack_adt m2').
   Proof.
     clear - memory_model_prf. intros.
-    edestruct ISP_INFO as (oo & n & IN & NONOE). eauto.
-    edestruct Mem.unrecord_stack_adt. eauto.
-    erewrite Mem.free_stack_blocks in H. 2: eauto.
-    rewrite H in IN. destruct IN.
-    - subst x.
-      inv MATCHFRAMES.
-      assert (in_frames (Mem.stack_adt m2') b0).
-      {
-        revert LPrec ISPEQ PAB. rewrite H in H3; inv H3. generalize (Mem.stack_adt m2'). clear.
-        induction 1; simpl; intros; eauto.
-        red in PINIT.
-        rewrite ISPEQ in PINIT. 
-        destruct PINIT as (bb0 & EQ & FB); inv EQ. unfold in_frame. rewrite FB. left; left; auto.
-      }
-      generalize (Mem.stack_norepet m'0); rewrite H. intro ND. clear ISPEQ. inv ND.
-      specialize (H5 _ (or_introl eq_refl)). congruence.
-    - eauto.
+    edestruct ISP_INFO as (fr & fi & blocks & IN). eauto.
+    exists fr, fi; rewrite blocks; split; auto.
+    edestruct Mem.unrecord_stack_adt as (fr' & STK). eauto.
+    erewrite Mem.free_stack_blocks in STK. 2: eauto.
+    rewrite STK in IN. destruct IN as [IN|IN]; auto.
+    subst.
+    rewrite STK in MATCHFRAMES. revert ISPEQ. inv MATCHFRAMES.
+    intro ISPEQ.
+    red in PAB.
+    generalize (Mem.stack_norepet m'0); rewrite STK. intro ND. inversion ND. subst f l.
+    unfold in_frame in H2. rewrite blocks in PAB.
+    destruct PAB as (fi0 & EQ & SIZE & FIND); inversion EQ; subst b0 fi.
+    rewrite blocks in *.
+    specialize (H2 _ (or_introl eq_refl)).
+    simpl in H2. exfalso; apply H2.
+    revert ISPEQ LPrec. clear.
+    generalize (Mem.stack_adt m2').
+    induction 2; simpl; intros; eauto.
+    red in PINIT.
+    rewrite ISPEQ in PINIT.
+    destruct PINIT as (b & fi & EQ & blocks). inv EQ.
+    unfold in_frame; rewrite blocks. left; left; auto.
   Qed.
 
 Theorem step_simulation:
@@ -947,8 +951,8 @@ Opaque loadind.
       (FFP: Genv.find_funct_ptr ge fb = Some (Internal f))
       (ISP_INFO: forall (b : block) (o : ptrofs),
           init_sp = Vptr b o ->
-          exists oo n, In (b :: nil, oo, n) (Mem.stack_adt m1) /\
-                  oo <> None)
+          exists fr fi, frame_adt_blocks fr = (b,fi)::nil /\
+                        In fr (Mem.stack_adt m1))
       (RD: rd <> RSP)
       (* (INITSP_NONONE: forall b o oo n, In (b::nil, oo, n) (Mem.stack_adt m1) -> init_sp = Vptr b o -> oo <> None) *)
       (LP: list_prefix match_stackframe_frame_adt ms_init ms_nil (Stackframe fb sp (Vptr sp Ptrofs.zero) c :: s) (Mem.stack_adt m1)),
@@ -965,33 +969,49 @@ Opaque loadind.
         * simpl in PISP_DEF. destruct PISP_DEF.
           red in PNIL. exfalso; eapply PNIL; eauto.
         * red in PINIT.
-          destruct PINIT as (bb & ISP & FB).
-          destruct a,p; simpl in *; subst.
-          destruct b, p, o0; try easy.
-          destruct PAB as (Leq & Zeq & Ffp); subst.
-          rewrite <- H in ISP_INFO.
-          specialize (ISP_INFO _ _ eq_refl). destruct ISP_INFO as (oo & n & IN & NONONE).
-          generalize (Mem.stack_norepet m1); rewrite <- H. intro ND. inv ND.
-          simpl in IN. destruct IN. inv H0.
-          specialize (H3 _ (or_introl eq_refl)). exfalso; apply H3. left. left. auto.
-          inv H2. specialize (H6 _ (or_introl eq_refl)). destruct H0. inv H0.
-          destruct oo; try easy.
+          destruct PINIT as (bb & fi & ISP & FB).
+          rewrite FB. destruct a; simpl in *; subst.
+          (* destruct b, p, o0; try easy. *)
+          (* destruct PAB as (Leq & Zeq & Ffp); subst. *)
+          (* rewrite <- H in ISP_INFO. *)
+          (* specialize (ISP_INFO _ _ eq_refl). destruct ISP_INFO as (oo & n & IN & NONONE). *)
+          (* generalize (Mem.stack_norepet m1); rewrite <- H. intro ND. inv ND. *)
+          (* simpl in IN. destruct IN. inv H0. *)
+          (* specialize (H3 _ (or_introl eq_refl)). exfalso; apply H3. left. left. auto. *)
+          (* inv H2. specialize (H6 _ (or_introl eq_refl)). destruct H0. inv H0. *)
+          (* destruct oo; try easy. *)
           destr.
           destr. 
-          exfalso. contradict Heqb.
-          unfold check_top_frame. rewrite <- H. simpl. erewrite Ffp; eauto.
+          exfalso.
+          revert Heqb0.
+          unfold check_top_frame. rewrite <- H.
+          rewrite andb_false_iff.
+          destruct PAB as (fi' & blocks & size & FIND).
+          rewrite size.
+          simpl. erewrite FIND; eauto.
           erewrite frame_size_correct; eauto.
-          destruct zeq; simpl; auto. congruence.
-          exfalso; apply H6. eapply in_frames_in_frame. apply H0. left; auto.
-        * red in PAB0. destruct a, b0, p, o; try easy.
-          destruct PAB0 as (A & B & C). subst.
-          destr. destr. exfalso. contradict Heqb0.
-          unfold check_top_frame. rewrite <- H. simpl.
-          red in PAB. destruct b, p, o; try easy.
-          destruct PAB as (A & B & CC). subst.
-          erewrite CC; eauto.
+          destruct zeq; simpl; auto.
+          intros [A|A].
+          destruct Forall_dec; simpl in A. congruence. apply n.
+          rewrite blocks. constructor; auto. red. split; auto.
+          simpl. erewrite FIND; eauto.
+          congruence.
+        * red in PAB0. destruct a.
+          destruct PAB0 as (fi & blocks & size & FIND).
+          rewrite blocks.
+          destr. destr. exfalso. revert Heqb1.
+          unfold check_top_frame. rewrite <- H.
+          rewrite andb_false_iff.
+          destruct PAB as (fi' & blocks0 & size0 & FIND0).
+          rewrite size0.
+          simpl. erewrite FIND0; eauto.
           erewrite frame_size_correct; eauto.
-          destruct zeq; simpl; auto. congruence.
+          destruct zeq; simpl; auto.
+          intros [A|A].
+          destruct Forall_dec; simpl in A. congruence. apply n.
+          rewrite blocks0. constructor; auto. red. split; auto.
+          simpl. erewrite FIND0; eauto.
+          congruence.
       + rewrite nextinstr_pc. rewrite Pregmap.gso. auto. congruence.
     - rewrite nextinstr_inv by congruence.
       rewrite Pregmap.gss. unfold parent_pointer.
@@ -1000,24 +1020,10 @@ Opaque loadind.
       + simpl in PISP_DEF. destruct PISP_DEF.
         red in PNIL. exfalso; eapply PNIL; eauto.
       + red in PINIT.
-        destruct PINIT as (bb & ISP & FB).
-        destruct a,p; simpl in *; subst.
-        destruct b, p, o0; try easy.
-        destruct PAB as (Leq & Zeq & Ffp); subst.
-        rewrite <- H in ISP_INFO.
-        specialize (ISP_INFO _ _ eq_refl). destruct ISP_INFO as (oo & n & IN & NONONE).
-        cut (o = oo). intro; subst.
-        destruct oo; try easy.
-        generalize (Mem.stack_norepet m1); rewrite <- H. intro ND. inv ND.
-        inv H2.
-        specialize (H5 _ (or_introl eq_refl)).
-        specialize (fun pf => H3 _ pf (or_introl (or_introl eq_refl))).
-        destruct IN as [IN|[IN|IN]]; try inv IN.
-        exfalso; apply H3; left; auto. auto.
-        exfalso; apply H5; eapply in_frames_in_frame; eauto. left; auto.
-      + red in PAB0. destruct a, b0, p, o; try easy.
-        destruct PAB0 as (A & B & C). subst.
-        simpl. auto. 
+        destruct PINIT as (bb & fr & ISP & FB).
+        rewrite FB. simpl. auto.
+      + red in PAB0. destruct a. 
+        destruct PAB0 as (fi & A & B & C). rewrite A. reflexivity.
     - intros.
       rewrite nextinstr_inv.
       + rewrite Pregmap.gso by congruence; auto.
@@ -1165,15 +1171,22 @@ Opaque loadind.
   rewrite SEQ.
   rewrite E. rewrite G.
   unfold check_top_frame. rewrite <- SAMEADT. inversion MATCHFRAMES. subst a l1.
-  destruct b, p. red in PAB. destr_in PAB. destruct PAB as (A & B & CC); subst.
-  erewrite CC; eauto. simpl. destruct peq; try congruence. simpl.
-  rewrite if_zeq, if_zeq'. eauto.
-  destr. exfalso. unfold check_init_sp_in_stack in Heqb.
-  destr_in Heqb.
-  edestruct unrecord_init_sp_in_stack as (oo & n & INS2 & NONONE). rewrite <- SAMEADT; eauto.
+  destruct PAB as (fi & A & B & CC); subst.
+  rewrite A, B. 
+  erewrite CC; eauto. simpl. rewrite and_sumbool.
+  destr. destr.
+  destr. exfalso. unfold check_init_sp_in_stack in Heqb0.
+  destr_in Heqb0.
+  edestruct unrecord_init_sp_in_stack as (fr & fi' & frblocks & INFR). rewrite <- SAMEADT; eauto.
   rewrite Heqv. auto. eauto. eauto. eauto.
-  destruct in_frames_dec; auto. simpl in Heqb. congruence.
-  apply n0. eapply in_frames_in_frame; eauto. left; auto.
+  destruct in_frames_dec; simpl in Heqb0; auto. congruence. 
+  apply n. eapply in_frames_in_frame; eauto. eapply in_frame_blocks_in_frame. rewrite frblocks.
+  left; auto.
+  clear Heqs0; exfalso; apply n.
+  constructor; auto.
+  red; split; auto.
+  simpl. symmetry; eapply CC; eauto. 
+
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -1196,7 +1209,8 @@ Opaque loadind.
   rewrite EQ', EQ'' in SAMEADT. inv SAMEADT; auto.
 
   intros b o ISPEQ.
-  edestruct unrecord_init_sp_in_stack as (oo & n & INS2 & NONONE). rewrite <- SAMEADT; eauto.
+  edestruct unrecord_init_sp_in_stack as (fr & fr' & frblocks & infr).
+  rewrite <- SAMEADT; eauto.
   eauto. eauto. eauto. eauto. eauto.
 
 + (* Direct call *)
@@ -1211,15 +1225,19 @@ Opaque loadind.
   rewrite SEQ.
   rewrite E. rewrite G.
   unfold check_top_frame. rewrite <- SAMEADT. inversion MATCHFRAMES. subst l1 a.
-  destruct b, p. red in PAB. destr_in PAB. destruct PAB as (A & B & CC); subst.
-  erewrite CC; eauto. simpl. destruct peq; try congruence. simpl.
-  rewrite if_zeq, if_zeq'.
-  destr. exfalso. unfold check_init_sp_in_stack in Heqb.
-  destr_in Heqb.
-  edestruct unrecord_init_sp_in_stack as (oo & n & INS2 & NONONE). rewrite <- SAMEADT; eauto.
+  destruct PAB as (fi & A & B & CC); subst.
+  erewrite B, CC; eauto. simpl.
+  rewrite and_sumbool. rewrite A.
+  destr.  destr. destr.
+  exfalso. unfold check_init_sp_in_stack in Heqb0.
+  destr_in Heqb0.
+  edestruct unrecord_init_sp_in_stack as (fi' & fr' & frblocks' & infr). rewrite <- SAMEADT; eauto.
   rewrite Heqv. auto. eauto. eauto. eauto.
-  destruct in_frames_dec; auto. simpl in Heqb. congruence.
-  apply n0. eapply in_frames_in_frame; eauto. left; auto.
+  destruct in_frames_dec; auto. simpl in Heqb0. congruence.
+  apply n. eapply in_frames_in_frame; eauto. red; rewrite frblocks'; left; auto.
+  exfalso; clear Heqs0; apply n; constructor; auto.
+  red; split; simpl; eauto.
+  symmetry; eapply CC; eauto.
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H4. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -1242,7 +1260,6 @@ Opaque loadind.
   intros b o ISPEQ.
   edestruct unrecord_init_sp_in_stack as (oo & n & INS2 & NONONE). rewrite <- SAMEADT; eauto.
   eauto. eauto. eauto. eauto. eauto.
-
 - (* Mbuiltin *)
   inv AT. monadInv H4.
   exploit functions_transl; eauto. intro FN.
@@ -1413,16 +1430,20 @@ Transparent destroyed_by_jumptable.
   rewrite SEQ.
   rewrite  E, G; eauto.
   unfold check_top_frame. rewrite <- SAMEADT. inversion MATCHFRAMES. subst l1 a.
-  destruct b, p. red in PAB. destr_in PAB. destruct PAB as (A & B & CC); subst.
-  erewrite CC; eauto. simpl. destruct peq; try congruence. simpl.
-  rewrite if_zeq, if_zeq'.
-  destr. exfalso. unfold check_init_sp_in_stack in Heqb.
-  destr_in Heqb.
-  edestruct unrecord_init_sp_in_stack as (oo & n & INS2 & NONONE). rewrite <- SAMEADT; eauto.
+  destruct PAB as (fi & A & B & CC); subst.
+  erewrite B, CC; eauto. simpl.
+  rewrite and_sumbool. rewrite A.
+  destr.  destr. destr.
+  exfalso. unfold check_init_sp_in_stack in Heqb0.
+  destr_in Heqb0.
+  edestruct unrecord_init_sp_in_stack as (fi' & fr' & frblocks' & infr). rewrite <- SAMEADT; eauto.
   rewrite Heqv. auto. eauto. eauto. eauto.
-  destruct in_frames_dec; auto. simpl in Heqb. congruence.
-  apply n0. eapply in_frames_in_frame; eauto. left; auto.
-  eauto.
+  destruct in_frames_dec; auto. simpl in Heqb0. congruence.
+  apply n. eapply in_frames_in_frame; eauto. red; rewrite frblocks'; left; auto.
+  exfalso; clear Heqs0; apply n; constructor; auto.
+  red; split; simpl; eauto.
+  symmetry; eapply CC; eauto.
+
   apply star_one. eapply exec_step_internal.
   transitivity (Val.offset_ptr rs0#PC Ptrofs.one). auto. rewrite <- H3. simpl. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -1462,24 +1483,24 @@ Transparent destroyed_by_jumptable.
   exploit Mem.record_stack_blocks_extends.
   apply Q. eauto.
   {
-    simpl. intros; subst.
+    simpl. intros b IN; subst.
     erewrite Mem.store_stack_blocks. 2: simpl in *; eauto.
     erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
-    red in H4; simpl in H4.
-    intuition subst.
+    destruct IN as [IN|[]]. simpl in IN; subst. 
     eapply Mem.fresh_block_alloc in INF; eauto. 
   }
   {
     constructor; auto.
-    simpl; intros. inv H5.
-    eapply Mem.perm_store_2 in H4. 2: simpl in *; eauto.
-    eapply Mem.perm_alloc_inv in H4. 2: eauto. rewrite pred_dec_true in H4; auto.
+    simpl; intros o k p PERM. 
+    eapply Mem.perm_store_2 in PERM. 2: simpl in *; eauto.
+    eapply Mem.perm_alloc_inv in PERM. 2: eauto. rewrite pred_dec_true in PERM; auto.
     rewrite X. auto. 
   }
   intros (m1'' & CC & DD).
-  exploit Mem.alloc_record_push_frame. rewrite X. eauto.
-  instantiate (2:= (chunk_of_type Tptr, fn_retaddr_ofs f, parent_ra init_ra s)::nil).
-  simpl. simpl in P. rewrite Ptrofs.add_zero_l in P. rewrite P. eauto. rewrite X. eauto.
+  exploit Mem.alloc_record_push_frame. 3-5: eauto. reflexivity. rewrite X. eauto.
+  rewrite X; eauto.
+  instantiate (1:= (chunk_of_type Tptr, fn_retaddr_ofs f, parent_ra init_ra s)::nil).
+  simpl. simpl in P. rewrite Ptrofs.add_zero_l in P. rewrite P. eauto. 
   intro PF.
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
@@ -1505,16 +1526,15 @@ Transparent destroyed_at_function_entry.
   erewrite Mem.store_stack_blocks. 2: simpl in * ; eauto.
   erewrite Mem.alloc_stack_blocks. 2: eauto.
   auto.
-  constructor; auto.
-  rewrite X, H. 
-  split; auto.
+  red. eexists; split. reflexivity. rewrite X. split; auto.
+  rewrite H.
   inversion 1. auto. 
   
   {
     erewrite (Mem.record_stack_blocks_stack_adt _ _ m1''). 2: eauto.
     erewrite (Mem.store_stack_blocks _ _ _ _ _ m3'). 2: simpl in * ; eauto.
     erewrite (Mem.alloc_stack_blocks _ _ _ m1'). 2: eauto.  
-    intros b o SPEQ. edestruct ISP_INFO as (oo & n & INS2 & NONE); eauto.
+    intros b o SPEQ. edestruct ISP_INFO as (fr & fr' & frblocks & infr); eauto.
     eexists; eexists; split; eauto. right; eauto.
   }
   {

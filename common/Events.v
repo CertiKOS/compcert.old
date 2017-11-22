@@ -1161,7 +1161,7 @@ Proof.
   intro A; apply A.
   exploit Mem.invalid_block_stack_access. eapply Mem.fresh_block_alloc; eauto.
   unfold stack_access.
-  intros [[B C]|[B C]]. eapply Mem.stack_top_valid in B. eapply Mem.fresh_block_alloc in B; eauto. easy.
+  intros [B|B]. eapply Mem.stack_top_valid in B. eapply Mem.fresh_block_alloc in B; eauto. easy.
   eassumption.
 - inv H.  
   assert (b <> b0).

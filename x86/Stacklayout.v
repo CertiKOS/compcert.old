@@ -207,20 +207,10 @@ Program Definition frame_of_frame_env (b: bounds) : frame_info :=
   let fe := make_env b in
   {|
     frame_size := fe_size fe;
-    frame_link := nil;
     frame_perm := fun o =>
-                    if zle (fe_ofs_retaddr fe) o && zlt o (fe_ofs_retaddr fe + size_chunk Mptr)
-                    then Readonly
-                    else
-                      if zle (fe_ofs_local fe) o && zlt o (fe_ofs_local fe + 4 * bound_local b)
-                      then Private
-                      else
-                        if zle (fe_ofs_arg) o && zlt o (fe_ofs_arg + 4 * bound_outgoing b)
-                        then Private
-                        else
-                          if zle (fe_ofs_callee_save fe) o && zlt o (size_callee_save_area b (fe_ofs_callee_save fe))
-                          then Private
-                          else Public
+                    if zle (fe_stack_data fe) o && zlt o (fe_stack_data fe + bound_stack_data b)
+                    then Public
+                    else Private
   |}.
 (* Next Obligation. *)
 (*   rewrite Forall_forall. intros ? [?|[]]; subst. intros i H. simpl in *. *)

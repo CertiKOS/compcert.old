@@ -1566,7 +1566,8 @@ Proof.
       erewrite Mem.alloc_stack_blocks; eauto. intro IFF.
       apply Mem.in_frames_valid in IFF.
       eapply Mem.fresh_block_alloc in IFF; eauto.
-    + constructor; auto. simpl; congruence.
+    + constructor; auto. simpl.
+      eapply Mem.perm_alloc_3; eauto.
     + intros (m2' & USB & EXT).
       econstructor; split.
       left; apply plus_one. eapply exec_function_internal; simpl; eauto.

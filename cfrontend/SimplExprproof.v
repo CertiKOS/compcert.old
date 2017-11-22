@@ -2198,13 +2198,13 @@ Proof.
   econstructor; eauto.
 
 (* internal function *)
-  inv H9. inversion H4; subst.
+  inv H11. inversion H5; subst.
   econstructor; split.
   left; apply plus_one. eapply step_internal_function. econstructor.
-  rewrite H8; rewrite H7; auto.
-  rewrite H8; rewrite H7. eapply alloc_variables_preserved; eauto.
-  rewrite blocks_of_env_preserved. eauto.
-  rewrite H7. eapply bind_parameters_preserved; eauto.
+  rewrite H8; rewrite H9; auto.
+  rewrite H8; rewrite H9. eapply alloc_variables_preserved; eauto.
+  unfold blocks_with_info. rewrite blocks_of_env_preserved. eauto. eauto. eauto.
+  rewrite H8. eapply bind_parameters_preserved; eauto.
   eauto.
   constructor; auto.
 

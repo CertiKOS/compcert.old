@@ -1226,7 +1226,9 @@ Proof.
     erewrite Mem.alloc_stack_blocks; eauto. intro INF. apply Mem.in_frames_valid in INF.
     eapply Mem.fresh_block_alloc in INF; eauto.
   }
-  { constructor; auto; simpl; congruence. }
+  { simpl; constructor; auto; simpl.
+    eapply Mem.perm_alloc_3; eauto.
+  }
   intros (m2'' & C & D).
   econstructor; split.
   eapply exec_function_internal; simpl; eauto.

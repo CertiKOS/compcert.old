@@ -116,6 +116,8 @@ Record match_envs (f: meminj) (cenv: compilenv)
       /\ (VSet.mem id cenv = true -> v = Vundef);
     me_inj:
       forall id1 b1 ty1 id2 b2 ty2, e!id1 = Some(b1, ty1) -> e!id2 = Some(b2, ty2) -> id1 <> id2 -> b1 <> b2;
+    me_tinj:
+      forall id1 b1 ty1 id2 b2 ty2, te!id1 = Some(b1, ty1) -> te!id2 = Some(b2, ty2) -> id1 <> id2 -> b1 <> b2;
     me_range:
       forall id b ty, e!id = Some(b, ty) -> Ple lo b /\ Plt b hi;
     me_trange:
@@ -642,6 +644,14 @@ Lemma match_alloc_variables:
   forall j g tm te,
   list_norepet (var_names vars) ->
   Mem.inject j g m tm ->
+  (* (forall id1 b1 ty1 id2 b2 ty2 b t1 t2, *)
+  (*     e ! id1 = None -> *)
+  (*     e ! id2 = None -> *)
+  (*     e' ! id1 = Some (b1, ty1) -> *)
+  (*     e' ! id2 = Some (b2, ty2) -> *)
+  (*     j b1 = Some (b, t1) -> *)
+  (*     j b2 = Some (b, t2) -> *)
+  (*     b1 = b2) -> *)
   exists j', exists te', exists tm',
       alloc_variables tge te tm (remove_lifted cenv vars) te' tm'
   /\ Mem.inject j' g m' tm'
@@ -656,92 +666,150 @@ Lemma match_alloc_variables:
        /\ if VSet.mem id cenv
           then te'!id = te!id /\ j' b = None
           else exists tb, te'!id = Some(tb, ty) /\ j' b = Some(tb, 0))
-  /\ (forall id, ~In id (var_names vars) -> e'!id = e!id /\ te'!id = te!id).
+  /\ (forall id, ~In id (var_names vars) -> e'!id = e!id /\ te'!id = te!id)
+  (* /\ (forall id1 b1 ty1 id2 b2 ty2 b t1 t2, *)
+  (*       e ! id1 = None -> *)
+  (*       e ! id2 = None -> *)
+  (*       e' ! id1 = Some (b1, ty1) -> *)
+  (*       e' ! id2 = Some (b2, ty2) -> *)
+  (*       j' b1 = Some (b, t1) -> *)
+  (*       j' b2 = Some (b, t2) -> *)
+  (*       b1 = b2) *).
 Proof.
-  induction 1; intros.
-  (* base case *)
-  exists j; exists te; exists tm. simpl.
-  split. constructor.
-  split. auto. split. auto. split. auto.  split. auto.
-  split. intros. elim H2. eapply Mem.valid_block_inject_2; eauto.
-  split. tauto. auto.
-
-  (* inductive case *)
-  simpl in H1. inv H1. simpl.
-  destruct (VSet.mem id cenv) eqn:?. simpl.
-  (* variable is lifted out of memory *)
-  exploit Mem.alloc_left_unmapped_inject; eauto.
-  intros [j1 [A [B [C D]]]].
-  exploit IHalloc_variables; eauto. instantiate (1 := te).
-  intros [j' [te' [tm' [J [K [L [M [N [Q [O P]]]]]]]]]].
-  exists j'; exists te'; exists tm'.
-  split. auto.
-  split. auto.
-  split. eapply inject_incr_trans; eauto.
-  split. intros. transitivity (j1 b). apply M. eapply Mem.valid_block_alloc; eauto.
-    apply D. apply Mem.valid_not_valid_diff with m; auto. eapply Mem.fresh_block_alloc; eauto.
-  split. intros. transitivity (j1 b). eapply N; eauto.
-    destruct (eq_block b b1); auto. subst.
-    assert (j' b1 = j1 b1). apply M. eapply Mem.valid_new_block; eauto.
+  induction 1; intros j g tm te LNR MINJ (* INJUNIQUE *).
+  - (* base case *)
+    exists j; exists te; exists tm. simpl.
+    split. constructor.
+    split. auto. split. auto. split. auto.  split. auto.
+    split. intros. elim H0. eapply Mem.valid_block_inject_2; eauto.
+    split. tauto. split. auto.
     congruence.
-  split. exact Q.
-  split. intros. destruct (ident_eq id0 id).
-    (* same var *)
-    subst id0.
-    assert (ty0 = ty).
-      destruct H1. congruence. elim H5. unfold var_names. change id with (fst (id, ty0)). apply in_map; auto.
-    subst ty0.
-    exploit P; eauto. intros [X Y]. rewrite Heqb. rewrite X. rewrite Y.
-    exists b1. split. apply PTree.gss.
-    split. auto.
-    rewrite M. auto. eapply Mem.valid_new_block; eauto.
-    (* other vars *)
-    eapply O; eauto. destruct H1. congruence. auto.
-  intros. exploit (P id0). tauto. intros [X Y]. rewrite X; rewrite Y.
-    split; auto. apply PTree.gso. intuition.
 
-  (* variable is not lifted out of memory *)
-  exploit Mem.alloc_parallel_inject.
-    eauto. eauto. apply Zle_refl. apply Zle_refl.
-  intros [j1 [tm1 [tb1 [A [B [C [D E]]]]]]].
-  exploit IHalloc_variables; eauto. instantiate (1 := PTree.set id (tb1, ty) te).
-  intros [j' [te' [tm' [J [K [L [M [N [Q [O P]]]]]]]]]].
-  exists j'; exists te'; exists tm'.
-  split. simpl. econstructor; eauto. rewrite comp_env_preserved; auto.
-  split. auto.
-  split. eapply inject_incr_trans; eauto.
-  split. intros. transitivity (j1 b). apply M. eapply Mem.valid_block_alloc; eauto.
-    apply E. apply Mem.valid_not_valid_diff with m; auto. eapply Mem.fresh_block_alloc; eauto.
-  split. intros. transitivity (j1 b). eapply N; eauto. eapply Mem.valid_block_alloc; eauto.
-    destruct (eq_block b b1); auto. subst.
-    assert (j' b1 = j1 b1). apply M. eapply Mem.valid_new_block; eauto.
-    rewrite H4 in H1. rewrite D in H1. inv H1. eelim Mem.fresh_block_alloc; eauto.
-  split. intros. destruct (eq_block b' tb1).
-    subst b'. rewrite (N _ _ _ H1) in H1.
-    destruct (eq_block b b1). subst b. rewrite D in H1; inv H1.
-    exploit (P id); auto. intros [X Y]. exists id; exists ty.
-    rewrite X; rewrite Y. repeat rewrite PTree.gss. auto.
-    rewrite E in H1; auto. elim H3. eapply Mem.valid_block_inject_2; eauto.
-    eapply Mem.valid_new_block; eauto.
-    eapply Q; eauto. unfold Mem.valid_block in *.
-    exploit Mem.nextblock_alloc. eexact A. exploit Mem.alloc_result. eexact A.
-    unfold block; xomega.
-  split. intros. destruct (ident_eq id0 id).
-    (* same var *)
-    subst id0.
-    assert (ty0 = ty).
-      destruct H1. congruence. elim H5. unfold var_names. change id with (fst (id, ty0)). apply in_map; auto.
-    subst ty0.
-    exploit P; eauto. intros [X Y]. rewrite Heqb. rewrite X. rewrite Y.
-    exists b1. split. apply PTree.gss.
-    exists tb1; split.
-    apply PTree.gss.
-    rewrite M. auto. eapply Mem.valid_new_block; eauto.
-    (* other vars *)
-    exploit (O id0 ty0). destruct H1. congruence. auto.
-    rewrite PTree.gso; auto.
-  intros. exploit (P id0). tauto. intros [X Y]. rewrite X; rewrite Y.
-    split; apply PTree.gso; intuition.
+  - (* inductive case *)
+    simpl in LNR. inv LNR. simpl.
+    destruct (VSet.mem id cenv) eqn:?. simpl.
+    + (* variable is lifted out of memory *)
+      exploit Mem.alloc_left_unmapped_inject; eauto.
+      intros [j1 [A [B [C D]]]].
+      exploit IHalloc_variables; eauto.
+      (* intros id1 b0 ty1 id2 b2 ty2 b t1 t2. *)
+      (* { *)
+      (*   rewrite ! PTree.gsspec. repeat destr. *)
+      (*   intros. eapply INJUNIQUE. *)
+      (*   apply H1. apply H2. eauto. eauto. rewrite <- D. eauto. intro; subst. congruence. *)
+      (*   rewrite <- D. eauto. intro; subst. congruence. *)
+      (* } *)
+      instantiate (1 := te).
+      intros [j' [te' [tm' [J [K [L [M [N [Q [O P]]]]]]]]]].
+      exists j'; exists te'; exists tm'.
+      split. auto.
+      split. auto.
+      split. eapply inject_incr_trans; eauto.
+      split. intros. transitivity (j1 b). apply M. eapply Mem.valid_block_alloc; eauto.
+      apply D. apply Mem.valid_not_valid_diff with m; auto. eapply Mem.fresh_block_alloc; eauto.
+      split. intros. transitivity (j1 b). eapply N; eauto.
+      destruct (eq_block b b1); auto. subst.
+      assert (j' b1 = j1 b1). apply M. eapply Mem.valid_new_block; eauto.
+      congruence.
+      split. exact Q.
+      split. intros. destruct (ident_eq id0 id).
+      (* same var *)
+      subst id0.
+      assert (ty0 = ty).
+      destruct H1. congruence. elim H3. unfold var_names. change id with (fst (id, ty0)). apply in_map; auto.
+      subst ty0.
+      exploit P; eauto. intros [X Y]. rewrite Heqb. rewrite X. rewrite Y.
+      exists b1. split. apply PTree.gss.
+      split. auto.
+      rewrite M. auto. eapply Mem.valid_new_block; eauto.
+      (* other vars *)
+      eapply O; eauto. destruct H1. congruence. auto.
+      intros. exploit (P id0). tauto. intros [X Y]. rewrite X; rewrite Y.
+      split; auto. apply PTree.gso. intuition.
+      (* { *)
+      (*   intros id1 b0 ty1 id2 b2 ty2 b t1 t2 NIN1 NIN2 IN1 IN2 INJ1 INJ2. *)
+      (*   destruct (peq id1 id2). congruence. *)
+
+      (*   (* destruct (plt b (Mem.nextblock tm)). *) *)
+      (*   (* erewrite N in INJ1, INJ2; eauto. *) *)
+      (*   (* rewrite D in INJ1, INJ2; eauto. *) *)
+      (*   (* intro; subst; congruence. *) *)
+      (*   (* intro; subst; congruence. *) *)
+      (*   (* exploit Q. apply INJ1. auto. *) *)
+      (*   (* exploit Q. apply INJ2. auto. *) *)
+
+      (*   (* eapply INJUNIQUE. apply NIN1. apply NIN2. eauto. eauto. *) *)
+
+      (*   destruct (peq id1 id). *)
+      (*   - subst. *)
+      (*     edestruct P as (AA & BB). apply H3.  *)
+      (*     rewrite AA in IN1. rewrite PTree.gss in IN1. inv IN1. *)
+          
+
+
+
+      (*   destruct (in_dec peq id1 (map fst vars)). *)
+      (*   - rewrite in_map_iff in i. destruct i as (x & EQ & i). subst. destruct x; simpl in *. *)
+      (*     destruct (O _ _ i) as (bb & E2  & EQ). *)
+      (*     rewrite IN1 in E2. inv E2. rewrite INJ1 in EQ. destr_in EQ.  *)
+      (*     destruct EQ as (tb & TE1 & HH); inv HH. *)
+      (*     destruct (in_dec peq id2 (map fst vars)). *)
+      (*     + rewrite in_map_iff in i1. destruct i1 as (x & EQ & i1). subst. destruct x; simpl in *. *)
+      (*       destruct (O _ _ i1) as (bb2 & E2  & EQ). *)
+      (*       rewrite IN2 in E2. inv E2. rewrite INJ2 in EQ. destr_in EQ.  *)
+      (*       destruct EQ as (tb2 & TE2 & HH); inv HH. *)
+      (*       eapply INJ. rewrite PTree.gso. apply NIN1. *)
+      (*       intro; subst. apply H3. unfold var_names. *)
+      (*       rewrite in_map_iff. exists (id,t); split ; eauto. *)
+      (*       rewrite PTree.gso. apply NIN2. *)
+      (*       intro; subst. apply H3. unfold var_names. *)
+      (*       rewrite in_map_iff. exists (id,t0); split ; eauto. *)
+      (*       eauto. eauto. eauto. eauto. *)
+      (*     + destruct (P _ n) as (AA & BB). *)
+      (*       rewrite AA in IN2. rewrite PTree.gsspec in IN2. destr_in IN2. inv IN2.  *)
+
+    + (* variable is not lifted out of memory *)
+      exploit Mem.alloc_parallel_inject.
+      eauto. eauto. apply Zle_refl. apply Zle_refl.
+      intros [j1 [tm1 [tb1 [A [B [C [D E]]]]]]].
+      exploit IHalloc_variables; eauto. instantiate (1 := PTree.set id (tb1, ty) te).
+      intros [j' [te' [tm' [J [K [L [M [N [Q [O P]]]]]]]]]].
+      exists j'; exists te'; exists tm'.
+      split. simpl. econstructor; eauto. rewrite comp_env_preserved; auto.
+      split. auto.
+      split. eapply inject_incr_trans; eauto.
+      split. intros. transitivity (j1 b). apply M. eapply Mem.valid_block_alloc; eauto.
+      apply E. apply Mem.valid_not_valid_diff with m; auto. eapply Mem.fresh_block_alloc; eauto.
+      split. intros. transitivity (j1 b). eapply N; eauto. eapply Mem.valid_block_alloc; eauto.
+      destruct (eq_block b b1); auto. subst.
+      assert (j' b1 = j1 b1). apply M. eapply Mem.valid_new_block; eauto.
+      rewrite H5 in H1. rewrite D in H1. inv H1. eelim Mem.fresh_block_alloc; eauto.
+      split. intros. destruct (eq_block b' tb1).
+      subst b'. rewrite (N _ _ _ H1) in H1.
+      destruct (eq_block b b1). subst b. rewrite D in H1; inv H1.
+      exploit (P id); auto. intros [X Y]. exists id; exists ty.
+      rewrite X; rewrite Y. repeat rewrite PTree.gss. auto.
+      rewrite E in H1; auto. elim H2. eapply Mem.valid_block_inject_2; eauto.
+      eapply Mem.valid_new_block; eauto.
+      eapply Q; eauto. unfold Mem.valid_block in *.
+      exploit Mem.nextblock_alloc. eexact A. exploit Mem.alloc_result. eexact A.
+      unfold block; xomega.
+      split. intros. destruct (ident_eq id0 id).
+      (* same var *)
+      subst id0.
+      assert (ty0 = ty).
+      destruct H1. congruence. elim H3. unfold var_names. change id with (fst (id, ty0)). apply in_map; auto.
+      subst ty0.
+      exploit P; eauto. intros [X Y]. rewrite Heqb. rewrite X. rewrite Y.
+      exists b1. split. apply PTree.gss.
+      exists tb1; split.
+      apply PTree.gss.
+      rewrite M. auto. eapply Mem.valid_new_block; eauto.
+      (* other vars *)
+      exploit (O id0 ty0). destruct H1. congruence. auto.
+      rewrite PTree.gso; auto.
+      intros. exploit (P id0). tauto. intros [X Y]. rewrite X; rewrite Y.
+      split; apply PTree.gso; intuition.
 Qed.
 
 Lemma alloc_variables_load:
@@ -924,7 +992,15 @@ Theorem match_envs_alloc_variables:
   /\ inject_incr j j'
   /\ (forall b, Mem.valid_block m b -> j' b = j b)
   /\ (forall b b' delta, j' b = Some(b', delta) -> Mem.valid_block tm b' -> j' b = j b)
-  /\ (forall id ty, In (id, ty) vars -> VSet.mem id cenv = false -> exists b, te!id = Some(b, ty)).
+  /\ (forall id ty, In (id, ty) vars -> VSet.mem id cenv = false -> exists b, te!id = Some(b, ty))
+(* /\  ( *)
+(*         forall id1 b1 ty1 id2 b2 ty2 b t1 t2, *)
+(*           e ! id1 = Some (b1, ty1) -> *)
+(*           e ! id2 = Some (b2, ty2) -> *)
+(*           j' b1 = Some (b, t1) -> *)
+(*           j' b2 = Some (b, t2) -> *)
+(*           b1 = b2 *)
+(*       ) *).
 Proof.
   intros.
   exploit (match_alloc_variables cenv); eauto. instantiate (1 := empty_env).
@@ -966,6 +1042,12 @@ Proof.
 
   (* injective *)
   eapply alloc_variables_injective. eexact H.
+  rewrite PTree.gempty. congruence.
+  intros. rewrite PTree.gempty in H7. congruence.
+  eauto. eauto. auto.
+
+  (* injective t *)
+  eapply alloc_variables_injective. eexact A.
   rewrite PTree.gempty. congruence.
   intros. rewrite PTree.gempty in H7. congruence.
   eauto. eauto. auto.
@@ -2063,6 +2145,46 @@ Proof.
   eapply Mem.alloc_stack_blocks; eauto.
 Qed.
 
+Lemma match_envs_norepet_blocks_with_info:
+  forall j cenv e tenv m0 lo hi te tenv' lo' hi',
+    match_envs j cenv e tenv m0 lo hi te tenv' lo' hi' -> 
+    list_norepet (map fst (blocks_with_info tge te)).
+Proof.
+  inversion 1.
+  clear - me_tinj0.
+  assert (INJ: forall id1 b1 ty1 id2 b2 ty2,
+             In (id1, (b1, ty1)) (PTree.elements te) ->
+             In (id2, (b2, ty2)) (PTree.elements te) ->
+             id1 <> id2 -> b1 <> b2).
+  {
+    intros.
+    eapply me_tinj0.
+    eapply PTree.elements_complete; eauto.
+    eapply PTree.elements_complete; eauto. auto.
+  }
+  clear - INJ.
+  revert INJ.
+  unfold blocks_with_info, blocks_of_env.
+  generalize (PTree.elements_keys_norepet te).
+  generalize (PTree.elements te).
+  induction l; simpl; intros LNR INJ; eauto.
+  constructor; auto.
+  - repeat destr. simpl. intro IN.
+    rewrite in_map_iff in IN.
+    destruct IN as (x & EQ & IN). subst.
+    rewrite in_map_iff in IN.
+    destruct IN as (x0 & EQ & IN). subst. destr_in Heqp. destr_in Heqp.
+    simpl in *. subst.
+    unfold block_of_binding in IN, Heqp.
+    destruct a. destruct p0. inv Heqp.
+    rewrite in_map_iff in IN.
+    destruct IN as (x0 & EQ & IN). repeat destr_in EQ.
+    apply (INJ _ _ _ _ _ _ (or_intror IN) (or_introl eq_refl)); auto.
+    intro; subst.
+    inv LNR. apply H1. rewrite in_map_iff. eexists; split; eauto. reflexivity.
+  - apply IHl. inv LNR; auto. intros; eapply INJ; eauto.
+Qed.
+
 Lemma step_simulation:
   forall S1 t S2, step1 fn_stack_requirements ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 fn_stack_requirements) tge S1' t S2' /\ match_states S2 S2'.
@@ -2265,39 +2387,57 @@ Proof.
     unfold var_names. rewrite map_app. auto.
   exploit match_envs_alloc_variables; eauto.
     instantiate (1 := cenv_for_gen (addr_taken_stmt f.(fn_body)) (fn_params f ++ fn_vars f)).
-    intros. eapply cenv_for_gen_by_value; eauto. rewrite VSF.mem_iff. eexact H5.
-    intros. eapply cenv_for_gen_domain. rewrite VSF.mem_iff. eexact H4.
+    intros. eapply cenv_for_gen_by_value; eauto. rewrite VSF.mem_iff. eexact H6.
+    intros. eapply cenv_for_gen_domain. rewrite VSF.mem_iff. eexact H3.
   intros [j' [te [tm0 [A [B [C [D [E [F G]]]]]]]]].
   assert (K: list_forall2 val_casted vargs (map snd (fn_params f))).
   { apply val_casted_list_params. unfold type_of_function in FUNTY. congruence. }
+  exploit match_envs_norepet_blocks_with_info. eauto. intro LNR.
   exploit Mem.record_stack_blocks_inject_parallel. eauto. 8: eauto.
-  instantiate (1 := (map fst (map fst (blocks_of_env tge te)), None, sz)).
+  instantiate (1 := {| frame_adt_blocks := blocks_with_info tge te; frame_adt_size := frame_adt_size fa;
+                       frame_adt_blocks_norepet := LNR |}).
   {
-    constructor. 
-    - rewrite Forall_forall. simpl. intros b0 IN b' delta J'B.
-      inv B.
-      unfold blocks_of_env in IN.
-      rewrite ! map_map, in_map_iff in IN.
-      destruct IN as [[id0 [bb ty]] [EQ' IN]].
-      apply PTree.elements_complete in IN. simpl in EQ'; subst.
-      destruct (me_vars0 id0); try congruence.
-      rewrite IN in ENV. inv ENV. rewrite J'B in MAPPED; inv MAPPED.
-      unfold blocks_of_env; rewrite ! map_map, in_map_iff.
-      repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
-    - apply Forall_forall. simpl. auto. 
+    setoid_rewrite Forall_forall. simpl. rewrite H2. intros (b0&fi); simpl; intros IN b' delta J'B.
+    inv B.
+    unfold blocks_with_info in IN.
+    unfold blocks_of_env in IN.
+    rewrite ! map_map, in_map_iff in IN.
+    destruct IN as [[id0 [bb ty]] [EQ' IN]].
+    repeat destr_in EQ'.
+    apply PTree.elements_complete in IN. simpl in Heqp; inv Heqp.
+    destruct (me_vars0 id0); try congruence.
+    rewrite IN in ENV. inv ENV. rewrite J'B in MAPPED; inv MAPPED.
+    unfold blocks_with_info, blocks_of_env. rewrite ! map_map.
+    apply PTree.elements_correct in TENV.
+    erewrite in_lnr_get_assoc; eauto. 
+    3: rewrite in_map_iff; (exists (id0, (b'0, ty0)); split; auto); reflexivity.
+    eexists; split; eauto.
+    replace ge with (globalenv prog) by reflexivity.
+    replace tge with (globalenv tprog) by reflexivity.
+    simpl.
+    assert (prog_comp_env prog = prog_comp_env tprog).
+    {
+      clear - TRANSF. destruct prog, tprog.
+      simpl. destruct TRANSF. simpl in *.
+      subst. congruence.
+    }
+    rewrite H3.
+    eapply inject_frame_info_id.
+    unfold blocks_with_info, blocks_of_env in LNR. rewrite ! map_map in LNR. simpl in *.
+    rewrite ! map_map. simpl. auto.
   }
   {
     intros b0 INS INF. red in INF. simpl in INF.
     rewrite (alloc_variables_stack_adt _ _ _ _ _ _ A) in INS.
     apply Mem.in_frames_valid in INS.
-    unfold blocks_of_env in INF.
+    unfold blocks_with_info, blocks_of_env in INF.
     rewrite ! map_map, in_map_iff in INF.
     destruct INF as [[id0 [bb ty]] [EQ' IN]].
     apply PTree.elements_complete in IN. simpl in EQ'; subst.
     eapply me_trange in IN; eauto. clear - IN INS. destruct IN; red in INS.  xomega.
   }
   {
-    intros b' IN. unfold blocks_of_env in IN.
+    intros b' IN. unfold blocks_with_info, blocks_of_env in IN.
     simpl in IN. red in IN. simpl in IN. rewrite ! map_map, in_map_iff in IN.
     destruct IN as [[id0 [bb ty]] [EQ' IN]].
     apply PTree.elements_complete in IN. simpl in EQ'; subst.
@@ -2305,20 +2445,92 @@ Proof.
     eapply me_trange0; eauto. 
   }
   {
-    simpl. congruence.
+    simpl; intros b fi IN. unfold blocks_with_info, blocks_of_env in IN.
+    simpl in IN. rewrite ! map_map, in_map_iff in IN.
+    destruct IN as [[id0 [bb ty]] [EQ' IN]].
+    apply PTree.elements_complete in IN. simpl in EQ'; inv EQ'. simpl.
+
+
+    Lemma alloc_variables_perm_1:
+      forall (ge: genv) e1 m1 vars e2 m2,
+        alloc_variables ge e1 m1 vars e2 m2 ->
+        forall b o k p,
+          Mem.perm m1 b o k p ->
+          Mem.perm m2 b o k p.
+    Proof.
+      induction 1; simpl; intros b o k p P. auto.
+      eapply IHalloc_variables.
+      eapply Mem.perm_alloc_1; eauto.
+    Qed.
+
+
+    Lemma alloc_variables_perm_2:
+      forall (ge: genv) e1 m1 vars e2 m2,
+        alloc_variables ge e1 m1 vars e2 m2 ->
+        forall b o k p,
+          Mem.valid_block m1 b ->
+          Mem.perm m2 b o k p ->
+          Mem.perm m1 b o k p.
+    Proof.
+      induction 1; simpl; intros b o k p V P. auto.
+      eapply IHalloc_variables in P.
+      eapply Mem.perm_alloc_inv in P; eauto.
+      destr_in P. subst. eapply Mem.fresh_block_alloc in V; eauto. easy.
+      eapply Mem.valid_block_alloc; eauto.
+    Qed.
+
+    Lemma alloc_variables_not_in_vars:
+      forall ge e1 m1 vars e2 m2,
+        alloc_variables ge e1 m1 vars e2 m2 ->
+        forall id,
+          ~ In id (map fst vars) ->
+          e1 ! id = e2 ! id.
+    Proof.
+      induction 1; simpl; intros id0 NIN. auto.
+      destruct (peq id0 id). subst. intuition congruence.
+      erewrite <- IHalloc_variables; auto. rewrite PTree.gso. auto. auto.
+    Qed.
+
+    Lemma alloc_variables_perm:
+      forall ge e1 m1 vars e2 m2,
+        alloc_variables ge e1 m1 vars e2 m2 ->
+        list_norepet (map fst vars) ->
+        forall id b ty o k p,
+          e1 ! id = None ->
+          e2 ! id = Some (b,ty) ->
+          Mem.perm m2 b o k p ->
+          0 <= o < sizeof ge ty.
+    Proof.
+      induction 1; simpl; intros LNR id0 b ty0 o k p E1 E2.
+      congruence.
+      inv LNR.
+      destruct (peq id id0). subst.
+      - erewrite <- alloc_variables_not_in_vars in E2; eauto.
+        rewrite PTree.gss in E2; inv E2.
+        intro P.
+        eapply alloc_variables_perm_2 in P. 2: eauto.
+        eapply Mem.perm_alloc_3; eauto.
+        eapply Mem.valid_new_block; eauto.
+      - eapply IHalloc_variables; eauto. rewrite PTree.gso; auto.
+    Qed.
+
+    intros; eapply alloc_variables_perm; eauto.
+    edestruct vars_and_temps_properties as (_ & AA & _); eauto.
+    apply PTree.gempty.
   }
   {
     unfold in_frame. simpl.
+    rewrite H2.
     inv B.
-    unfold blocks_of_env.
+    unfold blocks_with_info, blocks_of_env.
     intros; rewrite ! map_map, ! in_map_iff.
     split; [intros [[id0 [bb ty]] [EQ' IN]]| intros [[id0 [bb ty]] [EQ' IN]]];
       apply PTree.elements_complete in IN; simpl in EQ'; subst.
-    destruct (me_vars0 id0); try congruence.
-    rewrite IN in ENV. inv ENV. rewrite H4 in MAPPED; inv MAPPED.
-    repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
-    exploit me_flat0; eauto. intros (X & Y). subst.
-    repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
+    - destruct (me_vars0 id0); try congruence.
+      rewrite IN in ENV. inv ENV. rewrite H3 in MAPPED; inv MAPPED.
+      repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
+    - exploit me_flat0; eauto. intros (X & Y). subst.
+      repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
   }
   reflexivity.
   erewrite alloc_variables_stack_adt; eauto.
@@ -2347,29 +2559,32 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor.
   econstructor.
-  exact Y. exact X. exact Z. simpl. eexact A. eauto. simpl. eexact Q.
+  exact Y. exact X. exact Z. simpl. eexact A. 3: eauto. reflexivity. reflexivity.
+  eexact Q.
   simpl. eapply star_trans. eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
   eapply star_trans. eexact P. eapply step_add_debug_vars.
-  unfold remove_lifted; intros. rewrite List.filter_In in H4. destruct H4.
-  apply negb_true_iff in H5. eauto.
+  unfold remove_lifted; intros id ty IN.
+  rewrite List.filter_In in IN. destruct IN as [IN FILT].
+  apply negb_true_iff in FILT. eauto.
   reflexivity. reflexivity. traceEq.
   econstructor; eauto.
   eapply match_cont_invariant; eauto.
   {
-    intros.
+    intros b chunk v JB PLT LOAD.
     transitivity (Mem.load chunk m1' b 0).
-    eapply bind_parameters_load; eauto. intros.
-    exploit alloc_variables_range. eexact H1. eauto.
-    unfold empty_env. rewrite PTree.gempty. intros [?|?]. congruence.
-    red; intros; subst b'. xomega.
-    eapply alloc_variables_load in H6. 2: eauto.
-    eapply (Mem.load_unchanged_on (fun _ _ => True)).
-    eapply Mem.strong_unchanged_on_weak.
-    eapply Mem.record_stack_block_unchanged_on; eauto. auto. auto.
+    - eapply bind_parameters_load; eauto.
+      intros id b' ty EID.
+      exploit alloc_variables_range. eexact H1. eauto.
+      unfold empty_env. rewrite PTree.gempty. intros [?|?]. congruence.
+      red; intros; subst b'. xomega.
+    - eapply alloc_variables_load in LOAD. 2: eauto.
+      eapply (Mem.load_unchanged_on (fun _ _ => True)).
+      eapply Mem.strong_unchanged_on_weak.
+      eapply Mem.record_stack_block_unchanged_on; eauto. auto. auto.
   }
   apply compat_cenv_for.
-  rewrite (bind_parameters_nextblock _ _ _ _ _ _ H3).
-  rewrite (Mem.record_stack_block_nextblock _ _ _ H2).
+  rewrite (bind_parameters_nextblock _ _ _ _ _ _ H5).
+  rewrite (Mem.record_stack_block_nextblock _ _ _ H4).
   xomega.
   rewrite T.
   rewrite (Mem.record_stack_block_nextblock _ _ _ RSB). xomega.
@@ -2384,7 +2599,7 @@ Proof.
     destruct (SURJ (pred j0)). omega.
     exists (Datatypes.S x). destr.
     replace (pred (Datatypes.S x)) with x by omega.
-    rewrite H5. simpl. f_equal. omega.
+    rewrite H6. simpl. f_equal. omega.
   }
   
 (* external function *)

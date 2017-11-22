@@ -2264,7 +2264,7 @@ Proof.
     eapply Mem.fresh_block_alloc in INF; eauto.
   }
   {
-    constructor; auto. simpl; congruence.
+    constructor; auto. simpl. rewrite H9. eapply Mem.perm_alloc_3; eauto. 
   }
   intros (tm'' & W & X).
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
@@ -2276,7 +2276,7 @@ Proof.
   intros [ls1 [A B]].
   econstructor; split.
   eapply plus_left. econstructor; eauto.
-  
+  rewrite <- H9; eauto.
   eapply star_left. econstructor; eauto.
   eapply star_right. eexact A.
   econstructor; eauto.

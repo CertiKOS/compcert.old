@@ -1138,12 +1138,14 @@ Proof.
     subst b1. rewrite F in H2; inv H2. split; apply Ple_refl.
     rewrite G in H2 by auto. congruence. }
   exploit Mem.record_stack_blocks_inject_parallel. apply D. 8: eauto. 
-  instantiate (1 := (tstk::nil, None, sz)).
+  instantiate (1 := make_singleton_frame_adt tstk (fn_stacksize f) sz).
   {
-    constructor.
-    - simpl. constructor; auto.
-      intros. left; congruence.
-    - red; simpl. auto.
+    red. red. simpl. constructor; auto.
+    simpl.
+    rewrite F. inversion 1; subst.
+    rewrite peq_true.
+    eexists; split. eauto.
+    apply inject_frame_info_id.
   }
   {
     unfold in_frame; simpl. intros.
@@ -1155,7 +1157,9 @@ Proof.
     eapply Mem.valid_new_block; eauto.
   }
   {
-    simpl; congruence.
+    simpl.
+    intros ? ? [A|[]]; inv A. simpl.
+    eapply Mem.perm_alloc_3; eauto.
   }
   {
     unfold in_frame; simpl.

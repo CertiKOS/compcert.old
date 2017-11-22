@@ -697,6 +697,12 @@ Section WITHMEMORYMODEL.
     - unfold goto_label in H1. repeat destr_in H1; apply Ple_refl.
     - repeat destr_in H1.
       edestruct (Mem.push_frame_alloc_record) as (m3 & ALLOC & m4 & STORES & RSB). eauto.
+      instantiate (1 :=
+                     {| frame_adt_blocks := (b,frame)::nil;
+                        frame_adt_size := frame_size frame;
+                        frame_adt_blocks_norepet := norepet_1 _;
+                     |}).
+      reflexivity. reflexivity.
       edestruct Mem.record_stack_blocks_mem_unchanged; eauto. simpl. eauto.
       rewrite H0.
       apply Mem.do_stores_nextblock in STORES. rewrite STORES.

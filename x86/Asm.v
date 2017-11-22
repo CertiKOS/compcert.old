@@ -674,36 +674,37 @@ Definition check_alloc_frame (f: frame_info) (* ofs_link *) (* ofs_ra *) :=
   (*   &&  *) zle 0 (frame_size f).
 
 
-Definition check_top_frame (m: mem) (stk: option block) (sz: Z) (* (oldsp: val) *) (* ofs_link *) (* ofs_ra *) :=
+Definition match_frame (bfi: block * frame_info) (stk: option block) (sz: Z) : Prop :=
+  match stk with Some stk => stk = fst bfi | _ => True end
+  /\ sz = (frame_size (snd bfi)).
+
+Lemma match_frame_dec : forall bfi stk sz,
+    { match_frame bfi stk sz } + { ~ match_frame bfi stk sz }.
+Proof.
+  unfold match_frame. intros.
+  destruct (zeq sz (frame_size (snd bfi))). 2: right; intros (A & B); omega.
+  destruct stk; auto.
+  destruct (peq b (fst bfi)); auto. right; intros (A & B). congruence.
+Qed.
+
+Definition check_top_frame (m: mem) (stk: option block) (sz: Z) :=
   match Mem.stack_adt m with
-  | (b,Some fi, n)::r =>
-    (* if *) (match stk with Some stk => in_dec peq stk b
-                        | _ => true end)
-         && zeq sz (frame_size fi)
-         && zeq n sz
-         (* && range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) *)
-         (* && range_eqb (Ptrofs.unsigned ofs_ra) (size_chunk Mptr) (fun o => frame_readonly_dec fi o) *)
-         (* && Forall_dec _ (fun fl => zeq (Ptrofs.unsigned ofs_link) (seg_ofs fl)) (frame_link fi) *)
-         (* && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr) *)
-    (* then *)
-    (*   (* match oldsp with *) *)
-    (*   (*   Vptr bsp o => *) *)
-    (*   (*   match r with *) *)
-    (*   (*     f::r => *) *)
-    (*   (*     if in_dec peq bsp (frame_blocks f) && Ptrofs.eq_dec o Ptrofs.zero then true else false *) *)
-    (*   (*   | _ => false  *) *)
-    (*   (*   end *) *)
-    (*   (* | Vundef => false *) *)
-    (*   (* | _ => true *) *)
-    (*   (* end *) *)
-    (*   true *)
-    (* else false *)
+    fr::r =>
+    Forall_dec
+      _ (fun bfi => match_frame_dec bfi stk sz)
+      (frame_adt_blocks fr)
+      && zeq sz (frame_adt_size fr)
   | _ => false
   end.
 
 Definition parent_pointer (m: mem) : option (block*Z) :=
   match Mem.stack_adt m with
-  | _::(b::nil,Some fi,_)::_ => Some (b, frame_size fi) 
+  | _::fr::_ =>
+    match frame_adt_blocks fr with
+      (b,fi)::nil =>
+      Some (b, frame_size fi)
+    | _ => None
+    end
   | _ => None
   end.
 

@@ -975,7 +975,11 @@ Lemma make_memcpy_correct:
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  forall (STACK_TOP_NO_INFO: forall b, is_stack_top (Mem.stack_adt m) b -> get_frame_info (Mem.stack_adt m) b = None),
+  forall (STACK_TOP_NO_INFO: forall b,
+             is_stack_top (Mem.stack_adt m) b ->
+             forall fi,
+               get_frame_info (Mem.stack_adt m) b = Some fi ->
+               forall o, frame_perm fi o = Public),
   (step fn_stack_requirements) ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
@@ -994,9 +998,7 @@ Proof.
    *)
   apply Mem.storebytes_stack_access in H9.
   destruct H9; auto.
-  red. rewrite STACK_TOP_NO_INFO; auto. intuition.
-  intuition.
-  auto.
+  red. destr. red; red; eauto. intuition.
 Qed.
 
 Lemma make_store_correct:
@@ -1006,7 +1008,10 @@ Lemma make_store_correct:
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
   assign_loc (Clight.globalenv prog) ty m b ofs v m' ->
-  forall (STACK_TOP_NO_INFO: forall b, is_stack_top (Mem.stack_adt m) b -> get_frame_info (Mem.stack_adt m) b = None),
+  forall (STACK_TOP_NO_INFO: forall b, is_stack_top (Mem.stack_adt m) b ->
+                                       forall fi,
+                                         get_frame_info (Mem.stack_adt m) b = Some fi ->
+                                         forall o, frame_perm fi o = Public),
   (step fn_stack_requirements) ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
@@ -1398,10 +1403,7 @@ Fixpoint nostackinfo (adt: stack_adt) (k: cont) : Prop :=
     match adt with
       nil => False
     | a::r => nostackinfo r k /\
-             match a with
-               (_, None, _) => True
-             | _ => False
-             end
+              Forall (fun bfi => forall o, frame_perm (snd bfi) o = Public) (frame_adt_blocks a)
     end
   end.
 
@@ -1649,7 +1651,11 @@ Proof.
   eapply transl_expr_correct; eauto.
   simpl in TOPNOINFO.
   repeat destr_in TOPNOINFO.
-  unfold is_stack_top. simpl. intros; destr. exfalso; apply n. auto.
+  unfold is_stack_top. simpl. intros. destr_in H6.
+  rewrite Forall_forall in H4.
+  eapply get_assoc_in in H6.
+  specialize (H4  _ H6). eapply H4.
+  exfalso; apply n. auto.
   eapply match_states_skip; eauto.
   erewrite assign_loc_stack_adt; eauto.
 
@@ -1859,7 +1865,7 @@ Proof.
 
   inv H.
   inv TR.
-  monadInv H6.
+  monadInv H5.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   exploit match_env_alloc_variables. apply LINK. all: eauto.
   apply match_env_empty.
@@ -1871,13 +1877,20 @@ Proof.
   simpl. assumption.
   simpl. assumption.
   simpl; eauto.
+  3: eauto. rewrite H4. 2: eauto.
+  unfold Clight.blocks_with_info, blocks_with_info.
   erewrite match_env_same_blocks. eauto. eauto.
   simpl. rewrite create_undef_temps_match. eapply bind_parameter_temps_match; eauto.
   simpl. econstructor; eauto.
   unfold transl_function. rewrite EQ; simpl. rewrite EQ1; simpl. auto.
   constructor.
   erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl.
-  erewrite alloc_variables_stack_adt. eauto. eauto.
+  erewrite alloc_variables_stack_adt. 2: eauto.
+  split; auto.
+  rewrite H4. rewrite Forall_forall. unfold Clight.blocks_with_info. 
+  intros x1. rewrite in_map_iff.
+  intros (((b2 & lo) & hi) & EQ2 & IN).
+  subst. simpl. auto.
 
 - (* external function *)
   inv TR.

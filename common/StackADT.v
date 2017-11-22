@@ -2600,5 +2600,26 @@ Proof.
   eapply stack_inject_incr; eauto.
 Qed.
 
+Lemma norepet_1:
+  forall {A:Type} (a:A),
+    list_norepet (a::nil).
+Proof.
+  repeat constructor. easy.
+Qed.
+
+Definition make_singleton_frame_adt (b: block) (sz: Z) (machsz: Z) :=
+  {|
+    frame_adt_blocks := (b,{| frame_size := sz; frame_perm := fun o => Public |})::nil;
+    frame_adt_size := machsz;
+    frame_adt_blocks_norepet := norepet_1 _
+  |}.
+
+Definition make_singleton_frame_adt' (b: block) fi (sz: Z) :=
+  {|
+    frame_adt_blocks := (b,fi)::nil;
+    frame_adt_size := sz;
+    frame_adt_blocks_norepet := norepet_1 _
+  |}.
+
 
 End INJ.

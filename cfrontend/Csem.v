@@ -158,6 +158,9 @@ Definition block_of_binding (id_b_ty: ident * (block * type)) :=
 Definition blocks_of_env (e: env) : list (block * Z * Z) :=
   List.map block_of_binding (PTree.elements e).
 
+Definition blocks_with_info (e: env) : list (block * frame_info) :=
+  map (fun x => let '(b, lo, hi) := x in (b,{| frame_size := hi; frame_perm := fun o => Public |})) (blocks_of_env e).
+
 (** Selection of the appropriate case of a [switch], given the value [n]
   of the selector expression. *)
 
@@ -751,10 +754,12 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f (Sgoto lbl) k e m)
          E0 (State f s' k' e m)
 
-  | step_internal_function: forall f vargs k m e m1 m1' m2 sz,
+  | step_internal_function: forall f vargs k m e m1 m1' m2 sz fa,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env e)), None, sz) m1' ->
+      frame_adt_blocks fa = blocks_with_info e ->
+      frame_adt_size fa = sz ->
+      Mem.record_stack_blocks m1 fa m1' ->
       bind_parameters e m1' f.(fn_params) vargs m2 ->
       sstep (Callstate (Internal f) vargs k m sz)
          E0 (State f f.(fn_body) k e m2)

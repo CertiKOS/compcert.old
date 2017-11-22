@@ -25,7 +25,6 @@ Section WITHMEMORYMODEL.
     {|
       frame_size := Mem.stack_limit;
       frame_perm := fun o => Public;
-      frame_link := nil;
     |}.
 
   Inductive mono_initial_state {F V} (prog: program F V): state -> Prop :=
@@ -34,7 +33,7 @@ Section WITHMEMORYMODEL.
        initial_state prog (State rs m) ->
        Mem.alloc m 0 (Mem.stack_limit) = (m1,bstack) ->
        Mem.drop_perm m1 bstack 0 (Mem.stack_limit) Writable = Some m2 ->
-       Mem.record_stack_blocks m2 (bstack::nil,Some frame_info_mono,0) m3 ->
+       Mem.record_stack_blocks m2 (make_singleton_frame_adt' bstack frame_info_mono 0) m3 ->
        mono_initial_state prog (State rs m3).
 
   Existing Instance mem_accessors_default.
