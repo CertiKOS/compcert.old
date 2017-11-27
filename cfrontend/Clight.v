@@ -703,7 +703,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
   | function_entry1_intro: forall m1 m1',
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      Mem.record_stack_blocks m1 (Some (frame_without_info (map fst (map fst (blocks_of_env ge e))))) sz = Some m1' ->
+      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env ge e)), None, sz) m1' ->
       bind_parameters ge e m1' f.(fn_params) vargs m' ->
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m' sz.
@@ -718,7 +718,7 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       list_norepet (var_names f.(fn_params)) ->
       list_disjoint (var_names f.(fn_params)) (var_names f.(fn_temps)) ->
       alloc_variables ge empty_env m f.(fn_vars) e m' ->
-      Mem.record_stack_blocks m' (Some (frame_without_info (map fst (map fst (blocks_of_env ge e))))) sz = Some m1' ->
+      Mem.record_stack_blocks m' (map fst (map fst (blocks_of_env ge e)), None, sz) m1' ->
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m1' sz.
 

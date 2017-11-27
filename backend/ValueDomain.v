@@ -3668,8 +3668,8 @@ Proof.
 Qed.
 
 Lemma romatch_record:
-  forall m m' fi rm n1,
-  Mem.record_stack_blocks m fi n1  = Some m' ->
+  forall m m' fi rm,
+  Mem.record_stack_blocks m fi m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
@@ -4106,8 +4106,8 @@ Proof.
 Qed.
 
 Lemma mmatch_record:
-  forall m m' fi rm n1,
-  Mem.record_stack_blocks m fi n1 = Some m' ->
+  forall m m' fi rm,
+  Mem.record_stack_blocks m fi m' ->
   mmatch m rm ->
   mmatch m' rm.
 Proof.
@@ -4120,7 +4120,7 @@ Proof.
   specialize (H3 ofs). eapply Mem.perm_valid_block. apply H3. omega. auto.
   rewrite Mem.loadbytes_empty in H3 by omega. inv H3.
   rewrite Mem.loadbytes_empty; auto. omega.
-  rewrite (Mem.record_stack_block_nextblock _ _ _ _ H); xomega.
+  rewrite (Mem.record_stack_block_nextblock _ _ _ H); xomega.
 Qed.
 
 Lemma mmatch_top':
@@ -4327,7 +4327,7 @@ Proof.
 Qed.
 
 Lemma mmatch_inj_strong:
-  forall bc m am, mmatch bc m am -> Mem.inject (inj_of_bc bc) m m.
+  forall bc m am, mmatch bc m am -> Mem.inject (inj_of_bc bc) (flat_frameinj (length (Mem.stack_adt m))) m m.
 Proof.
   intros bc m am H.
   apply Mem.self_inject.
@@ -4346,7 +4346,7 @@ Proof.
 Qed.
 
 Lemma mmatch_inj:
-  forall bc m am, mmatch bc m am -> bc_below bc (Mem.nextblock m) -> Mem.inject (inj_of_bc bc) m m.
+  forall bc m am, mmatch bc m am -> bc_below bc (Mem.nextblock m) -> Mem.inject (inj_of_bc bc) (flat_frameinj (length (Mem.stack_adt m))) m m.
 Proof.
   intros; eapply mmatch_inj_strong; eauto.
 Qed.
@@ -4374,7 +4374,7 @@ Proof.
 Qed.
 
 Lemma mmatch_inj_top:
-  forall bc m m', Mem.inject (inj_of_bc bc) m m' -> mmatch bc m mtop.
+  forall bc g m m', Mem.inject (inj_of_bc bc) g m m' -> mmatch bc m mtop.
 Proof.
   intros.
   assert (SM: forall b, bc b <> BCinvalid -> smatch bc m b Ptop).

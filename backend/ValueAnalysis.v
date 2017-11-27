@@ -910,11 +910,11 @@ Theorem external_call_match' :
   forall (ge: genv) vargs m vres m' bc rm am,
   forall (external_call_mem_inject:
             meminj_preserves_globals ge (inj_of_bc bc) ->
-            Mem.inject (inj_of_bc bc) m m ->
+            Mem.inject (inj_of_bc bc) (flat_frameinj (length (Mem.stack_adt m)))  m m ->
             Val.inject_list (inj_of_bc bc) vargs vargs ->
             exists f', exists vres', exists m2',
                                        Val.inject f' vres vres'
-                                       /\ Mem.inject f' m' m2'
+                                       /\ Mem.inject f' (flat_frameinj (length (Mem.stack_adt m')))  m' m2'
                                        /\ Mem.unchanged_on (loc_unmapped (inj_of_bc bc)) m m'
                                        /\ inject_incr (inj_of_bc bc) f'
                                        /\ inject_separated (inj_of_bc bc) f' m m)
@@ -1076,7 +1076,10 @@ Proof.
   eapply external_call_match'; eauto.
   intros.
   exploit external_call_mem_inject; eauto.
-  destruct 1 as [? [? [? [? [? [? [? [? [? ?]]]]]]]]]; eauto 8.
+  destruct 1 as [? [? [? [? [? [? [? [? [? ?]]]]]]]]].
+  exists x, x0, x1. split; auto. split; auto.
+  erewrite <- external_call_stack_blocks. 2: eauto.
+  eauto.
   eapply external_call_readonly; eauto.
   intros; eapply external_call_max_perm; eauto.
   eapply external_call_nextblock; eauto.
@@ -1251,8 +1254,8 @@ Proof.
 Qed.
 
 Lemma sound_stack_record:
-  forall m m' b fi bc stk bound,
-  Mem.record_stack_blocks m b fi = Some m' ->
+  forall m m' b bc stk bound,
+  Mem.record_stack_blocks m b m' ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
 Proof.
@@ -2008,7 +2011,7 @@ Proof.
 - constructor.
 - simpl; tauto.
 - apply RM; auto.
-- apply mmatch_inj_top with m0.
+- eapply mmatch_inj_top with (m:=m0).
   replace (inj_of_bc bc) with (Mem.flat_inj (Mem.nextblock m0)).
   eapply Genv.initmem_inject; eauto.
   symmetry; apply extensionality; unfold Mem.flat_inj; intros x.

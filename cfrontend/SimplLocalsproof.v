@@ -639,12 +639,12 @@ Qed.
 Lemma match_alloc_variables:
   forall cenv e m vars e' m',
   alloc_variables ge e m vars e' m' ->
-  forall j tm te,
+  forall j g tm te,
   list_norepet (var_names vars) ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   exists j', exists te', exists tm',
       alloc_variables tge te tm (remove_lifted cenv vars) te' tm'
-  /\ Mem.inject j' m' tm'
+  /\ Mem.inject j' g m' tm'
   /\ inject_incr j j'
   /\ (forall b, Mem.valid_block m b -> j' b = j b)
   /\ (forall b b' delta, j' b = Some(b', delta) -> Mem.valid_block tm b' -> j' b = j b)
@@ -909,10 +909,10 @@ Proof.
 Qed.
 
 Theorem match_envs_alloc_variables:
-  forall cenv m vars e m' temps j tm,
+  forall cenv m vars e m' temps j g tm,
   alloc_variables ge empty_env m vars e m' ->
   list_norepet (var_names vars) ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   (forall id ty, In (id, ty) vars -> VSet.mem id cenv = true ->
                      exists chunk, access_mode ty = By_value chunk) ->
   (forall id, VSet.mem id cenv = true -> In id (var_names vars)) ->
@@ -920,7 +920,7 @@ Theorem match_envs_alloc_variables:
      alloc_variables tge empty_env tm (remove_lifted cenv vars) te tm'
   /\ match_envs j' cenv e (create_undef_temps temps) m' (Mem.nextblock m) (Mem.nextblock m')
                         te (create_undef_temps (add_lifted cenv vars temps)) (Mem.nextblock tm) (Mem.nextblock tm')
-  /\ Mem.inject j' m' tm'
+  /\ Mem.inject j' g m' tm'
   /\ inject_incr j j'
   /\ (forall b, Mem.valid_block m b -> j' b = j b)
   /\ (forall b b' delta, j' b = Some(b', delta) -> Mem.valid_block tm b' -> j' b = j b)
@@ -1010,14 +1010,14 @@ Proof.
 Qed.
 
 Lemma assign_loc_inject:
-  forall f ty m loc ofs v m' tm loc' ofs' v',
+  forall f g ty m loc ofs v m' tm loc' ofs' v',
   assign_loc ge ty m loc ofs v m' ->
   Val.inject f (Vptr loc ofs) (Vptr loc' ofs') ->
   Val.inject f v v' ->
-  Mem.inject f m tm ->
+  Mem.inject f g m tm ->
   exists tm',
      assign_loc tge ty tm loc' ofs' v' tm'
-  /\ Mem.inject f m' tm'
+  /\ Mem.inject f g m' tm'
   /\ (forall b chunk v,
       f b = None -> Mem.load chunk m b 0 = Some v -> Mem.load chunk m' b 0 = Some v).
 Proof.
@@ -1095,25 +1095,35 @@ Proof.
   simpl in H0. eapply Mem.nextblock_store; eauto.
   eapply Mem.nextblock_storebytes; eauto.
 Qed.
+Lemma assign_loc_stack_adt:
+  forall ge ty m b ofs v m',
+    assign_loc ge ty m b ofs v m' ->
+    Mem.stack_adt m' = Mem.stack_adt m.
+Proof.
+  intros ge0 ty m b ofs v m' AL; inv AL.
+  eapply Mem.storev_stack_adt; eauto.
+  eapply Mem.storebytes_stack_blocks; eauto.
+Qed.
 
 Theorem store_params_correct:
-  forall j f k cenv le lo hi te tlo thi e m params args m',
+  forall j g f k cenv le lo hi te tlo thi e m params args m',
   bind_parameters ge e m params args m' ->
   forall s tm tle1 tle2 targs,
   list_norepet (var_names params) ->
   list_forall2 val_casted args (map snd params) ->
   Val.inject_list j args targs ->
   match_envs j cenv e le m lo hi te tle1 tlo thi ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
   star (step2 fn_stack_requirements) tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
-  /\ Mem.inject j m' tm'
+  /\ Mem.inject j g m' tm'
   /\ match_envs j cenv e le m' lo hi te tle tlo thi
-  /\ Mem.nextblock tm' = Mem.nextblock tm.
+  /\ Mem.nextblock tm' = Mem.nextblock tm
+  /\ Mem.stack_adt tm' = Mem.stack_adt tm.
 Proof.
   induction 1; simpl; intros until targs; intros NOREPET CASTED VINJ MENV MINJ TLE LE.
   (* base case *)
@@ -1146,7 +1156,7 @@ Proof.
   apply TLE. intuition.
   intros. apply LE. auto.
   instantiate (1 := s).
-  intros [tle [tm' [U [V [X [Y Z]]]]]].
+  intros [tle [tm' [U [V [X [Y [Z ZZ]]]]]]].
   exists tle; exists tm'; split.
   eapply star_trans.
   eapply star_left. econstructor.
@@ -1161,7 +1171,10 @@ Proof.
   reflexivity. reflexivity.
   eexact U.
   traceEq.
-  rewrite (assign_loc_nextblock _ _ _ _ _ _ _ A) in Z. auto.
+  rewrite (assign_loc_nextblock _ _ _ _ _ _ _ A) in Z.
+  split; auto. split; auto. split; auto. split; auto.
+  rewrite ZZ.
+  eapply assign_loc_stack_adt; eauto.
 Qed.
 
 Lemma bind_parameters_nextblock:
@@ -1256,9 +1269,9 @@ Proof.
 Qed.
 
 Lemma blocks_of_env_no_overlap:
-  forall (ge: genv) j cenv e le m lo hi te tle tlo thi tm,
+  forall (ge: genv) j g cenv e le m lo hi te tle tlo thi tm,
   match_envs j cenv e le m lo hi te tle tlo thi ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   (forall id b ty,
    e!id = Some(b, ty) -> Mem.range_perm m b 0 (sizeof ge ty) Cur Freeable) ->
   forall l,
@@ -1291,13 +1304,13 @@ Proof.
 Qed.
 
 Lemma free_list_right_inject:
-  forall j m1 l m2 m2',
-  Mem.inject j m1 m2 ->
+  forall j g m1 l m2 m2',
+  Mem.inject j g m1 m2 ->
   Mem.free_list m2 l = Some m2' ->
   (forall b1 b2 delta lo hi ofs k p,
      j b1 = Some(b2, delta) -> In (b2, lo, hi) l ->
      Mem.perm m1 b1 ofs k p -> lo <= ofs + delta < hi -> False) ->
-  Mem.inject j m1 m2'.
+  Mem.inject j g m1 m2'.
 Proof.
   induction l; simpl; intros.
   congruence.
@@ -1314,13 +1327,13 @@ Proof.
 Qed.
 
 Theorem match_envs_free_blocks:
-  forall j cenv e le m lo hi te tle tlo thi m' tm,
+  forall j g cenv e le m lo hi te tle tlo thi m' tm,
   match_envs j cenv e le m lo hi te tle tlo thi ->
-  Mem.inject j m tm ->
+  Mem.inject j g m tm ->
   Mem.free_list m (blocks_of_env ge e) = Some m' ->
   exists tm',
      Mem.free_list tm (blocks_of_env tge te) = Some tm'
-  /\ Mem.inject j m' tm'.
+  /\ Mem.inject j g m' tm'.
 Proof.
   intros.
 Local Opaque ge tge.
@@ -1381,10 +1394,11 @@ Variables e te: env.
 Variables le tle: temp_env.
 Variables m tm: mem.
 Variable f: meminj.
+Variable g: frameinj.
 Variable cenv: compilenv.
 Variables lo hi tlo thi: block.
 Hypothesis MATCH: match_envs f cenv e le m lo hi te tle tlo thi.
-Hypothesis MEMINJ: Mem.inject f m tm.
+Hypothesis MEMINJ: Mem.inject f g m tm.
 Hypothesis GLOB: exists bound, match_globalenvs f bound.
 
 Lemma typeof_simpl_expr:
@@ -1776,34 +1790,41 @@ Qed.
 
 (** Relating execution states *)
 
+
 Inductive match_states: state -> state -> Prop :=
   | match_regular_states:
-      forall f s k e le m tf ts tk te tle tm j lo hi tlo thi
+      forall f s k e le m tf ts tk te tle tm j g lo hi tlo thi
         (TRF: transf_function f = OK tf)
         (TRS: simpl_stmt (cenv_for f) s = OK ts)
         (MENV: match_envs j (cenv_for f) e le m lo hi te tle tlo thi)
         (MCONT: match_cont j (cenv_for f) k tk m lo tlo)
-        (MINJ: Mem.inject j m tm)
+        (MINJ: Mem.inject j g m tm)
         (COMPAT: compat_cenv (addr_taken_stmt s) (cenv_for f))
         (BOUND: Ple hi (Mem.nextblock m))
-        (TBOUND: Ple thi (Mem.nextblock tm)),
+        (TBOUND: Ple thi (Mem.nextblock tm))
+        (ORDSTRICT: frameinj_order_strict g)
+        (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (State f s k e le m)
                    (State tf ts tk te tle tm)
   | match_call_state:
-      forall fd vargs k m tfd tvargs tk tm j targs tres cconv sz
+      forall fd vargs k m tfd tvargs tk tm j g targs tres cconv sz
         (TRFD: transf_fundef fd = OK tfd)
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
-        (MINJ: Mem.inject j m tm)
+        (MINJ: Mem.inject j g m tm)
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
-        (ANORM: val_casted_list vargs targs),
+        (ANORM: val_casted_list vargs targs)
+        (ORDSTRICT: frameinj_order_strict g)
+        (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Callstate fd vargs k m sz)
                    (Callstate tfd tvargs tk tm sz)
   | match_return_state:
-      forall v k m tv tk tm j
+      forall v k m tv tk tm j g
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
-        (MINJ: Mem.inject j m tm)
-        (RINJ: Val.inject j v tv),
+        (MINJ: Mem.inject j g m tm)
+        (RINJ: Val.inject j v tv)
+        (ORDSTRICT: frameinj_order_strict g)
+        (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
       match_states (Returnstate v k m)
                    (Returnstate tv tk tm).
 
@@ -2033,7 +2054,7 @@ End FIND_LABEL.
 
 
 Lemma alloc_variables_stack_adt:
-  forall e m vars e' m',
+  forall ge e m vars e' m',
     alloc_variables ge e m vars e' m' ->
     Mem.stack_adt m' = Mem.stack_adt m.
 Proof.
@@ -2081,6 +2102,7 @@ Proof.
   eapply match_cont_invariant; eauto.
   erewrite assign_loc_nextblock; eauto.
   erewrite assign_loc_nextblock; eauto.
+  erewrite assign_loc_stack_adt; eauto.
 
 (* set temporary *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
@@ -2122,7 +2144,8 @@ Proof.
   inv MENV; xomega. inv MENV; xomega.
   eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
   eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  
 (* sequence *)
   econstructor; split. apply plus_one. econstructor.
   econstructor; eauto with compat. econstructor; eauto with compat.
@@ -2165,29 +2188,38 @@ Proof.
 
 (* return none *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject; eauto. intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto.
+  intros (tm'' & R & S & IS).
   econstructor; split. apply plus_one. econstructor; eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.
-
+  eapply Mem.frameinj_surjective_free_list_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
+  
 (* return some *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
   exploit sem_cast_inject; eauto. intros [tv' [C D]].
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject; eauto. intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto.
+  intros (tm'' & R & S & T).
   econstructor; split. apply plus_one. econstructor; eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env'; eauto.
+  eapply Mem.frameinj_surjective_free_list_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* skip call *)
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
-  exploit Mem.unrecord_stack_block_inject; eauto. intros (tm'' & R & S).
+  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto.
+  intros (tm'' & R & S & T).
   econstructor; split. apply plus_one. econstructor; eauto.
   eapply match_cont_is_call_cont; eauto.
   monadInv TRF; auto.
   econstructor; eauto.
   intros. apply match_cont_change_cenv with (cenv_for f); auto. eapply match_cont_free_env'; eauto.
+  eapply Mem.frameinj_surjective_free_list_unrecord; eauto.
+  eapply Mem.inject_stack_adt; eauto.
 
 (* switch *)
   exploit eval_simpl_expr; eauto with compat. intros [tv [A B]].
@@ -2238,14 +2270,13 @@ Proof.
   intros [j' [te [tm0 [A [B [C [D [E [F G]]]]]]]]].
   assert (K: list_forall2 val_casted vargs (map snd (fn_params f))).
   { apply val_casted_list_params. unfold type_of_function in FUNTY. congruence. }
-  exploit Mem.record_stack_blocks_inject. eauto. 4: eauto.
-  instantiate (1 := Some (frame_without_info (map fst (map fst (blocks_of_env tge te))))).
+  exploit Mem.record_stack_blocks_inject_parallel. eauto. 8: eauto.
+  instantiate (1 := (map fst (map fst (blocks_of_env tge te)), None, sz)).
   {
-    simpl. constructor. 
-    intros b0 b' delta J'B.
-    inv B.
-    split; intros IN.
-    - unfold blocks_of_env in IN.
+    constructor. 
+    - rewrite Forall_forall. simpl. intros b0 IN b' delta J'B.
+      inv B.
+      unfold blocks_of_env in IN.
       rewrite ! map_map, in_map_iff in IN.
       destruct IN as [[id0 [bb ty]] [EQ' IN]].
       apply PTree.elements_complete in IN. simpl in EQ'; subst.
@@ -2253,70 +2284,64 @@ Proof.
       rewrite IN in ENV. inv ENV. rewrite J'B in MAPPED; inv MAPPED.
       unfold blocks_of_env; rewrite ! map_map, in_map_iff.
       repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
-    - unfold blocks_of_env in IN.
-      rewrite ! map_map, in_map_iff in IN.
-      destruct IN as [[id0 [bb ty]] [EQ' IN]].
-      apply PTree.elements_complete in IN. simpl in EQ'; subst.
-      destruct (me_vars0 id0); try congruence.
-      rewrite IN in TENV. inv TENV.
-      exploit me_mapped0. eauto. rewrite ENV.
-      intros (b1' & ? & ?). inv H5.
-      exploit me_flat0. eauto. apply J'B. rewrite ENV. inversion 1. subst. inv H6.
-      unfold blocks_of_env; rewrite ! map_map, in_map_iff.
-      repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
+    - apply Forall_forall. simpl. auto. 
   }
   {
-    intros b0 b'0 delta0 INF JB. simpl.
-    rewrite (alloc_variables_stack_adt _ _ _ _ _ H1) in INF.
-    apply Mem.in_frames_valid in INF.
-    split; intros IN. 
-    {
-      unfold blocks_of_env in IN.
-      rewrite ! map_map, in_map_iff in IN.
-      destruct IN as [[id0 [bb ty]] [EQ' IN]].
-      apply PTree.elements_complete in IN. simpl in EQ'; subst.
-      inv B. destruct (me_vars0 id0); try congruence.
-      eapply me_range0 in IN; eauto. clear - INF IN. destruct IN; red in INF.  xomega.
-    }
-    {
-      rewrite E in JB; auto.
-      eapply Mem.valid_block_inject_2 in JB; eauto.
-      unfold blocks_of_env in IN.
-      rewrite ! map_map, in_map_iff in IN.
-      destruct IN as [[id0 [bb ty]] [EQ' IN]].
-      apply PTree.elements_complete in IN. simpl in EQ'; subst.
-      inv B.
-      eapply me_trange0 in IN; eauto. clear - JB IN. destruct IN; red in JB.  xomega.
-    }
+    intros b0 INS INF. red in INF. simpl in INF.
+    rewrite (alloc_variables_stack_adt _ _ _ _ _ _ A) in INS.
+    apply Mem.in_frames_valid in INS.
+    unfold blocks_of_env in INF.
+    rewrite ! map_map, in_map_iff in INF.
+    destruct INF as [[id0 [bb ty]] [EQ' IN]].
+    apply PTree.elements_complete in IN. simpl in EQ'; subst.
+    eapply me_trange in IN; eauto. clear - IN INS. destruct IN; red in INS.  xomega.
   }
   {
     intros b' IN. unfold blocks_of_env in IN.
-    simpl in IN. rewrite ! map_map, in_map_iff in IN.
+    simpl in IN. red in IN. simpl in IN. rewrite ! map_map, in_map_iff in IN.
     destruct IN as [[id0 [bb ty]] [EQ' IN]].
     apply PTree.elements_complete in IN. simpl in EQ'; subst.
     inv B. destruct (me_vars0 id0); try congruence.
     eapply me_trange0; eauto. 
   }
+  {
+    simpl. congruence.
+  }
+  {
+    unfold in_frame. simpl.
+    inv B.
+    unfold blocks_of_env.
+    intros; rewrite ! map_map, ! in_map_iff.
+    split; [intros [[id0 [bb ty]] [EQ' IN]]| intros [[id0 [bb ty]] [EQ' IN]]];
+      apply PTree.elements_complete in IN; simpl in EQ'; subst.
+    destruct (me_vars0 id0); try congruence.
+    rewrite IN in ENV. inv ENV. rewrite H4 in MAPPED; inv MAPPED.
+    repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
+    exploit me_flat0; eauto. intros (X & Y). subst.
+    repeat eexists. 2: apply PTree.elements_correct; eauto. reflexivity.
+  }
+  reflexivity.
+  erewrite alloc_variables_stack_adt; eauto.
   intros (m2' & RSB & INJ).
   exploit store_params_correct.
-    eauto.
-    eapply list_norepet_append_left; eauto.
-    eexact K.
-    apply val_inject_list_incr with j'; eauto.
-    {
-      eapply match_envs_invariant. eexact B. all: eauto.
-      intros.
-      eapply (Mem.load_unchanged_on (fun _ _ => True)).
-      eapply Mem.strong_unchanged_on_weak.
-      eapply Mem.record_stack_block_unchanged_on; eauto. auto. auto.
-    }
-    eexact INJ.
-    intros. apply (create_undef_temps_lifted id f). auto.
-    intros. destruct (create_undef_temps (fn_temps f))!id as [v|] eqn:?; auto.
-    exploit create_undef_temps_inv; eauto. intros [P Q]. elim (l id id); auto.
-  intros [tel [tm1 [P [Q [R [S T]]]]]].
+  eauto.
+  eapply list_norepet_append_left; eauto.
+  eexact K.
+  apply val_inject_list_incr with j'; eauto.
+  {
+    eapply match_envs_invariant. eexact B. all: eauto.
+    intros.
+    eapply (Mem.load_unchanged_on (fun _ _ => True)).
+    eapply Mem.strong_unchanged_on_weak.
+    eapply Mem.record_stack_block_unchanged_on; eauto. auto. auto.
+  }
+  eexact INJ.
+  intros. apply (create_undef_temps_lifted id f). auto.
+  intros. destruct (create_undef_temps (fn_temps f))!id as [v|] eqn:?; auto.
+  exploit create_undef_temps_inv; eauto. intros [P Q]. elim (l id id); auto.
+  intros [tel [tm1 [P [Q [R [S [T TT]]]]]]].
   change (cenv_for_gen (addr_taken_stmt (fn_body f)) (fn_params f ++ fn_vars f))
-    with (cenv_for f) in *.
+  with (cenv_for f) in *.
   generalize (vars_and_temps_properties (cenv_for f) (fn_params f) (fn_vars f) (fn_temps f)).
   intros [X [Y Z]]. auto. auto.
   econstructor; split.
@@ -2344,11 +2369,24 @@ Proof.
   }
   apply compat_cenv_for.
   rewrite (bind_parameters_nextblock _ _ _ _ _ _ H3).
-  rewrite (Mem.record_stack_block_nextblock _ _ _ _ H2).
+  rewrite (Mem.record_stack_block_nextblock _ _ _ H2).
   xomega.
   rewrite T.
-  rewrite (Mem.record_stack_block_nextblock _ _ _ _ RSB). xomega.
-
+  rewrite (Mem.record_stack_block_nextblock _ _ _ RSB). xomega.
+  eapply frameinj_order_strict_push; eauto.
+  rewrite TT.
+  erewrite Mem.record_stack_blocks_stack_adt; eauto.
+  erewrite alloc_variables_stack_adt. 2: eauto.
+  {
+    simpl.
+    red; intros.
+    destruct (Nat.eq_dec j0 O). subst. exists O; destr.
+    destruct (SURJ (pred j0)). omega.
+    exists (Datatypes.S x). destr.
+    replace (pred (Datatypes.S x)) with x by omega.
+    rewrite H5. simpl. f_equal. omega.
+  }
+  
 (* external function *)
   monadInv TRFD. inv FUNTY.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
@@ -2361,7 +2399,8 @@ Proof.
   eapply match_cont_extcall; eauto. xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  
 (* return *)
   specialize (MCONT (cenv_for f)). inv MCONT.
   econstructor; split.
@@ -2397,6 +2436,8 @@ Proof.
   xomega. xomega.
   eapply Genv.initmem_inject; eauto.
   constructor.
+  eapply frameinj_order_strict_flat; eauto.
+  eapply frameinj_surjective_flat; auto.
 Qed.
 
 Lemma final_states_simulation:

@@ -230,7 +230,7 @@ Notation wf_bigrammar t := {g:bigrammar t | wf_grammar g}.
 Create HintDb ibr_rng_db.
 Create HintDb nonempty_db.
 
-Hint Extern 0 => progress change unit with (interp Unit_t) : ibr_rng_db.
+(* Hint Extern 0 => progress change unit with (interp Unit_t) : ibr_rng_db. *)
 
 Require Import Bits.
 (* "Create HintDb inv_db" would not create an empty rewrite db *)

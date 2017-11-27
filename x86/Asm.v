@@ -12,7 +12,7 @@
 
 (** Abstract syntax and semantics for IA32 assembly language *)
 
-Require Import Coqlib Maps String.
+Require Import String Coqlib Maps.
 Require Import AST Integers Floats Values Memory Events Globalenvs Smallstep.
 Require Import Locations Stacklayout Conventions EraseArgs.
 
@@ -665,28 +665,28 @@ End MEM_ACCESSORS_DEFAULT.
 
 
 Definition check_alloc_frame (f: frame_info) ofs_link ofs_ra :=
-  zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link f)) &&
-      disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr).
+  (Nat.eq_dec (length (frame_link f)) 1)
+    && Forall_dec _ (fun fl => zeq (Ptrofs.unsigned ofs_link) (seg_ofs fl)) (frame_link f)
+    && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
+    && zle 0 (frame_size f).
 
 
 Definition check_top_frame (m: mem) (stk: block) (sz: Z) (oldsp: val) ofs_link ofs_ra :=
   match Mem.stack_adt m with
-  | (Some (frame_with_info b (Some fi)), n)::r =>
-    if peq b stk && zeq sz (frame_size fi) && zeq n sz
-           &&
-           range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr)
-           (fun o => frame_readonly_dec fi o)
-           &&
-           range_eqb (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
-           (fun o => frame_readonly_dec fi o)
-           && zeq (Ptrofs.unsigned ofs_link) (seg_ofs (frame_link fi)) &&
-           disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
+  | (b,Some fi, n)::r =>
+    if (in_dec peq stk b)
+         && zeq sz (frame_size fi)
+         && zeq n sz
+         && range_eqb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (fun o => frame_readonly_dec fi o)
+         && range_eqb (Ptrofs.unsigned ofs_ra) (size_chunk Mptr) (fun o => frame_readonly_dec fi o)
+         && Forall_dec _ (fun fl => zeq (Ptrofs.unsigned ofs_link) (seg_ofs fl)) (frame_link fi)
+         && disjointb (Ptrofs.unsigned ofs_link) (size_chunk Mptr) (Ptrofs.unsigned ofs_ra) (size_chunk Mptr)
     then
       match oldsp with
         Vptr bsp o =>
         match r with
-          (Some (frame_with_info b _),_)::r =>
-          if peq bsp b && Ptrofs.eq_dec o Ptrofs.zero then true else false
+          f::r =>
+          if in_dec peq bsp (frame_blocks f) && Ptrofs.eq_dec o Ptrofs.zero then true else false
         | _ => false 
         end
       | Vundef => false
@@ -1038,21 +1038,11 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Pallocframe fi ofs_ra ofs_link =>
-    let (m1, stk) := Mem.alloc m 0 (frame_size fi) in
     if check_alloc_frame fi ofs_link ofs_ra then
-      let sp := Vptr stk Ptrofs.zero in
-      match Mem.storev Mptr m1 (Val.offset_ptr sp ofs_link) rs#RSP with
-      | None => Stuck
-      | Some m2 =>
-        match Mem.storev Mptr m2 (Val.offset_ptr sp ofs_ra) rs#RA with
-        | None => Stuck
-        | Some m3 =>
-          match Mem.record_stack_blocks m3 (Some (frame_with_info stk (Some fi))) (frame_size fi) with
-            Some m4 =>
-            Next (nextinstr (rs #RAX <- (rs#RSP) #RSP <- sp)) m4
-          | _ => Stuck
-          end
-        end
+      match Mem.push_frame m fi ((Mptr, ofs_link, rs#RSP)::(Mptr,ofs_ra, rs#RA)::nil) with
+        Some (m4,b) =>
+        Next (nextinstr (rs #RAX <- (rs#RSP) #RSP <- (Vptr b Ptrofs.zero))) m4
+      | _ => Stuck
       end
     else Stuck
   | Pfreeframe sz ofs_ra ofs_link =>

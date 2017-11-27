@@ -298,6 +298,9 @@ Definition transl_instr (fmap: FMAP_TYPE) (lmap: LMAP_TYPE)
            (f:ident) (i: Asm.instruction) (ofs: int32) : 
   res (ACCUM_INSTRS * LMAP_TYPE)  :=
   match i with
+  | Pxorl_r rd =>
+    do rd' <- transl_ireg rd;
+      OK (fun data_addr => [XOR true (Reg_op rd') (Reg_op rd')],lmap)
   | Paddl_ri rd n =>
     do rd' <- transl_ireg rd; 
     OK (fun data_addr => [ADD true (Reg_op rd') (Imm_op (int_to_bits n))], lmap)

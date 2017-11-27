@@ -1295,301 +1295,304 @@ Theorem transl_step_correct:
 Proof.
   induction 1; intros R1 MSTATE; inv MSTATE.
 
-  (* skip seq *)
-  inv TS. inv TK. econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto.
+  - (* skip seq *)
+    inv TS. inv TK. econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto.
 
-  (* skip block *)
-  inv TS. inv TK. econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto. constructor.
+  - (* skip block *)
+    inv TS. inv TK. econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto. constructor.
 
-  (* skip return *)
-  inv TS.
-  assert ((fn_code tf)!ncont = Some(Ireturn rret)
-          /\ match_stacks k cs) as EQ.
+  - (* skip return *)
+    inv TS.
+    assert ((fn_code tf)!ncont = Some(Ireturn rret)
+            /\ match_stacks k cs) as EQ.
     inv TK; simpl in H; try contradiction; auto.
-  destruct EQ.
-  assert (fn_stacksize tf = fn_stackspace f) as SZEQ.
+    destruct EQ.
+    assert (fn_stacksize tf = fn_stackspace f) as SZEQ.
     inv TF. auto.
-  edestruct Mem.free_parallel_extends as [tm' []]; eauto.
-  constructor.
-  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
-  econstructor; split.
-  left; apply plus_one. eapply exec_Ireturn. eauto.
-  rewrite SZEQ. eauto. eauto.
-  constructor; auto.
+    edestruct Mem.free_parallel_extends as [tm' []]; eauto.
+    constructor.
+    exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
+    econstructor; split.
+    left; apply plus_one. eapply exec_Ireturn. eauto.
+    rewrite SZEQ. eauto. eauto.
+    constructor; auto.
 
-  (* assign *)
-  inv TS.
-  exploit transl_expr_correct; eauto.
-  intros [rs' [tm' [A [B [C [D E]]]]]].
-  econstructor; split.
-  right; split. eauto. Lt_state.
-  econstructor; eauto. constructor.
+  - (* assign *)
+    inv TS.
+    exploit transl_expr_correct; eauto.
+    intros [rs' [tm' [A [B [C [D E]]]]]].
+    econstructor; split.
+    right; split. eauto. Lt_state.
+    econstructor; eauto. constructor.
 
-  (* store *)
-  inv TS.
-  exploit transl_exprlist_correct; eauto.
-  intros [rs' [tm' [A [B [C [D E]]]]]].
-  exploit transl_expr_correct; eauto.
-  intros [rs'' [tm'' [F [G [J [K L]]]]]].
-  assert (Val.lessdef_list vl rs''##rl).
+  - (* store *)
+    inv TS.
+    exploit transl_exprlist_correct; eauto.
+    intros [rs' [tm' [A [B [C [D E]]]]]].
+    exploit transl_expr_correct; eauto.
+    intros [rs'' [tm'' [F [G [J [K L]]]]]].
+    assert (Val.lessdef_list vl rs''##rl).
     replace (rs'' ## rl) with (rs' ## rl). auto.
     apply list_map_exten. intros. apply K. auto.
-  edestruct eval_addressing_lessdef as [vaddr' []]; eauto.
-  edestruct Mem.storev_extends as [tm''' []]; eauto.
-  econstructor; split.
-  left; eapply plus_right. eapply star_trans. eexact A. eexact F. reflexivity.
-  eapply exec_Istore with (a := vaddr'). eauto.
-  rewrite <- H4. apply eval_addressing_preserved. exact symbols_preserved.
-  eauto.
-  traceEq.
-  econstructor; eauto. constructor.
+    edestruct eval_addressing_lessdef as [vaddr' []]; eauto.
+    edestruct Mem.storev_extends as [tm''' []]; eauto.
+    econstructor; split.
+    left; eapply plus_right. eapply star_trans. eexact A. eexact F. reflexivity.
+    eapply exec_Istore with (a := vaddr'). eauto.
+    rewrite <- H4. apply eval_addressing_preserved. exact symbols_preserved.
+    eauto.
+    traceEq.
+    econstructor; eauto. constructor.
 
-  (* call *)
-  inv TS; inv H.
-  (* indirect *)
-  exploit transl_expr_correct; eauto.
-  intros [rs' [tm' [A [B [C [D X]]]]]].
-  exploit transl_exprlist_correct; eauto.
-  intros [rs'' [tm'' [E [F [G [J Y]]]]]].
-  exploit functions_translated; eauto. intros [tf' [P Q]].
-  econstructor; split.
-  left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
-  eapply exec_Icall; eauto.
-  {
-    destruct IFI as (bb & oo & EQ3 & EQ2). red; rewrite EQ3.
-    rewrite J by (simpl; auto).
-    subst. inv C.
-    rewrite symbols_preserved; eauto.
-  }
-  simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
-  apply sig_transl_function; auto.
-  traceEq.
-  constructor; auto. econstructor; eauto.
-  (* direct *)
-  exploit transl_exprlist_correct; eauto.
-  intros [rs'' [tm'' [E [F [G [J Y]]]]]].
-  exploit functions_translated; eauto. intros [tf' [P Q]].
-  econstructor; split.
-  left; eapply plus_right. eexact E.
-  eapply exec_Icall; eauto.
-  {
-    destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3. simpl. reflexivity.
-  }
-  simpl. rewrite symbols_preserved. rewrite H4.
-    rewrite Genv.find_funct_find_funct_ptr in P. eauto.
-  apply sig_transl_function; auto.
-  traceEq.
-  assert (id = id0).
-  apply Genv.find_invert_symbol in H4.
-  destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3.
-  apply Genv.find_invert_symbol in EQ2. congruence.  subst.
-  constructor; auto. econstructor; eauto.
+  - (* call *)
+    inv TS; inv H.
+    + (* indirect *)
+      exploit transl_expr_correct; eauto.
+      intros [rs' [tm' [A [B [C [D X]]]]]].
+      exploit transl_exprlist_correct; eauto.
+      intros [rs'' [tm'' [E [F [G [J Y]]]]]].
+      exploit functions_translated; eauto. intros [tf' [P Q]].
+      econstructor; split.
+      left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
+      eapply exec_Icall; eauto.
+      {
+        destruct IFI as (bb & oo & EQ3 & EQ2). red; rewrite EQ3.
+        rewrite J by (simpl; auto).
+        subst. inv C.
+        rewrite symbols_preserved; eauto.
+      }
+      simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
+      apply sig_transl_function; auto.
+      traceEq.
+      constructor; auto. econstructor; eauto.
+    + (* direct *)
+      exploit transl_exprlist_correct; eauto.
+      intros [rs'' [tm'' [E [F [G [J Y]]]]]].
+      exploit functions_translated; eauto. intros [tf' [P Q]].
+      econstructor; split.
+      left; eapply plus_right. eexact E.
+      eapply exec_Icall; eauto.
+      {
+        destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3. simpl. reflexivity.
+      }
+      simpl. rewrite symbols_preserved. rewrite H4.
+      rewrite Genv.find_funct_find_funct_ptr in P. eauto.
+      apply sig_transl_function; auto.
+      traceEq.
+      assert (id = id0).
+      apply Genv.find_invert_symbol in H4.
+      destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3.
+      apply Genv.find_invert_symbol in EQ2. congruence.  subst.
+      constructor; auto. econstructor; eauto.
 
-  (* tailcall *)
-  inv TS; inv H.
-  (* indirect *)
-  exploit transl_expr_correct; eauto.
-  intros [rs' [tm' [A [B [C [D X]]]]]].
-  exploit transl_exprlist_correct; eauto.
-  intros [rs'' [tm'' [E [F [G [J Y]]]]]].
-  exploit functions_translated; eauto. intros [tf' [P Q]].
-  exploit match_stacks_call_cont; eauto. intros [U V].
-  assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
-  edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
-  constructor.
-  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
-  econstructor; split.
-  left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
-  eapply exec_Itailcall; eauto.
-  simpl. rewrite J; simpl; auto.
-  destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3. inv C. rewrite symbols_preserved; eauto. 
-  simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
-  apply sig_transl_function; auto.
-  rewrite H; eauto.
-  traceEq.
-  constructor; auto.
-  (* direct *)
-  exploit transl_exprlist_correct; eauto.
-  intros [rs'' [tm'' [E [F [G [J Y]]]]]].
-  exploit functions_translated; eauto. intros [tf' [P Q]].
-  exploit match_stacks_call_cont; eauto. intros [U V].
-  assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
-  edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
-  constructor.
-  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
-  econstructor; split.
-  left; eapply plus_right. eexact E.
-  eapply exec_Itailcall; eauto.
-  simpl. reflexivity. 
-  simpl. rewrite symbols_preserved. rewrite H6.
-  rewrite Genv.find_funct_find_funct_ptr in P. eauto.
-  apply sig_transl_function; auto.
-  rewrite H; eauto.
-  traceEq.
-  assert (id = id0).
-  apply Genv.find_invert_symbol in H6.
-  destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3.
-  apply Genv.find_invert_symbol in EQ2. congruence.  subst.
-  constructor; auto.
+  - (* tailcall *)
+    inv TS; inv H.
+    + (* indirect *)
+      exploit transl_expr_correct; eauto.
+      intros [rs' [tm' [A [B [C [D X]]]]]].
+      exploit transl_exprlist_correct; eauto.
+      intros [rs'' [tm'' [E [F [G [J Y]]]]]].
+      exploit functions_translated; eauto. intros [tf' [P Q]].
+      exploit match_stacks_call_cont; eauto. intros [U V].
+      assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
+      edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
+      constructor.
+      exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
+      econstructor; split.
+      left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
+      eapply exec_Itailcall; eauto.
+      simpl. rewrite J; simpl; auto.
+      destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3. inv C. rewrite symbols_preserved; eauto. 
+      simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
+      apply sig_transl_function; auto.
+      rewrite H; eauto.
+      traceEq.
+      constructor; auto.
+    + (* direct *)
+      exploit transl_exprlist_correct; eauto.
+      intros [rs'' [tm'' [E [F [G [J Y]]]]]].
+      exploit functions_translated; eauto. intros [tf' [P Q]].
+      exploit match_stacks_call_cont; eauto. intros [U V].
+      assert (fn_stacksize tf = fn_stackspace f). inv TF; auto.
+      edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
+      constructor.
+      exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
+      econstructor; split.
+      left; eapply plus_right. eexact E.
+      eapply exec_Itailcall; eauto.
+      simpl. reflexivity. 
+      simpl. rewrite symbols_preserved. rewrite H6.
+      rewrite Genv.find_funct_find_funct_ptr in P. eauto.
+      apply sig_transl_function; auto.
+      rewrite H; eauto.
+      traceEq.
+      assert (id = id0).
+      apply Genv.find_invert_symbol in H6.
+      destruct IFI as (bb & oo & EQ3 & EQ2). inv EQ3.
+      apply Genv.find_invert_symbol in EQ2. congruence.  subst.
+      constructor; auto.
 
-  (* builtin *)
-  inv TS.
-  exploit invert_eval_builtin_args; eauto. intros (vparams & P & Q).
-  exploit transl_exprlist_correct; eauto.
-  intros [rs' [tm' [E [F [G [J K]]]]]].
-  exploit transl_eval_builtin_args; eauto.
-  intros (vargs' & U & V).
-  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs'#r) (fun r => rs'#r)); eauto.
-  intros (vargs'' & X & Y).
-  assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
-  edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
-  econstructor; split.
-  left. eapply plus_right. eexact E.
-  eapply exec_Ibuiltin. eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-  auto. traceEq.
-  econstructor; eauto. constructor.
-  eapply match_env_update_res; eauto.
+  - (* builtin *)
+    inv TS.
+    exploit invert_eval_builtin_args; eauto. intros (vparams & P & Q).
+    exploit transl_exprlist_correct; eauto.
+    intros [rs' [tm' [E [F [G [J K]]]]]].
+    exploit transl_eval_builtin_args; eauto.
+    intros (vargs' & U & V).
+    exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs'#r) (fun r => rs'#r)); eauto.
+    intros (vargs'' & X & Y).
+    assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
+    edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
+    econstructor; split.
+    left. eapply plus_right. eexact E.
+    eapply exec_Ibuiltin. eauto.
+    eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+    eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+    auto. traceEq.
+    econstructor; eauto. constructor.
+    eapply match_env_update_res; eauto.
 
-  (* seq *)
-  inv TS.
-  econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto. econstructor; eauto.
+  - (* seq *)
+    inv TS.
+    econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto. econstructor; eauto.
 
-  (* ifthenelse *)
-  inv TS.
-  exploit transl_condexpr_correct; eauto. intros [rs' [tm' [A [B [C D]]]]].
-  econstructor; split.
-  left. eexact A.
-  destruct b; econstructor; eauto.
+  - (* ifthenelse *)
+    inv TS.
+    exploit transl_condexpr_correct; eauto. intros [rs' [tm' [A [B [C D]]]]].
+    econstructor; split.
+    left. eexact A.
+    destruct b; econstructor; eauto.
 
-  (* loop *)
-  inversion TS; subst.
-  econstructor; split.
-  left. apply plus_one. eapply exec_Inop; eauto.
-  econstructor; eauto.
-  econstructor; eauto.
-  econstructor; eauto.
+  - (* loop *)
+    inversion TS; subst.
+    econstructor; split.
+    left. apply plus_one. eapply exec_Inop; eauto.
+    econstructor; eauto.
+    econstructor; eauto.
+    econstructor; eauto.
 
-  (* block *)
-  inv TS.
-  econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto. econstructor; eauto.
+  - (* block *)
+    inv TS.
+    econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto. econstructor; eauto.
 
-  (* exit seq *)
-  inv TS. inv TK.
-  econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto. econstructor; eauto.
+  - (* exit seq *)
+    inv TS. inv TK.
+    econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto. econstructor; eauto.
 
-  (* exit block 0 *)
-  inv TS. inv TK. simpl in H0. inv H0.
-  econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto. econstructor; eauto.
+  - (* exit block 0 *)
+    inv TS. inv TK. simpl in H0. inv H0.
+    econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto. econstructor; eauto.
 
-  (* exit block n+1 *)
-  inv TS. inv TK. simpl in H0.
-  econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto. econstructor; eauto.
+  - (* exit block n+1 *)
+    inv TS. inv TK. simpl in H0.
+    econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto. econstructor; eauto.
 
-  (* switch *)
-  inv TS.
-  exploit transl_exitexpr_correct; eauto.
-  intros (nd & rs' & tm' & A & B & C & D).
-  econstructor; split.
-  right; split. eexact A. Lt_state.
-  econstructor; eauto. constructor; auto.
+  - (* switch *)
+    inv TS.
+    exploit transl_exitexpr_correct; eauto.
+    intros (nd & rs' & tm' & A & B & C & D).
+    econstructor; split.
+    right; split. eexact A. Lt_state.
+    econstructor; eauto. constructor; auto.
 
-  (* return none *)
-  inv TS.
-  exploit match_stacks_call_cont; eauto. intros [U V].
-  inversion TF.
-  edestruct Mem.free_parallel_extends as [tm' []]; eauto.
-  constructor.
-  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
-  econstructor; split.
-  left; apply plus_one. eapply exec_Ireturn; eauto.
-  rewrite H3; eauto.
-  constructor; auto.
+  - (* return none *)
+    inv TS.
+    exploit match_stacks_call_cont; eauto. intros [U V].
+    inversion TF.
+    edestruct Mem.free_parallel_extends as [tm' []]; eauto.
+    constructor.
+    exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
+    econstructor; split.
+    left; apply plus_one. eapply exec_Ireturn; eauto.
+    rewrite H3; eauto.
+    constructor; auto.
 
-  (* return some *)
-  inv TS.
-  exploit transl_expr_correct; eauto.
-  intros [rs' [tm' [A [B [C [D E]]]]]].
-  exploit match_stacks_call_cont; eauto. intros [U V].
-  inversion TF.
-  edestruct Mem.free_parallel_extends as [tm'' []]; eauto.
-  constructor.
-  exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
-  econstructor; split.
-  left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
-  rewrite H5; eauto. traceEq.
-  simpl. constructor; auto.
+  - (* return some *)
+    inv TS.
+    exploit transl_expr_correct; eauto.
+    intros [rs' [tm' [A [B [C [D E]]]]]].
+    exploit match_stacks_call_cont; eauto. intros [U V].
+    inversion TF.
+    edestruct Mem.free_parallel_extends as [tm'' []]; eauto.
+    constructor.
+    exploit Mem.unrecord_stack_block_extends; eauto. intros (m2' & USB & EXT).
+    econstructor; split.
+    left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
+    rewrite H5; eauto. traceEq.
+    simpl. constructor; auto.
 
-  (* label *)
-  inv TS.
-  econstructor; split.
-  right; split. apply star_refl. Lt_state.
-  econstructor; eauto.
+  - (* label *)
+    inv TS.
+    econstructor; split.
+    right; split. apply star_refl. Lt_state.
+    econstructor; eauto.
 
-  (* goto *)
-  inv TS. inversion TF; subst.
-  exploit tr_find_label; eauto. eapply tr_cont_call_cont; eauto.
-  intros [ns2 [nd2 [nexits2 [A [B C]]]]].
-  econstructor; split.
-  left; apply plus_one. eapply exec_Inop; eauto.
-  econstructor; eauto.
+  - (* goto *)
+    inv TS. inversion TF; subst.
+    exploit tr_find_label; eauto. eapply tr_cont_call_cont; eauto.
+    intros [ns2 [nd2 [nexits2 [A [B C]]]]].
+    econstructor; split.
+    left; apply plus_one. eapply exec_Inop; eauto.
+    econstructor; eauto.
 
-  (* internal call *)
-  monadInv TF. exploit transl_function_charact; eauto. intro TRF.
-  inversion TRF. subst f0.
-  pose (e := set_locals (fn_vars f) (set_params vargs (CminorSel.fn_params f))).
-  pose (rs := init_regs targs rparams).
-  assert (ME: match_env map2 e nil rs).
+  - (* internal call *)
+    monadInv TF. exploit transl_function_charact; eauto. intro TRF.
+    inversion TRF. subst f0.
+    pose (e := set_locals (fn_vars f) (set_params vargs (CminorSel.fn_params f))).
+    pose (rs := init_regs targs rparams).
+    assert (ME: match_env map2 e nil rs).
     unfold rs, e. eapply match_init_env_init_reg; eauto.
-  assert (MWF: map_wf map2).
+    assert (MWF: map_wf map2).
     assert (map_valid init_mapping s0) by apply init_mapping_valid.
     exploit (add_vars_valid (CminorSel.fn_params f)); eauto. intros [A B].
     eapply add_vars_wf; eauto. eapply add_vars_wf; eauto. apply init_mapping_wf.
-  edestruct Mem.alloc_extends as [tm' []]; eauto; try apply Zle_refl.
-  exploit Mem.record_stack_blocks_extends; eauto.
-  simpl. intros. subst. erewrite Mem.alloc_stack_blocks; eauto. intro IFF. apply Mem.in_frames_valid in IFF.
-  eapply Mem.fresh_block_alloc in IFF; eauto.
-  intros (m2' & USB & EXT).
-  econstructor; split.
-  left; apply plus_one. eapply exec_function_internal; simpl; eauto.
-  simpl. econstructor; eauto.
-  econstructor; eauto.
-  inversion MS; subst; econstructor; eauto.
+    edestruct Mem.alloc_extends as [tm' []]; eauto; try apply Zle_refl.
+    exploit Mem.record_stack_blocks_extends; eauto.
+    + unfold in_frame. simpl. intros ? [?|[]]; subst.
+      erewrite Mem.alloc_stack_blocks; eauto. intro IFF.
+      apply Mem.in_frames_valid in IFF.
+      eapply Mem.fresh_block_alloc in IFF; eauto.
+    + constructor; auto. simpl; congruence.
+    + intros (m2' & USB & EXT).
+      econstructor; split.
+      left; apply plus_one. eapply exec_function_internal; simpl; eauto.
+      simpl. econstructor; eauto.
+      econstructor; eauto.
+      inversion MS; subst; econstructor; eauto.
 
-  (* external call *)
-  monadInv TF.
-  edestruct external_call_mem_extends as [tvres [tm' [A [B [C D]]]]]; eauto.
-  econstructor; split.
-  left; apply plus_one. eapply exec_function_external; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  constructor; auto.
+  - (* external call *)
+    monadInv TF.
+    edestruct external_call_mem_extends as [tvres [tm' [A [B [C D]]]]]; eauto.
+    econstructor; split.
+    left; apply plus_one. eapply exec_function_external; eauto.
+    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    constructor; auto.
 
-  (* return *)
-  inv MS.
-  econstructor; split.
-  left; apply plus_one; constructor.
-  econstructor; eauto. constructor.
-  eapply match_env_update_dest; eauto.
+  - (* return *)
+    inv MS.
+    econstructor; split.
+    left; apply plus_one; constructor.
+    econstructor; eauto. constructor.
+    eapply match_env_update_dest; eauto.
 Qed.
 
 Lemma transl_initial_states:
   forall S, CminorSel.initial_state fn_stack_requirements prog S ->
-  exists R, RTL.initial_state fn_stack_requirements tprog R /\ match_states S R.
+       exists R, RTL.initial_state fn_stack_requirements tprog R /\ match_states S R.
 Proof.
   induction 1.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
@@ -1605,7 +1608,7 @@ Qed.
 
 Lemma transl_final_states:
   forall S R r,
-  match_states S R -> CminorSel.final_state S r -> RTL.final_state R r.
+    match_states S R -> CminorSel.final_state S r -> RTL.final_state R r.
 Proof.
   intros. inv H0. inv H. inv MS. inv LD. constructor.
 Qed.

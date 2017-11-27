@@ -21,11 +21,11 @@ static int permutation[256] = { 151,160,137,91,90,15,
    138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
    };
 
-static double fade(double t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+static inline double fade(double t) { return t * t * t * (t * (t * 6 - 15) + 10); }
 
-static double lerp(double t, double a, double b) { return a + t * (b - a); }
+static inline double lerp(double t, double a, double b) { return a + t * (b - a); }
 
-static double grad(int hash, double x, double y, double z) {
+static inline double grad(int hash, double x, double y, double z) {
   int h = hash & 15;                      // CONVERT LO 4 BITS OF HASH CODE
   double u = h<8 ? x : y,                 // INTO 12 GRADIENT DIRECTIONS.
          v = h<4 ? y : h==12||h==14 ? x : z;

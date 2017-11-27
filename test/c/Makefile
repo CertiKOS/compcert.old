@@ -7,15 +7,15 @@ CFLAGS=-O1 -Wall
 
 LIBS=$(LIBMATH)
 
-TIME=xtime -o /dev/null -mintime 2.0     # Xavier's hack
-#TIME=time >/dev/null                    # Otherwise
+#TIME=xtime -o /dev/null -mintime 2.0     # Xavier's hack
+TIME=time >/dev/null                    # Otherwise
 
 PROGS=fib integr qsort fft fftsp fftw sha1 sha3 aes almabench \
   lists binarytrees fannkuch knucleotide mandelbrot nbody \
   nsieve nsievebits spectral vmach \
   bisect chomp perlin siphash24
 
-all: $(PROGS:%=%.compcert)
+all: $(PROGS:%=%.compcert) $(PROGS:%=%.compcert.noinline)
 
 all_s: $(PROGS:%=%.s)
 
@@ -23,6 +23,9 @@ all_gcc: $(PROGS:%=%.gcc)
 
 %.compcert: %.c $(CCOMP)
 	$(CCOMP) $(CCOMPFLAGS) -o $*.compcert $*.c $(LIBS)
+
+%.compcert.noinline: %.c $(CCOMP)
+	$(CCOMP) $(CCOMPFLAGS) -fno-inlining -o $*.compcert.noinline $*.c $(LIBS)
 
 %.s: %.c $(CCOMP)
 	$(CCOMP) $(CCOMPFLAGS) -S $*.c
@@ -53,7 +56,8 @@ bench_gcc:
 
 bench:
 	@for i in $(PROGS); do \
-	   echo -n "$$i: "; $(TIME) ./$$i.compcert; \
+	   echo -n "$$i with inlining   : "; $(TIME) ./$$i.compcert; \
+	   echo -n "$$i without inlining: "; $(TIME) ./$$i.compcert.noinline; \
          done
 
 cminor_roundtrip:
@@ -68,5 +72,5 @@ cminor_roundtrip:
          done
 
 clean:
-	rm -f *.compcert *.gcc
+	rm -f *.compcert *.compcert.noinline *.gcc
 	rm -f *.compcert.c *.light.c *.parsed.c *.s *.o *.sdump *~ 

@@ -2120,7 +2120,7 @@ Definition do_step (w: world) (s: state) : list transition :=
   | Callstate (Internal f) vargs k m sz =>
     check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
-      do m1 <- Mem.record_stack_blocks m1 (Some (frame_without_info (map fst (map fst (blocks_of_env ge e))))) sz;
+      do m1 <- Mem.record_stack_blocks_none m1 (map fst (map fst (blocks_of_env ge e))) sz;
         do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
         ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ _ _) vargs k m _ =>
@@ -2196,7 +2196,8 @@ Proof with try (left; right; econstructor; eauto; fail).
   destruct (do_alloc_variables empty_env m (fn_params f ++ fn_vars f)) as [e m1] eqn:?.
   myinv. left; right; eapply step_internal_function with m1 m0. auto.
   change e with (fst (e,m1)). change m1 with (snd (e,m1)) at 2. rewrite <- Heqp.
-  apply do_alloc_variables_sound. eauto. eapply sem_bind_parameters_sound; eauto.
+  apply do_alloc_variables_sound. eapply Mem.record_stack_blocks_none_correct; eauto.
+  eapply sem_bind_parameters_sound; eauto.
   (* external *)
   destruct p as [[[w' tr] v] m']. myinv. left; right; constructor.
   eapply do_ef_external_sound; eauto.
@@ -2288,7 +2289,7 @@ Proof with (unfold ret; eauto with coqlib).
 
   (* Call step *)
   rewrite pred_dec_true; auto. rewrite (do_alloc_variables_complete _ _ _ _ _ H1).
-  rewrite H2.
+  rewrite <- Mem.record_stack_blocks_none_correct in H2. rewrite H2.
   rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H3)...
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
 Qed.

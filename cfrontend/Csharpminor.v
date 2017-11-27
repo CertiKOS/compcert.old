@@ -462,7 +462,7 @@ Inductive step: state -> trace -> state -> Prop :=
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
       alloc_variables empty_env m (fn_vars f) e m1 ->
-      Mem.record_stack_blocks m1 (Some (frame_without_info (map fst (map fst (blocks_of_env e))))) sz = Some m1' ->
+      Mem.record_stack_blocks m1 (map fst (map fst (blocks_of_env e)), None, sz) m1' ->
       bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       step (Callstate (Internal f) vargs k m sz)
         E0 (State f f.(fn_body) k e le m1')

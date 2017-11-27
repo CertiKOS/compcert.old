@@ -302,7 +302,8 @@ Definition check_alloc_frame (f: frame_info) (fn: function) :=
       Ptrofs.unsigned (fn_retaddr_ofs fn) <= o < Ptrofs.unsigned (fn_retaddr_ofs fn) + size_chunk Mptr ->
       frame_readonly f o) /\
   disjointb  (Ptrofs.unsigned (fn_link_ofs fn)) (size_chunk Mptr) (Ptrofs.unsigned (fn_retaddr_ofs fn)) (size_chunk Mptr) = true /\
-  Ptrofs.unsigned (fn_link_ofs fn) = seg_ofs (frame_link f).
+  0 <= (frame_size f) /\
+  exists fl, frame_link f = fl :: nil /\ seg_ofs fl = Ptrofs.unsigned (fn_link_ofs fn).
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -420,7 +421,7 @@ Inductive step: state -> trace -> state -> Prop :=
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
-      Mem.record_stack_blocks m3 (Some (frame_with_info stk (Some (fn_frame f)))) (fn_stacksize f) = Some m1_ ->
+      Mem.record_stack_blocks m3 (stk::nil, Some (fn_frame f),fn_stacksize f) m1_ ->
       rs' = undef_regs destroyed_at_function_entry rs ->
       step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m1_)

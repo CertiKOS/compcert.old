@@ -730,15 +730,15 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 (** External calls must commute with memory injections,
   in the following sense. *)
   ec_mem_inject {perminj: InjectPerm}:
-    forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
+    forall ge1 ge2 vargs m1 t vres m2 f g m1' vargs',
     symbols_inject' f ge1 ge2 ->
     sem ge1 vargs m1 t vres m2 ->
-    Mem.inject f m1 m1' ->
+    Mem.inject f g m1 m1' ->
     Val.inject_list f vargs vargs' ->
     exists f', exists vres', exists m2',
        sem ge2 vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
-    /\ Mem.inject f' m2 m2'
+    /\ Mem.inject f' g m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
@@ -823,11 +823,11 @@ Proof.
 Qed.
 
 Lemma volatile_load_inject {perminj: InjectPerm}:
-  forall ge1 ge2 f chunk m b ofs t v b' ofs' m',
+  forall ge1 ge2 f g chunk m b ofs t v b' ofs' m',
   symbols_inject f ge1 ge2 ->
   volatile_load ge1 chunk m b ofs t v ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
-  Mem.inject f m m' ->
+  Mem.inject f g m m' ->
   exists v', volatile_load ge2 chunk m' b' ofs' t v' /\ Val.inject f v v'.
 Proof.
   intros until m'; intros SI VL VI MI. generalize SI; intros (A & B & C & D).
@@ -970,15 +970,15 @@ Proof.
 Qed.
 
 Lemma volatile_store_inject {perminj: InjectPerm}:
-  forall ge1 ge2 f chunk m1 b ofs v t m2 m1' b' ofs' v',
+  forall ge1 ge2 f g chunk m1 b ofs v t m2 m1' b' ofs' v',
   symbols_inject f ge1 ge2 ->
   volatile_store ge1 chunk m1 b ofs v t m2 ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Val.inject f v v' ->
-  Mem.inject f m1 m1' ->
+  Mem.inject f g m1 m1' ->
   exists m2',
        volatile_store ge2 chunk m1' b' ofs' v' t m2'
-    /\ Mem.inject f m2 m2'
+    /\ Mem.inject f g m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'.
 Proof.
@@ -1755,15 +1755,15 @@ Proof.
 Qed.
 
 Lemma external_call_mem_inject {perminj: InjectPerm}:
-  forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
+  forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f g m1' vargs',
   meminj_preserves_globals ge f ->
   external_call ef ge vargs m1 t vres m2 ->
-  Mem.inject f m1 m1' ->
+  Mem.inject f g m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
      external_call ef ge vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
-    /\ Mem.inject f' m2 m2'
+    /\ Mem.inject f' g m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
@@ -2028,11 +2028,12 @@ Variables sp1 sp2: val.
 Variables m1 m2: mem.
 
 Variable j: meminj.
+Variable g: frameinj.
 
 Hypothesis sp_inject: Val.inject j sp1 sp2.
 Hypothesis env_inject: forall x, Val.inject j (e1 x) (e2 x).
 Context {perminj: InjectPerm}.
-Hypothesis mem_extends: Mem.inject j m1 m2.
+Hypothesis mem_extends: Mem.inject j g m1 m2.
 
 Hypothesis senv_preserved:
   forall s b,

@@ -1398,6 +1398,7 @@ Context {injperm: InjectPerm}.
 Variable F V: Type.
 Variable genv: Genv.t F V.
 Variable f: meminj.
+Variable g: frameinj.
 Hypothesis globals: meminj_preserves_globals genv f.
 Variable sp1: block.
 Variable sp2: block.
@@ -1415,7 +1416,7 @@ Qed.
 Lemma eval_condition_inject:
   forall cond vl1 vl2 b m1 m2,
   Val.inject_list f vl1 vl2 ->
-  Mem.inject f m1 m2 ->
+  Mem.inject f g m1 m2 ->
   eval_condition cond vl1 m1 = Some b ->
   eval_condition cond vl2 m2 = Some b.
 Proof.
@@ -1444,7 +1445,7 @@ Qed.
 Lemma eval_operation_inject:
   forall op vl1 vl2 v1 m1 m2,
   Val.inject_list f vl1 vl2 ->
-  Mem.inject f m1 m2 ->
+  Mem.inject f g m1 m2 ->
   eval_operation genv (Vptr sp1 Ptrofs.zero) op vl1 m1 = Some v1 ->
   exists v2,
      eval_operation genv (Vptr sp2 Ptrofs.zero) (shift_stack_operation delta op) vl2 m2 = Some v2

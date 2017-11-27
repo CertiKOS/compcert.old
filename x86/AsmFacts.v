@@ -692,11 +692,11 @@ Section WITHMEMORYMODEL.
     - unfold goto_label in H1. repeat destr_in H1; apply Ple_refl.
     - unfold goto_label in H1. repeat destr_in H1; apply Ple_refl.
     - repeat destr_in H1.
+      edestruct (Mem.push_frame_alloc_record) as (m3 & ALLOC & m4 & STORES & RSB). eauto.
       edestruct Mem.record_stack_blocks_mem_unchanged; eauto. simpl. eauto.
       rewrite H0.
-      rewrite (Mem.nextblock_store _ _ _ _ _ _ Heqo0).
-      rewrite (Mem.nextblock_store _ _ _ _ _ _ Heqo).
-      rewrite (Mem.nextblock_alloc _ _ _ _ _ Heqp).
+      apply Mem.do_stores_nextblock in STORES. rewrite STORES.
+      rewrite (Mem.nextblock_alloc _ _ _ _ _ ALLOC).
       xomega.
     - repeat destr_in H1.
       edestruct Mem.unrecord_stack_block_mem_unchanged. simpl; eauto.

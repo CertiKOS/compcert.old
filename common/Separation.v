@@ -687,8 +687,8 @@ Qed.
 
 (** The image of a memory injection *)
 
-Program Definition minjection (j: meminj) (m0: mem) : massert := {|
-  m_pred := fun m => Mem.inject j m0 m;
+Program Definition minjection (j: meminj) g (m0: mem) : massert := {|
+  m_pred := fun m => Mem.inject j g m0 m;
   m_footprint := fun b ofs => exists b0 delta, j b0 = Some(b, delta) /\ Mem.perm m0 b0 (ofs - delta) Max Nonempty;
   m_invar_weak := true;
   m_invar_stack := true;
@@ -701,8 +701,8 @@ Next Obligation.
 Qed.
 
 Lemma loadv_parallel_rule:
-  forall j m1 m2 chunk addr1 v1 addr2,
-  m2 |= minjection j m1 ->
+  forall j g m1 m2 chunk addr1 v1 addr2,
+  m2 |= minjection j g m1 ->
   Mem.loadv chunk m1 addr1 = Some v1 ->
   Val.inject j addr1 addr2 ->
   exists v2, Mem.loadv chunk m2 addr2 = Some v2 /\ Val.inject j v1 v2.
@@ -711,12 +711,12 @@ Proof.
 Qed.
 
 Lemma storev_parallel_rule:
-  forall j m1 m2 P chunk addr1 v1 m1' addr2 v2,
-  m2 |= minjection j m1 ** P ->
+  forall j g m1 m2 P chunk addr1 v1 m1' addr2 v2,
+  m2 |= minjection j g m1 ** P ->
   Mem.storev chunk m1 addr1 v1 = Some m1' ->
   Val.inject j addr1 addr2 ->
   Val.inject j v1 v2 ->
-  exists m2', Mem.storev chunk m2 addr2 v2 = Some m2' /\ m2' |= minjection j m1' ** P.
+  exists m2', Mem.storev chunk m2 addr2 v2 = Some m2' /\ m2' |= minjection j g m1' ** P.
 Proof.
   intros. destruct H as (A & B & C). simpl in A.
   exploit Mem.storev_mapped_inject; eauto. intros (m2' & STORE & INJ).
@@ -744,8 +744,8 @@ Proof.
 Qed.
 
 Lemma alloc_parallel_rule:
-  forall m1 sz1 m1' b1 m2 sz2 m2' b2 P j lo hi delta,
-    m2 |= minjection j m1 ** P ->
+  forall m1 sz1 m1' b1 m2 sz2 m2' b2 P j g lo hi delta,
+    m2 |= minjection j g m1 ** P ->
     Mem.alloc m1 0 sz1 = (m1', b1) ->
     Mem.alloc m2 0 sz2 = (m2', b2) ->
     (8 | delta) ->
@@ -754,7 +754,7 @@ Lemma alloc_parallel_rule:
     0 <= sz2 <= Ptrofs.max_unsigned ->
     0 <= delta -> hi <= sz2 ->
     exists j',
-      m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' m1' ** P
+      m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' g m1' ** P
       /\ inject_incr j j'
       /\ j' b1 = Some(b2, delta)
       /\ (forall b, b <> b1 -> j' b = j b).
@@ -775,7 +775,8 @@ Proof.
   - red; intros. apply Zdivides_trans with 8; auto. 
     exists (8 / align_chunk chunk). destruct chunk; reflexivity.
   - intros. elim FRESH2. eapply Mem.valid_block_inject_2; eauto.
-  - intro IFS. erewrite Mem.alloc_stack_blocks in IFS. 2: eauto. apply Mem.in_frames_valid in IFS. congruence.
+  - intros f2 fi IFS IFB. erewrite Mem.alloc_stack_blocks in IFS. 2: eauto.
+    exfalso; apply FRESH2. apply Mem.in_frames_valid. eapply in_frames_in_frame; eauto.
   - intros (j' & INJ' & J1 & J2 & J3).
     exists j'; split; auto.
     rewrite <- ! sep_assoc.
@@ -815,15 +816,15 @@ Proof.
 Qed.
 
 Lemma free_parallel_rule:
-  forall j m1 b1 sz1 m1' m2 b2 sz2 lo hi delta P,
-  m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j m1 ** P ->
+  forall j g m1 b1 sz1 m1' m2 b2 sz2 lo hi delta P,
+  m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j g m1 ** P ->
   Mem.free m1 b1 0 sz1 = Some m1' ->
   inject_perm_condition Freeable ->
   j b1 = Some (b2, delta) ->
   lo = delta -> hi = delta + Zmax 0 sz1 ->
   exists m2',
      Mem.free m2 b2 0 sz2 = Some m2'
-  /\ m2' |= minjection j m1' ** P.
+  /\ m2' |= minjection j g m1' ** P.
 Proof.
   intros. rewrite <- ! sep_assoc in H. 
   destruct H as (A & B & C).
@@ -941,15 +942,15 @@ Context `{enable_builtins_instance: !EnableBuiltins mem}.
 Context `{external_calls_prf: !ExternalCalls mem}.
 
 Lemma external_call_parallel_rule:
-  forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
+  forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j g P vargs2,
   m_invar_weak P = false ->
   external_call ef ge vargs1 m1 t vres1 m1' ->
-  m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
+  m2 |= minjection j g m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
   exists j' vres2 m2',
      external_call ef ge vargs2 m2 t vres2 m2'
   /\ Val.inject j' vres1 vres2
-  /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
+  /\ m2' |= minjection j' g m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
   /\ inject_separated j j' m1 m2.
 Proof.
@@ -980,8 +981,8 @@ Proof.
 Qed.  
 
 Lemma alloc_parallel_rule_2:
-  forall (F V: Type) (ge: Genv.t F V) m1 sz1 m1' b1 m2 sz2 m2' b2 P j lo hi delta,
-  m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
+  forall (F V: Type) (ge: Genv.t F V) m1 sz1 m1' b1 m2 sz2 m2' b2 P j g lo hi delta,
+  m2 |= minjection j g m1 ** globalenv_inject ge j ** P ->
   Mem.alloc m1 0 sz1 = (m1', b1) ->
   Mem.alloc m2 0 sz2 = (m2', b2) ->
   (8 | delta) ->
@@ -990,7 +991,7 @@ Lemma alloc_parallel_rule_2:
   0 <= sz2 <= Ptrofs.max_unsigned ->
   0 <= delta -> hi <= sz2 ->
   exists j',
-     m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' m1' ** globalenv_inject ge j' ** P
+     m2' |= range b2 0 lo ** range b2 hi sz2 ** minjection j' g m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
   /\ j' b1 = Some(b2, delta)
   /\ inject_separated j j' m1 m2 .
@@ -1000,7 +1001,7 @@ Proof.
   assert (X: inject_incr j j1).
   { unfold j1; red; intros. destruct (eq_block b b1); auto. 
     subst b. eelim Mem.fresh_block_alloc. eexact H0. 
-    eapply Mem.valid_block_inject_1. eauto. apply sep_proj1 in H. eexact H. }
+    eapply Mem.valid_block_inject_1. eauto. apply sep_proj1 in H. apply H. }
   assert (Y: inject_separated j j1 m1 m2).
   { unfold j1; red; intros. destruct (eq_block b0 b1). 
   - inversion H9; clear H9; subst b3 delta0 b0. split; eapply Mem.fresh_block_alloc; eauto.
@@ -1023,62 +1024,65 @@ Proof.
   + rewrite D in H9; congruence.
 Qed.
 
-
 Lemma record_stack_block_parallel_rule:
-  forall m1 m1' m2 j P fi b b' delta n,
+  forall m1 m1' m2 j g P fi b b' delta n,
     j b = Some (b', delta) ->
     m_invar_stack P = false ->
-    m2 |= minjection j m1 ** P ->
-    forall (NIN: ~ in_frames (Mem.stack_adt m1) b /\ ~ in_frames (Mem.stack_adt m2) b'),
-    Mem.record_stack_blocks m1 (Some (frame_with_info b None)) n = Some m1' ->
+    m2 |= minjection j g m1 ** P ->
+    forall (NIN: ~ in_frames (Mem.stack_adt m2) b'),
+    Mem.record_stack_blocks m1 (b::nil, None, n) m1' ->
     (forall (ofs : Z) (k : perm_kind) (p : permission),
         Mem.perm m1 b ofs k p -> frame_public fi (ofs + delta)) ->
+    (forall (ofs : Z) (k : perm_kind) (p : permission),
+        Mem.perm m2 b' ofs k p -> 0 <= ofs < frame_size fi) ->
     (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
+    frameinj_surjective g (length (Mem.stack_adt m2)) ->
     exists m2',
-      Mem.record_stack_blocks m2 (Some (frame_with_info b' (Some fi))) n = Some m2' /\
-      m2' |= minjection j m1' ** P.
+      Mem.record_stack_blocks m2 (b'::nil, Some fi, n) m2' /\
+      m2' |= minjection j (fun n => if Nat.eq_dec n O then Some O else option_map S (g (pred n))) m1' ** P.
 Proof.
-  intros m1 m1' m2 j P fi b b' delta n FB INVAR MINJ NIN RSB1 INS UNIQ.
+  intros m1 m1' m2 j g P fi b b' delta n FB INVAR MINJ NIN RSB1 PERM1 PERM2 UNIQ SURJ.
   destruct MINJ as (MINJ & PM & DISJ).
-  exploit Mem.record_stack_blocks_inject; eauto.
-  simpl. 
-  apply MINJ.
-  {
-    instantiate (1 := Some (frame_with_info b' (Some fi))).
-    simpl. 
-    eapply frame_with_info_add_info.
-    - rewrite FB. inversion 1; subst. eauto.
-    - intros.
-      split; intros; subst. congruence. eapply UNIQ; eauto. 
-  }
-  {
-    simpl. intros.
-    destruct (peq b0 b); subst.
-    eapply NIN in H. easy.
-    split; auto. intro; subst. autospe. easy.
-  }
-  red; simpl; intros. subst. eapply Mem.valid_block_inject_2; eauto. apply MINJ.
-  intros (m2' & RSB2 & INJ).
-  eexists; split; eauto.
-  split; [|split].
-  - simpl in *. auto.  
-  - eapply m_invar. eauto.
-    exploit Mem.record_stack_block_unchanged_on. eauto.
-    destruct (m_invar_weak P); eauto using Mem.strong_unchanged_on_weak.
-    congruence.
-  - red; intros. eapply DISJ; eauto.
-    simpl in *. decompose [ex and] H.
-    repeat eexists; eauto.
-    eapply Mem.record_stack_block_perm; eauto.
+  generalize (Mem.record_stack_blocks_inject_parallel _ m1' _ _ _ (b::nil,None,n) (b'::nil, Some fi, n) MINJ).
+  intro A. exploit A.
+  - constructor.
+    + simpl. constructor; auto. intros. left; congruence.
+    + red; simpl. constructor; auto.
+      intros. rewrite FB in H; inv H. eapply Mem.perm_implies with (p2:=Nonempty) in H0. 2: constructor.
+      exploit PERM1; eauto.
+      eapply Mem.perm_inject in H0. 2: eauto.
+      2: apply MINJ.
+      2: constructor.
+      exploit PERM2; eauto.
+  - intros. unfold in_frame. simpl. intros [B|[]]. subst. congruence.
+  - red; unfold in_frame; simpl. intros ? [B|[]]. subst. eapply Mem.valid_block_inject_2; eauto. apply MINJ.
+  - unfold in_frame; simpl. intros ? ? [B|[]]. inversion 1; subst. eauto.
+  - intros. unfold in_frame. simpl.
+    split; intros [B|[]]; left; subst. congruence. eapply UNIQ in H. auto.
+  - reflexivity.
+  - eauto.
+  - eauto.
+  - intros (m2' & RSB2 & INJ).
+    eexists; split; eauto.
+    split; [|split].
+    + simpl in *. auto.  
+    + eapply m_invar. eauto.
+      exploit Mem.record_stack_block_unchanged_on. eauto.
+      destruct (m_invar_weak P); eauto using Mem.strong_unchanged_on_weak.
+      congruence.
+    + red; intros. eapply DISJ; eauto.
+      simpl in *. decompose [ex and] H.
+      repeat eexists; eauto.
+      eapply Mem.record_stack_block_perm; eauto.
 Qed.
 
 Lemma push_frame_parallel_rule
   : forall (F V : Type) (ge : Genv.t F V) (m1 : mem) (sz1 : Z) (m1' m1'' : mem) (b1 : block) (m2 : mem) fi
-      (P : massert) (j : meminj) (lo hi delta : Z) n,
+      (P : massert) (j : meminj) g (lo hi delta : Z) n,
     m_invar_stack P = false ->
-    m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
+    m2 |= minjection j g m1 ** globalenv_inject ge j ** P ->
     Mem.alloc m1 0 sz1 = (m1', b1) ->
-    Mem.record_stack_blocks m1' (Some (frame_with_info b1 None)) n = Some m1'' ->
+    Mem.record_stack_blocks m1' (b1::nil,None,n) m1'' ->
     (8 | delta) ->
     lo = delta ->
     hi = delta + Z.max 0 sz1 ->
@@ -1087,32 +1091,31 @@ Lemma push_frame_parallel_rule
     hi <= frame_size fi ->
     (forall ofs, 0 <= ofs < sz1 -> frame_public fi (ofs + delta)) ->
     n = frame_size fi ->
+    frameinj_surjective g (length (Mem.stack_adt m2)) ->
     exists j' m2_1' b2 m2',
       Mem.alloc m2 0 (frame_size fi) = (m2_1', b2) 
-      /\ Mem.record_stack_blocks m2_1' (Some (frame_with_info b2 (Some fi))) (frame_size fi) = Some m2' 
-      /\ m2' |= range b2 0 lo ** range b2 hi (frame_size fi) ** minjection j' m1'' ** globalenv_inject ge j' ** P
+      /\ Mem.record_stack_blocks m2_1' (b2::nil, Some fi, frame_size fi) m2' 
+      /\ m2' |= range b2 0 lo ** range b2 hi (frame_size fi)
+            ** minjection j' (fun n => if Nat.eq_dec n O then Some O else option_map S (g (pred n))) m1''
+            ** globalenv_inject ge j' ** P
       /\ inject_incr j j'
       /\ j' b1 = Some (b2, delta)
       /\ inject_separated j j' m1 m2.
 Proof.
-  intros until delta; intros n INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ. subst n.
+  intros until delta; intros n INVAR SEP ALLOC1 REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ SURJ. subst n.
   destruct (Mem.alloc m2 0 (frame_size fi)) as (m2_ & sp) eqn:ALLOC2.
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
   rewrite sep_swap3 in INJ'.
   exploit record_stack_block_parallel_rule.  3: eauto. all: eauto.
-  {
-    erewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC1).
-    erewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC2). 
-    split; intros INF; apply Mem.in_frames_valid in INF;
+  - erewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC2). 
+    intros INF; apply Mem.in_frames_valid in INF;
       (eapply Mem.fresh_block_alloc; [|eauto]); eauto.
-  }
-  {
-    intros.
+  - intros.
     exploit Mem.perm_alloc_3. 2: eauto. eauto. apply PUB.
-  }
-  {
-    intros.
+  - intros.
+    exploit Mem.perm_alloc_3. 2: eauto. eauto. auto.
+  - intros.
     destruct (j bb) eqn:?; try destruct p.
     exploit J1. eauto. rewrite H. inversion 1; subst. eapply Mem.valid_block_inject_2 in Heqo.
     eapply Mem.fresh_block_alloc in Heqo; eauto. easy. apply SEP.
@@ -1120,28 +1123,24 @@ Proof.
     exploit Mem.alloc_result. apply ALLOC1. intro; subst.
     eapply Mem.valid_block_inject_1 in H. 2: apply INJ'.
     exploit Mem.valid_block_alloc_inv. apply ALLOC1. apply H. intros [A|A]; auto. intuition.
-  }
-  intros (m0 & EQmem & INJ''). inv EQmem.
-  rewrite sep_swap3 in INJ''.
-  exists j', m2_, sp, m0; split; eauto.
+  - erewrite Mem.alloc_stack_blocks; eauto.
+  - intros (m0 & EQmem & INJ''). 
+    rewrite sep_swap3 in INJ''.
+    exists j', m2_, sp, m0; split; eauto.
 Qed.
 
 Lemma unrecord_stack_block_parallel_rule:
-  forall m1 m1' m2 j P,
+  forall m1 m1' m2 j g P,
     (* j b = Some (b', delta) -> *)
     m_invar_stack P = false ->
-    m2 |= minjection j m1 ** P ->
+    m2 |= minjection j g m1 ** P ->
     Mem.unrecord_stack_block m1 = Some m1' ->
+    (forall i j, g i = Some j -> O < i -> O < j)%nat ->
     exists m2', Mem.unrecord_stack_block m2 = Some m2' /\
-           m2' |= minjection j m1' ** P.
+           m2' |= minjection j (fun n => option_map pred (g (S n))) m1' ** P.
 Proof.
-  intros m1 m1' m2 j P (* fi b b' delta FB *) INVAR MINJ RSB.
-  destruct (Mem.unrecord_stack_adt _ _ RSB) as (b & ADT).
-  exploit Mem.inject_stack_adt. apply MINJ. intro EQLEN.
-  rewrite ADT in EQLEN.
-  destruct (Mem.stack_adt m2) eqn:STK.
-  simpl in EQLEN. inv EQLEN. 
-  exploit Mem.unrecord_stack_block_inject; eauto. apply MINJ. intros (m2' & UNRECORD & INJ).
+  intros m1 m1' m2 j g P (* fi b b' delta FB *) INVAR MINJ RSB Go.
+  exploit Mem.unrecord_stack_block_inject_parallel; eauto. apply MINJ. intros (m2' & UNRECORD & INJ).
   eexists; split; eauto.
   destruct MINJ as (MINJ & PM & DISJ).
   split; [|split].
@@ -1157,19 +1156,20 @@ Proof.
 Qed.
 
 Lemma pop_frame_parallel_rule:
-  forall (j : meminj) (m1 : mem) (b1 : block) (sz1 sz2 : Z) (m1' m1'' m2 : mem) (b2 : block) (lo hi delta n : Z) (P : massert),
+  forall (j : meminj) g (m1 : mem) (b1 : block) (sz1 sz2 : Z) (m1' m1'' m2 : mem) (b2 : block) (lo hi delta n : Z) (P : massert),
     m_invar_stack P = false ->
-    m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j m1 ** P ->
+    m2 |= range b2 0 lo ** range b2 hi sz2 ** minjection j g m1 ** P ->
     Mem.free m1 b1 0 sz1 = Some m1' ->
     Mem.unrecord_stack_block m1' = Some m1'' ->
     j b1 = Some (b2, delta) ->
     lo = delta -> hi = delta + Z.max 0 sz1 ->
+    (forall i j, g i = Some j -> O < i -> O < j)%nat ->
     exists m2_ m2',
       Mem.free m2 b2 0 sz2 = Some m2_ /\
       Mem.unrecord_stack_block m2_ = Some m2'
-      /\ m2' |= minjection j m1'' ** P.
+      /\ m2' |= minjection j (fun n => option_map pred (g (S n))) m1'' ** P.
 Proof.
-  intros j m1 b1 sz1 sz2 m1' m1'' m2 b2 lo hi delta n P INVAR SEP FREE UNRECORD JB LOEQ HIEQ.
+  intros j g m1 b1 sz1 sz2 m1' m1'' m2 b2 lo hi delta n P INVAR SEP FREE UNRECORD JB LOEQ HIEQ G0.
   exploit free_parallel_rule; eauto.
   simpl. auto.
   intros (m2' & FREE' & SEP').
