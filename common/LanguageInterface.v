@@ -1,4 +1,5 @@
 Require Import String.
+Require Import RelationClasses.
 Require Import Coqlib.
 Require Import AST.
 Require Import Integers.
@@ -161,6 +162,17 @@ Qed.
 Section COMPOSE.
   Context {li1 li2 li3} (cc12: callconv li1 li2) (cc23: callconv li2 li3).
 
+  Definition cc_compose_mq :=
+    fun '(w12, w23, q2) q1 q3 =>
+      match_query_def li1 li2 cc12 w12 q1 q2 /\
+      match_query_def li2 li3 cc23 w23 q2 q3.
+
+  Definition cc_compose_mr :=
+    fun '(w12, w23, q2) q1 q3 r1 r3 =>
+      exists r2,
+        match_reply_def li1 li2 cc12 w12 q1 q2 r1 r2 /\
+        match_reply_def li2 li3 cc23 w23 q2 q3 r2 r3.
+
   Program Definition cc_compose :=
     {|
       world_def := world_def _ _ cc12 * world_def _ _ cc23 * query li2;
@@ -170,15 +182,8 @@ Section COMPOSE.
         exists ge2,
           match_senv li1 li2 cc12 (fst (fst w)) ge1 ge2 /\
           match_senv li2 li3 cc23 (snd (fst w)) ge2 ge3;
-      match_query_def w q1 q3 :=
-        let '(w12, w23, q2) := w in
-          match_query_def li1 li2 cc12 w12 q1 q2 /\
-          match_query_def li2 li3 cc23 w23 q2 q3;
-      match_reply_def w q1 q3 r1 r3 :=
-        let '(w12, w23, q2) := w in
-        exists r2,
-          match_reply_def li1 li2 cc12 w12 q1 q2 r1 r2 /\
-          match_reply_def li2 li3 cc23 w23 q2 q3 r2 r3;
+      match_query_def := cc_compose_mq;
+      match_reply_def := cc_compose_mr;
     |}.
   Next Obligation.
     eauto using match_dummy_query_def.
@@ -253,27 +258,33 @@ Ltac inv_compose_query :=
   revert w q1 q2 Hq;
   apply match_query_cc_compose.
 
+(** * Common calling conventions *)
+
 (** ** Extension passes *)
 
 Definition loc_out_of_bounds (m: mem) (b: block) (ofs: Z) : Prop :=
   ~Mem.perm m b ofs Max Nonempty.
+
+Definition cc_extends_mq :=
+  fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
+    id1 = id2 /\
+    sg1 = sg2 /\
+    Val.lessdef_list vargs1 vargs2 /\
+    Mem.extends m1 m2.
+
+Definition cc_extends_mr :=
+  fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
+    Val.lessdef vres1 vres2 /\
+    Mem.extends m1' m2' /\
+    Mem.unchanged_on (loc_out_of_bounds m1) m2 m2'.
 
 Program Definition cc_extends: callconv li_c li_c :=
   {|
     world_def := unit;
     dummy_world_def := tt;
     match_senv w := eq;
-    match_query_def w :=
-      fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
-        id1 = id2 /\
-        sg1 = sg2 /\
-        Val.lessdef_list vargs1 vargs2 /\
-        Mem.extends m1 m2;
-    match_reply_def w :=
-      fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
-        Val.lessdef vres1 vres2 /\
-        Mem.extends m1' m2' /\
-        Mem.unchanged_on (loc_out_of_bounds m1) m2 m2';
+    match_query_def w := cc_extends_mq;
+    match_reply_def w := cc_extends_mr;
   |}.
 Next Obligation.
   intuition.
@@ -331,26 +342,30 @@ Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
+Definition cc_inject_mq f :=
+  fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
+    id1 = id2 /\
+    sg1 = sg2 /\
+    Val.inject_list f vargs1 vargs2 /\
+    Mem.inject f m1 m2.
+
+Definition cc_inject_mr f :=
+  fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
+    exists f',
+      Val.inject f' vres1 vres2 /\
+      Mem.inject f' m1' m2' /\
+      Mem.unchanged_on (loc_unmapped f) m1 m1' /\
+      Mem.unchanged_on (loc_out_of_reach f m1) m2 m2' /\
+      inject_incr f f' /\
+      inject_separated f f' m1 m2.
+
 Program Definition cc_inject: callconv li_c li_c :=
   {|
     world_def := meminj;
     dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
-    match_query_def f :=
-      fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
-        id1 = id2 /\
-        sg1 = sg2 /\
-        Val.inject_list f vargs1 vargs2 /\
-        Mem.inject f m1 m2;
-    match_reply_def f :=
-      fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
-        exists f',
-          Val.inject f' vres1 vres2 /\
-          Mem.inject f' m1' m2' /\
-          Mem.unchanged_on (loc_unmapped f) m1 m1' /\
-          Mem.unchanged_on (loc_out_of_reach f m1) m2 m2' /\
-          inject_incr f f' /\
-          inject_separated f f' m1 m2;
+    match_query_def := cc_inject_mq;
+    match_reply_def := cc_inject_mr;
   |}.
 Next Obligation.
   intuition.
@@ -424,16 +439,18 @@ Notation tr_mem w := (cq_mem (world_q1 w)).
 
 (** *** Extensions *)
 
+Definition cc_extends_triangle_mr :=
+  fun '(vres1, m1') '(vres2, m2') =>
+    Val.lessdef vres1 vres2 /\
+    Mem.extends m1' m2'.
+
 Program Definition cc_extends_triangle: callconv li_c li_c :=
   {|
     world_def := unit;
     dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w := eq;
-    match_reply_def w :=
-      fun _ _ '(vres1, m1') '(vres2, m2') =>
-        Val.lessdef vres1 vres2 /\
-        Mem.extends m1' m2'
+    match_reply_def w q1 q2 := cc_extends_triangle_mr;
   |}.
 
 (** The following lemma and tactic are used in simulation proofs for
@@ -483,19 +500,21 @@ Inductive cc_inject_triangle_mq: meminj -> query li_c -> query li_c -> Prop :=
       (cq id sg vargs m)
       (cq id sg vargs m).
 
+Definition cc_inject_triangle_mr f :=
+  fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
+    exists f',
+      Val.inject f' vres1 vres2 /\
+      Mem.inject f' m1' m2' /\
+      inject_incr f f' /\
+      inject_separated f f' m1 m2.
+
 Program Definition cc_inject_triangle: callconv li_c li_c :=
   {|
     world_def := meminj;
     dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
     match_query_def := cc_inject_triangle_mq;
-    match_reply_def f :=
-      fun '(cq _ _ _ m1) '(cq _ _ _ m2) '(vres1, m1') '(vres2, m2') =>
-        exists f',
-          Val.inject f' vres1 vres2 /\
-          Mem.inject f' m1' m2' /\
-          inject_incr f f' /\
-          inject_separated f f' m1 m2;
+    match_reply_def := cc_inject_triangle_mr;
   |}.
 Next Obligation.
   rewrite <- Mem.nextblock_empty.
