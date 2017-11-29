@@ -873,12 +873,9 @@ Lemma external_call_parallel_rule:
   external_call ef ge vargs1 m1 t vres1 m1' ->
   m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
-  exists w, (exists t2, match_events_query cc_inject w t t2) /\
-  forall t2, match_events cc_inject w t t2 ->
   exists j' vres2 m2',
-     external_call ef ge vargs2 m2 t2 vres2 m2'
+     external_call ef ge vargs2 m2 t vres2 m2'
   /\ Val.inject j' vres1 vres2
-  /\ Mem.unchanged_on (loc_unmapped j) m1 m1'
   /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
   /\ inject_separated j j' m1 m2.
@@ -887,9 +884,7 @@ Proof.
   destruct SEP as (A & B & C). simpl in A.
   exploit external_call_mem_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_pick1; eauto.
-  intros (w & Hwq & Hw). exists w; split; eauto.
-  intros t2 Ht2. specialize (Hw t2 Ht2).
-  destruct Hw as (j' & vres2 & m2' & CALL' & RES & INJ' & UNCH1 & UNCH2 & INCR & ISEP).
+  intros (j' & vres2 & m2' & CALL' & RES & INJ' & UNCH1 & UNCH2 & INCR & ISEP).
   assert (MAXPERMS: forall b ofs p,
             Mem.valid_block m1 b -> Mem.perm m1' b ofs Max p -> Mem.perm m1 b ofs Max p).
   { intros. eapply external_call_max_perm; eauto. }

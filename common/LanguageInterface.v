@@ -7,6 +7,7 @@ Require Import Floats.
 Require Import Values.
 Require Import Memory.
 Require Import Globalenvs.
+Require Import Events.
 
 (** * Semantic interface of languages *)
 
@@ -275,9 +276,6 @@ Ltac inv_compose_query :=
 
 (** ** Extension passes *)
 
-Definition loc_out_of_bounds (m: mem) (b: block) (ofs: Z) : Prop :=
-  ~Mem.perm m b ofs Max Nonempty.
-
 Definition cc_extends_mq :=
   fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>
     id1 = id2 /\
@@ -330,30 +328,6 @@ Proof.
 Qed.
 
 (** ** Injection passes *)
-
-Definition symbols_inject (f: meminj) (ge1 ge2: Senv.t): Prop :=
-   (forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
-/\ (forall id b1 b2 delta,
-     f b1 = Some(b2, delta) -> Senv.find_symbol ge1 id = Some b1 ->
-     delta = 0 /\ Senv.find_symbol ge2 id = Some b2)
-/\ (forall id b1,
-     Senv.public_symbol ge1 id = true -> Senv.find_symbol ge1 id = Some b1 ->
-     exists b2, f b1 = Some(b2, 0) /\ Senv.find_symbol ge2 id = Some b2)
-/\ (forall b1 b2 delta,
-     f b1 = Some(b2, delta) ->
-     Senv.block_is_volatile ge2 b2 = Senv.block_is_volatile ge1 b1).
-
-Definition loc_unmapped (f: meminj) (b: block) (ofs: Z): Prop :=
-  f b = None.
-
-Definition loc_out_of_reach (f: meminj) (m: mem) (b: block) (ofs: Z): Prop :=
-  forall b0 delta,
-  f b0 = Some(b, delta) -> ~Mem.perm m b0 (ofs - delta) Max Nonempty.
-
-Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
-  forall b1 b2 delta,
-  f b1 = None -> f' b1 = Some(b2, delta) ->
-  ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
 Definition cc_inject_mq f :=
   fun '(cq id1 sg1 vargs1 m1) '(cq id2 sg2 vargs2 m2) =>

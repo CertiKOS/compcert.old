@@ -2,6 +2,7 @@ Require Export List.
 Require Export RelationClasses.
 Require Export Morphisms.
 Require Export Globalenvs.
+Require Export Events.
 Require Export LanguageInterface.
 
 (** Algebraic structures on calling conventions. *)

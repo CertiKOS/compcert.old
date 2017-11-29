@@ -24,7 +24,6 @@ Require Import Floats.
 Require Import Values.
 Require Import Memory.
 Require Import Globalenvs.
-Require Export LanguageInterface.
 
 (** * Events and traces *)
 
@@ -66,8 +65,7 @@ Inductive event: Type :=
   | Event_syscall: string -> list eventval -> eventval -> event
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
-  | Event_annot: string -> list eventval -> event
-  | Event_extcall: query li_c -> reply li_c -> event.
+  | Event_annot: string -> list eventval -> event.
 
 (** The dynamic semantics for programs collect traces of events.
   Traces are of two kinds: finite (type [trace]) or infinite (type [traceinf]). *)
@@ -448,7 +446,19 @@ Section EVENTVAL_INJECT.
 Variable f: block -> option (block * Z).
 Variable ge1 ge2: Senv.t.
 
-Hypothesis symb_inj: symbols_inject f ge1 ge2.
+Definition symbols_inject : Prop :=
+   (forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
+/\ (forall id b1 b2 delta,
+     f b1 = Some(b2, delta) -> Senv.find_symbol ge1 id = Some b1 ->
+     delta = 0 /\ Senv.find_symbol ge2 id = Some b2)
+/\ (forall id b1,
+     Senv.public_symbol ge1 id = true -> Senv.find_symbol ge1 id = Some b1 ->
+     exists b2, f b1 = Some(b2, 0) /\ Senv.find_symbol ge2 id = Some b2)
+/\ (forall b1 b2 delta,
+     f b1 = Some(b2, delta) ->
+     Senv.block_is_volatile ge2 b2 = Senv.block_is_volatile ge1 b1).
+
+Hypothesis symb_inj: symbols_inject.
 
 Lemma eventval_match_inject:
   forall ev ty v1 v2,
@@ -480,115 +490,16 @@ Qed.
 
 End EVENTVAL_INJECT.
 
-(** * Validity of external calls *)
-
-Definition loc_not_writable (m: mem) (b: block) (ofs: Z) : Prop :=
-  ~Mem.perm m b ofs Max Writable.
-
-Record extcall_step_valid sg (vargs: list val) m1 vres m2 :=
-  {
-    ecv_well_typed:
-      Val.has_type vres (proj_sig_res sg);
-    ecv_valid_block b:
-      Mem.valid_block m1 b ->
-      Mem.valid_block m2 b;
-    ecv_max_perm b ofs p:
-      Mem.valid_block m1 b ->
-      Mem.perm m2 b ofs Max p ->
-      Mem.perm m1 b ofs Max p;
-    ecv_readonly:
-      Mem.unchanged_on (loc_not_writable m1) m1 m2;
-  }.
-
-Definition extcall_valid (q: query li_c) (r: reply li_c) :=
-  let '(cq id sg vargs m) := q in
-  let '(vres, m') := r in
-  extcall_step_valid sg vargs m vres m'.
-
 (** * Matching traces. *)
 
 Section MATCH_TRACES.
 
 Variable ge: Senv.t.
-Variable cc: callconv li_c li_c.
-Variable w: world cc.
 
 (** Matching between traces corresponding to single transitions.
-  Arguments (provided by the program) must be related.
+  Arguments (provided by the program) must be equal.
   Results (provided by the outside world) can vary as long as they
   can be converted safely to values. *)
-
-Inductive match_events_query: trace -> trace -> Prop :=
-  | match_events_query_E0:
-      match_events_query nil nil
-  | match_events_query_syscall id args res1 res2 t1 t2:
-      match_events_query
-        (Event_syscall id args res1 :: t1)
-        (Event_syscall id args res2 :: t2)
-  | match_events_query_vload chunk id ofs res1 res2 t1 t2:
-      match_events_query
-        (Event_vload chunk id ofs res1 :: t1)
-        (Event_vload chunk id ofs res2 :: t2)
-  | match_events_query_vstore chunk id ofs arg t1 t2:
-      match_events_query
-        (Event_vstore chunk id ofs arg :: t1)
-        (Event_vstore chunk id ofs arg :: t2)
-  | match_events_query_annot id args t1 t2:
-      match_events_query
-        (Event_annot id args :: t1)
-        (Event_annot id args :: t2)
-  | match_events_query_extcall q1 q2 r1 r2 t1 t2:
-      match_query cc w q1 q2 ->
-      match_events_query
-        (Event_extcall q1 r1 :: t1)
-        (Event_extcall q2 r2 :: t2).
-
-Inductive match_events: trace -> trace -> Prop :=
-  | match_events_E0:
-      match_events nil nil
-  | match_events_syscall id args res:
-      match_events
-        (Event_syscall id args res :: nil)
-        (Event_syscall id args res :: nil)
-  | match_events_vload chunk id ofs res:
-      match_events
-        (Event_vload chunk id ofs res :: nil)
-        (Event_vload chunk id ofs res :: nil)
-  | match_events_vstore chunk id ofs arg:
-      match_events
-        (Event_vstore chunk id ofs arg :: nil)
-        (Event_vstore chunk id ofs arg :: nil)
-  | match_events_annot id args:
-      match_events
-        (Event_annot id args :: nil)
-        (Event_annot id args :: nil)
-  | match_events_extcall q1 q2 r1 r2:
-      (extcall_valid q1 r1 -> extcall_valid q2 r2) ->
-      match_query cc w q1 q2 ->
-      match_reply cc w r1 r2 ->
-      match_events
-        (Event_extcall q1 r1 :: nil)
-        (Event_extcall q2 r2 :: nil).
-
-Lemma match_events_subrel_query t1 t2:
-  match_events t1 t2 ->
-  match_events_query t1 t2.
-Proof.
-  destruct 1; constructor; eauto.
-Qed.
-
-(** Stable events are invariant under the calling convention. *)
-
-Definition stable_event t :=
-  match t with
-    | Event_extcall _ _ :: nil => False
-    | _ :: _ :: _ => False
-    | _ => True
-  end.
-
-(** For stable events, we can use the simpler [match_traces] below
-  instead of [match_events_query], and use equality instead of
-  [match_events]. *)
 
 Inductive match_traces: trace -> trace -> Prop :=
   | match_traces_E0:
@@ -602,63 +513,15 @@ Inductive match_traces: trace -> trace -> Prop :=
   | match_traces_vstore: forall chunk id ofs arg,
       match_traces (Event_vstore chunk id ofs arg :: nil) (Event_vstore chunk id ofs arg :: nil)
   | match_traces_annot: forall id args,
-      match_traces (Event_annot id args :: nil) (Event_annot id args :: nil)
-  | match_traces_extcall: forall q r1 r2,
-      extcall_valid q r1 ->
-      extcall_valid q r2 ->
-      match_traces
-        (Event_extcall q r1 :: nil)
-        (Event_extcall q r2 :: nil).
-
-Lemma match_traces_match_events_query t1 t2:
-  stable_event t1 ->
-  match_traces t1 t2 ->
-  match_events_query t1 t2.
-Proof.
-  destruct 2; try contradiction; constructor; auto.
-Qed.
-
-Lemma match_stable_event_refl t:
-  stable_event t ->
-  match_events t t.
-Proof.
-  intros Ht.
-  destruct t as [ | [] []]; contradiction || constructor; auto.
-Qed.
-
-Lemma match_stable_event_corefl t1 t2:
-  stable_event t1 ->
-  match_events t1 t2 ->
-  t1 = t2.
-Proof.
-  destruct 2; tauto.
-Qed.
+      match_traces (Event_annot id args :: nil) (Event_annot id args :: nil).
 
 End MATCH_TRACES.
-
-Arguments match_events : clear implicits.
-Arguments match_events_query : clear implicits.
-
-(** Properties specific to certain calling conventions. *)
-
-Lemma match_events_id_corefl w t1 t2:
-  match_events cc_id w t1 t2 ->
-  t2 = t1.
-Proof.
-  destruct 1; try congruence.
-  destruct H0.
-  inv H1.
-  simpl in *.
-  congruence.
-Qed.
 
 (** Invariance by change of global environment *)
 
 Section MATCH_TRACES_INV.
 
 Variables ge1 ge2: Senv.t.
-Variable cc: callconv li_c li_c.
-Variable w: world cc.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
@@ -680,7 +543,6 @@ Definition output_event (ev: event) : Prop :=
   | Event_vload _ _ _ _ => False
   | Event_vstore _ _ _ _ => True
   | Event_annot _ _ => True
-  | Event_extcall _ _ => False
   end.
 
 Fixpoint output_trace (t: trace) : Prop :=
@@ -735,6 +597,24 @@ Definition extcall_sem : Type :=
 
 (** We now specify the expected properties of this predicate. *)
 
+Definition loc_out_of_bounds (m: mem) (b: block) (ofs: Z) : Prop :=
+  ~Mem.perm m b ofs Max Nonempty.
+
+Definition loc_not_writable (m: mem) (b: block) (ofs: Z) : Prop :=
+  ~Mem.perm m b ofs Max Writable.
+
+Definition loc_unmapped (f: meminj) (b: block) (ofs: Z): Prop :=
+  f b = None.
+
+Definition loc_out_of_reach (f: meminj) (m: mem) (b: block) (ofs: Z): Prop :=
+  forall b0 delta,
+  f b0 = Some(b, delta) -> ~Mem.perm m b0 (ofs - delta) Max Nonempty.
+
+Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
+  forall b1 b2 delta,
+  f b1 = None -> f' b1 = Some(b2, delta) ->
+  ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
+
 Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
   mk_extcall_properties {
 
@@ -779,10 +659,8 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
     Val.lessdef_list vargs vargs' ->
-    exists w, (exists t', match_events_query cc_extends w t t') /\
-    forall t', match_events cc_extends w t t' ->
     exists vres', exists m2',
-       sem ge vargs' m1' t' vres' m2'
+       sem ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2'
     /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2';
@@ -795,10 +673,8 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge1 vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
-    exists w, (exists t', match_events_query cc_inject w t t') /\
-    forall t', match_events cc_inject w t t' ->
     exists f', exists vres', exists m2',
-       sem ge2 vargs' m1' t' vres' m2'
+       sem ge2 vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -823,22 +699,6 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
     match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
 }.
-
-Lemma stable_step cc t (P: world cc -> trace -> Prop):
-  stable_event t ->
-  P dummy_world t ->
-  exists w, (exists t', match_events_query cc w t t') /\
-  forall t', match_events cc w t t' -> P w t'.
-Proof.
-  intros Ht H.
-  exists dummy_world; split.
-  - exists t.
-    apply match_events_subrel_query.
-    apply match_stable_event_refl; eauto.
-  - intros t' Ht'.
-    apply match_stable_event_corefl in Ht'; eauto.
-    congruence.
-Qed.
 
 (** ** Semantics of volatile loads *)
 
@@ -926,18 +786,10 @@ Proof.
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H. inv H1. inv H6. inv H4.
-  apply stable_step.
-  {
-    destruct H2; constructor.
-  }
   exploit volatile_load_extends; eauto. intros [v' [A B]].
   exists v'; exists m1'; intuition. constructor; auto.
 (* mem injects *)
 - inv H0. inv H2. inv H7. inversion H5; subst.
-  apply stable_step.
-  {
-    destruct H3; constructor.
-  }
   exploit volatile_load_inject; eauto. intros [v' [A B]].
   exists f; exists v'; exists m1'; intuition. constructor; auto.
   red; intros. congruence.
@@ -1084,12 +936,10 @@ Proof.
 - inv H. eapply volatile_store_readonly; eauto.
 (* mem extends*)
 - inv H. inv H1. inv H6. inv H7. inv H4.
-  apply stable_step. { inv H2; constructor. }
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
   exists Vundef; exists m2'; intuition. constructor; auto.
 (* mem inject *)
 - inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
-  apply stable_step. { inv H3; constructor. }
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
   exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
 (* trace length *)
@@ -1146,7 +996,6 @@ Proof.
 - inv H. eapply UNCHANGED; eauto.
 (* mem extends *)
 - inv H. inv H1. inv H7.
-  apply stable_step. { constructor. }
   assert (SZ: v2 = Vptrofs sz).
   { unfold Vptrofs in *. destruct Archi.ptr64; inv H5; auto. }
   subst v2.
@@ -1159,7 +1008,6 @@ Proof.
   eapply UNCHANGED; eauto.
 (* mem injects *)
 - inv H0. inv H2. inv H8.
-  apply stable_step. { constructor. }
   assert (SZ: v' = Vptrofs sz).
   { unfold Vptrofs in *. destruct Archi.ptr64; inv H6; auto. }
   subst v'.
@@ -1222,7 +1070,6 @@ Proof.
   eapply Mem.free_range_perm; eauto.
 (* mem extends *)
 - inv H. inv H1. inv H8. inv H6.
-  apply stable_step. { constructor. }
   exploit Mem.load_extends; eauto. intros [v' [A B]].
   assert (v' = Vptrofs sz).
   { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. }
@@ -1238,7 +1085,6 @@ Proof.
   tauto.
 (* mem inject *)
 - inv H0. inv H2. inv H7. inv H9.
-  apply stable_step. { constructor. }
   exploit Mem.load_inject; eauto. intros [v' [A B]].
   assert (v' = Vptrofs sz).
   { unfold Vptrofs in *; destruct Archi.ptr64; inv B; auto. }
@@ -1317,7 +1163,6 @@ Proof.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
 - (* extensions *)
   intros. inv H.
-  apply stable_step. { constructor. }
   inv H1. inv H13. inv H14. inv H10. inv H11.
   exploit Mem.loadbytes_length; eauto. intros LEN.
   exploit Mem.loadbytes_extends; eauto. intros [bytes2 [A B]].
@@ -1334,7 +1179,6 @@ Proof.
   tauto.
 - (* injections *)
   intros. inv H0. inv H2. inv H14. inv H15. inv H11. inv H12.
-  apply stable_step. { constructor. }
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
   assert (bytes = nil).
@@ -1429,13 +1273,11 @@ Proof.
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H.
-  apply stable_step. { constructor. }
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_lessdef; eauto.
 (* mem injects *)
 - inv H0.
-  apply stable_step. { constructor. }
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
@@ -1476,13 +1318,11 @@ Proof.
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H. inv H1. inv H6.
-  apply stable_step. { constructor. }
   exists v2; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
 (* mem inject *)
 - inv H0. inv H2. inv H7.
-  apply stable_step. { constructor. }
   exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
@@ -1521,12 +1361,10 @@ Proof.
 - inv H. apply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H.
-  apply stable_step. { constructor. }
   exists Vundef; exists m1'; intuition.
   econstructor; eauto.
 (* mem injects *)
 - inv H0.
-  apply stable_step. { constructor. }
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   red; intros; congruence.
@@ -1542,82 +1380,16 @@ Qed.
 (** ** Semantics of external functions. *)
 
 (** For functions defined outside the program ([EF_external],
-  [EF_builtin] and [EF_runtime]), we record an external call event. *)
+  [EF_builtin] and [EF_runtime]), we do not define their
+  semantics, but only assume that it satisfies
+  [extcall_properties]. *)
 
-Inductive external_functions_sem id (sg: signature): extcall_sem :=
-  external_funcions_sem_intro ge vargs m vres m':
-    extcall_step_valid sg vargs m vres m' ->
-    external_functions_sem id sg ge vargs m (Event_extcall (cq id sg vargs m) (vres, m') :: E0) vres m'.
+Parameter external_functions_sem: String.string -> signature -> extcall_sem.
 
-Lemma external_functions_properties:
+Axiom external_functions_properties:
   forall id sg, extcall_properties (external_functions_sem id sg) sg.
-Proof.
-  split.
-  (* well-typed *)
-  - destruct 1.
-    eapply ecv_well_typed; eauto.
-  (* symbols *)
-  - destruct 2; constructor; eauto.
-  (* valid blocks *)
-  - destruct 1.
-    eapply ecv_valid_block; eauto.
-  (* perms *)
-  - destruct 1.
-    eapply ecv_max_perm; eauto.
-  (* readonly *)
-  - destruct 1.
-    eapply ecv_readonly; eauto.
-  (* mem extends *)
-  - intros.
-    destruct H.
-    edestruct (match_cc_extends id sg) as (w & Hq & Hr); eauto.
-    exists w; split.
-    {
-      exists (Event_extcall (cq id sg vargs' m1') (Vundef, m1') :: nil).
-      constructor; eauto.
-    }
-    intros t' Ht'.
-    inv Ht'.
-    assert (q2 = cq id sg vargs' m1') by eauto using match_query_determ; subst.
-    destruct r2 as [vres' m2'].
-    specialize (Hr _ _ _ _ H7).
-    exists vres', m2'; intuition.
-    constructor.
-    assumption.
-  (* mem inject *)
-  - intros.
-    destruct H0.
-    edestruct match_cc_inject as (w & Hq & Hr); eauto.
-    exists w; split.
-    {
-      exists (Event_extcall (cq id sg vargs' m1') (Vundef, m1') :: nil).
-      constructor; eauto.
-    }
-    intros t' Ht'.
-    inv Ht'.
-    assert (q2 = cq id sg vargs' m1') by eauto using match_query_determ; subst.
-    destruct r2 as [vres' m2'].
-    edestruct Hr as (f' & H'); eauto.
-    exists f', vres', m2'; intuition.
-    constructor.
-    assumption.
-  (* trace length *)
-  - destruct 1; simpl.
-    reflexivity.
-  (* receptive *)
-  - destruct 1; inversion 1.
-    destruct r2 as [vres2 m2].
-    exists vres2, m2.
-    constructor; auto.
-  (* determ *)
-  - destruct 1; inversion 1; subst.
-    split.
-    + constructor; eauto.
-    + inversion 1; auto.
-Qed.
 
-(** For inline assembly, we do not define its semantics,
-  but only assume that it satisfies [extcall_properties]. *)
+(** We treat inline assembly similarly. *)
 
 Parameter inline_assembly_sem: String.string -> signature -> extcall_sem.
 
@@ -1709,10 +1481,8 @@ Lemma external_call_mem_inject:
   external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
-  exists w, (exists t', match_events_query cc_inject w t t') /\
-  forall t', match_events cc_inject w t t' ->
   exists f', exists vres', exists m2',
-     external_call ef ge vargs' m1' t' vres' m2'
+     external_call ef ge vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
