@@ -117,6 +117,9 @@ Proof.
   reflexivity.
 Qed.
 
+Delimit Scope cc_scope with cc.
+Bind Scope cc_scope with callconv.
+
 (** ** Identity *)
 
 Program Definition cc_id {T}: callconv T T :=
@@ -162,6 +165,8 @@ Proof.
   destruct w.
   repeat constructor.
 Qed.
+
+Notation "1" := cc_id : cc_scope.
 
 (** ** Composition *)
 
@@ -253,6 +258,8 @@ End COMPOSE.
 
 Arguments comp_fst {li1 li2 li3 cc12 cc23} w.
 Arguments comp_snd {li1 li2 li3 cc12 cc23} w.
+
+Infix "@" := cc_compose (at level 30, right associativity) : cc_scope.
 
 Ltac inv_compose_query :=
   let w := fresh "w" in
