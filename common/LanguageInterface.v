@@ -75,13 +75,19 @@ Record callconv T1 T2 :=
       match_query_def dummy_world_def dummy_query dummy_query;
   }.
 
+Arguments world_def {_ _}.
+Arguments dummy_world_def {_ _}.
+Arguments match_senv {_ _} _ _ _.
+Arguments match_query_def {_ _} _ _ _.
+Arguments match_reply_def {_ _} _ _ _ _ _.
+
 Record world {T1 T2} (cc: callconv T1 T2) :=
   mk_world {
-    world_proj :> world_def T1 T2 cc;
+    world_proj :> world_def cc;
     world_q1: query T1;
     world_q2: query T2;
     world_match_query:
-      match_query_def T1 T2 cc world_proj world_q1 world_q2;
+      match_query_def cc world_proj world_q1 world_q2;
   }.
 
 Arguments mk_world {T1 T2} cc _ _ _ _.
@@ -98,7 +104,7 @@ Inductive match_query {T1 T2} cc: world cc -> query T1 -> query T2 -> Prop :=
 
 Inductive match_reply {T1 T2} cc: world cc -> reply T1 -> reply T2 -> Prop :=
   match_reply_intro w q1 q2 r1 r2 Hq:
-    match_reply_def T1 T2 cc w q1 q2 r1 r2 ->
+    match_reply_def cc w q1 q2 r1 r2 ->
     match_reply cc (mk_world cc w q1 q2 Hq) r1 r2.
 
 Lemma match_query_determ {T1 T2} (cc: callconv T1 T2) w q q1 q2:
@@ -164,24 +170,24 @@ Section COMPOSE.
 
   Definition cc_compose_mq :=
     fun '(w12, w23, q2) q1 q3 =>
-      match_query_def li1 li2 cc12 w12 q1 q2 /\
-      match_query_def li2 li3 cc23 w23 q2 q3.
+      match_query_def cc12 w12 q1 q2 /\
+      match_query_def cc23 w23 q2 q3.
 
   Definition cc_compose_mr :=
     fun '(w12, w23, q2) q1 q3 r1 r3 =>
       exists r2,
-        match_reply_def li1 li2 cc12 w12 q1 q2 r1 r2 /\
-        match_reply_def li2 li3 cc23 w23 q2 q3 r2 r3.
+        match_reply_def cc12 w12 q1 q2 r1 r2 /\
+        match_reply_def cc23 w23 q2 q3 r2 r3.
 
   Program Definition cc_compose :=
     {|
-      world_def := world_def _ _ cc12 * world_def _ _ cc23 * query li2;
+      world_def := world_def cc12 * world_def cc23 * query li2;
       dummy_world_def :=
-        (dummy_world_def _ _ cc12, dummy_world_def _ _ cc23, dummy_query);
+        (dummy_world_def cc12, dummy_world_def cc23, dummy_query);
       match_senv w ge1 ge3 :=
         exists ge2,
-          match_senv li1 li2 cc12 (fst (fst w)) ge1 ge2 /\
-          match_senv li2 li3 cc23 (snd (fst w)) ge2 ge3;
+          match_senv cc12 (fst (fst w)) ge1 ge2 /\
+          match_senv cc23 (snd (fst w)) ge2 ge3;
       match_query_def := cc_compose_mq;
       match_reply_def := cc_compose_mr;
     |}.
@@ -303,7 +309,7 @@ Lemma match_cc_extends id sg vargs1 m1 vargs2 m2:
       Mem.unchanged_on (loc_out_of_bounds m1) m2 m2'.
 Proof.
   intros Hm Hvargs.
-  assert (Hq: match_query_def _ _ cc_extends tt (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
+  assert (Hq: match_query_def cc_extends tt (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
   {
     simpl.
     eauto.
@@ -389,7 +395,7 @@ Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
         inject_separated f f' m1 m2.
 Proof.
   intros Hvargs Hm.
-  assert (match_query_def _ _ cc_inject f (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
+  assert (match_query_def cc_inject f (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
   {
     simpl.
     eauto.
