@@ -478,7 +478,7 @@ Record semantics li: Type := Semantics_gen {
   state: Type;
   genvtype: Type;
   step : query li -> genvtype -> state -> trace -> state -> Prop;
-  initial_state: query li -> state -> Prop;
+  initial_state: option state -> query li -> state -> Prop;
   final_state: query li -> state -> reply li -> Prop;
   globalenv: genvtype;
   symbolenv: Senv.t
@@ -488,7 +488,7 @@ Record semantics li: Type := Semantics_gen {
 
 Definition Semantics li {state funtype vartype: Type}
     (step: Genv.t funtype vartype -> state -> trace -> state -> Prop)
-    (initial_state: query li -> state -> Prop)
+    (initial_state: option state -> query li -> state -> Prop)
     (final_state: state -> reply li -> Prop)
     (globalenv: Genv.t funtype vartype) :=
   {| state := state;
@@ -518,10 +518,11 @@ Record fsim_properties {li1 li2} (cc: callconv li1 li2)
                        (match_states: world cc -> index -> state L1 -> state L2 -> Prop) : Prop := {
     fsim_order_wf: well_founded order;
     fsim_match_initial_states:
-      forall w q1 q2, match_query cc w q1 q2 ->
-      forall s1, initial_state L1 q1 s1 ->
+      forall w j k1 k2, option_rel (match_states w j) k1 k2 ->
+      forall q1 q2, match_query cc w q1 q2 ->
+      forall s1, initial_state L1 k1 q1 s1 ->
       exists i s2,
-        initial_state L2 q2 s2 /\
+        initial_state L2 k2 q2 s2 /\
         match_states w i s1 s2;
     fsim_match_final_states:
       forall w i s1 s2 r1,
@@ -585,10 +586,11 @@ Hypothesis public_preserved:
 Variable match_states: world cc -> state L1 -> state L2 -> Prop.
 
 Hypothesis match_initial_states:
-  forall w q1 q2, match_query cc w q1 q2 ->
-  forall s1, initial_state L1 q1 s1 ->
+  forall w k1 k2, option_rel (match_states w) k1 k2 ->
+  forall q1 q2, match_query cc w q1 q2 ->
+  forall s1, initial_state L1 k1 q1 s1 ->
   exists s2,
-    initial_state L2 q2 s2 /\
+    initial_state L2 k2 q2 s2 /\
     match_states w s1 s2.
 
 Hypothesis match_final_states:
@@ -626,7 +628,10 @@ Proof.
   apply Forward_simulation with order (fun w idx s1 s2 => idx = s1 /\ match_states w s1 s2);
   constructor.
 - auto.
-- intros. exploit match_initial_states; eauto. intros [s2 [A B]].
+- intros. exploit match_initial_states; eauto.
+  + instantiate (1 := k2).
+    destruct H as [ | ? ? [? ?]]; constructor; eauto.
+  + intros [s2 [A B]].
     exists s1; exists s2; auto.
 - intros. destruct H. eapply match_final_states; eauto.
 - intros. destruct H0. subst i. exploit simulation; eauto. intros [s2' [A B]].
@@ -866,8 +871,8 @@ Record determinate {li} (L: semantics li) : Prop :=
       match_traces (symbolenv L) t1 t2 /\ (t1 = t2 -> s1 = s2);
     sd_traces:
       single_events L;
-    sd_initial_determ: forall q s1 s2,
-      initial_state L q s1 -> initial_state L q s2 -> s1 = s2;
+    sd_initial_determ: forall k q s1 s2,
+      initial_state L k q s1 -> initial_state L k q s2 -> s1 = s2;
     sd_final_nostep: forall q s r,
       final_state L q s r -> Nostep L q s;
     sd_final_determ: forall q s r1 r2,
@@ -1826,12 +1831,12 @@ Record bigstep_semantics li : Type :=
 Record bigstep_sound {li} (B: bigstep_semantics li) (L: semantics li) : Prop :=
   Bigstep_sound {
     bigstep_terminates_sound:
-      forall q t r,
+      forall k q t r,
       bigstep_terminates B q t r ->
-      exists s1 s2, initial_state L q s1 /\ Star L q s1 t s2 /\ final_state L q s2 r;
+      exists s1 s2, initial_state L k q s1 /\ Star L q s1 t s2 /\ final_state L q s2 r;
     bigstep_diverges_sound:
-      forall q T,
+      forall k q T,
       bigstep_diverges B q T ->
-      exists s1, initial_state L q s1 /\ forever (step L q) (globalenv L) s1 T
+      exists s1, initial_state L k q s1 /\ forever (step L q) (globalenv L) s1 T
 }.
 
