@@ -643,7 +643,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & FIND & LINK).
-  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0 (fn_stack_requirements (prog_main tprog))); split.
+  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m2 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto.
   apply (Genv.init_mem_match TRANSL); auto.
   replace (prog_main tprog) with (prog_main prog).
@@ -651,6 +651,7 @@ Proof.
   assumption.
   symmetry; eapply match_program_main; eauto.
   rewrite <- H3. apply sig_function_translated.
+  eauto. eauto.
   erewrite <- match_program_main; eauto.
   constructor. auto. constructor. constructor. apply Mem.extends_refl.
 Qed.

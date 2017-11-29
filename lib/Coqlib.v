@@ -1434,16 +1434,22 @@ Qed.
 
 (* PW: Custom tactics *)
 
+Ltac clean_destr :=
+  match goal with
+  | H: _ = left _ |- _ => clear H
+  | H: _ = right _ |- _ => clear H
+  end.
+
 Ltac destr :=
   match goal with
     |- context [match ?a with _ => _ end] => destruct a eqn:?; try intuition congruence
-  end.
+  end; repeat clean_destr.
 
 Ltac destr_in H :=
   match type of H with
     context [match ?a with _ => _ end] => destruct a eqn:?; try intuition congruence
   | _ => inv H
-  end.
+  end; repeat clean_destr.
 
 Ltac autospecialize H :=
   match type of H with

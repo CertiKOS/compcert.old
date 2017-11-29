@@ -1537,17 +1537,74 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil f nil tm (fn_stack_requirements (prog_main tp))); split.
-  econstructor; eauto.
-  fold tge. erewrite match_prog_main by eauto. auto.
-  destruct TRANSF. rewrite match_prog_main0.
-  econstructor; eauto.
-  constructor. auto.
-  erewrite <- Genv.init_mem_genv_next by eauto. apply Ple_refl.
-  erewrite <- Genv.init_mem_genv_next by eauto. apply Ple_refl.
-  eapply frameinj_order_strict_flat.
-  eapply frameinj_surjective_flat; eauto.
-  erewrite ! Genv.init_mem_stack_adt; eauto.
+  edestruct Mem.alloc_parallel_inject as (f' & m1' & b' & ALLOC & INJ' & INCR & FNEW & FOLD); eauto. apply Zle_refl. apply Zle_refl.
+  edestruct Mem.record_stack_blocks_inject_parallel as (m2' & RSB & RSBINJ). apply INJ'. 8: now eauto.
+  instantiate (1 := make_singleton_frame_adt b' 0 0).
+  - red; red. rewrite Forall_forall. simpl. intros (bb & fi) [AA|[]] b2 delta FB; inv AA; simpl in *.
+    rewrite FNEW in FB; inv FB.
+    rewrite peq_true.
+    eexists; split; eauto.
+    split; simpl; auto. intros; omega.
+  - erewrite Mem.alloc_stack_blocks; eauto.
+    erewrite Genv.init_mem_stack_adt; eauto.
+  - intros bb [AA|[]]; inv AA. simpl in *.
+    eapply Mem.valid_new_block; eauto.
+  - intros b0 fi [AA|[]] o k p0 PERM; inv AA; simpl in *.
+    eapply Mem.perm_alloc_inv in PERM; eauto.
+    rewrite pred_dec_true in PERM; auto.
+  - intros b0 b2 delta FB.
+    unfold in_frame; simpl.
+    split; intros [AA|[]]; inv AA; left; try congruence.
+    destruct (eq_block b1 b0); auto.
+    rewrite FOLD in FB; auto.
+    eapply Mem.valid_block_inject_2 in FB; eauto. eapply Mem.fresh_block_alloc in FB; eauto. easy.
+  - reflexivity.
+  - apply frameinj_surjective_flat. rewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC).
+    erewrite ! Genv.init_mem_stack_adt; eauto.
+  - exists (Callstate nil f nil m2' (fn_stack_requirements (prog_main tp))); split.
+    econstructor; eauto.
+    + fold tge. erewrite match_prog_main by eauto. auto.
+    + destruct TRANSF. rewrite match_prog_main0.
+      econstructor; eauto.
+      * constructor.
+        -- assert (FSPEC: forall b, f' b = if peq b b1 then Some (b', 0) else j b).
+           {
+             intros; destr; eauto.
+           }
+           inv C; constructor; simpl; intros; rewrite ? FSPEC in *; eauto.
+           ++ repeat destr_in H; eauto.
+              eapply Genv.find_symbol_not_fresh in H6; eauto.
+              eapply Mem.fresh_block_alloc in H6; eauto. easy.
+           ++ destr. subst. 
+              eapply Genv.find_symbol_not_fresh in H6; eauto.
+              eapply Mem.fresh_block_alloc in H6; eauto. easy.
+              eauto.
+           ++ edestruct symbols_inject_6 as (b0 & FS  & FF); eauto.
+           ++ destr_in H; eauto. inv H.
+              eapply Genv.find_def_not_fresh in H6; eauto.
+              eapply Mem.fresh_block_alloc in H6; eauto. easy.
+           ++ destr_in H; eauto. inv H.
+              eapply Genv.find_def_not_fresh in H6; eauto.
+              eapply Mem.fresh_block_alloc in H6; eauto. easy.
+        -- unfold ge. erewrite Genv.init_mem_genv_next by eauto.
+           rewrite (Mem.record_stack_block_nextblock _ _ _ H5).
+           rewrite (Mem.nextblock_alloc _ _ _ _ _ H4). xomega.
+        -- unfold tge. erewrite Genv.init_mem_genv_next by eauto.
+           rewrite (Mem.record_stack_block_nextblock _ _ _ RSB).
+           rewrite (Mem.nextblock_alloc _ _ _ _ _ ALLOC). xomega.
+      * eapply frameinj_order_strict_ext. apply frameinj_order_strict_flat.
+        instantiate (1 := Datatypes.S (length (Mem.stack_adt m0))).
+        unfold flat_frameinj.
+        intros.
+        destruct (Nat.eq_dec). subst. destr; omega.
+        repeat destr; simpl; try f_equal; try omega.
+      * eapply frameinj_surjective_ext. eapply frameinj_surjective_flat; eauto.
+        unfold flat_frameinj.
+        intros.
+        erewrite Mem.record_stack_blocks_stack_adt; eauto. simpl.
+        erewrite Mem.alloc_stack_blocks; eauto.
+        erewrite ! Genv.init_mem_stack_adt; eauto. simpl.
+        repeat destr; simpl; try f_equal; try omega.
 Qed.
 
 Lemma transf_final_states:

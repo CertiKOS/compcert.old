@@ -567,13 +567,15 @@ End RELSEM.
   without arguments and with an empty continuation. *)
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b f m0 m1 b1 m2,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0 (fn_stack_requirements (prog_main p))).
+      Mem.alloc m0 0 0 = (m1,b1) ->
+      Mem.record_stack_blocks m1 (make_singleton_frame_adt b1 0 0) m2 ->
+      initial_state p (Callstate f nil Kstop m2 (fn_stack_requirements (prog_main p))).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -853,24 +855,28 @@ End NATURALSEM.
 
 Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
   | bigstep_program_terminates_intro:
-      forall b f m0 t m r,
+      forall b f m0 t m r m01 b1 m02,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      eval_funcall ge m0 f nil t m (Vint r) (fn_stack_requirements (prog_main p)) ->
+      Mem.alloc m0 0 0 = (m01,b1) ->
+      Mem.record_stack_blocks m01 (make_singleton_frame_adt b1 0 0) m02 ->
+      eval_funcall ge m02 f nil t m (Vint r) (fn_stack_requirements (prog_main p)) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
   | bigstep_program_diverges_intro:
-      forall b f m0 t,
+      forall b f m0 t m01 b1 m02,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      evalinf_funcall ge m0 f nil t (fn_stack_requirements (prog_main p)) ->
+      Mem.alloc m0 0 0 = (m01,b1) ->
+      Mem.record_stack_blocks m01 (make_singleton_frame_adt b1 0 0) m02 ->
+      evalinf_funcall ge m02 f nil t (fn_stack_requirements (prog_main p)) ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=

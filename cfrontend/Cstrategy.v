@@ -3039,23 +3039,27 @@ End BIGSTEP.
 (** ** Whole-program behaviors, big-step style. *)
 
 Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
-  | bigstep_program_terminates_intro: forall b f m0 m1 t r,
+  | bigstep_program_terminates_intro: forall b f m0 m1 t r m2 b1 m3,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      eval_funcall ge m0 f nil t m1 (Vint r) (fn_stack_requirements (prog_main p)) ->
+      Mem.alloc m0 0 0 = (m2,b1) ->
+      Mem.record_stack_blocks m2 (make_singleton_frame_adt b1 0 0) m3 ->
+      eval_funcall ge m3 f nil t m1 (Vint r) (fn_stack_requirements (prog_main p)) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
-  | bigstep_program_diverges_intro: forall b f m0 t,
+  | bigstep_program_diverges_intro: forall b f m0 t m2 b1 m3,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      evalinf_funcall ge m0 f nil t (fn_stack_requirements (prog_main p)) ->
+      Mem.alloc m0 0 0 = (m2,b1) ->
+      Mem.record_stack_blocks m2 (make_singleton_frame_adt b1 0 0) m3 ->
+      evalinf_funcall ge m3 f nil t (fn_stack_requirements (prog_main p)) ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=

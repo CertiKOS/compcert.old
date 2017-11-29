@@ -1211,7 +1211,8 @@ Proof.
   rewrite (match_program_main TRANSF). fold tge. rewrite symbols_preserved. eauto.
   eexact A.
   rewrite <- H2. eapply sig_function_translated; eauto.
-  inv TRANSF.  inv H4. rewrite H5. econstructor; eauto. red; intros; constructor. apply Mem.extends_refl.
+  eauto. eauto.
+  destruct TRANSF as (_ & MAIN & _); rewrite MAIN. econstructor; eauto. red; intros; constructor. apply Mem.extends_refl.
 Qed.
 
 Lemma sel_final_states:

@@ -4191,9 +4191,8 @@ End WITHINITSP.
 
 Inductive match_states' (s : Linear.state) (s': Mach.state): Prop :=
 | match_states'_intro:
-    match_states_inv Vnullptr Vnullptr (Locmap.init Vundef) (signature_main) Val.Vnullptr_has_type Mem.empty s s' ->
+    match_states_inv (Vptr (Genv.genv_next ge) Ptrofs.zero) Vnullptr (Locmap.init Vundef) (signature_main) (Val.Vptr_has_type _ _) Mem.empty s s' ->
     match_states' s s'.
-
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state fn_stack_requirements prog st1 ->
@@ -4206,7 +4205,8 @@ Proof.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
-  set (j := Mem.flat_inj (Mem.nextblock m0)).
+  eauto. eauto.
+  set (j := Mem.flat_inj (Mem.nextblock m2)).
   constructor.
   econstructor.
   econstructor. instantiate (2 := j). all: eauto.
@@ -4220,33 +4220,109 @@ Proof.
   - unfold Locmap.init. red; intros; auto.
   - unfold j, Mem.flat_inj.
     red. intros.
-    destruct (plt b0 (Mem.nextblock Mem.empty)); try congruence.
+    repeat destr_in H; try congruence. 
     rewrite Mem.nextblock_empty in p; xomega.
-  - red. unfold Mem.flat_inj. intros b1.
+  - red. unfold Mem.flat_inj. intros b0.
     unfold Mem.valid_block. simpl.
     rewrite Mem.nextblock_empty in *. intros. split; xomega.
-  - unfold Vnullptr. destruct Archi.ptr64; simpl; auto.
-  - red. discriminate.
+  - simpl. unfold j. unfold Mem.flat_inj.
+    erewrite Mem.record_stack_block_nextblock. 2: eauto.
+    erewrite Mem.nextblock_alloc. 2: eauto.
+    erewrite <- Genv.init_mem_genv_next; eauto. fold ge. destr. xomega.
+  - red. intros b' o' EQ; inv EQ.
+    unfold j, Mem.flat_inj.
+    intros b0 b2 delta1 delta2 J1 J2. destr_in J1; destr_in J2.
   - simpl stack_contents. rewrite sep_pure. split; auto. split;[|split].
     + split.
-      * simpl. eapply Genv.initmem_inject; eauto.
+      * simpl.
+        edestruct Mem.alloc_parallel_inject as (f' & m2' & b2 & ALLOC' & INJ & INCR & JNEW & JOLD).
+        eapply Genv.initmem_inject; eauto. eauto. apply Zle_refl. apply Zle_refl.
+        rewrite H4 in ALLOC'; inv ALLOC'.
+        assert (forall b, f' b = j b).
+        {
+          unfold j, Mem.flat_inj.
+          intros.
+          erewrite Mem.record_stack_block_nextblock. 2: eauto.
+          erewrite Mem.nextblock_alloc. 2: eauto.
+          apply Mem.alloc_result in H4. subst. 
+          destr.
+          - apply Plt_succ_inv in p.
+            destruct p; subst; auto.
+            rewrite JOLD. unfold Mem.flat_inj; destr.
+            apply Plt_ne; auto.
+          - rewrite JOLD.
+            unfold Mem.flat_inj; destr. xomega.
+            intro; subst. xomega.
+        }
+        edestruct Mem.record_stack_blocks_inject_parallel as (m2'' & RSB & INJ'); eauto.
+        -- eapply frame_inject_ext.         
+           apply Mem.frame_inject_flat. simpl. constructor; simpl; auto.
+           eapply Mem.valid_new_block. eauto.
+           intros; rewrite H; unfold j.
+           erewrite <- Mem.record_stack_block_nextblock. 2: eauto.
+           reflexivity.
+        -- erewrite Mem.alloc_stack_blocks. 2: eauto.
+           intros b0 INS [|[]]. subst. simpl in INS.
+           apply Mem.in_frames_valid in INS.
+           eapply Mem.fresh_block_alloc; eauto.
+        -- red; simpl. intros b0 [|[]]. simpl in *; subst.
+           eapply Mem.valid_new_block; eauto.
+        -- intros b0 fi [AA|[]]. inv AA.
+           intros.
+           eapply Mem.perm_alloc_inv in H6; eauto. destr_in H6.
+        -- unfold in_frame; simpl.
+           intros b1 b0 delta. rewrite H. unfold j, Mem.flat_inj.
+           intro FI; repeat destr_in FI.
+        -- apply frameinj_surjective_flat.
+           erewrite Mem.alloc_stack_blocks; eauto.
+        -- exploit Mem.record_stack_block_det. apply H5. apply RSB. intro; subst.
+           eapply Mem.inject_ext. apply INJ'. auto.
       * simpl. red. simpl. easy.
-    +  simpl. exists (Mem.nextblock m0); split. apply Ple_refl.
-       unfold j, Mem.flat_inj; constructor; intros.
-       apply pred_dec_true; auto.
-       destruct (plt b1 (Mem.nextblock m0)); congruence.
-       change (Mem.valid_block m0 b0). eapply Genv.find_symbol_not_fresh; eauto.
-       change (Mem.valid_block m0 b0). eapply Genv.find_funct_ptr_not_fresh; eauto.
-       change (Mem.valid_block m0 b0). eapply Genv.find_var_info_not_fresh; eauto.
+    + simpl. exists (Mem.nextblock m1); split.
+      rewrite (Mem.record_stack_block_nextblock _ _ _ H5).
+      apply Ple_refl.
+      assert (j = Mem.flat_inj (Mem.nextblock m1)). rewrite <- (Mem.record_stack_block_nextblock _ _ _ H5). auto. clearbody j. subst j.
+      unfold Mem.flat_inj; constructor; intros.
+      apply pred_dec_true; auto.
+      destruct (plt b0 (Mem.nextblock m1)); congruence.
+      change (Mem.valid_block m1 b0). eapply Mem.valid_block_alloc. eauto.
+      eapply Genv.find_symbol_not_fresh; eauto.
+      change (Mem.valid_block m1 b0). eapply Mem.valid_block_alloc. eauto.
+      eapply Genv.find_funct_ptr_not_fresh; eauto.
+      change (Mem.valid_block m1 b0). eapply Mem.valid_block_alloc. eauto.
+      eapply Genv.find_var_info_not_fresh; eauto.
     + red; simpl; tauto.
-  - eapply frameinj_order_strict_flat.
-  - eapply frameinj_surjective_flat. auto.
+  - eapply frameinj_order_strict_ext.
+    eapply frameinj_order_strict_flat.
+    intros; apply frameinj_push_flat.
+  - eapply frameinj_surjective_ext. eapply frameinj_surjective_flat. apply le_refl.
+    intros; rewrite <- frameinj_push_flat.
+    erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl.
+    erewrite Mem.alloc_stack_blocks; eauto.
   - constructor. rewrite Mem.nextblock_empty; xomega.
     constructor.
-  - constructor. rewrite Mem.nextblock_empty; xomega.
-    unfold Vnullptr. destruct Archi.ptr64; simpl; auto.
-    unfold Vnullptr. destruct Archi.ptr64; simpl; auto.
-    constructor.
+  - constructor.
+    + rewrite Mem.nextblock_empty; xomega.
+    + simpl. red. erewrite Mem.record_stack_block_nextblock. 2: eauto.
+      erewrite Mem.nextblock_alloc; eauto.
+      erewrite <- Genv.init_mem_genv_next; eauto. fold ge. xomega.
+    + simpl.
+      erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl.
+      eexists; eexists; split;[|split].
+      2: left; auto. left. f_equal.
+      erewrite Mem.alloc_result with (b0:=b1); eauto.
+      erewrite <- Genv.init_mem_genv_next; eauto. fold ge. reflexivity.
+      split.
+      * unfold signature_main. unfold size_arguments. simpl.
+        change (if Archi.ptr64 then 0 else 0) with 0. simpl.
+        intros o RNG.
+        rewrite Ptrofs.unsigned_zero in RNG.
+        change (fe_ofs_arg) with 0 in RNG. omega.
+      * unfold signature_main. unfold size_arguments. simpl.
+        change (if Archi.ptr64 then 0 else 0) with 0. simpl.
+        intros o RNG.
+        change (fe_ofs_arg) with 0 in RNG. omega.
+    + constructor.
   - constructor.
     eexists; eexists; split. rewrite app_nil_l. eauto. constructor.
     constructor.
@@ -4319,7 +4395,11 @@ Proof.
   + apply Val.Vnullptr_has_type.
   + eapply stacking_frame_correct; eauto.
   + intros [s2' [A B]].
-    exists s2'; split. exact A. split.
+    exists s2'; split.
+    simpl. 
+    unfold match_prog, match_program in TRANSF.
+    rewrite (Genv.genv_next_match TRANSF).
+    exact A. split.
     * eapply step_type_preservation; eauto. eexact wt_prog. 
     * econstructor; eauto. 
 Qed.

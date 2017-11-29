@@ -732,8 +732,9 @@ module Target(System: SYSTEM):TARGET =
       (* Pseudo-instructions *)
       | Plabel(l) ->
           fprintf oc "%a:\n" label (transl_label l)
-      | Pallocframe(_, ofs_ra, ofs_link)
-      | Pfreeframe(_, ofs_ra, ofs_link) ->
+      | Pallocframe(_, _)
+      | Pload_parent_pointer(_, _)
+      | Pfreeframe(_, _) ->
 	 assert false
       | Pbuiltin(ef, args, res) ->
           begin match ef with

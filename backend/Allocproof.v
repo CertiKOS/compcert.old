@@ -2337,13 +2337,13 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf (Locmap.init Vundef) m0 (fn_stack_requirements (prog_main tprog))); split.
+  exists (LTL.Callstate nil tf (Locmap.init Vundef) m2 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.
   rewrite (match_program_main TRANSF).  auto.
   congruence.
-  rewrite (match_program_main TRANSF).  auto.
+  rewrite (match_program_main TRANSF).  
   constructor; auto.
   constructor. rewrite SIG; rewrite H3; auto.
   rewrite SIG, H3, loc_arguments_main. auto.

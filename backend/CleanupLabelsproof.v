@@ -364,8 +364,8 @@ Proof.
   eapply (Genv.init_mem_transf TRANSL); eauto.
   rewrite (match_program_main TRANSL), symbols_preserved; eauto.
   apply function_ptr_translated; auto.
-  rewrite sig_function_translated. auto.
-  inv TRANSL. inv H4. rewrite H5. constructor; auto. constructor.
+  rewrite sig_function_translated. auto. eauto. eauto.
+  inv TRANSL. destruct H6 as (MAIN & PUB); rewrite MAIN; constructor; auto. constructor.
 Qed.
 
 Lemma transf_final_states:

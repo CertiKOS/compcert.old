@@ -2090,6 +2090,52 @@ Proof.
   eapply Mem.alloc_stack_blocks; eauto.
 Qed.
 
+
+    Lemma alloc_variables_perm_1:
+      forall e1 m1 vars e2 m2,
+        alloc_variables e1 m1 vars e2 m2 ->
+        forall b o k p,
+          Mem.perm m1 b o k p ->
+          Mem.perm m2 b o k p.
+    Proof.
+      induction 1; simpl; intros b o k p P. auto.
+      eapply IHalloc_variables.
+      eapply Mem.perm_alloc_1; eauto.
+    Qed.
+
+
+    Lemma alloc_variables_not_in_vars:
+      forall e1 m1 vars e2 m2,
+        alloc_variables e1 m1 vars e2 m2 ->
+        forall id,
+          ~ In id (map fst vars) ->
+          e1 ! id = e2 ! id.
+    Proof.
+      induction 1; simpl; intros id0 NIN. auto.
+      destruct (peq id0 id). subst. intuition congruence.
+      erewrite <- IHalloc_variables; auto. rewrite PTree.gso. auto. auto.
+    Qed.
+
+    Lemma alloc_variables_perm:
+      forall e1 m1 vars e2 m2,
+        alloc_variables e1 m1 vars e2 m2 ->
+        list_norepet (map fst vars) ->
+        forall id b hi,
+          e1 ! id = None ->
+          e2 ! id = Some (b,hi) ->
+          Mem.range_perm m2 b 0 hi Max Freeable.
+    Proof.
+      induction 1; simpl; intros LNR id0 b hi E1 E2.
+      congruence.
+      inv LNR.
+      destruct (peq id id0). subst.
+      - erewrite <- alloc_variables_not_in_vars in E2; eauto.
+        rewrite PTree.gss in E2; inv E2.
+        red; intros. eapply alloc_variables_perm_1. eauto.
+        eapply Mem.perm_alloc_2; eauto.
+      - eapply IHalloc_variables; eauto. rewrite PTree.gso; auto.
+    Qed.
+
 Lemma transl_step_correct:
   forall S1 t S2, Csharpminor.step fn_stack_requirements ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
@@ -2375,50 +2421,6 @@ Opaque PTree.set.
     eauto.
     eapply Mem.perm_inject. apply FB. eauto.
 
-    Lemma alloc_variables_perm_1:
-      forall e1 m1 vars e2 m2,
-        alloc_variables e1 m1 vars e2 m2 ->
-        forall b o k p,
-          Mem.perm m1 b o k p ->
-          Mem.perm m2 b o k p.
-    Proof.
-      induction 1; simpl; intros b o k p P. auto.
-      eapply IHalloc_variables.
-      eapply Mem.perm_alloc_1; eauto.
-    Qed.
-
-
-    Lemma alloc_variables_not_in_vars:
-      forall e1 m1 vars e2 m2,
-        alloc_variables e1 m1 vars e2 m2 ->
-        forall id,
-          ~ In id (map fst vars) ->
-          e1 ! id = e2 ! id.
-    Proof.
-      induction 1; simpl; intros id0 NIN. auto.
-      destruct (peq id0 id). subst. intuition congruence.
-      erewrite <- IHalloc_variables; auto. rewrite PTree.gso. auto. auto.
-    Qed.
-
-    Lemma alloc_variables_perm:
-      forall e1 m1 vars e2 m2,
-        alloc_variables e1 m1 vars e2 m2 ->
-        list_norepet (map fst vars) ->
-        forall id b hi,
-          e1 ! id = None ->
-          e2 ! id = Some (b,hi) ->
-          Mem.range_perm m2 b 0 hi Max Freeable.
-    Proof.
-      induction 1; simpl; intros LNR id0 b hi E1 E2.
-      congruence.
-      inv LNR.
-      destruct (peq id id0). subst.
-      - erewrite <- alloc_variables_not_in_vars in E2; eauto.
-        rewrite PTree.gss in E2; inv E2.
-        red; intros. eapply alloc_variables_perm_1. eauto.
-        eapply Mem.perm_alloc_2; eauto.
-      - eapply IHalloc_variables; eauto. rewrite PTree.gso; auto.
-    Qed.
 
     eapply alloc_variables_perm. eauto. eauto. apply PTree.gempty. eauto. auto.
     constructor.
@@ -2512,7 +2514,10 @@ Inductive match_states'
     m_init
     (M_INIT: Genv.init_mem prog = Some m_init)    
     (genv_next_le_m_init_next: Ple (Genv.genv_next ge) (Mem.nextblock m_init))
-    (MATCH: match_states m_init s s')
+    m1 b1 m2
+    (ALLOC: Mem.alloc m_init 0 0 = (m1,b1))
+    (RSB: Mem.record_stack_blocks m1 (make_singleton_frame_adt b1 0 0) m2)
+    (MATCH: match_states m2 s s')
 .
 
 Lemma match_globalenvs_init:
@@ -2545,17 +2550,81 @@ Proof.
   eapply match_program_main; eauto. 
   eexact FIND.
   rewrite <- H2. apply sig_preserved; auto.
-  econstructor; eauto.
-  unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
-  inv TRANSL. inv H4. rewrite H5;
-  eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m0)) (cs := @nil frame) (cenv := PTree.empty Z).
-  auto.
-  eapply Genv.initmem_inject; eauto.
-  apply mcs_nil with (Mem.nextblock m0). apply match_globalenvs_init; auto. xomega. xomega.
-  constructor. red; auto.
-  constructor.
-  eapply frameinj_order_strict_flat.
-  eapply frameinj_surjective_flat; eauto.
+  eauto. eauto.
+  edestruct Mem.alloc_parallel_inject as (f' & m2' & b2 & ALLOC' & INJ & INCR & JNEW & JOLD).
+  eapply Genv.initmem_inject; eauto. eauto. apply Zle_refl. apply Zle_refl.
+  rewrite H3 in ALLOC'; inv ALLOC'.
+  assert (EXT: forall b, f' b = Mem.flat_inj (Mem.nextblock m2) b).
+  {
+    unfold Mem.flat_inj.
+    intros.
+    erewrite Mem.record_stack_block_nextblock. 2: eauto.
+    erewrite Mem.nextblock_alloc. 2: eauto.
+    apply Mem.alloc_result in H3. subst. 
+    destr.
+    - apply Plt_succ_inv in p.
+      destruct p; subst; auto.
+      rewrite JOLD. unfold Mem.flat_inj; destr.
+      apply Plt_ne; auto.
+    - rewrite JOLD.
+      unfold Mem.flat_inj; destr. xomega.
+      intro; subst. xomega.
+  }
+  edestruct Mem.record_stack_blocks_inject_parallel as (m2'' & RSB & INJ'); eauto.
+  -- eapply frame_inject_ext.         
+     apply Mem.frame_inject_flat. simpl. constructor; simpl; auto.
+     eapply Mem.valid_new_block. eauto.
+     intros; rewrite EXT.
+     erewrite <- Mem.record_stack_block_nextblock. 2: eauto.
+     reflexivity.
+  -- erewrite Mem.alloc_stack_blocks. 2: eauto.
+     intros b0 INS [|[]]. subst. simpl in INS.
+     apply Mem.in_frames_valid in INS.
+     eapply Mem.fresh_block_alloc; eauto.
+  -- red; simpl. intros b0 [|[]]. simpl in *; subst.
+     eapply Mem.valid_new_block; eauto.
+  -- intros b0 fi [AA|[]]. inv AA.
+     intros o k p PERM.
+     eapply Mem.perm_alloc_inv in PERM; eauto. destr_in PERM.
+  -- unfold in_frame; simpl.
+     intros b1 b0 delta. rewrite EXT. unfold Mem.flat_inj.
+     intro FI; repeat destr_in FI.
+  -- apply frameinj_surjective_flat.
+     erewrite Mem.alloc_stack_blocks; eauto.
+  -- exploit Mem.record_stack_block_det. apply H4. apply RSB.
+     intro; subst.
+     econstructor; eauto.
+     unfold ge. erewrite Genv.init_mem_genv_next; eauto. apply Ple_refl.
+     destruct TRANSL as (_ & MAIN & _).
+     rewrite MAIN.
+     eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m2'')) (cs := @nil frame) (cenv := PTree.empty Z).
+     auto.
+     eapply Mem.inject_ext. eauto. auto.
+     apply mcs_nil with (Mem.nextblock m2'').
+     {
+       exploit match_globalenvs_init. eauto. intro MG.
+       assert (Ple (Mem.nextblock m0) (Mem.nextblock m2'')).
+       {
+         erewrite (Mem.record_stack_block_nextblock _ _ _ RSB).
+         erewrite (Mem.nextblock_alloc _ _ _ _ _ H3). xomega.
+       }
+       inv MG; constructor; simpl; eauto. xomega.
+       unfold Mem.flat_inj. intros; destr.
+       unfold Mem.flat_inj.  intros b1 b0 delta EQ PLT; repeat destr_in EQ.
+       intros id b0 FS; eapply SYMBOLS in FS; xomega.
+       intros b0 fd FFP; eapply FUNCTIONS in FFP; xomega.
+       intros b0 gv FVI; eapply VARINFOS in FVI; xomega.
+     }
+     xomega. xomega.
+     constructor. red; auto.
+     constructor.
+     eapply frameinj_order_strict_ext.
+     eapply frameinj_order_strict_flat.
+     intros; apply frameinj_push_flat.
+     eapply frameinj_surjective_ext. eapply frameinj_surjective_flat. apply le_refl.
+     intros; rewrite <- frameinj_push_flat.
+     erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl.
+     erewrite Mem.alloc_stack_blocks; eauto.
 Qed.
 
 Lemma transl_final_states:

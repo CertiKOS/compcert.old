@@ -261,6 +261,7 @@ Proof.
   rewrite symbols_preserved. rewrite (match_program_main TRANSL). eauto.
   eapply function_ptr_translated; eauto.
   rewrite <- H3; apply sig_preserved.
+  eauto. eauto.
   destruct TRANSL as (_ & A & _); rewrite A. constructor. constructor.
 Qed.
 

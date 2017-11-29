@@ -1603,7 +1603,9 @@ Proof.
   symmetry; eapply match_program_main; eauto.
   eexact A.
   rewrite <- H2. apply sig_transl_function; auto.
-  inv TRANSL. inv H4. setoid_rewrite H5. constructor. auto. constructor.
+  eauto. eauto.
+  destruct TRANSL as (_ & MAIN & _).
+  setoid_rewrite MAIN. constructor. auto. constructor.
   constructor. apply Mem.extends_refl.
 Qed.
 

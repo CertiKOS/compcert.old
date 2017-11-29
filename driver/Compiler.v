@@ -406,8 +406,8 @@ Proof.
 Qed.
 
 Lemma mono_semantics_determinate:
-  forall p,
-    determinate (RawAsmgen.mono_semantics p p).
+  forall p m rs,
+    determinate (RawAsmgen.mono_semantics p p rs m).
 Proof.
   Ltac Equalities :=
     match goal with
@@ -433,9 +433,10 @@ Proof.
     eapply Events.external_call_trace_length; eauto.
     eapply Events.external_call_trace_length; eauto.
   - (* initial states *)
-    inv H; inv H0. inv H; inv H1. f_equal.
-    eapply Memtype.Mem.record_stack_block_det; eauto.
-    congruence.
+    inv H; inv H0.
+    assert (m1 = m0 /\ bstack = bstack0) by intuition congruence. destruct H; subst.
+    assert (m2 = m4) by congruence. subst.
+    f_equal. eapply Memtype.Mem.record_stack_block_det; eauto.
   - (* final no step *)
     assert (NOTNULL: forall b ofs, Values.Vnullptr <> Values.Vptr b ofs).
     { intros; unfold Values.Vnullptr; destruct Archi.ptr64; congruence. }
@@ -443,11 +444,13 @@ Proof.
   - (* final states *)
     inv H; inv H0. congruence.
 Qed.
+
 Theorem cstrategy_semantic_preservation:
   forall p tp,
-  match_prog p tp ->
-  forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics tp)
-  /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (Asm.semantics tp).
+    match_prog p tp ->
+    let init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp))) in
+  forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics init_sp tp)
+  /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (Asm.semantics init_sp tp).
 Proof.
   intros p tp M. unfold match_prog, pass_match in M; simpl in M.
 Ltac DestructM :=
@@ -456,8 +459,9 @@ Ltac DestructM :=
       let p := fresh "p" in let M := fresh "M" in let MM := fresh "MM" in
       destruct H as (p & M & MM); clear H
   end.
-  repeat DestructM. 
-  assert (F: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics tp)).
+  repeat DestructM.
+  intros init_sp.
+  assert (F: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics init_sp tp)).
   {
   eapply compose_forward_simulations.
     eapply SimplExprproof.transl_program_correct; eassumption.
@@ -516,8 +520,14 @@ Ltac DestructM :=
       unfold Asmgen.transl_function in EQ0. monadInv EQ0. simpl. auto. auto.
       eapply match_program_no_more_functions in Heqo0; eauto. rewrite Heqo0. auto.
     }
-    subst. eapply Asmgenproof.transf_program_correct. eassumption.
+    subst. unfold init_sp.
+    replace (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp))
+      with (Asmgenproof.init_sp_block p19).
+    eapply Asmgenproof.transf_program_correct. eassumption.
     eapply Stackingproof.stacking_frame_correct; eauto.
+    unfold Asmgenproof.init_sp_block.
+    eapply Globalenvs.Genv.senv_transf_partial in M18.
+    destruct M18 as (NB & _). simpl in NB. auto.
   }
   split. auto.
   apply forward_to_backward_simulation.
@@ -529,20 +539,22 @@ Qed.
 Theorem cstrategy_semantic_preservation_raw:
   forall p tp,
     match_prog p tp ->
-    forall NORSP:     RawAsmgen.asm_prog_no_rsp (Globalenvs.Genv.globalenv tp),
-      forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp)
-  /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (RawAsmgen.mono_semantics tp tp).
+    forall (NORSP:     RawAsmgen.asm_prog_no_rsp (Globalenvs.Genv.globalenv tp)) m
+      (IM: Globalenvs.Genv.init_mem tp = Some m),
+      forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m)
+  /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m).
 Proof.
-  intros p tp M NORSP.
-  assert (F: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics tp)).
+  intros p tp M NORSP m IM.
+  set( init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp)))).
+  assert (F: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (Asm.semantics init_sp tp)).
   {
     eapply cstrategy_semantic_preservation; eauto.
   }
   assert (G: forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p)
-                                (RawAsmgen.mono_semantics tp tp)).
+                                (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m)).
   {
     eapply compose_forward_simulations. apply F.
-    eapply RawAsmgen.transf_program_correct. auto.
+    eapply RawAsmgen.transf_program_correct; auto.
   }
   split. auto.
   apply forward_to_backward_simulation.
@@ -554,10 +566,12 @@ Qed.
 Theorem cstrategy_semantic_preservation_raw':
   forall p tp,
     match_prog p tp ->
-    forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp)
-    /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (RawAsmgen.mono_semantics tp tp).
+    forall m,
+      Globalenvs.Genv.init_mem tp = Some m ->
+      forward_simulation (Cstrategy.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m)
+      /\ backward_simulation (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)) (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m).
 Proof.
-  intros p tp M.
+  intros p tp M m IM.
   eapply cstrategy_semantic_preservation_raw; eauto.
   unfold match_prog, pass_match in M; simpl in M.
   repeat DestructM. 
@@ -574,8 +588,9 @@ Qed.
 
 Theorem c_semantic_preservation:
   forall p tp,
-  match_prog p tp ->
-  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (Asm.semantics tp).
+    match_prog p tp ->
+    let init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp))) in
+  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (Asm.semantics init_sp tp).
 Proof.
   intros.
   apply compose_backward_simulation with (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)).
@@ -589,8 +604,10 @@ Qed.
 
 Theorem c_semantic_preservation_raw:
   forall p tp,
-  match_prog p tp ->
-  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp).
+    match_prog p tp ->
+    forall m,
+      Globalenvs.Genv.init_mem tp = Some m ->
+  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m).
 Proof.
   intros.
   apply compose_backward_simulation with (atomic (Cstrategy.semantics (fn_stack_requirements tp) p)).
@@ -599,7 +616,7 @@ Proof.
   apply Cstrategy.strategy_simulation.
   apply Csem.semantics_single_events.
   eapply ssr_well_behaved; eapply Cstrategy.semantics_strongly_receptive.
-  exact (proj2 (cstrategy_semantic_preservation_raw' _ _ H)).
+  exact (proj2 (cstrategy_semantic_preservation_raw' _ _ H _ H0)).
 Qed.
 
 (** * Correctness of the CompCert compiler *)
@@ -616,18 +633,21 @@ Qed.
 
 Theorem transf_c_program_correct:
   forall p tp,
-  transf_c_program p = OK tp ->
-  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (Asm.semantics tp).
+    transf_c_program p = OK tp ->
+    let init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp))) in
+  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (Asm.semantics init_sp tp).
 Proof.
   intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
 Qed.
 
 Theorem transf_c_program_correct_raw:
   forall p tp,
-  transf_c_program p = OK tp ->
-  backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp).
+    transf_c_program p = OK tp ->
+    forall m,
+      Globalenvs.Genv.init_mem tp = Some m ->
+      backward_simulation (Csem.semantics (fn_stack_requirements tp) p) (RawAsmgen.mono_semantics tp tp (Asm.Pregmap.init Values.Vundef) m).
 Proof.
-  intros. apply c_semantic_preservation_raw. apply transf_c_program_match; auto.
+  intros. apply c_semantic_preservation_raw. apply transf_c_program_match; auto. auto.
 Qed.
 
 
@@ -649,7 +669,9 @@ Theorem separate_transf_c_program_correct:
   link_list c_units = Some c_program ->
   exists asm_program, 
       link_list asm_units = Some asm_program
-   /\ backward_simulation (Csem.semantics (fn_stack_requirements asm_program) c_program) (Asm.semantics asm_program).
+      /\
+      let init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv asm_program))) in
+      backward_simulation (Csem.semantics (fn_stack_requirements asm_program) c_program) (Asm.semantics init_sp asm_program).
 Proof.
   intros. 
   assert (nlist_forall2 match_prog c_units asm_units).

@@ -2252,7 +2252,9 @@ Proof.
   destruct TRANSL. destruct H as (A & B & C). simpl in B. auto. 
   eexact FIND.
   rewrite <- H3. apply type_of_fundef_preserved. auto.
-  inv TRANSL. inv H. inv H6.  setoid_rewrite H. constructor. auto. constructor.
+  eauto. eauto.
+  destruct TRANSL as ((_ & MAIN & _) & _).
+  setoid_rewrite MAIN. constructor. auto. constructor.
 Qed.
 
 Lemma transl_final_states:

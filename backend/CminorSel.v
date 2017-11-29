@@ -457,13 +457,15 @@ Inductive step: state -> trace -> state -> Prop :=
 End RELSEM.
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b f m0 m1 b1 m2,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0 (fn_stack_requirements (prog_main p))).
+      Mem.alloc m0 0 0 = (m1,b1) ->
+      Mem.record_stack_blocks m1 (make_singleton_frame_adt b1 0 0) m2 ->
+      initial_state p (Callstate f nil Kstop m2 (fn_stack_requirements (prog_main p))).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,

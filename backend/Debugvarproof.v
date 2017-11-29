@@ -560,11 +560,11 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) m0 (fn_stack_requirements (prog_main tprog))); split.
+  exists (Callstate nil tf (Locmap.init Vundef) m2 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.
-  inv TRANSF.  inv H6. rewrite H4;  constructor. constructor. auto.
+  inv TRANSF.  destruct H8 as (MAIN & PUBLIC). rewrite MAIN. constructor. constructor. auto.
 Qed.
 
 Lemma transf_final_states:

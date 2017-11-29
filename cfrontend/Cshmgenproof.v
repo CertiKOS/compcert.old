@@ -1920,7 +1920,7 @@ Proof.
   { eapply transl_fundef_sig2; eauto. }
   econstructor; split.
   econstructor; eauto. apply (Genv.init_mem_match TRANSL). eauto.
-  inv TRANSL. inv H4. rewrite H5.
+  inv TRANSL. inv H6. rewrite H7.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
   simpl; auto.
 Qed.

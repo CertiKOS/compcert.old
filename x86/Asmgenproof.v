@@ -870,80 +870,6 @@ Qed.
     unfold in_frame; rewrite blocks. left; left; auto.
   Qed.
 
-Theorem step_simulation:
-  forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1') (* (ANN: asm_no_none S1') *),
-  (exists S2', plus (step init_sp) tge S1' t S2' /\ match_states S2 S2')
-  \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
-Proof.
-  induction 1; intros; inv MS(* ; inv ANN *).
-
-- (* Mlabel *)
-  left; eapply exec_straight_steps; eauto; intros.
-  monadInv TR. econstructor; split. apply exec_straight_one. simpl; eauto. auto.
-  split. apply agree_nextinstr; auto. simpl; congruence.
-  eapply msfa_ext_code; eauto.
-
-- (* Mgetstack *)
-  unfold load_stack in H.
-  exploit Mem.loadv_extends; eauto. intros [v' [A B]].
-  rewrite (sp_val _ _ _ AG) in A.
-  left; eapply exec_straight_steps; eauto. intros. simpl in TR.
-  exploit loadind_correct; eauto. intros [rs' [P [Q R]]].
-  exists rs'; split. eauto.
-  split. eapply agree_set_mreg; eauto. congruence.
-  simpl; congruence.
-  eapply msfa_ext_code; eauto.
-  
-- (* Msetstack *)
-  unfold store_stack in H.
-  assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
-  exploit Mem.storev_extends; eauto. intros [m2' [A B]].
-  left; eapply exec_straight_steps; eauto.
-  rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
-  exploit storeind_correct; eauto.
-
-  intros [rs' [P Q]].
-  exists rs'; split. eauto.
-  split. eapply agree_undef_regs; eauto.
-  simpl; intros. rewrite Q; auto with asmgen.
-Local Transparent destroyed_by_setstack.
-  destruct ty; simpl; intuition congruence.
-  eapply msfa_ext_code; eauto.
-  unfold Mem.storev in H; destr_in H. 
-  erewrite Mem.store_no_abstract; eauto.
-  unfold Mem.storev in H; destr_in H.
-  simpl in A. 
-  apply Mem.store_no_abstract in H; eauto.
-  apply Mem.store_no_abstract in A; eauto.
-  congruence.
-  unfold Mem.storev in A; destr_in A.
-  erewrite Mem.store_no_abstract; simpl in *; eauto.
-- (* Mgetparam *)
-  assert (f0 = f) by congruence; subst f0.
-  unfold load_stack in *.
-  exploit Mem.loadv_extends. eauto. eexact H0. auto.
-  intros [ra' [A B]]. (* rewrite (sp_val _ _ _ AG) in A. *)
-  (* exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'. *)
-  (* exploit Mem.loadv_extends. eauto. eexact H1. auto. *)
-  (* intros [v' [C D]]. *)
-Opaque loadind.
-  left; eapply exec_straight_steps; eauto; intros.
-  assert (DIFF: negb (mreg_eq dst AX) = true -> IR RAX <> preg_of dst).
-    intros. change (IR RAX) with (preg_of AX). red; intros.
-    unfold proj_sumbool in H1. destruct (mreg_eq dst AX); try discriminate.
-    elim n. eapply preg_of_injective; eauto.
-  destruct ep; simpl in TR.
-(* RAX contains parent *)
-  exploit loadind_correct. eexact TR.
-  instantiate (2 := rs0). rewrite AXP; eauto.
-  intros [rs1 [P [Q R]]].
-  exists rs1; split. eauto.
-  split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto.
-  simpl; intros. rewrite R; auto.
-(* RAX does not contain parent *)
-  monadInv TR.
-
 
   Lemma load_parent_pointer_correct:
     forall (tge: genv) fn (rd: ireg) x m1 (rs1: regset) s fb sp c f
@@ -1029,6 +955,82 @@ Opaque loadind.
       + rewrite Pregmap.gso by congruence; auto.
       + intro; subst. contradict H; simpl; congruence.
   Qed.
+
+Theorem step_simulation:
+  forall S1 t S2, Mach.step init_sp init_ra return_address_offset ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1') (* (ANN: asm_no_none S1') *),
+  (exists S2', plus (step init_sp) tge S1' t S2' /\ match_states S2 S2')
+  \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
+Proof.
+  induction 1; intros; inv MS(* ; inv ANN *).
+
+- (* Mlabel *)
+  left; eapply exec_straight_steps; eauto; intros.
+  monadInv TR. econstructor; split. apply exec_straight_one. simpl; eauto. auto.
+  split. apply agree_nextinstr; auto. simpl; congruence.
+  eapply msfa_ext_code; eauto.
+
+- (* Mgetstack *)
+  unfold load_stack in H.
+  exploit Mem.loadv_extends; eauto. intros [v' [A B]].
+  rewrite (sp_val _ _ _ AG) in A.
+  left; eapply exec_straight_steps; eauto. intros. simpl in TR.
+  exploit loadind_correct; eauto. intros [rs' [P [Q R]]].
+  exists rs'; split. eauto.
+  split. eapply agree_set_mreg; eauto. congruence.
+  simpl; congruence.
+  eapply msfa_ext_code; eauto.
+  
+- (* Msetstack *)
+  unfold store_stack in H.
+  assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
+  exploit Mem.storev_extends; eauto. intros [m2' [A B]].
+  left; eapply exec_straight_steps; eauto.
+  rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
+  exploit storeind_correct; eauto.
+
+  intros [rs' [P Q]].
+  exists rs'; split. eauto.
+  split. eapply agree_undef_regs; eauto.
+  simpl; intros. rewrite Q; auto with asmgen.
+Local Transparent destroyed_by_setstack.
+  destruct ty; simpl; intuition congruence.
+  eapply msfa_ext_code; eauto.
+  unfold Mem.storev in H; destr_in H. 
+  erewrite Mem.store_no_abstract; eauto.
+  unfold Mem.storev in H; destr_in H.
+  simpl in A. 
+  apply Mem.store_no_abstract in H; eauto.
+  apply Mem.store_no_abstract in A; eauto.
+  congruence.
+  unfold Mem.storev in A; destr_in A.
+  erewrite Mem.store_no_abstract; simpl in *; eauto.
+- (* Mgetparam *)
+  assert (f0 = f) by congruence; subst f0.
+  unfold load_stack in *.
+  exploit Mem.loadv_extends. eauto. eexact H0. auto.
+  intros [ra' [A B]]. (* rewrite (sp_val _ _ _ AG) in A. *)
+  (* exploit (lessdef_parent_sp init_sp); eauto. clear B; intros B; subst parent'. *)
+  (* exploit Mem.loadv_extends. eauto. eexact H1. auto. *)
+  (* intros [v' [C D]]. *)
+Opaque loadind.
+  left; eapply exec_straight_steps; eauto; intros.
+  assert (DIFF: negb (mreg_eq dst AX) = true -> IR RAX <> preg_of dst).
+    intros. change (IR RAX) with (preg_of AX). red; intros.
+    unfold proj_sumbool in H1. destruct (mreg_eq dst AX); try discriminate.
+    elim n. eapply preg_of_injective; eauto.
+  destruct ep; simpl in TR.
+(* RAX contains parent *)
+  exploit loadind_correct. eexact TR.
+  instantiate (2 := rs0). rewrite AXP; eauto.
+  intros [rs1 [P [Q R]]].
+  exists rs1; split. eauto.
+  split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto.
+  simpl; intros. rewrite R; auto.
+(* RAX does not contain parent *)
+  monadInv TR.
+
+
 
   assert (exists bsp, parent_sp init_sp s = Vptr bsp Ptrofs.zero).
   {
@@ -1182,7 +1184,7 @@ Opaque loadind.
   destruct in_frames_dec; simpl in Heqb0; auto. congruence. 
   apply n. eapply in_frames_in_frame; eauto. eapply in_frame_blocks_in_frame. rewrite frblocks.
   left; auto.
-  clear Heqs0; exfalso; apply n.
+  exfalso; apply n.
   constructor; auto.
   red; split; auto.
   simpl. symmetry; eapply CC; eauto. 
@@ -1235,7 +1237,7 @@ Opaque loadind.
   rewrite Heqv. auto. eauto. eauto. eauto.
   destruct in_frames_dec; auto. simpl in Heqb0. congruence.
   apply n. eapply in_frames_in_frame; eauto. red; rewrite frblocks'; left; auto.
-  exfalso; clear Heqs0; apply n; constructor; auto.
+  exfalso; apply n; constructor; auto.
   red; split; simpl; eauto.
   symmetry; eapply CC; eauto.
   apply star_one. eapply exec_step_internal.
@@ -1440,7 +1442,7 @@ Transparent destroyed_by_jumptable.
   rewrite Heqv. auto. eauto. eauto. eauto.
   destruct in_frames_dec; auto. simpl in Heqb0. congruence.
   apply n. eapply in_frames_in_frame; eauto. red; rewrite frblocks'; left; auto.
-  exfalso; clear Heqs0; apply n; constructor; auto.
+  exfalso; apply n; constructor; auto.
   red; split; simpl; eauto.
   symmetry; eapply CC; eauto.
 
@@ -1603,32 +1605,51 @@ Qed.
 
 End WITHINITSPRA.
 
-Let match_states v1 v2 s1 s2 :=
-  match_states v1 v2 s1 s2.
+Definition ptr_of_block (b: block) := Vptr b Ptrofs.zero.
+
+Definition init_sp_block := Genv.genv_next ge.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
-  exists st2, Asm.initial_state tprog st2 /\ match_states Vnullptr Vnullptr st1 st2.
+  exists st2, Asm.initial_state tprog st2 /\ match_states (ptr_of_block init_sp_block) Vnullptr st1 st2.
 Proof.
   intros. inversion H. unfold ge0 in *.
   econstructor; split. 
   - econstructor.
     eapply (Genv.init_mem_transf_partial TRANSF); eauto.
+    eauto. eauto.
   - replace (Genv.symbol_address (Genv.globalenv tprog) (prog_main tprog) Ptrofs.zero)
     with (Vptr fb Ptrofs.zero).
     + econstructor; eauto.
       * econstructor; eauto.
       * apply Mem.extends_refl.
       * split.
-        -- reflexivity.
-        -- simpl.
-           unfold Vnullptr; destruct Archi.ptr64; congruence.
-        -- eapply parent_sp_type. apply Val.Vnullptr_has_type. constructor.
+        -- apply Mem.alloc_result in H2. subst.
+           erewrite <- Genv.init_mem_genv_next; eauto.
+           reflexivity. 
+        -- simpl. unfold ptr_of_block. congruence.
+        -- eapply parent_sp_type. unfold ptr_of_block. apply Val.Vptr_has_type. constructor.
         -- intros. rewrite Regmap.gi. auto.
-      * erewrite Genv.init_mem_stack_adt; eauto.
+      *
+        erewrite Mem.record_stack_blocks_stack_adt. 2: eauto.
+        erewrite Mem.alloc_stack_blocks. 2: eauto.
+        erewrite Genv.init_mem_stack_adt; eauto.
         constructor.
-        red; intros. unfold Vnullptr in H3; destr_in H3.
-      * inversion 1.
+        red; intros. eexists; eexists; split. reflexivity. simpl.
+        f_equal. f_equal.
+        unfold init_sp_block.
+        apply Mem.alloc_result in H2. subst.
+        erewrite <- Genv.init_mem_genv_next; eauto.
+        reflexivity.
+      * inversion 1. subst.
+        exists (make_singleton_frame_adt b 0 0); eexists.
+        erewrite Mem.record_stack_blocks_stack_adt. 2: eauto.
+        erewrite Mem.alloc_stack_blocks. 2: eauto.
+        erewrite Genv.init_mem_stack_adt; eauto.
+        split. 2: left; auto.
+        apply Mem.alloc_result in H2. subst.
+        erewrite <- Genv.init_mem_genv_next; eauto.
+        reflexivity.
     + unfold Genv.symbol_address.
       rewrite (match_program_main TRANSF).
       rewrite symbols_preserved.
@@ -1637,8 +1658,8 @@ Proof.
 Qed.
 
 Lemma transf_final_states:
-  forall st1 st2 r,
-  match_states Vnullptr Vnullptr st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
+  forall v st1 st2 r,
+  match_states v Vnullptr st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
 Proof.
   intros. inv H0. inv H. constructor. auto.
   assert (r0 = AX).
@@ -1667,17 +1688,18 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics Vnullptr tprog).
+  forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics (ptr_of_block init_sp_block) tprog).
 Proof.
   eapply forward_simulation_star with (measure := measure).
   apply senv_preserved.
   eexact transf_initial_states.
-  eexact transf_final_states.
+  apply transf_final_states.
   intros.
   eapply step_simulation in H0; eauto. 
-  - unfold Vnullptr; destruct Archi.ptr64; congruence.
-  - apply Val.Vnullptr_has_type.
+  - intros EX; exfalso; apply EX. unfold ptr_of_block; eauto. 
   - inversion 1.
+  - apply Val.Vnullptr_has_type.
+  - inversion 1. auto.
 Qed.
 
 End PRESERVATION.

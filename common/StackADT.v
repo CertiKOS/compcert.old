@@ -892,7 +892,6 @@ predicate that represents the permissions for the source memory [m1] in which
     - destruct s; simpl in *. congruence.
       destr_in H.
       red. simpl.
-      clear Heqs0. 
       destruct f; simpl in *; subst; intuition.
       unfold option_map in H; destr_in H.
   Qed.
@@ -2621,5 +2620,100 @@ Definition make_singleton_frame_adt' (b: block) fi (sz: Z) :=
     frame_adt_blocks_norepet := norepet_1 _
   |}.
 
+
+
+
+
+  Lemma val_inject_ext:
+    forall j1 j2 m1 m2,
+      Val.inject j1 m1 m2 ->
+      (forall x, j1 x = j2 x) ->
+      Val.inject j2 m1 m2.
+  Proof.
+    intros j1 j2 m1 m2 INJ EXT.
+    inv INJ; econstructor; eauto.
+    rewrite <- EXT; eauto.
+  Qed.
+
+  Lemma memval_inject_ext:
+    forall j1 j2 m1 m2,
+      memval_inject j1 m1 m2 ->
+      (forall x, j1 x = j2 x) ->
+      memval_inject j2 m1 m2.
+  Proof.
+    intros j1 j2 m1 m2 INJ EXT.
+    inv INJ; constructor; auto.
+    eapply val_inject_ext; eauto.
+  Qed.
+
+
+
+
+Lemma frame_inject_ext:
+  forall j1 j2 f1 f2,
+    frame_inject j1 f1 f2 ->
+    (forall b, j1 b = j2 b) ->
+    frame_inject j2 f1 f2.
+Proof.
+  intros j1 j2 f1 f2 FI EXT.
+  red in FI |- *.
+  rewrite Forall_forall in *.
+  intros x IN b2 delta J2.
+  rewrite <- EXT in J2. eauto.
+Qed.
+
+
+  Lemma stack_inject_ext':
+    forall j1 j2 g P m1 m2,
+      stack_inject j1 g P m1 m2 ->
+      (forall x, j1 x = j2 x) ->
+      stack_inject j2 g P m1 m2.
+  Proof.
+    intros j1 j2 g P m1 m2 INJ EXT.
+    inv INJ; constructor; auto.
+    - intros.
+      edestruct stack_inject_frames0 as (f2 & FAP2 & FI2); eauto.
+      eexists; split; eauto.
+      eapply frame_inject_ext; eauto.
+    - intros.
+      eapply stack_inject_not_in_frames0; eauto. rewrite EXT; eauto.
+  Qed.
+
+ Lemma frameinj_order_strict_ext:
+      forall g1 g2,
+        frameinj_order_strict g1 ->
+        (forall i, g1 i = g2 i) ->
+        frameinj_order_strict g2.
+    Proof.
+      red; intros g1 g2 FOS EXT i1 i2 i1' i2' LT G1 G2.
+      rewrite <- EXT in G1, G2. eauto.
+    Qed.
+
+    Lemma frameinj_surjective_ext:
+      forall g1 g2 n,
+        frameinj_surjective g1 n ->
+        (forall i, g1 i = g2 i) ->
+        frameinj_surjective g2 n.
+    Proof.
+      red; intros g1 g2 n FS EXT i1 LT.
+      edestruct (FS i1) as (i & G); auto.
+      rewrite EXT in G. eauto.
+    Qed.
+
+    Lemma frameinj_push_flat:
+      forall i m,
+        flat_frameinj (Datatypes.S m) i =
+        (fun n : nat =>
+           if Nat.eq_dec n 0 then Some 0%nat else option_map Datatypes.S (flat_frameinj m (Init.Nat.pred n))) i.
+    Proof.
+      unfold flat_frameinj.
+      intros.
+      destruct Nat.eq_dec; subst.
+      - destr. omega.
+      - repeat destr.
+        + simpl. f_equal. omega.
+        + omega.
+        + omega.
+    Qed.
 
 End INJ.

@@ -35,7 +35,8 @@ Axiom i64_helpers_correct_prf:
 Theorem transf_c_program_correct:
   forall p tp,
   Compiler.transf_c_program p = Errors.OK tp ->
-  Smallstep.backward_simulation (Csem.semantics (Compiler.fn_stack_requirements tp) p) (Asm.semantics tp).
+  let init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp))) in
+  Smallstep.backward_simulation (Csem.semantics (Compiler.fn_stack_requirements tp) p) (Asm.semantics init_sp tp).
 Proof.
   apply Compiler.transf_c_program_correct.
 Qed.
@@ -58,7 +59,9 @@ Theorem separate_transf_c_program_correct:
   Linking.link_list c_units = Some c_program ->
   exists asm_program, 
       Linking.link_list asm_units = Some asm_program
-   /\ Smallstep.backward_simulation (Csem.semantics (Compiler.fn_stack_requirements asm_program) c_program) (Asm.semantics asm_program).
+      /\
+      let init_sp := (Asmgenproof.ptr_of_block (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv asm_program))) in
+      Smallstep.backward_simulation (Csem.semantics (Compiler.fn_stack_requirements asm_program) c_program) (Asm.semantics init_sp asm_program).
 Proof.
   apply Compiler.separate_transf_c_program_correct.
 Qed.

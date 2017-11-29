@@ -1202,10 +1202,10 @@ Proof.
     rewrite Forall_forall; intros. destruct x. apply VF. simpl.
     eapply in_frame_blocks_in_frame; eauto.
     Unshelve.
-    + red; simpl; intros. clear Heqs. rewrite Forall_forall in f.
+    + red; simpl; intros. rewrite Forall_forall in f.
       edestruct in_frame_info as (fi & IN); eauto. simpl in IN.
       apply f in IN. auto.
-    + simpl. clear Heqs0.
+    + simpl. 
       rewrite Forall_forall in f0 |- *. intros.
       rewrite in_map_iff in H. destruct H as ((bb&ff) & EQ & IN). simpl in *; subst.
       intros; eapply f0 in IN. auto.
@@ -7905,6 +7905,31 @@ Qed.
     eapply mem_inj_frame_inj_ext; eauto.
   Qed.
 
+  Lemma mem_inj_ext':
+    forall j1 j2 g m1 m2,
+      mem_inj j1 g m1 m2 ->
+      (forall x, j1 x = j2 x) ->
+      mem_inj j2 g m1 m2.
+  Proof.
+    intros j1 j2 g m1 m2 INJ EXT.
+    inv INJ; constructor; auto; intros; rewrite <- ? EXT in *; eauto.
+    eapply memval_inject_ext; eauto.
+    eapply stack_inject_ext'; eauto.
+  Qed.
+
+  Lemma mem_inject_ext':
+    forall j1 j2 g m1 m2,
+      inject j1 g m1 m2 ->
+      (forall x, j1 x = j2 x) ->
+      inject j2 g m1 m2.
+  Proof.
+    intros j1 j2 g m1 m2 INJ EXT.
+    inv INJ; constructor; auto; intros; rewrite <- ? EXT in *; eauto.
+    eapply mem_inj_ext'; eauto.
+    red; intros. eapply mi_no_overlap0; rewrite ? EXT; eauto.
+  Qed.
+
+
   Lemma record_stack_blocks_intro:
     forall m1 f,
       valid_frame f m1 ->
@@ -8239,6 +8264,7 @@ Proof.
   intros; eapply record_stack_block_det; eauto.
   simpl; intros; eapply mext_length_stack; eauto.
   simpl; intros; eapply stack_norepet.
+  intros; eapply mem_inject_ext'; eauto.
 Qed.
 
 End Mem.

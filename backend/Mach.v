@@ -452,11 +452,13 @@ Inductive step: state -> trace -> state -> Prop :=
 End RELSEM.
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall fb m0,
+  | initial_state_intro: forall fb m0 m1 b m2,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some fb ->
-      initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
+      Mem.alloc m0 0 0 = (m1,b) ->
+      Mem.record_stack_blocks m1 (make_singleton_frame_adt b 0 0) m2 ->
+      initial_state p (Callstate nil fb (Regmap.init Vundef) m2).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r retcode,
@@ -465,6 +467,6 @@ Inductive final_state: state -> int -> Prop :=
       final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
-  Semantics (step Vnullptr Vnullptr rao) (initial_state p) final_state (Genv.globalenv p).
+  Semantics (step (Vptr (Genv.genv_next (Genv.globalenv p)) Ptrofs.zero) Vnullptr rao) (initial_state p) final_state (Genv.globalenv p).
 
 End WITHEXTERNALCALLSOPS.

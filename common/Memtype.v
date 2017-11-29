@@ -1910,6 +1910,12 @@ for [unchanged_on]. *)
  stack_norepet:
    forall m, nodup (Mem.stack_adt m);
 
+ inject_ext {injperm: InjectPerm}:
+    forall j1 j2 g m1 m2,
+      inject j1 g m1 m2 ->
+      (forall x, j1 x = j2 x) ->
+      inject j2 g m1 m2;
+
 }.
 
 Section WITHMEMORYMODEL.
@@ -2458,6 +2464,21 @@ Proof.
   replace (S (pred x0)) with x0 by omega. rewrite H0. simpl. auto.  
 Qed.
 
+
+Lemma frame_inject_flat:
+  forall thr f,
+    Forall (fun bfi => Plt (fst bfi) thr) (frame_adt_blocks f) ->
+    frame_inject (Mem.flat_inj thr) f f.
+Proof.
+  red; intros thr f PLT.
+  eapply Forall_impl. 2: eauto. simpl; intros a IN PLTa b2 delta FI.
+  unfold Mem.flat_inj in FI. destr_in FI. inv FI.
+  erewrite in_lnr_get_assoc.
+  instantiate (1 := snd a). eexists; split; eauto.
+  apply inject_frame_info_id.
+  destruct f; auto.
+  rewrite <- surjective_pairing. auto.
+Qed.
 
 
 End WITHMEMORYMODEL.

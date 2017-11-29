@@ -373,7 +373,7 @@ Section WITHMEMORYMODEL.
     { unfold P; simpl. inversion 1; tauto. }
     revert H0.
     generalize (Mach.fn_code f) true (fun c : code => OK c).
-    clear g Heqs.
+    clear g.
     induction c; simpl; intros; eauto.
     eapply H0; eauto. red; easy.
     eapply IHc. 2: apply EQ0.

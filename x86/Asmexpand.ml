@@ -480,7 +480,7 @@ let set_al sg =
 
 let expand_instruction instr =
   match instr with
-  | Pallocframe (f, ofs_ra, ofs_link) ->
+  | Pallocframe (f, ofs_ra) ->
 let sz = StackADT.frame_size f in
      if Archi.ptr64 then begin
        let (sz, save_regs) = sp_adjustment_64 sz in
@@ -497,9 +497,9 @@ let sz = StackADT.frame_size f in
        (* Stack chaining *)
        let fullsz = sz + 8 in
        let addr1 = linear_addr RSP (Z.of_uint fullsz) in
-       let addr2 = linear_addr RSP ofs_link in
+       (* let addr2 = linear_addr RSP ofs_link in *)
        emit (Pleaq (RAX, addr1));
-       emit (Pmovq_mr (addr2, RAX));
+       (* emit (Pmovq_mr (addr2, RAX)); *)
        current_function_stacksize := Int64.of_int fullsz
      end else begin
        let sz = sp_adjustment_32 sz in
@@ -509,18 +509,27 @@ let sz = StackADT.frame_size f in
        emit (Pcfi_adjust sz');
        (* Stack chaining *)
        let addr1 = linear_addr RSP (Z.of_uint (sz + 4)) in
-       let addr2 = linear_addr RSP ofs_link in
+       (* let addr2 = linear_addr RSP ofs_link in *)
        emit (Pleal (RAX,addr1));
-       emit (Pmovl_mr (addr2,RAX));
+       (* emit (Pmovl_mr (addr2,RAX)); *)
        PrintAsmaux.current_function_stacksize := Int32.of_int sz
      end
-  | Pfreeframe(sz, ofs_ra, ofs_link) ->
+  | Pfreeframe(sz, ofs_ra) ->
      if Archi.ptr64 then begin
        let (sz, _) = sp_adjustment_64 sz in
        emit (Paddq_ri (RSP, Z.of_uint sz))
      end else begin
        let sz = sp_adjustment_32 sz in
        emit (Paddl_ri (RSP, Z.of_uint sz))
+     end
+  | Pload_parent_pointer (rd,sz) ->
+     emit (Pmov_rr (rd,RSP));
+     if Archi.ptr64 then begin
+       let (sz, _) = sp_adjustment_64 sz in
+       emit (Paddq_ri (rd, Z.of_uint sz))
+     end else begin
+       let sz = sp_adjustment_32 sz in
+       emit (Paddl_ri (rd, Z.of_uint sz))
      end
   | Pjmp_s(_, sg) | Pjmp_r(_, sg) | Pcall_s(_, sg) | Pcall_r(_, sg) ->
      set_al sg;
