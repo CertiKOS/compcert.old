@@ -145,17 +145,13 @@ Section JOIN.
       | inr b => g b
     end.
 
-  Program Definition cc_join (cc1 cc2: callconv li li): callconv li li :=
+  Definition cc_join (cc1 cc2: callconv li li): callconv li li :=
     {|
       world_def := world_def cc1 + world_def cc2;
-      dummy_world_def := inl (dummy_world_def cc1);
       match_senv := copair (match_senv cc1) (match_senv cc2);
       match_query_def := copair (match_query_def cc1) (match_query_def cc2);
       match_reply_def := copair (match_reply_def cc1) (match_reply_def cc2);
     |}.
-  Next Obligation.
-    apply match_dummy_query_def.
-  Qed.
 
   (** [cc_join] is the least upper bound with respect to [ccref]. *)
 
@@ -277,10 +273,9 @@ Section STAR.
           cc_star_mr ws q q2 r r2
     end.
 
-  Program Definition cc_star: callconv li li :=
+  Definition cc_star: callconv li li :=
     {|
       world_def := cc_star_world;
-      dummy_world_def := nil;
       match_senv := cc_star_me;
       match_query_def := cc_star_mq;
       match_reply_def := cc_star_mr;

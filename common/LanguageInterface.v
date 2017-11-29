@@ -15,10 +15,7 @@ Structure language_interface :=
   mk_language_interface {
     query: Type;
     reply: Type;
-    dummy_query: query;
   }.
-
-Arguments dummy_query {_}.
 
 (** ** Interface for C-like languages *)
 
@@ -34,7 +31,6 @@ Canonical Structure li_c :=
   {|
     query := c_query;
     reply := val * mem;
-    dummy_query := (cq EmptyString signature_main nil Mem.empty);
   |}.
 
 (** ** Miscellaneous interfaces *)
@@ -43,14 +39,12 @@ Definition li_wp :=
   {|
     query := unit;
     reply := int;
-    dummy_query := tt;
   |}.
 
 Definition li_empty :=
   {|
-    query := unit;
+    query := Empty_set;
     reply := Empty_set;
-    dummy_query := tt;
   |}.
 
 (** XXX temporary fix: external functions are identified with a [string],
@@ -65,19 +59,15 @@ Parameter str2ident : string -> ident.
 Record callconv T1 T2 :=
   mk_callconv {
     world_def: Type;
-    dummy_world_def: world_def;
     match_senv:
       world_def -> Senv.t -> Senv.t -> Prop;
     match_query_def:
       world_def -> query T1 -> query T2 -> Prop;
     match_reply_def:
       world_def -> query T1 -> query T2 -> reply T1 -> reply T2 -> Prop;
-    match_dummy_query_def:
-      match_query_def dummy_world_def dummy_query dummy_query;
   }.
 
 Arguments world_def {_ _}.
-Arguments dummy_world_def {_ _}.
 Arguments match_senv {_ _} _ _ _.
 Arguments match_query_def {_ _} _ _ _.
 Arguments match_reply_def {_ _} _ _ _ _ _.
@@ -95,9 +85,6 @@ Arguments mk_world {T1 T2} cc _ _ _ _.
 Arguments world_proj {T1 T2 cc} _.
 Arguments world_q1 {T1 T2 cc} _.
 Arguments world_q2 {T1 T2 cc} _.
-
-Program Definition dummy_world {T1 T2 cc}: world cc :=
-  mk_world cc _ _ _ (match_dummy_query_def T1 T2 cc).
 
 Inductive match_query {T1 T2} cc: world cc -> query T1 -> query T2 -> Prop :=
   match_query_intro w q1 q2 Hq:
@@ -126,7 +113,6 @@ Bind Scope cc_scope with callconv.
 Program Definition cc_id {T}: callconv T T :=
   {|
     world_def := unit;
-    dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w := eq;
     match_reply_def w q1 q2 := eq;
@@ -185,11 +171,9 @@ Section COMPOSE.
         match_reply_def cc12 w12 q1 q2 r1 r2 /\
         match_reply_def cc23 w23 q2 q3 r2 r3.
 
-  Program Definition cc_compose :=
+  Definition cc_compose :=
     {|
       world_def := world_def cc12 * world_def cc23 * query li2;
-      dummy_world_def :=
-        (dummy_world_def cc12, dummy_world_def cc23, dummy_query);
       match_senv w ge1 ge3 :=
         exists ge2,
           match_senv cc12 (fst (fst w)) ge1 ge2 /\
@@ -197,9 +181,6 @@ Section COMPOSE.
       match_query_def := cc_compose_mq;
       match_reply_def := cc_compose_mr;
     |}.
-  Next Obligation.
-    eauto using match_dummy_query_def.
-  Qed.
 
   Definition comp_fst (w: world cc_compose) :=
     let '(mk_world (w12, w23, q2) q1 q3 (conj Hq12 Hq23)) := w in
@@ -289,18 +270,13 @@ Definition cc_extends_mr :=
     Mem.extends m1' m2' /\
     Mem.unchanged_on (loc_out_of_bounds m1) m2 m2'.
 
-Program Definition cc_extends: callconv li_c li_c :=
+Definition cc_extends: callconv li_c li_c :=
   {|
     world_def := unit;
-    dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w := cc_extends_mq;
     match_reply_def w := cc_extends_mr;
   |}.
-Next Obligation.
-  intuition.
-  apply Mem.extends_refl.
-Qed.
 
 Lemma match_cc_extends id sg vargs1 m1 vargs2 m2:
   Mem.extends m1 m2 ->
@@ -346,19 +322,13 @@ Definition cc_inject_mr f :=
       inject_incr f f' /\
       inject_separated f f' m1 m2.
 
-Program Definition cc_inject: callconv li_c li_c :=
+Definition cc_inject: callconv li_c li_c :=
   {|
     world_def := meminj;
-    dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
     match_query_def := cc_inject_mq;
     match_reply_def := cc_inject_mr;
   |}.
-Next Obligation.
-  intuition.
-  apply (Mem.neutral_inject Mem.empty).
-  apply Mem.empty_inject_neutral.
-Qed.
 
 Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
   Val.inject_list f vargs1 vargs2 ->
@@ -431,10 +401,9 @@ Definition cc_extends_triangle_mr :=
     Val.lessdef vres1 vres2 /\
     Mem.extends m1' m2'.
 
-Program Definition cc_extends_triangle: callconv li_c li_c :=
+Definition cc_extends_triangle: callconv li_c li_c :=
   {|
     world_def := unit;
-    dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w := eq;
     match_reply_def w q1 q2 := cc_extends_triangle_mr;
@@ -495,19 +464,13 @@ Definition cc_inject_triangle_mr f :=
       inject_incr f f' /\
       inject_separated f f' m1 m2.
 
-Program Definition cc_inject_triangle: callconv li_c li_c :=
+Definition cc_inject_triangle: callconv li_c li_c :=
   {|
     world_def := meminj;
-    dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
     match_query_def := cc_inject_triangle_mq;
     match_reply_def := cc_inject_triangle_mr;
   |}.
-Next Obligation.
-  rewrite <- Mem.nextblock_empty.
-  constructor; intuition.
-  apply Mem.empty_inject_neutral.
-Qed.
 
 (** The following lemma is used to prove initial state simulations,
   as a way to inverse the [match_query] hypothesis. See also the
