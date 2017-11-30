@@ -464,6 +464,23 @@ Proof.
   eauto 10 using Mem.val_lessdef_inject_compose, Mem.extends_inject_compose.
 Qed.
 
+Lemma cc_inject_extends_triangle:
+  ccref cc_inject_triangle (cc_inject_triangle @ cc_extends_triangle).
+Proof.
+  intros f q1 q3 Hq.
+  exists (f, tt, q3).
+  split.
+  {
+    simpl in Hq |- *.
+    eauto.
+  }
+  intros [v1' m1'] [v3' m3'] ([v2' m2'] & Hr12 & Hr23).
+  destruct Hq as [id sg vargs m Hvargs Hm].
+  simpl in *.
+  destruct Hr12 as (f' & Hv12' & Hm12' & Hincr & Hsep), Hr23 as [Hv23' Hm23'].
+  eauto 10 using Mem.val_inject_lessdef_compose, Mem.inject_extends_compose.
+Qed.
+
 Lemma cc_inject_inject_triangle:
   ccref cc_inject_triangle (cc_inject_triangle @ cc_inject_triangle).
 Proof.
