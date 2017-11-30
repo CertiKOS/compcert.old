@@ -961,6 +961,7 @@ Proof.
     + econstructor; eauto.
       eapply Mem.public_stack_access_extends; eauto.
       eapply Mem.store_valid_access_3; eauto.
+      apply inject_perm_condition_writable; constructor.
     + eapply Mem.store_unchanged_on; eauto.
       unfold loc_out_of_bounds; intros.
       assert (Mem.perm m1 b i Max Nonempty).
@@ -1004,6 +1005,7 @@ Proof.
     with ((Ptrofs.unsigned ofs  + size_chunk chunk) + delta) by omega.
     eapply Mem.public_stack_access_inject; eauto.
     eapply Mem.store_valid_access_3; eauto.
+    apply inject_perm_condition_writable; constructor.
   + eapply Mem.store_unchanged_on; eauto.
     unfold loc_unmapped; intros. inv AI; congruence.
   + eapply Mem.store_unchanged_on; eauto.
@@ -1334,6 +1336,7 @@ Proof.
   erewrite <- list_forall2_length.
   eapply Mem.public_stack_access_extends; eauto.
   eapply Mem.storebytes_range_perm; eauto.
+  apply inject_perm_condition_writable; constructor.
   eauto.
   split. constructor.
   split. auto.
@@ -1395,7 +1398,9 @@ Proof.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto. omega.
   eapply public_stack_access_inside.
-  eapply Mem.public_stack_access_inject. 4: eauto. all: eauto. rewrite LEN. rewrite nat_of_Z_eq. eauto. omega.
+  eapply Mem.public_stack_access_inject. 5: eauto. all: eauto.
+  rewrite LEN. rewrite nat_of_Z_eq. eauto. omega.
+  apply inject_perm_condition_writable; constructor.
   omega.
   rewrite (list_forall2_length B); omega.
   split. constructor.

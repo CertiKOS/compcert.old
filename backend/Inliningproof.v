@@ -1513,11 +1513,11 @@ Proof.
   eapply match_stack_adt_free; eauto.
   eapply compat_framinj_rec_pop_left. eauto.
   red; intros.
-  destruct (SURJ j). auto.
+  destruct (SURJ j) as (x & Gj). auto.
   exists (pred x).
   destruct (Nat.eq_dec x O). subst. simpl.
   destruct CFINJ as (D & E).
-  rewrite D in H5 |- * by omega. auto.
+  rewrite D in Gj |- * by omega. auto.
   replace (S (pred x)) with x by omega; auto.
   
 (* + (* inlined *) *)
@@ -1697,11 +1697,11 @@ Proof.
     intros; split; auto. eapply Mem.unrecord_stack_block_perm; eauto. tauto.
   *  simpl. eapply compat_framinj_rec_pop_left. eauto.
   * red; intros.
-    destruct (SURJ j). auto.
+    destruct (SURJ j) as (x & Gj). auto.
     exists (pred x).
     destruct (Nat.eq_dec x O). subst. simpl.
     destruct CFINJ as (D & E).
-    rewrite D in H5 |- * by omega. auto.
+    rewrite D in Gj |- * by omega. auto.
     replace (S (pred x)) with x by omega; auto.
   * eapply match_stack_adt_free; eauto. 
       
@@ -1812,10 +1812,10 @@ Proof.
          erewrite Mem.alloc_stack_blocks; eauto.
          simpl; red; intros.
          destruct (Nat.eq_dec j O). subst. exists O; destr.
-         destruct (SURJ (pred j)). omega. 
+         destruct (SURJ (pred j)) as (x & Gj). omega. 
          exists (Datatypes.S x). destr.
          replace (pred (Datatypes.S x)) with x by omega.
-         rewrite H10. simpl. f_equal. omega.
+         rewrite Gj. simpl. f_equal. omega.
 
 - (* internal function, inlined *)
   inversion FB; subst.

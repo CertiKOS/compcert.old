@@ -1183,10 +1183,10 @@ Proof.
     simpl.
     red; intros.
     destruct (Nat.eq_dec j0 O). subst. exists O; destr.
-    destruct (SURJ (pred j0)). omega.
+    destruct (SURJ (pred j0)) as (x & Gp). omega.
     exists (Datatypes.S x). destr.
     replace (pred (Datatypes.S x)) with x by omega.
-    rewrite H2. simpl. f_equal. omega.
+    rewrite Gp. simpl. f_equal. omega.
   }
 
 - (* external function *)

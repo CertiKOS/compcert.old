@@ -1765,6 +1765,7 @@ for [unchanged_on]. *)
    forall m1 m2 b lo hi p,
      extends m1 m2 ->
      range_perm m1 b lo hi Cur p ->
+     inject_perm_condition p ->
      public_stack_access ( (stack_adt m1)) b lo hi ->
      public_stack_access ( (stack_adt m2)) b lo hi;
 
@@ -1773,12 +1774,14 @@ for [unchanged_on]. *)
      f b = Some (b', delta) ->
      inject f g m1 m2 ->
      range_perm m1 b lo hi Cur p ->
+     inject_perm_condition p ->
      public_stack_access ( (stack_adt m1)) b lo hi ->
      public_stack_access ( (stack_adt m2)) b' (lo + delta) (hi + delta);
 
  public_stack_access_magree {injperm: InjectPerm}: forall P (m1 m2 : mem) (b : block) (lo hi : Z) p,
      magree m1 m2 P ->
      range_perm m1 b lo hi Cur p ->
+     inject_perm_condition p ->
      public_stack_access ( (stack_adt m1)) b lo hi ->
      public_stack_access ( (stack_adt m2)) b lo hi;
 
@@ -1804,6 +1807,8 @@ for [unchanged_on]. *)
  is_stack_top_extends {injperm: InjectPerm}:
    forall m1 m2 b
      (MINJ: extends m1 m2)
+     (PERM: exists (o : Z) (k : perm_kind) (p : permission),
+         perm m1 b o k p /\ inject_perm_condition p)
      (IST: is_stack_top ( (stack_adt m1)) b),
      is_stack_top ( (stack_adt m2)) b ;
 
@@ -1811,6 +1816,8 @@ for [unchanged_on]. *)
    forall f g m1 m2 b1 b2 delta
      (MINJ: inject f g m1 m2)
      (FB: f b1 = Some (b2, delta))
+     (PERM: exists (o : Z) (k : perm_kind) (p : permission),
+         perm m1 b1 o k p /\ inject_perm_condition p)
      (IST: is_stack_top ( (stack_adt m1)) b1),
      is_stack_top ( (stack_adt m2)) b2 ;
 
@@ -2428,15 +2435,15 @@ Proof.
   intros. erewrite <- free_list_stack_blocks in SURJ by eauto.
   edestruct unrecord_stack_adt as (x & EQ). eauto. rewrite EQ in SURJ.
   red; intros.
-  destruct (SURJ (S j0)).
+  destruct (SURJ (S j0)) as (? & G).
   simpl; omega.
   destruct (Nat.eq_dec x0 O). subst.
   {
-    erewrite stack_inject_g0_0 in H0. inv H0. eauto. eapply stack_inject_range in H0; eauto. tauto.
-    eapply stack_inject_range in H0; eauto. omega.
+    erewrite stack_inject_g0_0 in G. inv G. eauto. eapply stack_inject_range in G; eauto. tauto.
+    eapply stack_inject_range in G; eauto. omega.
   }
   exists (pred x0).
-  replace (S (pred x0)) with x0 by omega. rewrite H0. simpl. auto.  
+  replace (S (pred x0)) with x0 by omega. rewrite G. simpl. auto.
 Qed.
 
 
@@ -2453,15 +2460,15 @@ Proof.
   intros. erewrite <- free_stack_blocks in SURJ by eauto.
   edestruct unrecord_stack_adt as (x & EQ). eauto. rewrite EQ in SURJ.
   red; intros.
-  destruct (SURJ (S j0)).
+  destruct (SURJ (S j0)) as (? & G).
   simpl; omega.
   destruct (Nat.eq_dec x0 O). subst.
   {
-    erewrite stack_inject_g0_0 in H0. inv H0. eauto. eapply stack_inject_range in H0; eauto. tauto.
-    eapply stack_inject_range in H0; eauto. omega.
+    erewrite stack_inject_g0_0 in G. inv G. eauto. eapply stack_inject_range in G; eauto. tauto.
+    eapply stack_inject_range in G; eauto. omega.
   }
   exists (pred x0).
-  replace (S (pred x0)) with x0 by omega. rewrite H0. simpl. auto.  
+  replace (S (pred x0)) with x0 by omega. rewrite G. simpl. auto.  
 Qed.
 
 

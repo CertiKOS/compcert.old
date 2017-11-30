@@ -509,6 +509,7 @@ Proof.
   exists tm'; split. econstructor. econstructor; eauto.
   eapply Mem.public_stack_access_magree; eauto.
   eapply Mem.store_valid_access_3; eauto.
+  apply inject_perm_condition_writable; constructor.  
   auto.
 Qed.
 
