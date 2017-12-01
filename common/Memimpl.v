@@ -6168,10 +6168,13 @@ Proof.
       rewrite H2 in FB; inv FB.
       exfalso; apply NIN1. eapply in_frames_in_frame; eauto. eapply in_frame_blocks_in_frame; eauto. 
     * intros i j A; destr_in A.
-    * intros; exists i; destr.
+    (* * intros; exists i; destr. *)
     * intros i j A; repeat destr_in A. omega.
     * intros i1 i2 f1 f2 FAP1 FAP2 A LT; repeat destr_in A.
       assert (f1=f2) by (eapply frame_at_same_pos; eauto). subst. omega.
+    * intros i1 i2 j1 j2 G1 G2 i3 RNG.
+      repeat destr_in G1; repeat destr_in G2.
+      exists i3; destr; try omega.
 Qed.
 
 (** Composing two memory injections. *)
@@ -6993,32 +6996,67 @@ Proof.
 Qed.
 
 Lemma frameinj_S_spec:
-  forall g n1 n2
+  forall g 
     (FPO: frameinj_preserves_order g)
-    (RNG: forall i j : nat, g i = Some j -> i < n1 /\ j < n2)
-    (EX: forall j : nat, j < n2 -> exists i : nat, g i = Some j)
-    (PACK : forall i j : nat, g i = Some j -> j <= i),
-  forall j i : nat, g (S i) = Some j -> forall j0, g i = Some j0 -> j = j0 \/ j = S j0.
+    (EX: forall i1 i2 j1 j2 : nat,
+                         g i1 = Some j1 ->
+                         g i2 = Some j2 ->
+                         forall j3 : nat,
+                         j1 <= j3 <= j2 -> exists i3 : nat, g i3 = Some j3 ),
+  forall j i (GS: g (S i) = Some j) j0 (G: g i = Some j0), j = j0 \/ j = S j0.
 Proof.
   induction j; simpl; intros; eauto.
-  - exploit FPO. 2: apply H0. 2: apply H. omega. intros. assert (j0 = 0) by omega. subst. auto.
-  - generalize (PACK _ _ H0), (PACK _ _ H). intros.
-    exploit (FPO i (S i)); eauto. intro.
+  - exploit FPO. 2: apply G. 2: apply GS. omega. intros. assert (j0 = 0) by omega. subst. auto.
+  - exploit (FPO i (S i)); eauto. intro LE.
     destruct (Nat.eq_dec j0 (S j)); subst; auto.
     destruct (Nat.eq_dec (S j0) (S j)); subst; auto.
-    destruct (EX (S j0)).
-    eapply le_lt_trans with (S j).  omega. 
-    eapply RNG. eauto.
+    destruct (EX _ _ _ _ G GS (S j0) ltac:(omega)) as (x & Gx).
     exploit (preserves_order_inv _ FPO j0 (S j0)). omega. eauto. eauto.
     exploit (preserves_order_inv _ FPO (S j0) (S j)). omega. eauto. eauto.
     intros. omega.
 Qed.
 
+
+
+
+Opaque minus.
+
+
+Lemma frameinj_S_spec':
+  forall g
+    (FPO: frameinj_preserves_order g)
+    (EX: forall i1 i2 j1 j2 : nat,
+                         g i1 = Some j1 ->
+                         g i2 = Some j2 ->
+                         forall j3 : nat,
+                           j1 <= j3 <= j2 -> exists i3 : nat, g i3 = Some j3)
+    l k j i (Gi: g i = Some j)
+     (LE: i <= k) (Gk: g k = Some l),
+    i - j <= k - l.
+Proof.
+  induction l; simpl; intros; eauto.
+  - exploit FPO. 2: apply Gi. 2: apply Gk. auto.
+    intros. assert (j = O) by omega. subst; omega.
+  - exploit (FPO i k); eauto. intro LEjSl.
+    destruct (Nat.eq_dec j (S l)); subst; auto. omega.
+    assert (i < k). destruct (le_lt_eq_dec _ _ LE); auto. subst. congruence.
+    destruct (Nat.eq_dec j l); subst; auto.
+    omega.
+    assert (LEjl: j <= l). omega. clear n LEjSl.
+    destruct (EX _ _ _ _ Gi Gk l ltac:(omega)) as (x & Gx).
+    specialize (fun pf => IHl _ _ _ Gi pf Gx).
+    etransitivity.
+    apply IHl.
+    exploit (preserves_order_inv _ FPO j l). omega. eauto. eauto. omega.
+    exploit (preserves_order_inv _ FPO l (S l)). omega. eauto. eauto. omega.     
+Qed.
+
+
 Lemma unrecord_stack_block_mem_inj_left:
   forall (m1 m1' m2 : mem) (j : meminj) g,
     mem_inj j g m1 m2 ->
     unrecord_stack_block m1 = Some m1' ->
-    frameinj_surjective g (length (stack_adt m2)) -> 
+    (* frameinj_surjective g (length (stack_adt m2)) ->  *)
     (* (exists btop btop2 btop' delta1 delta2, *)
     (*     is_stack_top (stack_adt m1) btop /\ *)
     (*     is_stack_top (tl (stack_adt m1)) btop2 /\ *)
@@ -7029,7 +7067,7 @@ Lemma unrecord_stack_block_mem_inj_left:
     (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ Mem.perm m1 b o k p) ->
     mem_inj j (fun n => g (S n)) m1' m2.
 Proof.
-  intros m1 m1' m2 j g MI USB SURJ EXOTHERS TOPNOPERM.
+  intros m1 m1' m2 j g MI USB EXOTHERS TOPNOPERM.
   unfold_unrecord.
   inv MI; constructor; simpl; intros; eauto.
   eapply stack_inject_invariant_strong.
@@ -7051,25 +7089,31 @@ Proof.
     + intros i j0 GS. 
       eapply stack_inject_range in GS. simpl in *.
       destruct GS; split; omega.
-    + intros.
-      destruct (stack_inject_exists_l (S i)); eauto. simpl; omega.
+    (* + intros. *)
+    (*   destruct (stack_inject_exists_l (S i)); eauto. simpl; omega. *)
     (* + intros. *)
     (*   destruct (stack_inject_exists_r j0); eauto. *)
     (*   destruct (Nat.eq_dec x O). *)
     (*   * subst. *)
     (*     assert (j0 = 0). apply stack_inject_pack in H1. omega. subst; exists 0; auto. *)
     (*   * destruct x. congruence. eauto.  *)
-    + generalize (frameinj_S_spec _ _ _ stack_inject_preserves_order stack_inject_range SURJ stack_inject_pack).
+    +
+      intros i j0 G.
+      generalize (stack_inject_pack _ _ G). intro.
+      cut (j0 <> S i). omega.
+      intro; subst.
+      generalize (frameinj_S_spec' _ stack_inject_preserves_order stack_inject_dense).
       intros GSSpec.
-      induction i; simpl; intros; eauto.
-      specialize (GSSpec _ _ G).
-      destruct (stack_inject_exists_l (S i)).
-      apply stack_inject_range in G. destruct G as (G1 & G2). omega.
-      specialize (GSSpec _ H0). specialize (IHi _ H0).
-      destruct GSSpec; subst. eauto. omega.
+      specialize (fun pf => GSSpec _ _ _ _ EXOTHERS pf G). trim GSSpec. omega. omega.
     + intros i1 i2 f1 f2 FAP1 FAP2 GS LT.
       eapply frame_at_pos_cons in FAP1. eapply stack_inject_sizes; eauto.
       intros i GI. destruct i. omega. apply Peano.le_n_S. apply LT. auto.
+    + intros i1 i2 j1 j2 G1 G2 j3 RNG.
+      edestruct (stack_inject_dense _ _ _ _ G1 G2 _ RNG) as (i3 & G3).
+      destruct (le_lt_eq_dec j1 j3). omega.
+      exploit (preserves_order_inv _ stack_inject_preserves_order j1 j3). auto. eauto. eauto.
+      intros; exists (pred i3). rewrite <- G3. f_equal. omega.
+      subst. eauto.
 Qed.
 
 Lemma frame_at_pos_cons_inv:
@@ -7087,20 +7131,15 @@ Lemma unrecord_stack_block_mem_inj_parallel:
   forall (m1 m1' m2 : mem) (j : meminj) g
     (MINJ:  mem_inj j g m1 m2)
     (USB: unrecord_stack_block m1 = Some m1')
-    (NO0: forall i j, g i = Some j -> O < i -> O < j),
+    (NO0: forall i j, g i = Some j -> O < i -> O < j)
+    (StackNotEmpty: stack_adt m2 <> nil),
     exists m2',
       unrecord_stack_block m2 = Some m2' /\
       mem_inj j (fun n => option_map pred (g (S n))) m1' m2'.
 Proof.
   intros.
   unfold_unrecord.
-  destruct (stack_adt m2) eqn: STK2.
-  {
-    exfalso.
-    inv MINJ. inv mi_stack_blocks0. 
-    destruct (stack_inject_exists_l O). rewrite H. simpl; omega.
-    apply stack_inject_range in H0. rewrite STK2 in H0. simpl in *. omega.
-  }
+  destruct (stack_adt m2) eqn: STK2. congruence.
   unfold unrecord_stack_block.
   setoid_rewrite STK2. eexists; split; eauto.
   inv MINJ; constructor; simpl; intros; eauto.
@@ -7143,8 +7182,6 @@ Proof.
       unfold option_map in GS; repeat destr_in GS.
       exploit NO0; eauto. omega. intro. destruct n. omega. simpl.
       apply stack_inject_range in Heqo. simpl in *. omega.
-    + intros.
-      destruct (stack_inject_exists_l (S i)). simpl; omega. rewrite H0. simpl; eauto.
     +
       intros.
       unfold option_map in G. repeat destr_in G.
@@ -7159,13 +7196,28 @@ Proof.
       destruct n. eapply NO0 in Heqo. intros; omega. omega. simpl. eauto.
       intros i GI. destruct i. omega. apply Peano.le_n_S. apply LT. 
       rewrite GI. simpl. auto.
+    + unfold option_map. intros i1 i2 j1 j2 G1 G2 j3 RNG.
+      repeat destr_in G1; repeat destr_in G2.
+      destruct (Nat.eq_dec n0 0). subst.
+      assert (pred n = 0). omega.
+      assert (j3 = 0) by omega. subst. exists i2; rewrite Heqo0. f_equal.
+      edestruct (stack_inject_dense _ _ _ _ Heqo Heqo0 (S j3)).
+      omega.
+      destruct (lt_dec O x).
+      exists (pred x).
+      replace (S (pred x)) with x. rewrite H0. simpl. auto.
+      omega.
+      assert (x = O) by omega. subst.
+      exploit stack_inject_preserves_order. 2: apply H0. 2: apply Heqo. omega. intros.
+      assert (n = S j3). omega. subst.
+      exists i1; rewrite Heqo. reflexivity.
 Qed.
 
 Lemma unrecord_stack_block_inject_left:
   forall (m1 m1' m2 : mem) (j : meminj) g,
     inject j g m1 m2 ->
     unrecord_stack_block m1 = Some m1' ->
-    frameinj_surjective g (length (stack_adt m2)) ->
+    (* frameinj_surjective g (length (stack_adt m2)) -> *)
     g 1 = Some 0 ->
     (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ Mem.perm m1 b o k p) ->
     inject j (fun n => g (S n)) m1' m2.
@@ -7983,6 +8035,47 @@ Qed.
     - red; simpl in *; rewrite NB; eauto.
     - intros. eapply mi_perm_inv0; eauto. rewrite <- PERM; eauto.
   Qed.
+
+
+  Lemma unrecord_stack_block_mem_inj_right:
+    forall (m1 m2 m2' : mem) (j : meminj) g,
+      mem_inj j g m1 m2 ->
+      unrecord_stack_block m2 = Some m2' ->
+      (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ Mem.perm m1 b o k p) ->
+      mem_inj j (fun n => if Nat.eq_dec n O then None else option_map pred (g n)) m1 m2'.
+  Proof.
+    intros m1 m2 m2' j g MI USB TOPNOPERM.
+    unfold_unrecord.
+    inv MI; constructor; simpl; intros; eauto.
+    change (perm m2 b2 (ofs + delta) k p). eapply mi_perm0; eauto.
+    eapply stack_inject_invariant_strong.
+    - intros b ofs k p b' delta JB PERM. eauto.
+    - rewrite H in *. simpl in *.
+      destruct mi_stack_blocks0; constructor; auto.
+      + red; intros.
+        unfold option_map in G1, G2; repeat destr_in G1; repeat destr_in G2.
+        exploit stack_inject_preserves_order. 2: apply Heqo. 2: apply Heqo0. auto. omega.
+      + intros i1 f1 FAP PERM.
+        edestruct (stack_inject_frames_ex _ _ FAP) as (i2 & GI); eauto. rewrite GI. simpl; eauto.
+      + intros i1 f1 i2 GS FAP.
+        unfold option_map in GS; repeat destr_in GS.
+        edestruct stack_inject_frame_inject as (f2 & FAP2 & FI); eauto.
+        destruct n
+      + simpl. intros b1 b2 delta f2 fi JB NIN INS INF o k p PERM IPC.
+        destruct (in_frame_dec f b1).
+        * eapply TOPNOPERM in PERM; eauto. easy.
+        * eapply stack_inject_not_in_frames; eauto. simpl. intros [A|A]. congruence. congruence.
+      + intros i j0 GS. 
+        eapply stack_inject_range in GS. simpl in *.
+        destruct GS; split; omega.
+      + intros.
+        destruct (stack_inject_exists_l (S i)); eauto. simpl; omega.
+      + intros. apply All0 in G. subst. omega. 
+      + intros i1 i2 f1 f2 FAP1 FAP2 GS LT.
+        eapply frame_at_pos_cons in FAP1. eapply stack_inject_sizes; eauto.
+        intros i GI. destruct i. omega. apply Peano.le_n_S. apply LT. auto.
+  Qed.
+
 
 
 End WITHINJPERM.

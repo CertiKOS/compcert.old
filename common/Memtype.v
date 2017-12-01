@@ -2317,47 +2317,49 @@ Qed.
 
 Context {injperm: InjectPerm}.
 
-Lemma frameinj_order_strict_0:
-  forall g j m1 m2,
-    inject j g m1 m2 ->
-    frameinj_order_strict g ->
-    forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat.
-Proof.
-  intros. eapply inject_stack_adt in H. 
-  eapply frameinj_order_strict_stack_inject0; eauto.
-Qed.
+(* Lemma frameinj_order_strict_0: *)
+(*   forall g j m1 m2, *)
+(*     inject j g m1 m2 -> *)
+(*     frameinj_order_strict g -> *)
+(*     forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat. *)
+(* Proof. *)
+(*   intros. eapply inject_stack_adt in H.  *)
+(*   eapply frameinj_order_strict_stack_inject0; eauto. *)
+(* Qed. *)
 
 
-Lemma frameinj_order_strict_pop:
-  forall g j m1 m2,
-    inject j g m1 m2 ->
-    frameinj_order_strict g ->
-    frameinj_order_strict (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))).
-Proof.
-  red; intros g j m1 m2 INJ. intros.
-  unfold option_map in H1, H2.
-  destr_in H1; destr_in H2. inv H1; inv H2.
-  exploit H. 2: exact Heqo. 2: exact Heqo0. omega. intros.
-  eapply frameinj_order_strict_0 in Heqo; eauto. omega. omega.
-Qed.
+(* Lemma frameinj_order_strict_pop: *)
+(*   forall g j m1 m2, *)
+(*     inject j g m1 m2 -> *)
+(*     frameinj_order_strict g -> *)
+(*     frameinj_order_strict (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))). *)
+(* Proof. *)
+(*   red; intros g j m1 m2 INJ. intros. *)
+(*   unfold option_map in H1, H2. *)
+(*   destr_in H1; destr_in H2. inv H1; inv H2. *)
+(*   exploit H. 2: exact Heqo. 2: exact Heqo0. omega. intros. *)
+(*   exploit stack_inject_pack. apply inject_stack_adt. eauto. apply Heqo. *)
+(*   exploit stack_inject_pack. apply inject_stack_adt. eauto. apply Heqo0. *)
+  
+(*   eapply frameinj_order_strict_0 in Heqo; eauto. omega. omega. *)
+(* Qed. *)
 
-
-Lemma unrecord_stack_block_inject_parallel_strict:
-   forall (m1 m1' m2 : mem) (j : meminj) g,
-     inject j g m1 m2 ->
-     frameinj_order_strict g ->
-     unrecord_stack_block m1 = Some m1' ->
-     exists m2',
-       unrecord_stack_block m2 = Some m2'
-       /\ inject j (fun n => option_map pred (g (S n))) m1' m2'
-       /\ frameinj_order_strict (fun n => option_map pred (g (S n))).
-Proof.
-  intros.
-  generalize (frameinj_order_strict_0 _ _ _ _ H H0). intros.
-  generalize (frameinj_order_strict_pop _ _ _ _ H H0). intros.
-  exploit unrecord_stack_block_inject_parallel; eauto.
-  intros (m2' & USB & INJ); eauto.
-Qed.
+(* Lemma unrecord_stack_block_inject_parallel_strict: *)
+(*    forall (m1 m1' m2 : mem) (j : meminj) g, *)
+(*      inject j g m1 m2 -> *)
+(*      frameinj_order_strict g -> *)
+(*      unrecord_stack_block m1 = Some m1' -> *)
+(*      exists m2', *)
+(*        unrecord_stack_block m2 = Some m2' *)
+(*        /\ inject j (fun n => option_map pred (g (S n))) m1' m2' *)
+(*        /\ frameinj_order_strict (fun n => option_map pred (g (S n))). *)
+(* Proof. *)
+(*   intros. *)
+(*   (* generalize (frameinj_order_strict_0 _ _ _ _ H H0). intros. *) *)
+(*   (* generalize (frameinj_order_strict_pop _ _ _ _ H H0). intros. *) *)
+(*   exploit unrecord_stack_block_inject_parallel; eauto. *)
+(*   intros (m2' & USB & INJ); eauto. *)
+(* Qed. *)
 
 Lemma storev_nextblock :
   forall m chunk addr v m',
@@ -2422,54 +2424,54 @@ Proof.
   eapply storev_perm_inv; eauto.
 Qed.
 
-Lemma frameinj_surjective_free_list_unrecord:
-  forall g j m P tm tm' tm'' l,
-    free_list tm l = Some tm' ->
-    unrecord_stack_block tm' = Some tm'' ->
-    stack_inject j g P (stack_adt m) (stack_adt tm) ->
-    frameinj_surjective g (length (stack_adt tm)) ->
-    frameinj_surjective (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n)))
-                        (length (stack_adt tm'')).
-Proof.
-  intros g j m P tm tm' tm'' l FL USB SI SURJ.
-  intros. erewrite <- free_list_stack_blocks in SURJ by eauto.
-  edestruct unrecord_stack_adt as (x & EQ). eauto. rewrite EQ in SURJ.
-  red; intros.
-  destruct (SURJ (S j0)) as (? & G).
-  simpl; omega.
-  destruct (Nat.eq_dec x0 O). subst.
-  {
-    erewrite stack_inject_g0_0 in G. inv G. eauto. eapply stack_inject_range in G; eauto. tauto.
-    eapply stack_inject_range in G; eauto. omega.
-  }
-  exists (pred x0).
-  replace (S (pred x0)) with x0 by omega. rewrite G. simpl. auto.
-Qed.
+(* Lemma frameinj_surjective_free_list_unrecord: *)
+(*   forall g j m P tm tm' tm'' l, *)
+(*     free_list tm l = Some tm' -> *)
+(*     unrecord_stack_block tm' = Some tm'' -> *)
+(*     stack_inject j g P (stack_adt m) (stack_adt tm) -> *)
+(*     frameinj_surjective g (length (stack_adt tm)) -> *)
+(*     frameinj_surjective (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))) *)
+(*                         (length (stack_adt tm'')). *)
+(* Proof. *)
+(*   intros g j m P tm tm' tm'' l FL USB SI SURJ. *)
+(*   intros. erewrite <- free_list_stack_blocks in SURJ by eauto. *)
+(*   edestruct unrecord_stack_adt as (x & EQ). eauto. rewrite EQ in SURJ. *)
+(*   red; intros. *)
+(*   destruct (SURJ (S j0)) as (? & G). *)
+(*   simpl; omega. *)
+(*   destruct (Nat.eq_dec x0 O). subst. *)
+(*   { *)
+(*     erewrite stack_inject_g0_0 in G. inv G. eauto. eapply stack_inject_range in G; eauto. tauto. *)
+(*     eapply stack_inject_range in G; eauto. omega. *)
+(*   } *)
+(*   exists (pred x0). *)
+(*   replace (S (pred x0)) with x0 by omega. rewrite G. simpl. auto. *)
+(* Qed. *)
 
 
-Lemma frameinj_surjective_free_unrecord:
-  forall g j m P tm tm' tm'' b lo hi,
-    free tm b lo hi = Some tm' ->
-    unrecord_stack_block tm' = Some tm'' ->
-    stack_inject j g P (stack_adt m) (stack_adt tm) ->
-    frameinj_surjective g (length (stack_adt tm)) ->
-    frameinj_surjective (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n)))
-                        (length (stack_adt tm'')).
-Proof.
-  intros g j m P tm tm' tm'' b lo hi FL USB SI SURJ.
-  intros. erewrite <- free_stack_blocks in SURJ by eauto.
-  edestruct unrecord_stack_adt as (x & EQ). eauto. rewrite EQ in SURJ.
-  red; intros.
-  destruct (SURJ (S j0)) as (? & G).
-  simpl; omega.
-  destruct (Nat.eq_dec x0 O). subst.
-  {
-    erewrite stack_inject_g0_0 in G. inv G. eauto. eapply stack_inject_range in G; eauto. tauto.
-    eapply stack_inject_range in G; eauto. omega.
-  }
-  exists (pred x0).
-  replace (S (pred x0)) with x0 by omega. rewrite G. simpl. auto.  
-Qed.
+(* Lemma frameinj_surjective_free_unrecord: *)
+(*   forall g j m P tm tm' tm'' b lo hi, *)
+(*     free tm b lo hi = Some tm' -> *)
+(*     unrecord_stack_block tm' = Some tm'' -> *)
+(*     stack_inject j g P (stack_adt m) (stack_adt tm) -> *)
+(*     frameinj_surjective g (length (stack_adt tm)) -> *)
+(*     frameinj_surjective (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))) *)
+(*                         (length (stack_adt tm'')). *)
+(* Proof. *)
+(*   intros g j m P tm tm' tm'' b lo hi FL USB SI SURJ. *)
+(*   intros. erewrite <- free_stack_blocks in SURJ by eauto. *)
+(*   edestruct unrecord_stack_adt as (x & EQ). eauto. rewrite EQ in SURJ. *)
+(*   red; intros. *)
+(*   destruct (SURJ (S j0)) as (? & G). *)
+(*   simpl; omega. *)
+(*   destruct (Nat.eq_dec x0 O). subst. *)
+(*   { *)
+(*     erewrite stack_inject_g0_0 in G. inv G. eauto. eapply stack_inject_range in G; eauto. tauto. *)
+(*     eapply stack_inject_range in G; eauto. omega. *)
+(*   } *)
+(*   exists (pred x0). *)
+(*   replace (S (pred x0)) with x0 by omega. rewrite G. simpl. auto.   *)
+(* Qed. *)
 
 
 Lemma frame_inject_flat:

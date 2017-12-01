@@ -100,9 +100,9 @@ BACKEND=\
   Bounds.v Stacklayout.v Stacking.v Stackingproof.v \
   Asm.v Asmgen.v Asmgenproof0.v Asmgenproof1.v Asmgenproof.v \
   Inlining.v Inliningspec.v Inliningproof.v \
+  Tailcall.v Tailcallproof.v \
   AsmFacts.v RawAsmgen.v AsmExpand.v RockSaltAsm.v RockSaltAsmGen.v
 
-#  Tailcall.v Tailcallproof.v \
 
  
 # C front-end modules (in cfrontend/)

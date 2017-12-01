@@ -213,6 +213,8 @@ Qed.
 Section PRESERVATION.
 Context `{external_calls_prf: ExternalCalls}.
 
+Existing Instance inject_perm_all.
+
 Variable prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 
@@ -341,12 +343,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
-      forall s f args m s' args' m',
+      forall s f args m s' args' m' sz,
       match_stackframes s s' ->
       Val.lessdef_list args args' ->
       Mem.extends m m' ->
-      match_states (Callstate s f args m)
-                   (Callstate s' (transf_fundef f) args' m')
+      match_states (Callstate s f args m sz)
+                   (Callstate s' (transf_fundef f) args' m' sz)
   | match_states_return:
       forall s v m s' v' m',
       match_stackframes s s' ->
@@ -384,7 +386,7 @@ Inductive match_states: state -> state -> Prop :=
 Definition measure (st: state) : nat :=
   match st with
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
-  | Callstate s f args m => 0%nat
+  | Callstate s f args m sz => 0%nat
   | Returnstate s v m => (List.length s * (niter + 2))%nat
   end.
 
@@ -403,10 +405,12 @@ Ltac EliminatedInstr :=
 (** The proof of semantic preservation, then, is a simulation diagram
   of the ``option'' kind. *)
 
+Variable fn_stack_requirements: ident -> Z.
+
 Lemma transf_step_correct:
-  forall s1 t s2, step ge s1 t s2 ->
+  forall s1 t s2, step fn_stack_requirements ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step fn_stack_requirements tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; EliminatedInstr.

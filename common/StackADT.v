@@ -737,8 +737,8 @@ predicate that represents the permissions for the source memory [m1] in which
           frame_public fi (o + delta);
       stack_inject_range:
         forall i j (G: g i = Some j), i < length s1 /\ j < length s2;
-      stack_inject_exists_l:
-        forall i (RNG: i < length s1), exists j, g i = Some j;
+      (* stack_inject_exists_l: *)
+      (*   forall i (RNG: i < length s1), exists j, g i = Some j; *)
       stack_inject_pack:
         forall i j (G: g i = Some j), j <= i;
       stack_inject_sizes:
@@ -748,6 +748,17 @@ predicate that represents the permissions for the source memory [m1] in which
           (G: g i1 = Some i2)
           (LARGEST: forall i, g i = Some i2 -> i <= i1),
           (frame_adt_size f2 <= frame_adt_size f1)%Z;
+      stack_inject_dense:
+        forall i1 i2 j1 j2
+          (G1: g i1 = Some j1)
+          (G2: g i2 = Some j2)
+          j3 (RNG: j1 <= j3 <= j2), exists i3, g i3 = Some j3;
+      (* The following does not hold for e.g. tailcall *)
+      (* stack_inject_dense_fw: *)
+      (*   forall i1 i2 j1 j2 *)
+      (*     (G1: g i1 = Some j1) *)
+      (*     (G2: g i2 = Some j2) *)
+      (*     i3 (RNG: i1 <= i3 <= i2), exists j3, g i3 = Some j3; *)
     }.
 
   Lemma stack_inject_frames:
@@ -1219,10 +1230,10 @@ predicate that represents the permissions for the source memory [m1] in which
     - unfold compose_frameinj; intros i j CINJ; repeat destr_in CINJ.
       exploit stack_inject_range0; eauto. intros (A & B); split; auto.
       eapply stack_inject_range1; eauto.
-    - intros. unfold compose_frameinj.
-      edestruct stack_inject_exists_l0 as (x & GI); eauto.
-      rewrite GI.
-      apply stack_inject_range0 in GI. destruct GI. eauto.
+    (* - intros. unfold compose_frameinj. *)
+    (*   edestruct stack_inject_exists_l0 as (x & GI); eauto. *)
+    (*   rewrite GI. *)
+    (*   apply stack_inject_range0 in GI. destruct GI. eauto. *)
     - unfold compose_frameinj.
       intros i j CINJ; destr_in CINJ.
       eapply stack_inject_pack0 in Heqo.
@@ -1238,6 +1249,32 @@ predicate that represents the permissions for the source memory [m1] in which
       assert (f3 = f3') by (eapply frame_at_same_pos; eauto). subst.
       assert (n =i2) by congruence. subst.
       transitivity (frame_adt_size f2). eauto. eauto.
+    - unfold compose_frameinj.
+      intros i1 i2 j1 j2 G1 G2 j3 RNG.
+      repeat destr_in G1. repeat destr_in G2.
+      edestruct stack_inject_dense1 as (i3 & G3). apply H0. apply H1. eauto.
+      destruct (le_lt_eq_dec _ _ (proj1 RNG)).
+      +
+        destruct (le_lt_eq_dec _ _ (proj2 RNG)).
+        * cut (n <= i3 <= n0)%nat.
+          intro RNG'.
+          edestruct stack_inject_dense0 as (i3' & G3'). apply Heqo. apply Heqo0. eauto. exists i3'; rewrite G3'; auto.
+          split. destruct (le_dec n i3); auto.
+          assert (LEi3n: (i3 <= n)%nat) by omega.
+          generalize (stack_inject_preserves_order1 _ _ LEi3n _ _ G3 H0). omega.
+          destruct (le_dec i3 n0); auto.
+          assert (LEi3n: (n0 <= i3)%nat) by omega.
+          generalize (stack_inject_preserves_order1 _ _ LEi3n _ _ H1 G3). omega.
+        * subst. exists i2; rewrite Heqo0; auto.
+      + subst; exists i1; rewrite Heqo; auto.
+    (* - unfold compose_frameinj. *)
+    (*   intros i1 i2 j1 j2 G1 G2 i3 RNG. *)
+    (*   repeat destr_in G1. repeat destr_in G2.  *)
+    (*   edestruct stack_inject_dense_fw0 as (j3 & G3). apply Heqo. apply Heqo0. eauto. *)
+    (*   rewrite G3. *)
+    (*   eapply stack_inject_dense_fw1. apply H0. apply H1. *)
+    (*   split. eapply stack_inject_preserves_order0. 2-3: eauto. omega. *)
+    (*   eapply stack_inject_preserves_order0. 2-3: eauto. omega. *)
   Qed.
   
   Definition get_frame_info l : block -> option frame_info :=
@@ -1656,17 +1693,22 @@ predicate that represents the permissions for the source memory [m1] in which
       g i2 = Some i2' ->
       (i1' < i2')%nat.
 
-  Lemma frameinj_order_strict_stack_inject0:
-    forall g j P s1 s2,
-      stack_inject j g P s1 s2 ->
-      frameinj_order_strict g ->
-      forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat.
-  Proof.
-    intros.
-    inv H.
-    edestruct (stack_inject_exists_l0 O). apply stack_inject_range0 in H1; omega.
-    exploit H0. apply H2. eauto. eauto. omega.
-  Qed.
+  (* Lemma frameinj_order_strict_stack_inject0: *)
+  (*   forall g j P s1 s2, *)
+  (*     stack_inject j g P s1 s2 -> *)
+  (*     frameinj_order_strict g -> *)
+  (*     forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat. *)
+  (* Proof. *)
+  (*   intros. *)
+  (*   inv H. *)
+    
+  (*   destruct (g O) eqn:G0. *)
+  (*   exploit H0. apply H2. eauto. eauto. omega. *)
+    
+  (*   (* edestruct (stack_inject_exists_l0 O). *) *)
+  (*   apply stack_inject_range0 in G0. ; omega. *)
+  (*   exploit H0. apply H2. eauto. eauto. omega. *)
+  (* Qed. *)
 
   Lemma frameinj_order_strict_push g:
     frameinj_order_strict g ->
@@ -1700,9 +1742,11 @@ predicate that represents the permissions for the source memory [m1] in which
     - congruence.
     - simpl. congruence.
     - congruence.
-    - simpl; intros; omega.
+    (* - simpl; intros; omega. *)
     - congruence.
     - congruence.
+    - congruence.
+    (* - congruence. *)
   Qed.
 
   Lemma frameinj_surjective_flat n x:
@@ -1713,7 +1757,6 @@ predicate that represents the permissions for the source memory [m1] in which
     unfold flat_frameinj.
     exists j; destr. omega.
   Qed.
-
 
   Lemma stack_inject_length_stack:
     forall j g P s1 s2,
@@ -1728,17 +1771,7 @@ predicate that represents the permissions for the source memory [m1] in which
     omega.
     exploit stack_inject_range; eauto.
     intros (C & D).
-    destruct (stack_inject_exists_l0 (length s1 - 1)%nat).
-    omega.
-    exploit stack_inject_range0. apply H0. intros (A & B).     
-    exploit stack_inject_preserves_order. eauto.
-    2: apply H. 2: apply H0.
-    omega.
-    intros.
-    assert (x0 = length s2 - 1)%nat by omega.
-    subst.
-    apply stack_inject_pack0 in H0.
-    omega.
+    exploit stack_inject_pack0; eauto. omega.
   Qed.
 
   Lemma size_stack_pos:
@@ -2169,18 +2202,18 @@ predicate that represents the permissions for the source memory [m1] in which
       eapply stack_inject_range in H; eauto. tauto.
   Qed.
 
-  Lemma stack_inject_g0_0:
-    forall j g p s1 s2,
-      stack_inject j g p s1 s2 ->
-      (0 < length s1 ->
-       0 < length s2 ->
-       g 0 = Some 0)%nat.
-  Proof.
-    intros j g p s1 s2 SI LT1 LT2.
-    inv SI.
-    destruct (stack_inject_exists_l0 _ LT1). rewrite H. apply stack_inject_pack0 in H. 
-    f_equal; omega.
-  Qed.
+  (* Lemma stack_inject_g0_0: *)
+  (*   forall j g p s1 s2, *)
+  (*     stack_inject j g p s1 s2 -> *)
+  (*     (0 < length s1 -> *)
+  (*      0 < length s2 -> *)
+  (*      g 0 = Some 0)%nat. *)
+  (* Proof. *)
+  (*   intros j g p s1 s2 SI LT1 LT2. *)
+  (*   inv SI. *)
+  (*   destruct (stack_inject_exists_l0 _ LT1). rewrite H. apply stack_inject_pack0 in H.  *)
+  (*   f_equal; omega. *)
+  (* Qed. *)
 
   Lemma stack_inject_id:
     forall p s,
@@ -2196,12 +2229,17 @@ predicate that represents the permissions for the source memory [m1] in which
     - inversion 1; eauto. intros; exfalso. apply NIN1. eapply in_frames_in_frame; eauto.
       eapply in_frame_blocks_in_frame; eauto.
     - intros i j H; destr_in H; inv H.
-    - intros. exists i; destr.
+    (* - intros. exists i; destr. *)
     - intros i j H; destr_in H; inv H. omega.
     - intros i1 i2 f1 f2 FAP1 FAP2 EQ LT; repeat destr_in EQ.
       assert (f1 = f2) by (eapply frame_at_same_pos; eauto). subst. omega.
+    - intros i1 i2 j1 j2 G1 G2 i3 RNG.
+      repeat destr_in G1. repeat destr_in G2.
+      exists i3; destr; eauto; omega.
+    (* - intros i1 i2 j1 j2 G1 G2 i3 RNG. *)
+    (*   repeat destr_in G1. repeat destr_in G2. *)
+    (*   destr; eauto; omega. *)
   Qed.
-
 
 (** The following shows how to transport a stack injection when more blocks get
 injected. We have an hypothesis about those new blocks. Namely, they are not
