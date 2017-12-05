@@ -1727,6 +1727,15 @@ for [unchanged_on]. *)
      (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ perm m1 b o k p) ->
      inject j (fun n => g (S n)) m1' m2;
 
+ unrecord_stack_block_inject_left' {injperm: InjectPerm}:
+   forall (m1 m1' m2 : mem) (j : meminj) g,
+     inject j g m1 m2 ->
+     unrecord_stack_block m1 = Some m1' ->
+     g O = None ->
+     (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ perm m1 b o k p) ->
+     inject j (fun n => g (S n)) m1' m2;
+
+
  unrecord_stack_block_extends {injperm: InjectPerm}:
    forall m1 m2 m1',
      extends m1 m2 ->

@@ -2559,6 +2559,54 @@ Proof.
       intros; exists (pred i3). rewrite <- G3. f_equal. omega.
 Qed.
 
+Lemma stack_inject_unrecord_left':
+  forall j g m1 s1 s2
+    (SI: stack_inject j g m1 s1 s2)
+    (G0: g O = None)
+    (TOPNOPERM : forall b : block, is_stack_top s1 b -> forall (o : Z) (k : perm_kind) (p : permission), ~ m1 b o k p)
+    f l
+    (STK1 : s1 = f :: l),
+    stack_inject j (fun n : nat => g (S n)) m1 l s2.
+Proof.
+  intros. rewrite STK1 in *.
+  inversion SI; constructor; auto.
+  + red; intros.
+    simpl in *. eapply stack_inject_preserves_order0. 2: apply G1. 2: apply G2. omega.
+  + intros i1 f1 FAP PERM.
+    eapply frame_at_pos_cons in FAP.
+    edestruct stack_inject_frames_ex as (i2 & G12); eauto.
+  + intros i1 f1 i2 GS FAP.
+    eapply frame_at_pos_cons in FAP.
+    edestruct stack_inject_frame_inject as (f2 & FAP2 & FI); eauto.
+  + simpl. intros b1 b2 delta f2 fi JB NIN INS INF o k p PERM IPC.
+    destruct (in_frame_dec f b1).
+    * eapply TOPNOPERM in PERM; eauto. easy.
+    * eapply stack_inject_not_in_frames; eauto. simpl. intros [A|A]. congruence. congruence.
+  + intros i j0 GS. 
+    eapply stack_inject_range0 in GS. simpl in *.
+    destruct GS; split; omega.
+  + intros i j0 G.
+    generalize (stack_inject_pack0 _ _ G). intro.
+    cut (j0 <> S i). omega.
+    intro; subst.
+    destruct (stack_inject_surjective0 O). apply stack_inject_range0 in G. omega.
+    generalize (fun pf => stack_inject_diff_increases _ _ _ _ _ SI _ _ _ _ H0 pf G).
+    intros GSSpec. trim GSSpec.
+    destruct (le_dec x (S i)); auto.
+    exploit stack_inject_preserves_order0. 2: apply G. 2: apply H0. omega. omega.
+    assert (x = 0) by omega. subst. congruence.
+  + intros i1 i2 f1 f2 FAP1 FAP2 GS LT.
+    eapply frame_at_pos_cons in FAP1. eapply stack_inject_sizes; eauto.
+    intros i GI. destruct i. omega. apply Peano.le_n_S. apply LT. auto.
+  + intros i LT.
+    destruct (Nat.eq_dec i O); subst.
+    * edestruct (stack_inject_surjective0 O) as (i3 & G3). eauto.
+      destruct i3; try congruence. eauto.
+    * edestruct (stack_inject_surjective0 i) as (i3 & G3). eauto.
+      edestruct (stack_inject_surjective0 O) as (i4 & G4). omega.
+      exploit (preserves_order_inv _ stack_inject_preserves_order0 O i). omega. eauto. eauto.
+      intros; exists (pred i3). rewrite <- G3. f_equal. omega.
+Qed.
 
 Lemma frame_at_pos_cons_inv:
   forall a s i f,
