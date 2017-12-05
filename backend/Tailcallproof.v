@@ -218,6 +218,33 @@ Existing Instance inject_perm_all.
 Variable prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 
+Definition regs_inject (j: meminj) (rs1 rs2: Regmap.t val) :=
+  forall r,
+    Val.inject j (rs1 # r) (rs2 # r).
+
+Lemma meminj_preserves_globals_flat {F V} (g: Genv.t F V) m:
+  Ple (Genv.genv_next g) (Mem.nextblock m) ->
+  meminj_preserves_globals g (Mem.flat_inj (Mem.nextblock m)).
+Proof.
+  intros PLE.
+  split; [|split].
+  - intros id b FS.
+    unfold Genv.find_symbol in FS.
+    eapply Genv.genv_symb_range in FS.
+    unfold Mem.flat_inj; rewrite pred_dec_true; auto. xomega.
+  - intros id b FVI.
+    unfold Genv.find_var_info in FVI.
+    repeat destr_in FVI.
+    eapply Genv.genv_defs_range in Heqo.
+    unfold Mem.flat_inj; rewrite pred_dec_true; auto. xomega.
+  - intros b1 b2 delta gv FVI FI.
+    unfold Genv.find_var_info in FVI.
+    repeat destr_in FVI.
+    eapply Genv.genv_defs_range in Heqo.
+    unfold Mem.flat_inj in FI; destr_in FI. 
+Qed.
+
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -262,16 +289,17 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs rs' f,
+  forall ros rs rs' f m,
   find_function ge ros rs = Some f ->
-  regs_lessdef rs rs' ->
+  regs_inject (Mem.flat_inj (Mem.nextblock m)) rs rs' ->
   find_function tge ros rs' = Some (transf_fundef f).
 Proof.
-  intros until f; destruct ros; simpl.
+  intros until m; destruct ros; simpl.
   intros.
   assert (rs'#r = rs#r).
     exploit Genv.find_funct_inv; eauto. intros [b EQ].
-    generalize (H0 r). rewrite EQ. intro LD. inv LD. auto.
+    generalize (H0 r). rewrite EQ. intro LD. inv LD.
+    unfold Mem.flat_inj in H4. repeat destr_in H4. reflexivity.
   rewrite H1. apply functions_translated; auto.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge i); intros.
   apply funct_ptr_translated; auto.
@@ -312,22 +340,55 @@ We first define the simulation invariant between call stacks.
 The first two cases are standard, but the third case corresponds
 to a frame that was eliminated by the transformation. *)
 
-Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
-  | match_stackframes_nil:
-      match_stackframes nil nil
-  | match_stackframes_normal: forall stk stk' res sp pc rs rs' f,
-      match_stackframes stk stk' ->
-      regs_lessdef rs rs' ->
-      match_stackframes
+
+(* The list of boolean records whether the source frame has a corresponding
+counterpart in the target stack ([true]) or not ([false]). This will later be used
+to specify the shape of the stack injection function [g]. *)
+Inductive match_stackframes: meminj -> list bool -> list stackframe -> list stackframe -> Prop :=
+  | match_stackframes_nil j:
+      match_stackframes j nil nil nil
+  | match_stackframes_normal: forall j l stk stk' res sp pc rs rs' f,
+      match_stackframes j l stk stk' ->
+      regs_inject j rs rs' ->
+      j sp = Some (sp,0) ->
+      match_stackframes j (true::l)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
-  | match_stackframes_tail: forall stk stk' res sp pc rs f,
-      match_stackframes stk stk' ->
+  | match_stackframes_tail: forall j l stk stk' res sp pc rs f,
+      match_stackframes j l stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
-      match_stackframes
+      match_stackframes j (false::l)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk'.
+
+(* Specifying the shape of stack injection functions *)
+
+Fixpoint compat_frameinj_rec (l: list bool) (g: frameinj) (ns nt: nat) :=
+  match l with
+    nil => forall i j (LE: (ns <= i)%nat) (Gi: g i = Some j), (nt <= j)%nat
+  | true::l =>
+    g ns = Some nt /\ compat_frameinj_rec l g (S ns) (S nt)
+  | false::l =>
+    g ns = None /\ compat_frameinj_rec l g (S ns) nt
+  end.
+
+Definition compat_frameinj l g := compat_frameinj_rec l g O O.
+
+Lemma compat_frameinj_rec_above:
+  forall l g ns nt (CFG: compat_frameinj_rec l g ns nt)
+    i j (Gi: g i = Some j) (LE: (ns <= i)%nat),
+    (nt <= j)%nat.
+Proof.
+  induction l; simpl; intros; eauto.
+  destruct a; destruct CFG as (GNS & GABOVE).
+  - destruct (Nat.eq_dec ns i); subst; auto.
+    + rewrite GNS in Gi; inv Gi; auto.
+    + eapply IHl in GABOVE. 2: apply Gi. 2: omega. omega.
+  - destruct (Nat.eq_dec ns i); subst; auto. 
+    + congruence.
+    + eapply IHl in GABOVE. 2: apply Gi. 2: omega. omega.
+Qed.
 
 (** Here is the invariant relating two states.  The first three
   cases are standard.  Note the ``less defined than'' conditions
@@ -336,35 +397,95 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
 
 Inductive match_states: state -> state -> Prop :=
   | match_states_normal:
-      forall s sp pc rs m s' rs' m' f
-             (STACKS: match_stackframes s s')
-             (RLD: regs_lessdef rs rs')
-             (MLD: Mem.extends m m'),
+      forall s sp pc rs m s' rs' m' f g l
+             (STACKS: match_stackframes (Mem.flat_inj (Mem.nextblock m)) l s s')
+             (RLD: regs_inject (Mem.flat_inj (Mem.nextblock m)) rs rs')
+             (MLD: Mem.inject (Mem.flat_inj (Mem.nextblock m)) g m m')
+             (CFG: compat_frameinj (true::l) g),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
-      forall s f args m s' args' m' sz,
-      match_stackframes s s' ->
-      Val.lessdef_list args args' ->
-      Mem.extends m m' ->
+      forall s f args m s' args' m' sz g l
+        (MS: match_stackframes (Mem.flat_inj (Mem.nextblock m)) l s s')
+        (LDargs: Val.inject_list (Mem.flat_inj (Mem.nextblock m)) args args')
+        (MLD: Mem.inject (Mem.flat_inj (Mem.nextblock m)) g m m')
+        (CFG: compat_frameinj l g),
       match_states (Callstate s f args m sz)
                    (Callstate s' (transf_fundef f) args' m' sz)
   | match_states_return:
-      forall s v m s' v' m',
-      match_stackframes s s' ->
-      Val.lessdef v v' ->
-      Mem.extends m m' ->
-      match_states (Returnstate s v m)
-                   (Returnstate s' v' m')
+      forall s v m s' v' m' g l
+        (MS: match_stackframes (Mem.flat_inj (Mem.nextblock m)) l s s')
+        (LDret: Val.inject (Mem.flat_inj (Mem.nextblock m)) v v')
+        (MLD: Mem.inject (Mem.flat_inj (Mem.nextblock m)) g m m')
+        (CFG: compat_frameinj (true::l) g),
+        match_states (Returnstate s v m)
+                     (Returnstate s' v' m')
   | match_states_interm:
-      forall s sp pc rs m s' m' f r v'
-             (STACKS: match_stackframes s s')
-             (MLD: Mem.extends m m'),
-      is_return_spec f pc r ->
-      f.(fn_stacksize) = 0 ->
-      Val.lessdef (rs#r) v' ->
-      match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
-                   (Returnstate s' v' m').
+      forall s sp pc rs m s' m' f r v' g l
+             (STACKS: match_stackframes (Mem.flat_inj (Mem.nextblock m)) l s s')
+             (MLD: Mem.inject (Mem.flat_inj (Mem.nextblock m)) g m m')
+             (RETspec: is_return_spec f pc r)
+             (SZzero: f.(fn_stacksize) = 0)
+             (LDret: Val.inject (Mem.flat_inj (Mem.nextblock m)) (rs#r) v')
+             (CFG: compat_frameinj l g),
+        match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
+                     (Returnstate s' v' m').
+
+Definition mem_state (s: state) : mem :=
+  match s with
+    State _ _ _ _ _ m
+  | Callstate _ _ _ m _
+  | Returnstate _ _ m => m
+  end.
+
+Definition match_state_ge {F V} (g: Genv.t F V) (s: state) :=
+  Ple (Genv.genv_next g) (Mem.nextblock (mem_state s)).
+
+Definition current_sp_state (s: state) : option (block * Z) :=
+  match s with
+    State _ f (Vptr sp _) _ _ _ => Some (sp, fn_stacksize f)
+  | _ => None
+  end.
+
+Definition stackblocks_of_stackframe (sf: stackframe) : option (block * Z) :=
+  match sf with
+  | (Stackframe _ f (Vptr sp _) _ _) => Some (sp,fn_stacksize f)
+  | _ => None
+  end.
+
+
+Definition stackframes_state (s: state) : list stackframe :=
+  match s with
+    State stk _ _ _ _ _
+  | Callstate stk _ _ _ _
+  | Returnstate stk _ _ => stk
+  end.
+
+
+Definition stack_blocks_of_state (s: state) : list (option (block * Z)) :=
+  current_sp_state s :: map stackblocks_of_stackframe (stackframes_state s).
+
+Definition sp_valid (s : state) : Prop :=
+  Forall (fun bz => match bz with
+                   Some (b,z) => Mem.valid_block (mem_state s) b
+                 | None => False
+                 end) (stack_blocks_of_state s).
+
+Definition match_stack_adt (s: state) :=
+  let stk := Mem.stack_adt (mem_state s) in
+  let sbl := stack_blocks_of_state s in
+  exists sprog sinit,
+    stk = sprog ++ sinit /\
+    list_forall2 (fun (f: frame_adt) obz =>
+                    match obz with
+                      Some (b,z) =>
+                      map fst (frame_adt_blocks f) = b :: nil /\
+                      forall o k p,
+                        Mem.perm (mem_state s) b o k p ->
+                        0 <= o < z
+                    | None => False
+                    end
+                 ) sprog sbl.
 
 (** The last case of [match_states] corresponds to the execution
   of a move/nop/return sequence in the original code that was
@@ -405,11 +526,57 @@ Ltac EliminatedInstr :=
 (** The proof of semantic preservation, then, is a simulation diagram
   of the ``option'' kind. *)
 
+
+Lemma regs_inject_regs:
+  forall j rs1 rs2, regs_inject j rs1 rs2 ->
+  forall rl, Val.inject_list j rs1##rl rs2##rl.
+Proof.
+  induction rl; constructor; auto.
+Qed.
+
+Lemma set_reg_inject:
+  forall j r v1 v2 rs1 rs2,
+  Val.inject j v1 v2 -> regs_inject j rs1 rs2 -> regs_inject j (rs1#r <- v1) (rs2#r <- v2).
+Proof.
+  intros; red; intros. repeat rewrite Regmap.gsspec.
+  destruct (peq r0 r); auto.
+Qed.
+
+Lemma set_res_inject:
+  forall j res v1 v2 rs1 rs2,
+  Val.inject j v1 v2 -> regs_inject j rs1 rs2 ->
+  regs_inject j (regmap_setres res v1 rs1) (regmap_setres res v2 rs2).
+Proof.
+  intros. destruct res; simpl; auto. apply set_reg_inject; auto.
+Qed.
+
+
+
+
+
 Variable fn_stack_requirements: ident -> Z.
+
+
+Lemma ros_is_function_transf:
+  forall j ros rs rs' id,
+    meminj_preserves_globals ge j ->
+    ros_is_function ge ros rs id ->
+    regs_inject j rs rs' ->
+    ros_is_function tge ros rs' id.
+Proof.
+  unfold ros_is_function. intros.
+  destr_in H0. simpl.
+  destruct H0 as (b & o & RS & FS).
+  specialize (H1 r). rewrite RS in H1; inv H1.
+  eexists; eexists; split; eauto.
+  rewrite symbols_preserved. rewrite FS.
+  f_equal.
+  destruct H. apply H in FS. rewrite FS in H4; inv H4. auto.
+Qed.
 
 Lemma transf_step_correct:
   forall s1 t s2, step fn_stack_requirements ge s1 t s2 ->
-  forall s1' (MS: match_states s1 s1'),
+  forall s1' (MS: match_states s1 s1') (MSG: match_state_ge ge s1) (SPV: sp_valid s1) (MSA: match_stack_adt s1) (MSA': match_stack_adt s1'),
   (exists s2', step fn_stack_requirements tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
@@ -417,7 +584,7 @@ Proof.
 
 - (* nop *)
   TransfInstr. left. econstructor; split.
-  eapply exec_Inop; eauto. constructor; auto.
+  eapply exec_Inop; eauto. econstructor; eauto.
 - (* eliminated nop *)
   assert (s0 = pc') by congruence. subst s0.
   right. split. simpl. omega. split. auto.
@@ -425,13 +592,17 @@ Proof.
 
 - (* op *)
   TransfInstr.
-  assert (Val.lessdef_list (rs##args) (rs'##args)). apply regs_lessdef_regs; auto.
-  exploit eval_operation_lessdef; eauto.
+  assert (Val.inject_list (Mem.flat_inj (Mem.nextblock m)) (rs##args) (rs'##args)). apply regs_inject_regs; auto.
+  exploit eval_operation_inject; eauto.
+  eapply meminj_preserves_globals_flat; eauto.
+  unfold Mem.flat_inj. rewrite pred_dec_true. reflexivity.
+  inv SPV. eauto.
   intros [v' [EVAL' VLD]].
   left. exists (State s' (transf_function f) (Vptr sp0 Ptrofs.zero) pc' (rs'#res <- v') m'); split.
   eapply exec_Iop; eauto.  rewrite <- EVAL'.
+  rewrite eval_shift_stack_operation.
   apply eval_operation_preserved. exact symbols_preserved.
-  econstructor; eauto. apply set_reg_lessdef; auto.
+  econstructor; eauto. apply set_reg_inject; auto.
 - (* eliminated move *)
   rewrite H1 in H. clear H1. inv H.
   right. split. simpl. omega. split. auto.
@@ -439,74 +610,232 @@ Proof.
 
 - (* load *)
   TransfInstr.
-  assert (Val.lessdef_list (rs##args) (rs'##args)). apply regs_lessdef_regs; auto.
-  exploit eval_addressing_lessdef; eauto.
+  assert (Val.inject_list (Mem.flat_inj (Mem.nextblock m)) (rs##args) (rs'##args)). apply regs_inject_regs; auto.
+  exploit eval_addressing_inject; eauto.
+  eapply meminj_preserves_globals_flat; eauto.
+  unfold Mem.flat_inj; rewrite pred_dec_true; auto.   inv SPV. eauto.
   intros [a' [ADDR' ALD]].
-  exploit Mem.loadv_extends; eauto.
+  exploit Mem.loadv_inject; eauto.
   intros [v' [LOAD' VLD]].
   left. exists (State s' (transf_function f) (Vptr sp0 Ptrofs.zero) pc' (rs'#dst <- v') m'); split.
   eapply exec_Iload with (a0 := a'). eauto.  rewrite <- ADDR'.
+  rewrite eval_shift_stack_addressing.
   apply eval_addressing_preserved. exact symbols_preserved. eauto.
-  econstructor; eauto. apply set_reg_lessdef; auto.
+  econstructor; eauto. apply set_reg_inject; auto.
 
 - (* store *)
   TransfInstr.
-  assert (Val.lessdef_list (rs##args) (rs'##args)). apply regs_lessdef_regs; auto.
-  exploit eval_addressing_lessdef; eauto.
+  assert (Val.inject_list (Mem.flat_inj (Mem.nextblock m)) (rs##args) (rs'##args)). apply regs_inject_regs; auto.
+  exploit eval_addressing_inject; eauto.
+  eapply meminj_preserves_globals_flat; eauto.
+  unfold Mem.flat_inj; rewrite pred_dec_true; auto. inv SPV. eauto.
   intros [a' [ADDR' ALD]].
-  exploit Mem.storev_extends. 2: eexact H1. eauto. eauto. apply RLD.
+  exploit Mem.storev_mapped_inject. 2: eexact H1. eauto. eauto. apply RLD.
   intros [m'1 [STORE' MLD']].
   left. exists (State s' (transf_function f) (Vptr sp0 Ptrofs.zero) pc' rs' m'1); split.
   eapply exec_Istore with (a0 := a'). eauto.  rewrite <- ADDR'.
+  rewrite eval_shift_stack_addressing.
   apply eval_addressing_preserved. exact symbols_preserved. eauto.
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
+  erewrite Mem.nextblock_store; eauto.
+  erewrite Mem.nextblock_store; eauto.
+  erewrite Mem.nextblock_store; eauto.
 
 - (* call *)
   exploit find_function_translated; eauto. intro FIND'.
   TransfInstr.
 + (* call turned tailcall *)
-  assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function f)) = Some m''}).
+  assert (X: { m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function f)) = Some m''}).
+  {
     apply Mem.range_perm_free. rewrite stacksize_preserved. rewrite H7.
     red; intros; omegaContradiction.
+  } 
   destruct X as [m'' FREE].
-  left. exists (Callstate s' (transf_fundef fd) (rs'##args) m''); split.
-  eapply exec_Itailcall; eauto. apply sig_preserved.
-  constructor. eapply match_stackframes_tail; eauto. apply regs_lessdef_regs; auto.
-  eapply Mem.free_right_extends; eauto.
-  rewrite stacksize_preserved. rewrite H7. intros. omegaContradiction.
+  generalize (Mem.free_right_inject _ _ _ _ _ _ _ _ MLD FREE). intro FINJ.
+  trim FINJ.
+  {
+    unfold Mem.flat_inj.
+    intros b1 delta ofs k p FI PERM RNG.
+    repeat destr_in FI.
+    rewrite stacksize_preserved in RNG. rewrite H7 in RNG. omega.
+  }
+  destruct MSA as (sprog & sinit & EQstk & LF2).
+  inv LF2. simpl in EQstk.
+  destruct MSA' as (sprog' & sinit' & EQstk' & LF2').
+  inv LF2'. simpl in EQstk'.
+  edestruct (Mem.unrecord_stack_block_succeeds m'') as (m2' & USB & EQ).
+  erewrite Mem.free_stack_blocks; eauto.
+  generalize (Mem.unrecord_stack_block_inject_right _ _ _ _ m2' FINJ). intro UINJ.
+  trim UINJ.
+  {
+    rewrite EQstk. unfold is_stack_top. simpl.
+    destruct H4 as (frame_blocks & perm_stack).
+    rewrite frame_blocks. intros b [A|[]]; inv A.
+    intros (o & k & p & PERM).
+    apply perm_stack in PERM. rewrite H7 in PERM. omega.
+  }
+  trim UINJ.
+  {
+    red in CFG. simpl in CFG.
+    intros i j Gi LT.
+    eapply compat_frameinj_rec_above in Gi. 2: apply CFG. omega. omega.
+  }
+  trim UINJ. apply CFG.
+  trim UINJ. eauto.
+  left. exists (Callstate s' (transf_fundef fd) (rs'##args) m2' (fn_stack_requirements id)); split.
+  eapply exec_Itailcall; eauto.
+  {
+    eapply ros_is_function_transf; eauto.
+    eapply meminj_preserves_globals_flat; eauto.
+  }
+  apply sig_preserved.
+  econstructor. eapply match_stackframes_tail; eauto. apply regs_inject_regs; auto.
+  eauto.
+  {
+    revert CFG.
+
+    Lemma compat_frameinj_pop_right_rec:
+      forall g l ns nt
+        (CFR: compat_frameinj_rec l g ns (S nt))
+        g' (G'spec: forall i, (ns <= i)%nat -> g' i = option_map pred (g i)),
+        compat_frameinj_rec l g' ns nt.
+    Proof.
+      induction l; simpl; intros; eauto.
+      - rewrite G'spec in Gi; auto.
+        unfold option_map in Gi; repeat destr_in Gi.
+        eapply CFR in Heqo. omega. auto.
+      - destr; destruct CFR as (Gn & CFR).
+        + split.
+          * rewrite G'spec; auto.
+            unfold option_map. rewrite Gn. reflexivity.
+          * eapply IHl; eauto.
+            intros; apply G'spec. omega.
+        + split.
+          * rewrite G'spec; auto.
+            unfold option_map. rewrite Gn. reflexivity.
+          * eapply IHl; eauto.
+            intros; apply G'spec. omega.
+    Qed.
+
+    Lemma compat_frameinj_pop_right:
+      forall g l,
+        compat_frameinj (true :: l) g ->
+        compat_frameinj (false :: l) (fun n : nat => if Nat.eq_dec n 0 then None else option_map Init.Nat.pred (g n)).
+    Proof.
+      intros g l (A & B); split; simpl; auto.
+      eapply compat_frameinj_pop_right_rec; eauto.
+      intros. destr. omega.
+    Qed.
+    eapply compat_frameinj_pop_right; eauto.
+
+  }
+
 + (* call that remains a call *)
   left. exists (Callstate (Stackframe res (transf_function f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
-                          (transf_fundef fd) (rs'##args) m'); split.
-  eapply exec_Icall; eauto. apply sig_preserved.
-  constructor. constructor; auto. apply regs_lessdef_regs; auto. auto.
+                          (transf_fundef fd) (rs'##args) m' (fn_stack_requirements id)); split.
+  eapply exec_Icall; eauto.
+  eapply ros_is_function_transf; eauto.
+  eapply meminj_preserves_globals_flat; eauto.
+  apply sig_preserved.
+  econstructor. constructor; eauto.
+  unfold Mem.flat_inj; rewrite pred_dec_true. auto. inv SPV; auto.
+  apply regs_inject_regs; auto. eauto.
+  auto.
 
 - (* tailcall *)
   exploit find_function_translated; eauto. intro FIND'.
-  exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
+  exploit Mem.free_parallel_inject; eauto.
+  unfold Mem.flat_inj; rewrite pred_dec_true; auto. inv SPV; auto. constructor.
+  intros [m'1 [FREE EXT]].
+  exploit Mem.unrecord_stack_block_inject_parallel. apply EXT. eauto.
+  {
+    red in CFG. simpl in CFG.
+    intros i j Gi LT.
+    eapply compat_frameinj_rec_above in Gi. 2: apply CFG. omega. omega.
+  }
+  {
+    apply CFG.
+  }
+  intros (m2' & USB' & UINJ).
   TransfInstr.
-  left. exists (Callstate s' (transf_fundef fd) (rs'##args) m'1); split.
-  eapply exec_Itailcall; eauto. apply sig_preserved.
-  rewrite stacksize_preserved; auto.
-  constructor. auto.  apply regs_lessdef_regs; auto. auto.
+  left. exists (Callstate s' (transf_fundef fd) (rs'##args) m2' (fn_stack_requirements id)); split.
+  eapply exec_Itailcall; eauto.
+  eapply ros_is_function_transf; eauto.
+  eapply meminj_preserves_globals_flat; eauto.
+  apply sig_preserved.
+  eauto. rewrite stacksize_preserved; auto. rewrite ! Z.add_0_r in FREE. eauto.
+  econstructor.
+  erewrite Mem.unrecord_stack_block_nextblock by eauto.
+  erewrite Mem.nextblock_free by eauto. eauto.
+  eauto.  apply regs_inject_regs; auto.
+  erewrite Mem.unrecord_stack_block_nextblock by eauto.
+  erewrite Mem.nextblock_free by eauto. eauto.
+  erewrite Mem.unrecord_stack_block_nextblock by eauto.
+  erewrite Mem.nextblock_free by eauto. eauto.
+  {
+    destruct CFG as (G0 & CFG).
+
+    Lemma compat_frameinj_rec_pop_parallel:
+      forall g l ns nt
+        (CFR: compat_frameinj_rec l g (S ns) (S nt)),
+        compat_frameinj_rec l (fun n : nat => option_map Init.Nat.pred (g (S n))) ns nt.
+    Proof.
+      induction l; simpl; intros; eauto.
+      - unfold option_map in Gi; repeat destr_in Gi.
+        eapply CFR in Heqo. omega. omega.
+      - destr; destruct CFR as (Gn & CFR).
+        + split.
+          * unfold option_map. rewrite Gn. reflexivity.
+          * eapply IHl; eauto.
+        + split.
+          * unfold option_map. rewrite Gn. reflexivity.
+          * eapply IHl; eauto.
+    Qed.
+    eapply compat_frameinj_rec_pop_parallel; eauto.
+
+  }
 
 - (* builtin *)
   TransfInstr.
-  exploit (eval_builtin_args_lessdef (ge := ge) (e1 := fun r => rs#r) (fun r => rs'#r)); eauto.
+  exploit (@eval_builtin_args_inject _ _ _ _ ge tge (fun r => rs#r) (fun r => rs'#r) (Vptr sp0 Ptrofs.zero)); eauto.
+  {
+    econstructor. unfold Mem.flat_inj. rewrite pred_dec_true; eauto. inv SPV; auto. reflexivity.
+  }
+  {
+    simpl. intros; rewrite symbols_preserved; auto.
+  }
+  {
+    simpl; intros.
+    generalize (meminj_preserves_globals_flat ge m). intro MPG. trim MPG; eauto.
+    destruct MPG; eauto.
+  }
   intros (vargs' & P & Q).
-  exploit external_call_mem_extends; eauto.
-  intros [v' [m'1 [A [B [C D]]]]].
+  exploit external_call_mem_inject; eauto.
+  eapply meminj_preserves_globals_flat; eauto.
+  intros [f' [v' [m'1 [A [B [C [D [E [F G]]]]]]]]].
   left. exists (State s' (transf_function f) (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res v' rs') m'1); split.
   eapply exec_Ibuiltin; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  edestruct eval_builtin_args_inject with (e1:= fun r => rs # r) (e2:= fun r => rs' # r) (sp1:=Vptr sp0 Ptrofs.zero) as
+      (args' & EVALargs' & INJargs); eauto.
+  {
+    econstructor. unfold Mem.flat_inj.  rewrite pred_dec_true; eauto. inv SPV; auto. reflexivity.
+  }
+  {
+    simpl; intros.
+    generalize (meminj_preserves_globals_flat ge m). intro MPG. trim MPG; eauto.
+    destruct MPG; eauto.
+  }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto. apply set_res_lessdef; auto.
+  econstructor; eauto.
+  
+  apply set_res_inject; auto.
 
 - (* cond *)
   TransfInstr.
   left. exists (State s' (transf_function f) (Vptr sp0 Ptrofs.zero) (if b then ifso else ifnot) rs' m'); split.
   eapply exec_Icond; eauto.
-  apply eval_condition_lessdef with (rs##args) m; auto. apply regs_lessdef_regs; auto.
+  apply eval_condition_inject with (rs##args) m; auto. apply regs_inject_regs; auto.
   constructor; auto.
 
 - (* jumptable *)
@@ -517,7 +846,7 @@ Proof.
   constructor; auto.
 
 - (* return *)
-  exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
+  exploit Mem.free_parallel_inject; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
   left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
   apply exec_Ireturn; auto. rewrite stacksize_preserved; auto.
@@ -530,17 +859,17 @@ Proof.
   right. split. simpl. omega. split. auto.
   constructor. auto.
   simpl. constructor.
-  eapply Mem.free_left_extends; eauto.
+  eapply Mem.free_left_inject; eauto.
 
 - (* eliminated return Some *)
   assert (or = Some r) by congruence. subst or.
   right. split. simpl. omega. split. auto.
   constructor. auto.
   simpl. auto.
-  eapply Mem.free_left_extends; eauto.
+  eapply Mem.free_left_inject; eauto.
 
 - (* internal call *)
-  exploit Mem.alloc_extends; eauto.
+  exploit Mem.alloc_inject; eauto.
     instantiate (1 := 0). omega.
     instantiate (1 := fn_stacksize f). omega.
   intros [m'1 [ALLOC EXT]].
@@ -552,10 +881,10 @@ Proof.
   left. econstructor; split.
   simpl. eapply exec_function_internal; eauto. rewrite EQ1; eauto.
   rewrite EQ2. rewrite EQ3. constructor; auto.
-  apply regs_lessdef_init_regs. auto.
+  apply regs_inject_init_regs. auto.
 
 - (* external call *)
-  exploit external_call_mem_extends; eauto.
+  exploit external_call_mem_inject; eauto.
   intros [res' [m2' [A [B [C D]]]]].
   left. exists (Returnstate s' res' m2'); split.
   simpl. econstructor; eauto.
@@ -567,7 +896,7 @@ Proof.
 + (* synchronous return in both programs *)
   left. econstructor; split.
   apply exec_return.
-  constructor; auto. apply set_reg_lessdef; auto.
+  constructor; auto. apply set_reg_inject; auto.
 + (* return instr in source program, eliminated because of tailcall *)
   right. split. unfold measure. simpl length.
   change (S (length s) * (niter + 2))%nat
@@ -590,7 +919,7 @@ Proof.
   rewrite symbols_preserved. eauto.
   symmetry; eapply match_program_main; eauto. 
   rewrite <- H3. apply sig_preserved.
-  constructor. constructor. constructor. apply Mem.extends_refl.
+  constructor. constructor. constructor. apply Mem.inject_refl.
 Qed.
 
 Lemma transf_final_states:

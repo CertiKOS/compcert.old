@@ -1658,7 +1658,7 @@ for [unchanged_on]. *)
      (INJ: inject j g m1 m2)
      (FAP: frame_at_pos (stack_adt m2) 0 f2)
      (FI: frame_inject j f1 f2)
-     (SURJ: frameinj_surjective g (length (stack_adt m2)))
+     (SURJ: g O = Some O)
      (RSB: record_stack_blocks m1 f1 m1'),
      inject j (fun n : nat => if Nat.eq_dec n 0 then Some O else g (Init.Nat.pred n)) m1' m2;
 
@@ -1672,7 +1672,6 @@ for [unchanged_on]. *)
               forall o k p, perm m2 b o k p -> 0 <= o < frame_size fi) ->
      (forall (b1 b2 : block) (delta : Z), j b1 = Some (b2, delta) -> in_frame fi1 b1 <-> in_frame fi2 b2) ->
      frame_adt_size fi1 = frame_adt_size fi2 ->
-     frameinj_surjective g (length (stack_adt m2)) ->
      record_stack_blocks m1 fi1 m1' ->
      exists m2',
        record_stack_blocks m2 fi2 m2' /\
@@ -1716,6 +1715,7 @@ for [unchanged_on]. *)
      inject j g m1 m2 ->
      unrecord_stack_block m1 = Some m1' ->
      (forall i j, g i = Some j -> (O < i) -> (O < j))%nat ->
+     g O = Some O ->
      exists m2',
        unrecord_stack_block m2 = Some m2' /\ inject j (fun n => option_map pred (g (S n))) m1' m2';
 
@@ -1723,7 +1723,6 @@ for [unchanged_on]. *)
    forall (m1 m1' m2 : mem) (j : meminj) g,
      inject j g m1 m2 ->
      unrecord_stack_block m1 = Some m1' ->
-     frameinj_surjective g (length (stack_adt m2)) ->
      g 1%nat = Some O ->
      (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ perm m1 b o k p) ->
      inject j (fun n => g (S n)) m1' m2;
@@ -1873,6 +1872,7 @@ for [unchanged_on]. *)
       unrecord_stack_block m1 = Some m1' ->
       (forall i j, g i = Some j -> j = O) ->
       (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ Mem.perm m1 b o k p) ->
+      g 1%nat = Some O ->
       inject j (fun n => g (S n)) m1' m2;
 
 
@@ -1895,13 +1895,13 @@ for [unchanged_on]. *)
       exists m2,
         record_stack_blocks m1 f m2;
 
- record_stack_block_right {injperm: InjectPerm}:
-   forall j g m1 m2 m2' f,
-     inject j g m1 m2 ->
-     record_stack_blocks m2 f m2' ->
-     stack_adt m1 = nil ->
-     (forall b o fi, In (b,fi) (frame_adt_blocks f) -> frame_perm fi o = Public) ->
-     inject j (fun n => option_map S (g n)) m1 m2';
+ (* record_stack_block_right {injperm: InjectPerm}: *)
+ (*   forall j g m1 m2 m2' f, *)
+ (*     inject j g m1 m2 -> *)
+ (*     record_stack_blocks m2 f m2' -> *)
+ (*     stack_adt m1 = nil -> *)
+ (*     (forall b o fi, In (b,fi) (frame_adt_blocks f) -> frame_perm fi o = Public) -> *)
+ (*     inject j (fun n => option_map S (g n)) m1 m2'; *)
 
  record_stack_block_det:
    forall m f m1 m2,
@@ -1922,6 +1922,28 @@ for [unchanged_on]. *)
       inject j1 g m1 m2 ->
       (forall x, j1 x = j2 x) ->
       inject j2 g m1 m2;
+unrecord_stack_block_inject_right {injperm: InjectPerm}:
+    forall j g m1 m2 m2'
+      (MI: inject j g m1 m2)
+      (TOPNOPERM: forall b, is_stack_top (stack_adt m1) b -> ~ exists o k p, perm m1 b o k p)
+      (NO0: forall i j, g i = Some j -> (O < i -> O < j)%nat)
+      (Ginit: (g O = Some O)%nat)
+      (USB: unrecord_stack_block m2 = Some m2'),
+      inject j (fun n => if Nat.eq_dec n O then None else option_map pred (g n)) m1 m2';
+
+stack_inject_unrecord_parallel_frameinj_flat {injperm: InjectPerm}:
+  forall j m1 m2
+    (MI: inject j (flat_frameinj (length (stack_adt m2))) m1 m2)
+    (LEN: length (stack_adt m1) = length (stack_adt m2))
+    (* fr2 l2 *)
+    (* (STK2 : stack_adt m2 = fr2 :: l2) *)
+    (* fr1 l1 *)
+    (* (STK1 : stack_adt m1 = fr1 :: l1) *)
+    m1'
+    (USB: unrecord_stack_block m1 = Some m1'),
+  exists m2',
+    unrecord_stack_block m2 = Some m2' /\ 
+    inject j (flat_frameinj (pred (length (stack_adt m2)))) m1' m2';
 
 }.
 
@@ -2317,49 +2339,50 @@ Qed.
 
 Context {injperm: InjectPerm}.
 
-(* Lemma frameinj_order_strict_0: *)
-(*   forall g j m1 m2, *)
-(*     inject j g m1 m2 -> *)
-(*     frameinj_order_strict g -> *)
-(*     forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat. *)
-(* Proof. *)
-(*   intros. eapply inject_stack_adt in H.  *)
-(*   eapply frameinj_order_strict_stack_inject0; eauto. *)
-(* Qed. *)
+Lemma frameinj_order_strict_0:
+  forall g j m1 m2,
+    inject j g m1 m2 ->
+    frameinj_order_strict g ->
+    g O = Some O ->
+    forall i j0 : nat, g i = Some j0 -> (0 < i)%nat -> (0 < j0)%nat.
+Proof.
+  intros. eapply inject_stack_adt in H.
+  eapply H0; eauto.
+Qed.
 
+Lemma frameinj_order_strict_pop:
+  forall g j m1 m2,
+    inject j g m1 m2 ->
+    g O = Some O ->
+    frameinj_order_strict g ->
+    frameinj_order_strict (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))).
+Proof.
+  red; intros g j m1 m2 INJ GO. intros.
+  unfold option_map in H1, H2.
+  destr_in H1; destr_in H2. inv H1; inv H2.
+  exploit H. 2: exact Heqo. 2: exact Heqo0. omega. intros.
+  exploit stack_inject_pack. apply inject_stack_adt. eauto. apply Heqo.
+  exploit stack_inject_pack. apply inject_stack_adt. eauto. apply Heqo0.
+  eapply frameinj_order_strict_0 in Heqo; eauto. omega. omega.
+Qed.
 
-(* Lemma frameinj_order_strict_pop: *)
-(*   forall g j m1 m2, *)
-(*     inject j g m1 m2 -> *)
-(*     frameinj_order_strict g -> *)
-(*     frameinj_order_strict (fun n : nat => option_map Init.Nat.pred (g (Datatypes.S n))). *)
-(* Proof. *)
-(*   red; intros g j m1 m2 INJ. intros. *)
-(*   unfold option_map in H1, H2. *)
-(*   destr_in H1; destr_in H2. inv H1; inv H2. *)
-(*   exploit H. 2: exact Heqo. 2: exact Heqo0. omega. intros. *)
-(*   exploit stack_inject_pack. apply inject_stack_adt. eauto. apply Heqo. *)
-(*   exploit stack_inject_pack. apply inject_stack_adt. eauto. apply Heqo0. *)
-  
-(*   eapply frameinj_order_strict_0 in Heqo; eauto. omega. omega. *)
-(* Qed. *)
-
-(* Lemma unrecord_stack_block_inject_parallel_strict: *)
-(*    forall (m1 m1' m2 : mem) (j : meminj) g, *)
-(*      inject j g m1 m2 -> *)
-(*      frameinj_order_strict g -> *)
-(*      unrecord_stack_block m1 = Some m1' -> *)
-(*      exists m2', *)
-(*        unrecord_stack_block m2 = Some m2' *)
-(*        /\ inject j (fun n => option_map pred (g (S n))) m1' m2' *)
-(*        /\ frameinj_order_strict (fun n => option_map pred (g (S n))). *)
-(* Proof. *)
-(*   intros. *)
-(*   (* generalize (frameinj_order_strict_0 _ _ _ _ H H0). intros. *) *)
-(*   (* generalize (frameinj_order_strict_pop _ _ _ _ H H0). intros. *) *)
-(*   exploit unrecord_stack_block_inject_parallel; eauto. *)
-(*   intros (m2' & USB & INJ); eauto. *)
-(* Qed. *)
+Lemma unrecord_stack_block_inject_parallel_strict:
+   forall (m1 m1' m2 : mem) (j : meminj) g,
+     inject j g m1 m2 ->
+     frameinj_order_strict g ->
+     unrecord_stack_block m1 = Some m1' ->
+     g O = Some O ->
+     exists m2',
+       unrecord_stack_block m2 = Some m2'
+       /\ inject j (fun n => option_map pred (g (S n))) m1' m2'
+       /\ frameinj_order_strict (fun n => option_map pred (g (S n))).
+Proof.
+  intros.
+  generalize (frameinj_order_strict_0 _ _ _ _ H H0 H2). intros.
+  generalize (frameinj_order_strict_pop _ _ _ _ H H2 H0). intros.
+  exploit unrecord_stack_block_inject_parallel; eauto.
+  intros (m2' & USB & INJ); eauto.
+Qed.
 
 Lemma storev_nextblock :
   forall m chunk addr v m',

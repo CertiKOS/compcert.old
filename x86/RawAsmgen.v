@@ -398,47 +398,6 @@ Section WITHMEMORYMODEL.
     rewrite IHl1. simpl. omega.
   Qed.
 
-  Ltac rewrite_perms_fw :=
-    match goal with
-    | H1: Mem.record_stack_blocks _ _ ?m |- Mem.perm ?m _ _ _ _ =>
-      eapply (Mem.record_stack_block_perm' _ _ _ H1)
-    | H1: Mem.alloc _ _ _ = (?m,_) |- Mem.perm ?m _ _ _ _ =>
-      first [
-          apply Mem.perm_implies; [apply (Mem.perm_alloc_2 _ _ _ _ _ H1) | try constructor]
-        |  apply (Mem.perm_alloc_1 _ _ _ _ _ H1)
-        ]
-    | H1: Mem.store _ _ _ _ _ = Some ?m |- Mem.perm ?m _ _ _ _ =>
-      apply (Mem.perm_store_1 _ _ _ _ _ _ H1)
-    | H1: Mem.storev _ _ _ _ = Some ?m |- Mem.perm ?m _ _ _ _ =>
-      apply (Mem.perm_store_1 _ _ _ _ _ _ H1)
-    end.
-
-  Ltac rewrite_stack_blocks :=
-    match goal with
-    | H: Mem.record_stack_blocks _ _  ?m |- context [Mem.stack_adt ?m] =>
-      rewrite (Mem.record_stack_blocks_stack_adt _ _ _ H)
-    | H: Mem.alloc _ _ _ = (?m,_) |- context [Mem.stack_adt ?m] =>
-      rewrite (Mem.alloc_stack_blocks _ _ _ _ _ H)
-    | H: Mem.store _ _ _ _ _ = Some ?m |- context [Mem.stack_adt ?m] =>
-      rewrite (Mem.store_stack_blocks _ _ _ _ _ _ H)
-    | H: Mem.storev _ _ _ _ = Some ?m |- context [Mem.stack_adt ?m] =>
-      rewrite (Mem.store_stack_blocks _ _ _ _ _ _ H)
-    end.
-
-  Ltac rewrite_perms_bw H :=
-    match type of H with
-      Mem.perm ?m2 _ _ _ _ =>
-      match goal with
-      | H1: Mem.record_stack_blocks _ _  ?m |- _ =>
-        apply (Mem.record_stack_block_perm _ _ _ H1) in H
-      | H1: Mem.alloc _ _ _ = (?m,_) |- _ =>
-        apply (Mem.perm_alloc_inv _ _ _ _ _ H1) in H
-      | H1: Mem.store _ _ _ _ _ = Some ?m |- _ =>
-        apply (Mem.perm_store_2 _ _ _ _ _ _ H1) in H
-      | H1: Mem.storev _ _ _ _ = Some ?m |- _ =>
-        apply (Mem.perm_store_2 _ _ _ _ _ _ H1) in H
-      end
-    end.
 
   Lemma val_inject_set:
     forall j rs1 rs2 r0 r1

@@ -1042,7 +1042,6 @@ Lemma record_stack_block_parallel_rule:
     (forall (ofs : Z) (k : perm_kind) (p : permission),
         Mem.perm m2 b' ofs k p -> 0 <= ofs < frame_size fi) ->
     (forall bb delta0, j bb = Some (b', delta0) -> bb = b) ->
-    frameinj_surjective g (length (Mem.stack_adt m2)) ->
     forall fa',
       fa' = {| frame_adt_blocks := (b',fi)::nil;
                frame_adt_size := n;
@@ -1052,7 +1051,7 @@ Lemma record_stack_block_parallel_rule:
       Mem.record_stack_blocks m2 fa' m2' /\
       m2' |= minjection j (fun n => if Nat.eq_dec n O then Some O else option_map S (g (pred n))) m1' ** P.
 Proof.
-  intros m1 m1' m2 j g P fi b b' delta n FB INVAR MINJ NIN fa finone (* PUB *) fablocks fasize RSB1 PERM0 PERM1 PERM2 UNIQ SURJ fa' fa'eq.
+  intros m1 m1' m2 j g P fi b b' delta n FB INVAR MINJ NIN fa finone (* PUB *) fablocks fasize RSB1 PERM0 PERM1 PERM2 UNIQ fa' fa'eq.
   destruct MINJ as (MINJ & PM & DISJ).
   generalize (Mem.record_stack_blocks_inject_parallel _ m1' _ _ _ fa fa' MINJ).
   intro A. exploit A.
@@ -1072,7 +1071,6 @@ Proof.
   - intros. subst. simpl in *. unfold in_frame; rewrite fablocks. simpl. 
     split; intros [B|[]]; left; subst. congruence. eapply UNIQ in H. auto.
   - subst; simpl in *; congruence. 
-  - eauto.
   - eauto.
   - intros (m2' & RSB2 & INJ).
     eexists; split; eauto.
@@ -1107,7 +1105,6 @@ Lemma push_frame_parallel_rule
     hi <= frame_size fi ->
     (forall ofs, 0 <= ofs < sz1 -> frame_public fi (ofs + delta)) ->
     n = frame_size fi ->
-    frameinj_surjective g (length (Mem.stack_adt m2)) ->
 
     exists j' m2_1' b2 m2',
       Mem.alloc m2 0 (frame_size fi) = (m2_1', b2) /\
@@ -1124,7 +1121,7 @@ Lemma push_frame_parallel_rule
       /\ j' b1 = Some (b2, delta)
       /\ inject_separated j j' m1 m2.
 Proof.
-  intros until delta; intros n INVAR SEP ALLOC1 fa finone fablocks fasize1 fasize REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ SURJ. subst n.
+  intros until delta; intros n INVAR SEP ALLOC1 fa finone fablocks fasize1 fasize REC1 ALIGN LO HI RANGE1 RANGE2 RANGE3 PUB EQ. subst n.
   destruct (Mem.alloc m2 0 (frame_size fi)) as (m2_ & sp) eqn:ALLOC2.
   exploit alloc_parallel_rule_2; eauto.
   intros (j' & INJ' & J1 & J2 & J3).
@@ -1151,7 +1148,6 @@ Proof.
     exploit Mem.alloc_result. apply ALLOC1. intro; subst.
     eapply Mem.valid_block_inject_1 in H. 2: apply INJ'.
     exploit Mem.valid_block_alloc_inv. apply ALLOC1. apply H. intros [A|A]; auto. intuition.
-  - erewrite Mem.alloc_stack_blocks; eauto.
   - reflexivity. 
   - intros (m0 & EQmem & INJ''). 
     rewrite sep_swap3 in INJ''.
@@ -1164,11 +1160,13 @@ Lemma unrecord_stack_block_parallel_rule:
     m2 |= minjection j g m1 ** P ->
     Mem.unrecord_stack_block m1 = Some m1' ->
     (forall i j, g i = Some j -> O < i -> O < j)%nat ->
+    g O = Some O ->
     exists m2', Mem.unrecord_stack_block m2 = Some m2' /\
            m2' |= minjection j (fun n => option_map pred (g (S n))) m1' ** P.
 Proof.
-  intros m1 m1' m2 j g P (* fi b b' delta FB *) INVAR MINJ RSB Go.
-  exploit Mem.unrecord_stack_block_inject_parallel; eauto. apply MINJ. intros (m2' & UNRECORD & INJ).
+  intros m1 m1' m2 j g P (* fi b b' delta FB *) INVAR MINJ RSB Go G0.
+  exploit Mem.unrecord_stack_block_inject_parallel; eauto. apply MINJ. auto.
+  intros (m2' & UNRECORD & INJ).
   eexists; split; eauto.
   destruct MINJ as (MINJ & PM & DISJ).
   split; [|split].
@@ -1192,12 +1190,13 @@ Lemma pop_frame_parallel_rule:
     j b1 = Some (b2, delta) ->
     lo = delta -> hi = delta + Z.max 0 sz1 ->
     (forall i j, g i = Some j -> O < i -> O < j)%nat ->
+    g O = Some O ->
     exists m2_ m2',
       Mem.free m2 b2 0 sz2 = Some m2_ /\
       Mem.unrecord_stack_block m2_ = Some m2'
       /\ m2' |= minjection j (fun n => option_map pred (g (S n))) m1'' ** P.
 Proof.
-  intros j g m1 b1 sz1 sz2 m1' m1'' m2 b2 lo hi delta n P INVAR SEP FREE UNRECORD JB LOEQ HIEQ G0.
+  intros j g m1 b1 sz1 sz2 m1' m1'' m2 b2 lo hi delta n P INVAR SEP FREE UNRECORD JB LOEQ HIEQ Gno0 G0 .
   exploit free_parallel_rule; eauto.
   simpl. auto.
   intros (m2' & FREE' & SEP').
