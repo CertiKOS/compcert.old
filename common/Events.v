@@ -2102,3 +2102,58 @@ End EVAL_BUILTIN_ARG_INJECT.
 End WITHEXTERNALCALLS.
 
 Hint Constructors eval_builtin_arg: barg.
+
+
+Ltac rewrite_perms_fw :=
+  match goal with
+  | H1: Mem.record_stack_blocks _ _ ?m |- Mem.perm ?m _ _ _ _ =>
+    eapply (Mem.record_stack_block_perm' _ _ _ H1)
+  | H1: Mem.alloc _ _ _ = (?m,_) |- Mem.perm ?m _ _ _ _ =>
+    first [
+        apply Mem.perm_implies; [apply (Mem.perm_alloc_2 _ _ _ _ _ H1) | try constructor]
+      |  apply (Mem.perm_alloc_1 _ _ _ _ _ H1)
+      ]
+  | H1: Mem.store _ _ _ _ _ = Some ?m |- Mem.perm ?m _ _ _ _ =>
+    apply (Mem.perm_store_1 _ _ _ _ _ _ H1)
+  | H1: Mem.storev _ _ _ _ = Some ?m |- Mem.perm ?m _ _ _ _ =>
+    apply (Mem.perm_store_1 _ _ _ _ _ _ H1)
+  end.
+
+Ltac rewrite_stack_blocks :=
+  match goal with
+  | H: Mem.alloc _ _ _ = (?m,_) |- context [Mem.stack_adt ?m] =>
+    rewrite (Mem.alloc_stack_blocks _ _ _ _ _ H)
+  | H: Mem.store _ _ _ _ _ = Some ?m |- context [Mem.stack_adt ?m] =>
+    rewrite (Mem.store_stack_blocks _ _ _ _ _ _ H)
+  | H: Mem.storev _ _ _ _ = Some ?m |- context [Mem.stack_adt ?m] =>
+    rewrite (Mem.storev_stack_adt _ _ _ _ _ H)
+  | H: external_call _ _ _ _ _ _ ?m |- context [Mem.stack_adt ?m] =>
+    rewrite <- (external_call_stack_blocks _ _ _ _ _ _ _ H)
+  | H: Mem.free_list _ _ = Some ?m |- context [Mem.stack_adt ?m] =>
+    rewrite (Mem.free_list_stack_blocks _ _ _ H)
+  | H: Mem.free _ _ _ _ = Some ?m |- context [Mem.stack_adt ?m] =>
+    rewrite (Mem.free_stack_blocks _ _ _ _ _ H)
+  | H: Mem.record_stack_blocks _ _  ?m |- context [Mem.stack_adt ?m] =>
+    rewrite (Mem.record_stack_blocks_stack_adt _ _ _ H)
+  | H: Mem.unrecord_stack_block ?m1 = Some ?m |- context [Mem.stack_adt ?m] =>
+    let f := fresh "f" in
+    let EQ := fresh "EQ" in
+    destruct (Mem.unrecord_stack_adt _ _ H) as (f & EQ);
+    replace (Mem.stack_adt m) with (tl (Mem.stack_adt m1)) by (rewrite EQ; reflexivity)
+  end.
+
+
+Ltac rewrite_perms_bw H :=
+  match type of H with
+    Mem.perm ?m2 _ _ _ _ =>
+    match goal with
+    | H1: Mem.record_stack_blocks _ _  ?m |- _ =>
+      apply (Mem.record_stack_block_perm _ _ _ H1) in H
+    | H1: Mem.alloc _ _ _ = (?m,_) |- _ =>
+      apply (Mem.perm_alloc_inv _ _ _ _ _ H1) in H
+    | H1: Mem.store _ _ _ _ _ = Some ?m |- _ =>
+      apply (Mem.perm_store_2 _ _ _ _ _ _ H1) in H
+    | H1: Mem.storev _ _ _ _ = Some ?m |- _ =>
+      apply (Mem.perm_store_2 _ _ _ _ _ _ H1) in H
+    end
+  end.

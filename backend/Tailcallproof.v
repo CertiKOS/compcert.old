@@ -437,10 +437,11 @@ Definition mem_state (s: state) : mem :=
 Definition match_state_ge {F V} (g: Genv.t F V) (s: state) :=
   Ple (Genv.genv_next g) (Mem.nextblock (mem_state s)).
 
-Definition current_sp_state (s: state) : option (block * Z) :=
+Definition current_sp_state (s: state) : option (option (block * Z)) :=
   match s with
-    State _ f (Vptr sp _) _ _ _ => Some (sp, fn_stacksize f)
-  | _ => None
+    State _ f (Vptr sp _) _ _ _ => Some (Some (sp, fn_stacksize f))
+  | State _ _ _ _ _ _ => None
+  | _ => Some None
   end.
 
 Definition stackblocks_of_stackframe (sf: stackframe) : option (block * Z) :=
@@ -449,7 +450,6 @@ Definition stackblocks_of_stackframe (sf: stackframe) : option (block * Z) :=
   | _ => None
   end.
 
-
 Definition stackframes_state (s: state) : list stackframe :=
   match s with
     State stk _ _ _ _ _
@@ -457,14 +457,17 @@ Definition stackframes_state (s: state) : list stackframe :=
   | Returnstate stk _ _ => stk
   end.
 
-
 Definition stack_blocks_of_state (s: state) : list (option (block * Z)) :=
-  current_sp_state s :: map stackblocks_of_stackframe (stackframes_state s).
+  match current_sp_state s with
+    Some (Some x) => Some x :: map stackblocks_of_stackframe (stackframes_state s)
+  | Some None => map stackblocks_of_stackframe (stackframes_state s)
+  | None => None :: map stackblocks_of_stackframe (stackframes_state s)
+  end.
 
 Definition sp_valid (s : state) : Prop :=
   Forall (fun bz => match bz with
                    Some (b,z) => Mem.valid_block (mem_state s) b
-                 | None => False
+                 | None => True
                  end) (stack_blocks_of_state s).
 
 Definition match_stack_adt (s: state) :=
@@ -589,6 +592,131 @@ Proof.
     eapply IG2 in JB; eauto. apply JB. eapply Genv.genv_defs_range; eauto.
 Qed.
 
+
+Lemma compat_frameinj_rec_pop_left:
+  forall g l ns nt
+    (CF: compat_frameinj_rec l g (S ns) nt),
+    compat_frameinj_rec l (fun n : nat => g (S n)) ns nt.
+Proof.
+  induction l; simpl; intros; eauto.
+  - eapply CF in Gi; eauto. omega.
+  - destruct a; destruct CF as [Gn CF].
+    + split; auto.
+    + split; auto.
+Qed.
+
+
+Lemma regs_inject_init_regs:
+  forall j params vl vl',
+    Val.inject_list j vl vl' ->
+    regs_inject j (init_regs vl params) (init_regs vl' params).
+Proof.
+  induction params; intros.
+  simpl. red; intros. rewrite Regmap.gi. constructor.
+  simpl. inv H.   red; intros. rewrite Regmap.gi. constructor.
+  apply set_reg_inject. auto. auto.
+Qed.
+Lemma compat_frameinj_rec_push_parallel:
+  forall g l ns nt
+    (CFR: compat_frameinj_rec l g ns nt)
+    g'
+    (G'spec: forall i, (S ns <= i)%nat -> g' i = option_map S (g (pred i))),
+    compat_frameinj_rec l g' (S ns) (S nt).
+Proof.
+  induction l; simpl; intros; eauto.
+  - rewrite G'spec in Gi; auto.
+    unfold option_map in Gi; repeat destr_in Gi.
+    eapply CFR in Heqo. omega. omega. 
+  - destr; destruct CFR as (Gn & CFR).
+    + split.
+      * rewrite G'spec; auto.
+        unfold option_map. simpl. rewrite Gn. reflexivity.
+      * eapply IHl; eauto.
+        intros; apply G'spec. omega.
+    + split.
+      * rewrite G'spec; auto.
+        unfold option_map. simpl. rewrite Gn. reflexivity.
+      * eapply IHl; eauto.
+        intros; apply G'spec. omega.
+Qed.
+
+Lemma compat_frameinj_pop_right_rec:
+  forall g l ns nt
+    (CFR: compat_frameinj_rec l g ns (S nt))
+    g' (G'spec: forall i, (ns <= i)%nat -> g' i = option_map pred (g i)),
+    compat_frameinj_rec l g' ns nt.
+Proof.
+  induction l; simpl; intros; eauto.
+  - rewrite G'spec in Gi; auto.
+    unfold option_map in Gi; repeat destr_in Gi.
+    eapply CFR in Heqo. omega. auto.
+  - destr; destruct CFR as (Gn & CFR).
+    + split.
+      * rewrite G'spec; auto.
+        unfold option_map. rewrite Gn. reflexivity.
+      * eapply IHl; eauto.
+        intros; apply G'spec. omega.
+    + split.
+      * rewrite G'spec; auto.
+        unfold option_map. rewrite Gn. reflexivity.
+      * eapply IHl; eauto.
+        intros; apply G'spec. omega.
+Qed.
+
+Lemma compat_frameinj_pop_right:
+  forall g l,
+    compat_frameinj (true :: l) g ->
+    compat_frameinj (false :: l) (fun n : nat => if Nat.eq_dec n 0 then None else option_map Init.Nat.pred (g n)).
+Proof.
+  intros g l (A & B); split; simpl; auto.
+  eapply compat_frameinj_pop_right_rec; eauto.
+  intros. destr. omega.
+Qed.
+
+Lemma compat_frameinj_rec_pop_parallel:
+  forall g l ns nt
+    (CFR: compat_frameinj_rec l g (S ns) (S nt)),
+    compat_frameinj_rec l (fun n : nat => option_map Init.Nat.pred (g (S n))) ns nt.
+Proof.
+  induction l; simpl; intros; eauto.
+  - unfold option_map in Gi; repeat destr_in Gi.
+    eapply CFR in Heqo. omega. omega.
+  - destr; destruct CFR as (Gn & CFR).
+    + split.
+      * unfold option_map. rewrite Gn. reflexivity.
+      * eapply IHl; eauto.
+    + split.
+      * unfold option_map. rewrite Gn. reflexivity.
+      * eapply IHl; eauto.
+Qed.
+
+Lemma match_stackframes_incr:
+  forall f l s s'
+    (MS: match_stackframes f l s s')
+    f' (INCR: inject_incr f f'),
+    match_stackframes f' l s s'.
+Proof.
+  induction 1; simpl; intros; eauto; try now econstructor; eauto.
+  econstructor; eauto.
+  red; intros; eauto.
+Qed.
+
+Lemma inject_globals_incr:
+  forall f f'
+    (INCR : inject_incr f f')
+    (SEP : forall b1 b2 delta, f b1 = None -> f' b1 = Some (b2, delta) -> Ple (Genv.genv_next ge) b1 /\ Ple (Genv.genv_next ge) b2)
+    (IG: inject_globals ge f),
+    inject_globals ge f'.
+Proof.
+  intros f f' INCR SEP (IG1 & IG2); split; intros; eauto.
+  eapply IG2; eauto.
+  destruct (f b1) eqn:FB1.
+  - destruct p. eapply INCR in FB1. congruence.
+  - specialize (SEP _ _ _ FB1 H).
+    xomega.
+Qed.
+
+
 Lemma transf_step_correct:
   forall s1 t s2, step fn_stack_requirements ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1') (MSG: match_state_ge ge s1) (MSG': match_state_ge tge s1') (SPV: sp_valid s1) (MSA: match_stack_adt s1) (MSA': match_stack_adt s1'),
@@ -701,43 +829,8 @@ Proof.
   eauto.
   {
     revert CFG.
-
-    Lemma compat_frameinj_pop_right_rec:
-      forall g l ns nt
-        (CFR: compat_frameinj_rec l g ns (S nt))
-        g' (G'spec: forall i, (ns <= i)%nat -> g' i = option_map pred (g i)),
-        compat_frameinj_rec l g' ns nt.
-    Proof.
-      induction l; simpl; intros; eauto.
-      - rewrite G'spec in Gi; auto.
-        unfold option_map in Gi; repeat destr_in Gi.
-        eapply CFR in Heqo. omega. auto.
-      - destr; destruct CFR as (Gn & CFR).
-        + split.
-          * rewrite G'spec; auto.
-            unfold option_map. rewrite Gn. reflexivity.
-          * eapply IHl; eauto.
-            intros; apply G'spec. omega.
-        + split.
-          * rewrite G'spec; auto.
-            unfold option_map. rewrite Gn. reflexivity.
-          * eapply IHl; eauto.
-            intros; apply G'spec. omega.
-    Qed.
-
-    Lemma compat_frameinj_pop_right:
-      forall g l,
-        compat_frameinj (true :: l) g ->
-        compat_frameinj (false :: l) (fun n : nat => if Nat.eq_dec n 0 then None else option_map Init.Nat.pred (g n)).
-    Proof.
-      intros g l (A & B); split; simpl; auto.
-      eapply compat_frameinj_pop_right_rec; eauto.
-      intros. destr. omega.
-    Qed.
     eapply compat_frameinj_pop_right; eauto.
-
   }
-
   eauto.
 
 + (* call that remains a call *)
@@ -773,24 +866,6 @@ Proof.
   apply regs_inject_regs; auto.
   {
     destruct CFG as (G0 & CFG).
-
-    Lemma compat_frameinj_rec_pop_parallel:
-      forall g l ns nt
-        (CFR: compat_frameinj_rec l g (S ns) (S nt)),
-        compat_frameinj_rec l (fun n : nat => option_map Init.Nat.pred (g (S n))) ns nt.
-    Proof.
-      induction l; simpl; intros; eauto.
-      - unfold option_map in Gi; repeat destr_in Gi.
-        eapply CFR in Heqo. omega. omega.
-      - destr; destruct CFR as (Gn & CFR).
-        + split.
-          * unfold option_map. rewrite Gn. reflexivity.
-          * eapply IHl; eauto.
-        + split.
-          * unfold option_map. rewrite Gn. reflexivity.
-          * eapply IHl; eauto.
-    Qed.
-
     eapply compat_frameinj_rec_pop_parallel; eauto.
   }
 
@@ -813,35 +888,9 @@ Proof.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor. 3: eauto.
   all: eauto.
-
-  Lemma match_stackframes_incr:
-    forall f l s s'
-      (MS: match_stackframes f l s s')
-      f' (INCR: inject_incr f f'),
-      match_stackframes f' l s s'.
-  Proof.
-    induction 1; simpl; intros; eauto; try now econstructor; eauto.
-    econstructor; eauto.
-    red; intros; eauto.
-  Qed.
   eapply match_stackframes_incr; eauto.
   apply set_res_inject; auto.
   red; intros; eauto.
-
-  Lemma inject_globals_incr:
-    forall f f'
-      (INCR : inject_incr f f')
-      (SEP : forall b1 b2 delta, f b1 = None -> f' b1 = Some (b2, delta) -> Ple (Genv.genv_next ge) b1 /\ Ple (Genv.genv_next ge) b2)
-      (IG: inject_globals ge f),
-      inject_globals ge f'.
-  Proof.
-    intros f f' INCR SEP (IG1 & IG2); split; intros; eauto.
-    eapply IG2; eauto.
-    destruct (f b1) eqn:FB1.
-    - destruct p. eapply INCR in FB1. congruence.
-    - specialize (SEP _ _ _ FB1 H).
-      xomega.
-  Qed.
   eapply inject_globals_incr; eauto.
   intros.
   specialize (G _ _ _ H2 H3). unfold Mem.valid_block in G.
@@ -903,24 +952,9 @@ Proof.
   rewrite Mem.perm_free in P; eauto.
   destruct P as (P & Q).
   intuition. apply PERM in Q. intuition.
-
-
   red; red in CFG.
   simpl in CFG.
   destruct CFG as (G0 & CFG).
-
-  Lemma compat_frameinj_rec_pop_left:
-    forall g l ns nt
-      (CF: compat_frameinj_rec l g (S ns) nt),
-      compat_frameinj_rec l (fun n : nat => g (S n)) ns nt.
-  Proof.
-    induction l; simpl; intros; eauto.
-    - eapply CF in Gi; eauto. omega.
-    - destruct a; destruct CF as [Gn CF].
-      + split; auto.
-      + split; auto.
-  Qed.
-
   eapply compat_frameinj_rec_pop_left; eauto.
   auto.
 
@@ -989,47 +1023,9 @@ Proof.
       -- rewrite EQ2. rewrite EQ3. econstructor. 3: eauto.
          all: eauto.
          eapply match_stackframes_incr; eauto.
-
-         Lemma regs_inject_init_regs:
-           forall j params vl vl',
-             Val.inject_list j vl vl' ->
-             regs_inject j (init_regs vl params) (init_regs vl' params).
-         Proof.
-           induction params; intros.
-           simpl. red; intros. rewrite Regmap.gi. constructor.
-           simpl. inv H.   red; intros. rewrite Regmap.gi. constructor.
-           apply set_reg_inject. auto. auto.
-         Qed.
-
          apply regs_inject_init_regs. auto.
          eapply val_inject_list_incr; eauto.
-
-
          red in CFG; red. simpl. split; auto.
-
-         Lemma compat_frameinj_rec_push_parallel:
-           forall g l ns nt
-             (CFR: compat_frameinj_rec l g ns nt)
-             g'
-             (G'spec: forall i, (S ns <= i)%nat -> g' i = option_map S (g (pred i))),
-             compat_frameinj_rec l g' (S ns) (S nt).
-         Proof.
-           induction l; simpl; intros; eauto.
-           - rewrite G'spec in Gi; auto.
-             unfold option_map in Gi; repeat destr_in Gi.
-             eapply CFR in Heqo. omega. omega. 
-           - destr; destruct CFR as (Gn & CFR).
-             + split.
-               * rewrite G'spec; auto.
-                 unfold option_map. simpl. rewrite Gn. reflexivity.
-               * eapply IHl; eauto.
-                 intros; apply G'spec. omega.
-             + split.
-               * rewrite G'spec; auto.
-                 unfold option_map. simpl. rewrite Gn. reflexivity.
-               * eapply IHl; eauto.
-                 intros; apply G'spec. omega.
-         Qed.
          eapply compat_frameinj_rec_push_parallel; eauto.
          intros; destr. omega.
          eapply inject_globals_incr; eauto.
@@ -1074,40 +1070,345 @@ Proof.
   rewrite Regmap.gss. auto.
 Qed.
 
+
+
+Lemma match_state_ge_step:
+  forall ge s1 t s1'
+    (MSG: match_state_ge ge s1)
+    (STEP: step fn_stack_requirements ge s1 t s1'),
+    match_state_ge ge s1'.
+Proof.
+  intros ge0 s1 t s1' MSG STEP.
+  inv STEP; red in MSG; red; simpl in *; auto.
+  - erewrite Mem.storev_nextblock; eauto.
+  - erewrite Mem.unrecord_stack_block_nextblock by eauto.
+    erewrite Mem.nextblock_free; eauto.
+  - apply external_call_nextblock in H1. xomega.
+  - erewrite Mem.unrecord_stack_block_nextblock by eauto.
+    erewrite Mem.nextblock_free; eauto.
+  - erewrite Mem.record_stack_block_nextblock by eauto.
+    erewrite Mem.nextblock_alloc; eauto.
+    xomega.
+  - apply external_call_nextblock in H. xomega.
+Qed.
+
+Lemma match_stack_adt_step:
+  forall ge s1 t s1'
+    (MSA: match_stack_adt s1)
+    (STEP: step fn_stack_requirements ge s1 t s1'),
+    match_stack_adt s1'.
+Proof.
+  intros ge0 s1 t s1' MSA STEP.
+  destruct MSA as (sprog & sinit & EQstk & LF2).
+  red.
+  inv STEP; simpl in *; eauto.
+  - erewrite Mem.storev_stack_adt; eauto.
+    exists sprog, sinit; split; eauto.
+    eapply list_forall2_imply. eauto. simpl.
+    intros v1 v2 IN SP V2.
+    destr_in V2. destr.
+    destruct V2 as (V1 & V2); split; auto.
+    intros; eapply V2; eauto.
+    eapply Mem.storev_perm_inv; eauto.
+  - exists sprog, sinit; split; eauto. simpl.
+    unfold stack_blocks_of_state in *. simpl in *.
+    destr_in LF2.
+    + repeat destr_in Heqo.
+      eapply list_forall2_imply. eauto. simpl.
+      intros v1 v2 IN SP V2.
+      destr_in V2.
+    + inv LF2. easy.
+  - edestruct Mem.unrecord_stack_adt. eauto.
+    erewrite Mem.free_stack_blocks in H1 by eauto.
+    rewrite H1 in *.
+    unfold stack_blocks_of_state in *; simpl in *.
+    inv LF2.
+    exists al, sinit; split; eauto.
+    inv EQstk. auto.
+    eapply list_forall2_imply. eauto. simpl.
+    intros v1 v2 IN SP V2.
+    destr_in V2.
+    destr. destruct V2; split; auto.
+    intros; eapply H5.
+    eapply Mem.unrecord_stack_block_perm in H6. 2: eauto.
+    eapply Mem.perm_free in H6. 2: eauto.
+    apply H6.
+  - erewrite <- external_call_stack_blocks; eauto.
+    exists sprog, sinit; split; auto.
+    eapply list_forall2_imply. eauto. simpl.
+    intros v1 v2 IN SP V2.
+    destr_in V2.
+    destr. destruct V2; split; auto.
+    intros o k p0 P. erewrite ec_perm_frames in P. eauto.
+    eapply external_call_spec. eauto.
+    unfold stack_blocks_of_state in SP.
+    simpl in SP.
+    exploit list_forall2_in_right. apply LF2.
+    unfold stack_blocks_of_state. simpl. eauto.
+    intros (x1 & INPROG & O & Q).
+    rewrite EQstk. apply in_frames_app. left.
+    eapply in_frames_in_frame. eauto. red. rewrite O. left; auto.
+  - edestruct Mem.unrecord_stack_adt. eauto.
+    erewrite Mem.free_stack_blocks in H2 by eauto.
+    rewrite H2 in *.
+    unfold stack_blocks_of_state in *; simpl in *.
+    inv LF2.
+    exists al, sinit; split; eauto.
+    inv EQstk. auto.
+    eapply list_forall2_imply. eauto. simpl.
+    intros v1 v2 IN SP V2.
+    destr_in V2.
+    destr. destruct V2; split; auto.
+    intros; eapply H4.
+    eapply Mem.unrecord_stack_block_perm in H5. 2: eauto.
+    eapply Mem.perm_free in H5. 2: eauto.
+    apply H5.
+  - erewrite Mem.record_stack_blocks_stack_adt. 2: eauto.
+    erewrite Mem.alloc_stack_blocks by eauto.
+    unfold stack_blocks_of_state in *; simpl in *.
+    exists (make_singleton_frame_adt stk (fn_stacksize f) sz :: sprog), sinit; split; eauto.
+    simpl. rewrite EQstk. auto. 
+    constructor; auto.
+    + split. reflexivity.
+      intros.
+      eapply Mem.record_stack_block_perm in H1. 2: eauto.
+      eapply Mem.perm_alloc_inv in H1. 2: eauto.
+      rewrite pred_dec_true in H1; auto.
+    + eapply list_forall2_imply. eauto. simpl.
+      intros v1 v2 IN SP V2.
+      destr_in V2.
+      destr. destruct V2; split; auto.
+      intros; eapply H2.
+      eapply Mem.record_stack_block_perm in H3. 2: eauto.
+      eapply Mem.perm_alloc_inv in H3. 2: eauto.
+      destr_in H3; eauto.
+      contradict e. intro; subst.
+      eapply Mem.fresh_block_alloc; eauto.
+      eapply Mem.in_frames_valid.
+      exploit list_forall2_in_right. apply LF2.
+      unfold stack_blocks_of_state. simpl. eauto.
+      intros (x1 & INPROG & O & Q).
+      rewrite EQstk. apply in_frames_app. left.
+      eapply in_frames_in_frame. eauto. red. rewrite O. left; auto.
+  - erewrite <- external_call_stack_blocks; eauto.
+    exists sprog, sinit; split; auto.
+    eapply list_forall2_imply. eauto. simpl.
+    intros v1 v2 IN SP V2.
+    destr_in V2.
+    destr. destruct V2; split; auto.
+    intros o k p0 P. erewrite ec_perm_frames in P. eauto.
+    eapply external_call_spec. eauto.
+    unfold stack_blocks_of_state in SP.
+    simpl in SP.
+    exploit list_forall2_in_right. apply LF2.
+    unfold stack_blocks_of_state. simpl. eauto.
+    intros (x1 & INPROG & O & Q).
+    rewrite EQstk. apply in_frames_app. left.
+    eapply in_frames_in_frame. eauto. red. rewrite O. left; auto.
+  - unfold stack_blocks_of_state in *; simpl in *.
+    exists sprog, sinit; split; eauto.
+    replace (match
+      match sp with
+      | Vundef => None
+      | Vint _ => None
+      | Vlong _ => None
+      | Vfloat _ => None
+      | Vsingle _ => None
+      | Vptr sp0 _ => Some (Some (sp0, fn_stacksize f))
+      end
+    with
+    | Some (Some x) => Some x :: map stackblocks_of_stackframe s
+    | Some None => map stackblocks_of_stackframe s
+    | None => None :: map stackblocks_of_stackframe s
+    end) with (match sp with
+           | Vundef => None
+           | Vint _ => None
+           | Vlong _ => None
+           | Vfloat _ => None
+           | Vsingle _ => None
+           | Vptr sp _ => Some (sp, fn_stacksize f)
+               end :: map stackblocks_of_stackframe s) by destr.
+    auto.
+Qed.
+
+
+Lemma sp_valid_step:
+  forall s1 t s1',
+    sp_valid s1 ->
+    step fn_stack_requirements ge s1 t s1' ->
+    sp_valid s1'.
+Proof.
+  intros s1 t s1' SPV STEP.
+  red in SPV; red.
+  unfold stack_blocks_of_state in *.
+  assert (valid_impl: forall b, Mem.valid_block (mem_state s1) b -> Mem.valid_block (mem_state s1') b).
+  {
+    inv STEP; simpl in *; intros; red; auto.
+    - red; erewrite Mem.storev_nextblock; eauto.
+    - erewrite Mem.unrecord_stack_block_nextblock by eauto.
+      erewrite Mem.nextblock_free; eauto.
+    - apply external_call_nextblock in H1. red in H2. xomega.
+    - erewrite Mem.unrecord_stack_block_nextblock by eauto.
+      erewrite Mem.nextblock_free; eauto.
+    - erewrite Mem.record_stack_block_nextblock by eauto.
+      erewrite Mem.nextblock_alloc; eauto.
+      red in H1. xomega.
+    - apply external_call_nextblock in H. red in H0; xomega.
+  }
+
+  assert (SPV': Forall
+          (fun bz : option (block * Z) =>
+           match bz with
+           | Some (b, _) => Mem.valid_block (mem_state s1') b
+           | None => True
+           end) match current_sp_state s1 with
+          | Some (Some x) => Some x :: map stackblocks_of_stackframe (stackframes_state s1)
+          | Some None => map stackblocks_of_stackframe (stackframes_state s1)
+          | None => None :: map stackblocks_of_stackframe (stackframes_state s1)
+          end).
+  {
+    eapply Forall_impl. 2: eauto. simpl; intros.
+    destr_in H0. destr. eauto.
+  }
+  inv STEP; simpl in *; intros; eauto.
+  - constructor; auto. destr. destr. destr_in Heqo. inv Heqo. inv SPV'; auto.
+    repeat destr_in SPV; inv SPV'; auto.
+  - inv SPV'; auto.
+  - inv SPV'; auto.
+  - constructor; auto. red; erewrite Mem.record_stack_block_nextblock by eauto.
+    eapply Mem.valid_new_block; eauto.
+  - inv SPV'; auto.
+    repeat destr; constructor; auto.
+    destr. destr_in Heqo.
+Qed.
+
+Definition match_states' s1 s2 :=
+  match_states s1 s2 /\ match_stack_adt s1 /\ match_stack_adt s2 /\
+  sp_valid s1 /\ match_state_ge ge s1 /\ match_state_ge tge s2.
+
+Hint Resolve match_stack_adt_step match_state_ge_step sp_valid_step.
+
+Lemma transf_step_correct':
+  forall s1 t s2,
+    step fn_stack_requirements ge s1 t s2 ->
+    forall s1',
+      match_states' s1 s1' ->
+      (exists s2', step fn_stack_requirements tge s1' t s2' /\ match_states' s2 s2') \/
+      (measure s2 < measure s1)%nat /\ t = E0 /\ match_states' s2 s1'.
+Proof.
+  intros s1 t s2 STEP s1' MS.
+  destruct MS as (MS & MSA & MSA' & SPV & MSG & MSG').
+  edestruct (transf_step_correct _ _ _ STEP _ MS) as
+      [(s2' & STEP' & MS')|(MLT & TE0 & MS')]; eauto.
+  - left. eexists; split; eauto.
+    repeat split; eauto.
+  - right; repeat split; eauto.
+Qed.
+
 Lemma transf_initial_states:
-  forall st1, initial_state prog st1 ->
-  exists st2, initial_state tprog st2 /\ match_states st1 st2.
+  forall st1, initial_state fn_stack_requirements prog st1 ->
+  exists st2, initial_state fn_stack_requirements tprog st2 /\ match_states' st1 st2.
 Proof.
   intros. inv H.
   exploit funct_ptr_translated; eauto. intro FIND.
-  exists (Callstate nil (transf_fundef f) nil m0); split.
+  exists (Callstate nil (transf_fundef f) nil m2 (fn_stack_requirements (prog_main tprog))); split.
   econstructor; eauto. apply (Genv.init_mem_transf TRANSL). auto.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.
   symmetry; eapply match_program_main; eauto. 
   rewrite <- H3. apply sig_preserved.
-  constructor. constructor. constructor. apply Mem.inject_refl.
+  erewrite <- match_program_main; eauto.
+  
+  edestruct Mem.alloc_parallel_inject as (f' & m2' & b2 & ALLOC & INJ & INCR & JNEW & JOLD).
+  eapply Genv.initmem_inject; eauto. eauto. apply Zle_refl. apply Zle_refl.
+  rewrite ALLOC in H4 ; inv H4.
+  assert (forall b, f' b = Mem.flat_inj (Mem.nextblock m2) b).
+  {
+    unfold Mem.flat_inj.
+    intros.
+    erewrite Mem.record_stack_block_nextblock. 2: eauto.
+    erewrite Mem.nextblock_alloc. 2: eauto.
+    apply Mem.alloc_result in ALLOC. subst. 
+    destr.
+    - apply Plt_succ_inv in p.
+      destruct p; subst; auto.
+      rewrite JOLD. unfold Mem.flat_inj; destr.
+      apply Plt_ne; auto.
+    - rewrite JOLD.
+      unfold Mem.flat_inj; destr. xomega.
+      intro; subst. xomega.
+  }
+  edestruct Mem.record_stack_blocks_inject_parallel as (m2'' & RSB & INJ'); eauto.
+  + eapply frame_inject_ext.         
+    apply Mem.frame_inject_flat. simpl. constructor; simpl; auto.
+    eapply Mem.valid_new_block. eauto.
+    intros; rewrite H.
+    erewrite <- Mem.record_stack_block_nextblock. 2: eauto.
+    reflexivity.
+  + erewrite Mem.alloc_stack_blocks. 2: eauto.
+    intros b0 INS [|[]]. subst. simpl in INS.
+    apply Mem.in_frames_valid in INS.
+    eapply Mem.fresh_block_alloc; eauto.
+  + red; simpl. intros b0 [|[]]. simpl in *; subst.
+    eapply Mem.valid_new_block; eauto.
+  + intros b0 fi [AA|[]]. inv AA.
+    intros.
+    eapply Mem.perm_alloc_inv in ALLOC; eauto. destr_in ALLOC.
+  + unfold in_frame; simpl.
+    intros b0 b2 delta. rewrite H. unfold Mem.flat_inj.
+    intro FI; repeat destr_in FI.
+  + exploit Mem.record_stack_block_det. apply H5. apply RSB. intro; subst m2''.
+    split.
+    econstructor. constructor. constructor.
+    eauto.
+    red; simpl.
+    intros; omega.
+    exploit Genv.init_mem_genv_next. eauto. intro EQ. fold ge in EQ.
+    erewrite Mem.record_stack_block_nextblock in H; eauto.
+    erewrite Mem.nextblock_alloc in H; eauto.
+    split.
+    * intros b0 PLT. rewrite H. unfold Mem.flat_inj. rewrite pred_dec_true; auto. rewrite <- EQ; xomega.
+    * intros b0 b2 delta FB PLT. rewrite H in FB.
+      unfold Mem.flat_inj in FB. destr_in FB.
+    * repeat split.
+      -- red; simpl.
+         unfold stack_blocks_of_state. simpl.
+         exists nil, (Mem.stack_adt m2); split; eauto. constructor.
+      -- red; simpl.
+         unfold stack_blocks_of_state. simpl.
+         exists nil, (Mem.stack_adt m2); split; eauto. constructor.
+      -- red; simpl. constructor.
+      -- red. simpl.
+         erewrite Mem.record_stack_block_nextblock; eauto.
+         erewrite Mem.nextblock_alloc; eauto.
+         unfold ge; erewrite Genv.init_mem_genv_next; eauto. xomega.
+      -- red. simpl.
+         erewrite Mem.record_stack_block_nextblock; eauto.
+         erewrite Mem.nextblock_alloc; eauto.
+         erewrite genv_next_preserved.
+         unfold ge; erewrite Genv.init_mem_genv_next; eauto. xomega.
 Qed.
 
 Lemma transf_final_states:
   forall st1 st2 r,
-  match_states st1 st2 -> final_state st1 r -> final_state st2 r.
+  match_states' st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. inv H3. constructor.
+  intros. inv H0. inv H. inv H0. inv LDret. inv MS. constructor.
 Qed.
+
 
 
 (** The preservation of the observable behavior of the program then
   follows. *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation (RTL.semantics fn_stack_requirements prog) (RTL.semantics fn_stack_requirements tprog).
 Proof.
   eapply forward_simulation_opt with (measure := measure); eauto.
   apply senv_preserved. 
   eexact transf_initial_states.
   eexact transf_final_states.
-  exact transf_step_correct.
+  simpl; intros; eapply transf_step_correct'; eauto.
 Qed.
 
 End PRESERVATION.

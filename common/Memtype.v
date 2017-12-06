@@ -1954,6 +1954,34 @@ stack_inject_unrecord_parallel_frameinj_flat {injperm: InjectPerm}:
     unrecord_stack_block m2 = Some m2' /\ 
     inject j (flat_frameinj (pred (length (stack_adt m2)))) m1' m2';
 
+record_stack_block_inject_flat {injperm: InjectPerm}:
+   forall m1 m1' m2 j  f1 f2
+     (INJ: inject j (flat_frameinj (length (Mem.stack_adt m1))) m1 m2)
+     (FI: frame_inject j f1 f2)
+     (NOIN: forall b, in_frames (stack_adt m2) b -> ~ in_frame f2 b)
+     (VF: valid_frame f2 m2)
+     (BOUNDS: forall b fi,
+         In (b,fi) (frame_adt_blocks f2) ->
+         forall (o : Z) (k : perm_kind) (p : permission), perm m2 b o k p -> (0 <= o < frame_size fi)%Z)
+     (EQINF: forall (b1 b2 : block) (delta : Z), j b1 = Some (b2, delta) -> in_frame f1 b1 <-> in_frame f2 b2)
+     (EQsz: frame_adt_size f1 = frame_adt_size f2)
+     (RSB: record_stack_blocks m1 f1 m1'),
+     exists m2',
+       record_stack_blocks m2 f2 m2' /\
+       inject j (flat_frameinj (length (Mem.stack_adt m1'))) m1' m2' /\
+       (length (Mem.stack_adt m1) = length (Mem.stack_adt m2) ->
+        length (Mem.stack_adt m1') = length (Mem.stack_adt m2'));
+
+unrecord_stack_block_inject_parallel_flat {injperm: InjectPerm}:
+  forall (m1 m1' m2 : mem) (j : meminj),
+    inject j (flat_frameinj (length (Mem.stack_adt m1))) m1 m2 ->
+    unrecord_stack_block m1 = Some m1' ->
+    exists m2',
+      unrecord_stack_block m2 = Some m2' /\
+      inject j (flat_frameinj (length (Mem.stack_adt m1'))) m1' m2' /\
+      (length (Mem.stack_adt m1) = length (Mem.stack_adt m2) ->
+       length (Mem.stack_adt m1') = length (Mem.stack_adt m2'))
+
 }.
 
 Section WITHMEMORYMODEL.

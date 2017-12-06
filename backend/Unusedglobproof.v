@@ -839,31 +839,28 @@ Proof.
 Qed.
 
 Inductive match_states: state -> state -> Prop :=
-  | match_states_regular: forall s f sp pc rs m ts tsp trs tm j g
+  | match_states_regular: forall s f sp pc rs m ts tsp trs tm j 
          (STACKS: match_stacks j s ts sp tsp)
          (KEPT: forall id, ref_function f id -> kept id)
          (SPINJ: j sp = Some(tsp, 0))
          (REGINJ: regset_inject j rs trs)
-         (MEMINJ: Mem.inject j g m tm)
-         (ORDSTRICT: frameinj_order_strict g)
-         (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
+         (MEMINJ: Mem.inject j (flat_frameinj (length (Mem.stack_adt m))) m tm)
+         (LEN: length (Mem.stack_adt m) = length (Mem.stack_adt tm)),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
-  | match_states_call: forall s fd args m ts targs tm j sz g
+  | match_states_call: forall s fd args m ts targs tm j sz 
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (KEPT: forall id, ref_fundef fd id -> kept id)
          (ARGINJ: Val.inject_list j args targs)
-         (MEMINJ: Mem.inject j g m tm)
-         (ORDSTRICT: frameinj_order_strict g)
-         (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
+         (MEMINJ: Mem.inject j (flat_frameinj (length (Mem.stack_adt m))) m tm)
+         (LEN: length (Mem.stack_adt m) = length (Mem.stack_adt tm)),
       match_states (Callstate s fd args m sz)
                    (Callstate ts fd targs tm sz)
-  | match_states_return: forall s res m ts tres tm j g
+  | match_states_return: forall s res m ts tres tm j 
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
-         (MEMINJ: Mem.inject j g m tm)
-         (ORDSTRICT: frameinj_order_strict g)
-         (SURJ: frameinj_surjective g (length (Mem.stack_adt tm))),
+         (MEMINJ: Mem.inject j (flat_frameinj (length (Mem.stack_adt m))) m tm)
+         (LEN: length (Mem.stack_adt m) = length (Mem.stack_adt tm)),
       match_states (Returnstate s res m)
                    (Returnstate ts tres tm).
 
@@ -1041,6 +1038,7 @@ Proof.
   econstructor; split. eapply exec_Istore; eauto.
   econstructor; eauto.
   erewrite Mem.storev_stack_adt; eauto.
+  erewrite (Mem.storev_stack_adt _ _ _ _ _ D), (Mem.storev_stack_adt _ _ _ _ _ H1). auto.
 
 - (* call *)
   exploit find_function_inject.
@@ -1061,12 +1059,17 @@ Proof.
   destruct ros as [r|id0]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   exploit Mem.free_parallel_inject; eauto. constructor. rewrite ! Zplus_0_r. intros (tm' & C & D).
-  exploit Mem.unrecord_stack_block_inject_parallel_strict; eauto. intros (m2' & USB & INJ & T).
+  exploit Mem.unrecord_stack_block_inject_parallel; eauto.
+  unfold flat_frameinj. intros i j0 EQ; destr_in EQ.
+  unfold flat_frameinj. rewrite pred_dec_true. auto.
+  erewrite <- Mem.free_stack_blocks; eauto.
+  edestruct Mem.unrecord_stack_adt. eauto. rewrite H1; simpl; omega.
+  intros (m2' & USB & INJ).
   econstructor; split.
   eapply exec_Itailcall; eauto.
   eapply ros_is_function_translated; eauto.
   econstructor; eauto.
-  apply match_stacks_bound with stk tsp; auto.
+  apply match_stacks_bound with stk tsp; eauto.
   apply Plt_Ple.
   erewrite (Mem.unrecord_stack_block_nextblock); eauto.
   change (Mem.valid_block m' stk). eapply Mem.valid_block_inject_1; eauto.
@@ -1074,8 +1077,13 @@ Proof.
   erewrite (Mem.unrecord_stack_block_nextblock); eauto.
   change (Mem.valid_block tm' tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
-  eapply Mem.frameinj_surjective_free_unrecord; eauto.
-  eapply Mem.inject_stack_adt; eauto.
+  eapply Mem.mem_inject_ext. eauto.
+  unfold flat_frameinj.
+  erewrite <- Mem.free_stack_blocks; eauto.
+  edestruct Mem.unrecord_stack_adt. exact H3. rewrite H1; simpl.
+  intros; repeat destr; omega.
+  
+
   
 - (* builtin *)
   exploit eval_builtin_args_inject; eauto.

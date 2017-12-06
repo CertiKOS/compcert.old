@@ -6945,6 +6945,23 @@ Proof.
   - eapply stack_inject_unrecord_left; eauto. rewrite H. reflexivity.
 Qed.
 
+Lemma unrecord_stack_block_mem_inj_left':
+  forall (m1 m1' m2 : mem) (j : meminj) g,
+    mem_inj j g m1 m2 ->
+    unrecord_stack_block m1 = Some m1' ->
+    g O = None ->
+    (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ Mem.perm m1 b o k p) ->
+    mem_inj j (fun n => g (S n)) m1' m2.
+Proof.
+  intros m1 m1' m2 j g MI USB EXOTHERS TOPNOPERM.
+  unfold_unrecord.
+  inv MI; constructor; simpl; intros; eauto.
+  eapply stack_inject_invariant_strong.
+  - intros b ofs k p b' delta JB PERM. change (perm m1 b ofs k p) in PERM. eauto.
+  - eapply stack_inject_unrecord_left'; eauto. rewrite H. reflexivity.
+Qed.
+
+
 Lemma unrecord_stack_block_mem_inj_parallel:
   forall (m1 m1' m2 : mem) (j : meminj) g
     (MINJ:  mem_inj j g m1 m2)
@@ -6975,6 +6992,7 @@ Proof.
     rewrite <- STK2; apply stack_norepet.
 Qed.
 
+
 Lemma unrecord_stack_block_inject_left:
   forall (m1 m1' m2 : mem) (j : meminj) g,
     inject j g m1 m2 ->
@@ -6988,6 +7006,25 @@ Proof.
   generalize (unrecord_stack_block_mem_unchanged _ _ USB). simpl. intros (NB & PERM & UNCH & LOAD).
   inv INJ; constructor; eauto.
   - eapply unrecord_stack_block_mem_inj_left; eauto. 
+  - unfold valid_block; rewrite NB; eauto.
+  - red; intros. rewrite PERM in H2, H3. eauto.
+  - intros. exploit mi_representable0.  eauto. intros (A & B).
+    split; auto. intros ofs. rewrite ! PERM. eauto.
+  - intros. rewrite ! PERM; eauto.
+Qed.
+
+Lemma unrecord_stack_block_inject_left' :
+  forall (m1 m1' m2 : mem) (j : meminj) g,
+    inject j g m1 m2 ->
+    unrecord_stack_block m1 = Some m1' ->
+    g O = None ->
+    (forall b, is_stack_top (stack_adt m1) b -> forall o k p, ~ perm m1 b o k p) ->
+    inject j (fun n => g (S n)) m1' m2.
+Proof.
+  intros m1 m1' m2 j g INJ USB EXOTHERS NOPERM.
+  generalize (unrecord_stack_block_mem_unchanged _ _ USB). simpl. intros (NB & PERM & UNCH & LOAD).
+  inv INJ; constructor; eauto.
+  - eapply unrecord_stack_block_mem_inj_left'; eauto. 
   - unfold valid_block; rewrite NB; eauto.
   - red; intros. rewrite PERM in H2, H3. eauto.
   - intros. exploit mi_representable0.  eauto. intros (A & B).
@@ -7042,6 +7079,44 @@ Proof.
   intros j g g' m1 m2 INJ EXT; inv INJ; constructor; auto.
   eapply stack_inject_ext; eauto.
 Qed.
+
+Lemma mem_inject_ext:
+  forall j g1 g2 m1 m2,
+    inject j g1 m1 m2 ->
+    (forall x, g1 x = g2 x) ->
+    inject j g2 m1 m2.
+Proof.
+  intros j g1 g2 m1 m2 INJ EXT.
+  inv INJ; constructor; auto.
+  eapply mem_inj_frame_inj_ext; eauto.
+Qed.
+
+Lemma unrecord_stack_block_inject_parallel_flat:
+  forall (m1 m1' m2 : mem) (j : meminj),
+    inject j (flat_frameinj (length (Mem.stack_adt m1))) m1 m2 ->
+    unrecord_stack_block m1 = Some m1' ->
+    exists m2',
+      unrecord_stack_block m2 = Some m2' /\
+      inject j (flat_frameinj (length (Mem.stack_adt m1'))) m1' m2' /\
+      (length (Mem.stack_adt m1) = length (Mem.stack_adt m2) ->
+       length (Mem.stack_adt m1') = length (Mem.stack_adt m2')).
+Proof.
+  intros m1 m1' m2 j INJ USB.
+  destruct (unrecord_stack_block_inject_parallel _ _ _ _ _ INJ USB)
+    as (m2' & USB' & INJ').
+  - unfold flat_frameinj; intros i j0 FI; destr_in FI.
+  - unfold flat_frameinj; rewrite pred_dec_true; auto.
+    edestruct unrecord_stack_adt. eauto. rewrite H; simpl; omega.
+  - rewrite USB'. eexists; split;  eauto.
+    split.
+    edestruct unrecord_stack_adt. exact USB. 
+    eapply mem_inject_ext; eauto. rewrite H. simpl. 
+    unfold flat_frameinj; simpl; intros; repeat destr; omega.
+    edestruct unrecord_stack_adt. exact USB.
+    edestruct unrecord_stack_adt. exact USB'. rewrite H, H0.  simpl; omega.
+Qed.
+    
+
 
 Lemma unrecord_stack_block_extends:
     forall m1 m2 m1',
@@ -7412,6 +7487,39 @@ Proof.
   + rewrite ! PERM1. rewrite PERM in H0. eapply mi_perm_inv0 in H0; eauto.
 Qed.
 
+
+Lemma record_stack_block_inject_flat:
+   forall m1 m1' m2 j  f1 f2
+     (INJ: inject j (flat_frameinj (length (Mem.stack_adt m1))) m1 m2)
+     (FI: frame_inject j f1 f2)
+     (NOIN: forall b, in_frames (stack_adt m2) b -> ~ in_frame f2 b)
+     (VF: valid_frame f2 m2)
+     (BOUNDS: forall b fi,
+         In (b,fi) (frame_adt_blocks f2) ->
+         forall (o : Z) (k : perm_kind) (p : permission), perm m2 b o k p -> (0 <= o < frame_size fi)%Z)
+     (EQINF: forall (b1 b2 : block) (delta : Z), j b1 = Some (b2, delta) -> in_frame f1 b1 <-> in_frame f2 b2)
+     (EQsz: frame_adt_size f1 = frame_adt_size f2)
+     (RSB: record_stack_blocks m1 f1 m1'),
+     exists m2',
+       record_stack_blocks m2 f2 m2' /\
+       inject j (flat_frameinj (length (Mem.stack_adt m1'))) m1' m2' /\
+       (length (Mem.stack_adt m1) = length (Mem.stack_adt m2) ->
+        length (Mem.stack_adt m1') = length (Mem.stack_adt m2')).
+Proof.
+  intros.
+  destruct (record_stack_block_inject _ m1' _ _ _ _ _ INJ FI NOIN VF)
+    as (m2' & RSB' & INJ'); eauto.
+  eexists; split; eauto.
+  split.
+  eapply mem_inject_ext. eauto.
+  unfold flat_frameinj; simpl; intros.
+  rewrite (record_stack_blocks_stack_adt _ _ _ RSB). simpl.
+  repeat destr; try omega. simpl. f_equal. omega.
+  rewrite (record_stack_blocks_stack_adt _ _ _ RSB').
+  rewrite (record_stack_blocks_stack_adt _ _ _ RSB). simpl. omega.
+Qed.
+
+
 Lemma record_stack_block_inject_left:
    forall m1 m1' m2 j g f1 f2
      (INJ: inject j g m1 m2)
@@ -7749,16 +7857,6 @@ Proof.
   - intros. rewrite ! PERM; eauto.
 Qed.
 
-  Lemma mem_inject_ext:
-    forall j g1 g2 m1 m2,
-      inject j g1 m1 m2 ->
-      (forall x, g1 x = g2 x) ->
-      inject j g2 m1 m2.
-  Proof.
-    intros j g1 g2 m1 m2 INJ EXT.
-    inv INJ; constructor; auto.
-    eapply mem_inj_frame_inj_ext; eauto.
-  Qed.
 
   Lemma mem_inj_ext':
     forall j1 j2 g m1 m2,
@@ -7926,7 +8024,13 @@ Qed.
     - eapply mi_align0. eauto. red; intros. rewrite <- PERM. eauto.
     - repeat unfold_unrecord. simpl. eapply mi_memval0; eauto.
     - rewrite EQSTK, EQSTK' in mi_stack_blocks0.
-      eapply stack_inject_unrecord_parallel_frameinj_flat_on; eauto.
+      eapply stack_inject_invariant_strong.
+      instantiate (1 := (perm m1)).
+      intros; eapply PERM; eauto.
+      rewrite STK2 in EQSTK'; inv EQSTK'.
+      eapply stack_inject_unrecord_parallel_frameinj_flat_on. eauto.
+      rewrite <- STK2; apply stack_norepet.
+      rewrite <- LEN, <- EQSTK. auto. reflexivity. reflexivity.
   Qed.
 
   Lemma inject_unrecord_parallel_frameinj_flat:
@@ -8213,6 +8317,7 @@ Proof.
   intros; eapply record_stack_blocks_inject_neutral; eauto.
   intros; eapply unrecord_stack_block_inject_parallel; eauto.
   intros; eapply unrecord_stack_block_inject_left; eauto.
+  intros; eapply unrecord_stack_block_inject_left'; eauto.
   intros; eapply unrecord_stack_block_extends; eauto.
   intros; eapply unrecord_stack_block_mem_unchanged; eauto.
   intros; eapply unrecord_stack_adt; eauto.
@@ -8240,6 +8345,9 @@ Proof.
   intros; eapply mem_inject_ext'; eauto.
   intros; eapply  unrecord_stack_block_inject_right; eauto.
   intros; eapply inject_unrecord_parallel_frameinj_flat; eauto.
+
+  intros; eapply record_stack_block_inject_flat; eauto.
+  intros; eapply unrecord_stack_block_inject_parallel_flat; eauto.
 Qed.
 
 End Mem.
