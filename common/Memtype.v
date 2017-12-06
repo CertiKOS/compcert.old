@@ -1658,7 +1658,6 @@ for [unchanged_on]. *)
      (INJ: inject j g m1 m2)
      (FAP: frame_at_pos (stack_adt m2) 0 f2)
      (FI: frame_inject j f1 f2)
-     (SURJ: g O = Some O)
      (RSB: record_stack_blocks m1 f1 m1'),
      inject j (fun n : nat => if Nat.eq_dec n 0 then Some O else g (Init.Nat.pred n)) m1' m2;
 

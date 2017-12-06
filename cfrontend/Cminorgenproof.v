@@ -2362,16 +2362,14 @@ Proof.
   monadInv TR. left.
   exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
   exploit match_callstack_freelist; eauto. intros [tm' [A [B C]]].
-  exploit Mem.unrecord_stack_block_inject_parallel_flat; eauto.
-  rewrite <- LEN in C.
+  exploit Mem.unrecord_stack_block_inject_parallel_flat. 
   erewrite Mem.free_list_stack_blocks. 2: eauto. eauto.
+  eauto.
   intros (tm'' & USB & INJ' & T).
   exploit match_callstack_unrecord. eauto. eauto. eauto. intros MCS'.
   econstructor; split.
   apply plus_one. eapply step_return_1. eauto. eauto. eauto.
   econstructor; eauto.
-  rewrite <- T. eauto.
-  revert LEN; repeat rewrite_stack_blocks; eauto.
   apply T; repeat rewrite_stack_blocks; eauto.
   rewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.unrecord_stack_block_nextblock _ _ USB).
   eauto.
@@ -2406,7 +2404,6 @@ Proof.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 [MINJ2 [INCR2 SEP2]]]].
   exploit Mem.record_stack_block_inject_flat.
-  rewrite <- LEN in MINJ2.
   erewrite <- alloc_variables_stack_adt in MINJ2. 2: eauto. eauto.
   7: eauto.
   instantiate (1 := make_singleton_frame_adt sp (fn_stackspace tf) (frame_adt_size fa)).
@@ -2461,10 +2458,7 @@ Proof.
   left; econstructor; split.
   apply plus_one. econstructor; simpl; eauto.
   econstructor. eexact TRBODY. eauto.
-  rewrite <- LEN'.
   eexact INJ3. 
-  repeat rewrite_stack_blocks; eauto.
-  erewrite alloc_variables_stack_adt; eauto.
   apply LEN'. repeat rewrite_stack_blocks; eauto.
   erewrite alloc_variables_stack_adt; eauto.
   rewrite (Mem.record_stack_block_nextblock _ _ _ RSB).
@@ -2482,14 +2476,14 @@ Proof.
   apply plus_one. econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
-
+  erewrite <- external_call_stack_blocks; eauto.
+  repeat rewrite_stack_blocks. eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.
   xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
-  erewrite <- external_call_stack_blocks; eauto.
 
 (* return *)
   inv MK. simpl.
@@ -2568,8 +2562,9 @@ Proof.
       unfold Mem.flat_inj; destr. xomega.
       intro; subst. xomega.
   }
-  edestruct Mem.record_stack_blocks_inject_parallel as (m2'' & RSB & INJ'); eauto.
-  -- eapply frame_inject_ext.         
+  edestruct Mem.record_stack_block_inject_flat as (m2'' & RSB & INJ' & LEN); eauto.
+  -- rewrite_stack_blocks. eauto.
+  -- eapply frame_inject_ext.
      apply Mem.frame_inject_flat. simpl. constructor; simpl; auto.
      eapply Mem.valid_new_block. eauto.
      intros; rewrite EXT.
@@ -2587,8 +2582,6 @@ Proof.
   -- unfold in_frame; simpl.
      intros b1 b0 delta. rewrite EXT. unfold Mem.flat_inj.
      intro FI; repeat destr_in FI.
-  -- apply frameinj_surjective_flat.
-     erewrite Mem.alloc_stack_blocks; eauto.
   -- exploit Mem.record_stack_block_det. apply H4. apply RSB.
      intro; subst.
      econstructor; eauto.
@@ -2596,8 +2589,8 @@ Proof.
      destruct TRANSL as (_ & MAIN & _).
      rewrite MAIN.
      eapply match_callstate with (f := Mem.flat_inj (Mem.nextblock m2'')) (cs := @nil frame) (cenv := PTree.empty Z).
-     auto.
-     eapply Mem.inject_ext. eauto. auto.
+     auto.  
+     eapply Mem.inject_ext. eauto. auto. reflexivity.
      apply mcs_nil with (Mem.nextblock m2'').
      {
        exploit match_globalenvs_init. eauto. intro MG.
@@ -2616,13 +2609,6 @@ Proof.
      xomega. xomega.
      constructor. red; auto.
      constructor.
-     eapply frameinj_order_strict_ext.
-     eapply frameinj_order_strict_flat.
-     intros; apply frameinj_push_flat.
-     eapply frameinj_surjective_ext. eapply frameinj_surjective_flat. apply le_refl.
-     intros; rewrite <- frameinj_push_flat.
-     erewrite Mem.record_stack_blocks_stack_adt. 2: eauto. simpl.
-     erewrite Mem.alloc_stack_blocks; eauto.
 Qed.
 
 Lemma transl_final_states:

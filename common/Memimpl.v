@@ -7310,12 +7310,11 @@ Lemma record_stack_inject_left:
     (SI : stack_inject j g m1 s1 s2)
     f1 f2
     (FAP: frame_at_pos s2 O f2)
-    (FI : frame_inject j f1 f2)
-    (Ginit: g O = Some O),
+    (FI : frame_inject j f1 f2),
     stack_inject j (fun n : nat => if Nat.eq_dec n 0 then Some 0 else g (pred n)) m1
                  (f1 :: s1) s2.
 Proof.
-  intros j g m1 s1 s2 SI f1 f2 FAP FI Ginit.
+  intros j g m1 s1 s2 SI f1 f2 FAP FI.
   destruct SI.
   constructor.
   - red; intros. destr_in G1. inv G1. omega.
@@ -7338,7 +7337,10 @@ Proof.
   - intros. destr_in G; inv G. omega.
     apply stack_inject_pack in H0. omega.
   - intros. destr_in G.
-    + subst. inv G. specialize (LARGEST 1). trim LARGEST. destr. omega.
+    + inv G. inv FAP1. simpl in H; inv H.
+      exploit frame_at_same_pos. apply FAP. apply FAP2. intro; subst.
+      destruct (stack_inject_surjective O) as (x & Gx). eapply frame_at_pos_lt; eauto.
+      specialize (LARGEST (S x)). trim LARGEST. destr. omega.
     + apply frame_at_pos_cons_inv in FAP1; try omega.
       eapply stack_inject_sizes; eauto.
       intros. specialize (LARGEST (S i)). destr_in LARGEST. simpl in LARGEST.
@@ -7357,10 +7359,9 @@ Lemma record_stack_blocks_mem_inj_left:
       record_stack_blocks m1 f1 m1' ->
       frame_at_pos (stack_adt m2) O f2 ->
       frame_inject j f1 f2 ->
-      g 0 = Some 0 ->
       mem_inj j (fun n => if Nat.eq_dec n 0 then Some 0 else g (pred n)) m1' m2.
 Proof.
-  intros j g m1 m2 f1 f2 m1' INJ ADT FAP FI G1; autospe.
+  intros j g m1 m2 f1 f2 m1' INJ ADT FAP FI; autospe.
   inv ADT.
   inversion INJ; subst; constructor; simpl; intros; eauto.
   eapply stack_inject_invariant_strong.
@@ -7519,13 +7520,11 @@ Proof.
   rewrite (record_stack_blocks_stack_adt _ _ _ RSB). simpl. omega.
 Qed.
 
-
 Lemma record_stack_block_inject_left:
    forall m1 m1' m2 j g f1 f2
      (INJ: inject j g m1 m2)
      (FAP: frame_at_pos (stack_adt m2) 0 f2)
      (FI: frame_inject j f1 f2)
-     (Ginit: g O = Some O)
      (RSB: record_stack_blocks m1 f1 m1'),
      inject j (fun n : nat => if Nat.eq_dec n 0 then Some 0 else g (Init.Nat.pred n)) m1' m2.
 Proof.

@@ -1491,3 +1491,12 @@ Proof.
   rewrite andb_true_iff in Heqb. destruct Heqb. repeat destr. inv H0. inv H.
   repeat destr. simpl in Heqb. congruence.
 Qed.
+
+Lemma length_tl:
+  forall {A} (l1 l2: list A),
+    length l1 = length l2 ->
+    length (tl l1) = length (tl l2).
+Proof.
+  destruct l1, l2; simpl in * ; try congruence.
+Qed.
+

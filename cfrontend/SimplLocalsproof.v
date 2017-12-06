@@ -2258,15 +2258,6 @@ Qed.
       eapply assign_loc_stack_adt; eauto.
     Qed.
 
-    Lemma length_tl:
-      forall {A} (l1 l2: list A),
-        length l1 = length l2 ->
-        length (tl l1) = length (tl l2).
-    Proof.
-      destruct l1, l2; simpl in * ; try congruence.
-    Qed.
-
-
 Lemma step_simulation:
   forall S1 t S2, step1 fn_stack_requirements ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 fn_stack_requirements) tge S1' t S2' /\ match_states S2 S2'.

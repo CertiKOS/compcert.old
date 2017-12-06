@@ -300,11 +300,11 @@ Section WITHMEMORYMODEL.
       (forall o k p, Mem.perm m1 b o k p -> lo <= o < hi) ->
       (forall b0, is_stack_top (Mem.stack_adt m2) b0 -> b0 = b) ->
       Mem.unrecord_stack_block m2 = Some m3 ->
-      (* g 1%nat = Some O -> *)
+      g 1%nat = Some O ->
       length (Mem.stack_adt m1') = 1%nat ->
       Mem.inject j (fun n => g (S n)) m3 m1'.
   Proof.
-    intros j g m1 b lo hi m2 m3 m1' INJ FREE PERMRNG IST USB LST.
+    intros j g m1 b lo hi m2 m3 m1' INJ FREE PERMRNG IST USB G1 LST.
     eapply Mem.unrecord_stack_block_inject_left_zero.
     eapply Mem.free_left_inject. eauto. eauto. eauto.
     intros. eapply stack_inject_range in H. 2: eapply Mem.inject_stack_adt; eauto.
@@ -312,6 +312,7 @@ Section WITHMEMORYMODEL.
     intros.
     apply IST in H. subst. intros PERM.
     eapply Mem.perm_free in PERM. 2: eauto. destruct PERM. apply H. split; eauto.
+    auto.
   Qed.
 
   Lemma ZEQ: forall a b,
@@ -1044,7 +1045,15 @@ Section WITHMEMORYMODEL.
           unfold is_stack_top. simpl. rewrite Heql0. intros ? [?|[]]. auto.
         }
         {
-          destruct NS as (f0' & fr & EQ & ?). rewrite EQ. reflexivity.
+          simpl. destr.
+          exfalso; apply n.
+          destruct l; simpl. 2: omega.
+          exfalso.
+          unfold proj_sumbool in Heqb1. destr_in Heqb1.
+          revert i. repeat rewrite_stack_blocks. rewrite Heql. simpl. easy.
+        }
+        {
+          destruct NS as (f0' & fr & EQ & ?). simpl. rewrite EQ. reflexivity.
         }
         intros INJ. 
         exists j, newostack; eexists; eexists; split; [|split]; eauto.
@@ -1986,7 +1995,9 @@ End PRESERVATION.
       erewrite <- Genv.init_mem_genv_next; eauto.
     }
     subst.
-    exploit Mem.record_stack_blocks_inject_parallel. apply STACKINJdrop. 8: eauto.
+    exploit Mem.record_stack_block_inject_flat.
+    erewrite <- Mem.alloc_stack_blocks in STACKINJdrop; eauto.
+    7: eauto.
     instantiate (1 := make_singleton_frame_adt' bstack frame_info_mono 0).
     {
       red; red.
@@ -2023,23 +2034,18 @@ End PRESERVATION.
       destr_in Fb1.
     }
     reflexivity.
-    apply frameinj_surjective_flat.
-    {
-      erewrite Mem.drop_perm_stack_adt. 2:eauto.
-      erewrite Mem.alloc_stack_blocks; eauto.
-    }
-    intros (m2' & MRSB & STACKINJ_FINAL).
+    intros (m2' & MRSB & STACKINJ_FINAL & LEN).
     exists (State ((((Pregmap.init Vundef) # PC <- (Genv.symbol_address ge0 (prog_main prog) Ptrofs.zero)) # RA <- Vnullptr) #RSP <- (Vptr bstack (Ptrofs.repr Mem.stack_limit))) m2');
       eexists; exists (Ptrofs.unsigned (Ptrofs.repr Mem.stack_limit)) (* (Ptrofs.unsigned Ptrofs.zero) *); split.
     2: econstructor; eauto.
     econstructor; eauto.
-    - eapply Mem.mem_inject_ext. eauto.
-      unfold flat_frameinj.
+    - eapply Mem.mem_inject_ext. eauto. 
+      unfold flat_frameinj. 
       intros.
       erewrite (Mem.record_stack_blocks_stack_adt _ _ _ RSB).
       erewrite (Mem.alloc_stack_blocks _ _ _ _ _ ALLOC); eauto.
       erewrite Genv.init_mem_stack_adt; eauto.
-      simpl. repeat destr; omega.
+      simpl. repeat destr. f_equal; omega.
     - unfold rs0.
       rewrite Pregmap.gss. inversion 1. auto.
     - unfold rs0.
