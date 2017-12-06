@@ -8065,6 +8065,419 @@ Qed.
   Qed.
 
 
+  Lemma inject_tailcall_inlined:
+    forall j j' g P1 P2 f f' s1 s2
+      (SI: stack_inject j g P1 (f::s1) s2)
+      (INCR: inject_incr j j')
+      (G0: g O = Some O)
+      (JB: forall b, in_frames (f::s1) b -> exists b' delta, j b = Some (b', delta))
+      (* (JB: forall b, in_frame f b -> exists b' delta, j b = Some (b', delta)) *)
+      (PERMS: forall b, in_frames s1 b -> forall o k p, P1 b o k p <-> P2 b o k p)
+      (PERMS': forall b, ~ in_frame f' b -> forall o k p, P2 b o k p -> P1 b o k p)
+      f2 (FAPtarget: frame_at_pos s2 O f2)
+      (FI: frame_inject j' f' f2)
+      (NEW: forall b1 b2 delta, j b1 = None -> j' b1 = Some (b2, delta) ->
+                           ~ in_frames s1 b1)
+      (NEW': forall b1 b2 delta, j b1 = None -> j' b1 = Some (b2, delta) ->
+                            in_frame f' b1)
+      (DIFF: forall b, in_frame f' b -> in_frame f b -> False)
+      (NEWF: forall b, in_frame f' b -> j b = None)
+      (OLDF: forall b, in_frame f b -> ~ exists o k p, P2 b o k p)
+      (SIZES: (frame_adt_size f2 <= frame_adt_size f')%Z)
+    ,
+      stack_inject j' g P2 (f'::s1) s2.
+  Proof.
+    intros.
+    inv SI.
+    econstructor; simpl; intros; eauto.
+    - destruct i1. eauto.
+      + apply frame_at_pos_cons_inv in FAP. 2: omega.
+        simpl in FAP.
+        eapply stack_inject_frames_ex; eauto.
+        apply frame_at_pos_cons. eauto.
+        destruct PERM as (b & o & k & p & JNONE & IFR & PERM2 & IPC).
+        exists b, o, k, p; repeat split; auto.
+        edestruct JB as (b' & delta & JB'); eauto.
+        right. eapply in_frames_in_frame; eauto.
+        eapply frame_at_pos_In; eauto. congruence.
+        rewrite PERMS. auto.
+        eapply in_frames_in_frame; eauto.
+        eapply frame_at_pos_In; eauto.
+    - destruct i1.
+      + inv FAP1. simpl in H; inv H.
+        rewrite G0 in G1. inv G1. eauto.
+      + apply frame_at_pos_cons_inv in FAP1. 2: omega.
+        simpl in FAP1.
+        edestruct stack_inject_frame_inject as (f0 & FAP0 & FI'); eauto.
+        apply frame_at_pos_cons. eauto. eexists; split; eauto.
+        eapply frame_inject_incr; eauto.
+        intros b b' delta JBnone J'Bsome IFR.
+        eapply NEW; eauto.
+        eapply in_frames_in_frame; eauto.
+        eapply frame_at_pos_In; eauto. 
+    - destruct (j b1) eqn: JB1.
+      + destruct p0.
+        exploit INCR. apply JB1. rewrite FB. intro A; inv A.
+        eapply stack_inject_not_in_frames; eauto. simpl.
+        intros [A|A].
+        eapply OLDF; eauto.
+        intuition.
+      + specialize (NEW' _ _ _ JB1 FB). intuition.
+    - destruct i1.
+      + rewrite G0 in G; inv G.
+        inv FAP1. simpl in H; inv H.
+        exploit frame_at_same_pos. apply FAPtarget.  apply FAP2. intro; subst.
+        auto.
+      + apply frame_at_pos_cons_inv in FAP1. 2: omega.
+        simpl in FAP1.
+        eapply stack_inject_sizes; eauto.
+        apply frame_at_pos_cons. eauto.
+  Qed.
+
+
+
+  Lemma mem_inj_tailcall_inlined:
+    forall F g m m'0 stk szstk
+      (INJ: mem_inj F g m m'0)
+      m' (FREE: Mem.free m stk 0 szstk = Some m') 
+      m'' (USB: Mem.unrecord_stack_block m' = Some m'' )
+      m'1 stk0 szstk0 (ALLOC: Mem.alloc m'' 0 szstk0 = (m'1, stk0))
+      stkreq m''0 (RSB: Mem.record_stack_blocks m'1 (make_singleton_frame_adt stk0 szstk0 stkreq) m''0)
+      sp' delta (Fstk: F stk = Some (sp', delta))
+      delta0
+      (PERMinjstk0: forall o, (0 <= o < szstk0)%Z -> Mem.perm m'0 sp' (o + delta0) Cur Freeable)
+      (DIV: Mem.inj_offset_aligned delta0 szstk0)
+      (VALID: forall b1 b2 delta, F b1 = Some (b2, delta) -> valid_block m b1)
+      (G0 : g O = Some O)
+      (STACKTOP: get_stack_top_blocks (stack_adt m) = stk::nil)
+      (PERMstk: forall o k p, perm m stk o k p -> (0 <= o < szstk)%Z)
+      sz1 sz2
+      (STACKTOP':  exists r, stack_adt m'0 = make_singleton_frame_adt sp' sz1 sz2 :: r)
+      (RNG: forall o : Z, (0 <= o < szstk0)%Z -> (0 <= o + delta0 < sz1)%Z)
+      (JBstack: forall b, in_frames (stack_adt m) b -> exists b' delta, F b = Some (b', delta))
+      (SIZE: (sz2 <= stkreq)%Z)
+,
+      let F' := fun b => if peq b stk0 then Some (sp', delta0) else F b in
+      mem_inj F' g m''0 m'0.
+  Proof.
+    intros.
+    generalize (record_stack_blocks_mem_unchanged _ _ _ RSB).
+    intros (NB & PERMRSB & UNCH & LOAD).
+    generalize (unrecord_stack_block_mem_unchanged _ _ USB).
+    intros (NB' & PERMUSB & UNCH' & LOAD').
+    simpl in *.
+    inv INJ; constructor; simpl; eauto.
+    - intros b1 b2 delta1 ofs k p FB PERM IPC.
+      rewrite PERMRSB in PERM.
+      eapply perm_alloc_inv in PERM; eauto.
+      unfold F' in FB. repeat destr_in FB.
+      + rewrite pred_dec_true in PERM; auto.
+        eapply Mem.perm_cur. eapply perm_implies. eapply PERMinjstk0. auto. constructor.
+      + rewrite pred_dec_false in PERM; auto.
+        eapply mi_perm0; eauto.
+        rewrite PERMUSB in PERM.
+        eapply perm_free_3; eauto.
+    - unfold F'.
+      intros b1 b2 delta1 chunk ofs p EQ RP.
+      repeat destr_in EQ.
+      + apply DIV.
+        generalize (RP (ofs + size_chunk chunk - 1)%Z).
+        intro RP1. trim RP1.
+        generalize (size_chunk_pos chunk); omega.
+        rewrite PERMRSB in RP1.
+        eapply perm_alloc_3 in RP1; eauto.
+        specialize (RP ofs). trim RP. generalize (size_chunk_pos chunk); omega.
+        rewrite PERMRSB in RP.
+        eapply perm_alloc_3 in RP; eauto.
+        omega.
+      + eapply mi_align0; eauto.
+        red; intros.
+        specialize (RP _ H).
+        rewrite PERMRSB in RP.
+        eapply perm_alloc_4 in RP. 2:  eauto. 2: auto.
+        rewrite PERMUSB in RP.
+        eapply perm_free_3; eauto.
+    - unfold F'; intros b1 ofs b2 delta1 FB PERM.
+      eapply memval_inject_incr.
+      Focus 2.
+      instantiate (1:=F). intros b1' b2' delta'. destr. subst.
+      intro FS. apply VALID in FS.
+      contradict FS.
+      unfold valid_block.
+      erewrite <- nextblock_free. 2: now eauto.
+      erewrite <- NB'.
+      eapply fresh_block_alloc; eauto.
+      cut (b1 <> stk0 -> memval_inject F (ZMap.get ofs (mem_contents m) # b1) (ZMap.get (ofs + delta1)%Z (mem_contents m'0) # b2)).
+      {
+        inv RSB. simpl in *.
+        unfold alloc in ALLOC; inv ALLOC. simpl in *.
+        unfold_unrecord. simpl in *.
+        unfold free in FREE; repeat destr_in FREE. simpl in *.
+        clear.
+        intro.
+        rewrite PMap.gsspec. destr. rewrite ZMap.gi. constructor.
+      }
+      intro DIFF.
+      rewrite pred_dec_false in FB; auto.
+      rewrite PERMRSB in PERM.
+      eapply perm_alloc_4 in PERM. 2:  eauto. 2: auto.
+      rewrite PERMUSB in PERM.
+      eapply perm_free_3 in PERM; eauto.         
+    - rewrite <- (free_stack_adt  _ _ _ _ _ FREE) in mi_stack_blocks0.
+      destruct (unrecord_stack_adt _ _ USB) as (x & EQ). rewrite EQ in mi_stack_blocks0.
+      rewrite (record_stack_blocks_stack_adt _ _ _ RSB).
+      rewrite (alloc_stack_adt _ _ _ _ _ ALLOC).
+      eapply inject_tailcall_inlined. apply mi_stack_blocks0.
+      + intros b1' b2' delta'. unfold F'; destr. subst.
+        intro FS. apply VALID in FS.
+        contradict FS. 
+        unfold valid_block.
+        erewrite <- nextblock_free. 2: now eauto.
+        erewrite <- NB'.
+        eapply fresh_block_alloc; eauto. 
+      + auto.
+      + rewrite <- EQ.
+        erewrite free_stack_adt; eauto.
+      + intros b IFR.
+        assert (valid_block m'' b). eapply in_frames_valid; eauto.
+        assert (b <> stk0). intro; subst. eapply fresh_block_alloc; eauto.
+        assert (b <> stk). generalize (stack_norepet m'). rewrite EQ. intro ND; inv ND. intro; subst.
+        eapply H4 in IFR; eauto.
+        erewrite <- free_stack_adt in STACKTOP; eauto.
+        rewrite EQ in STACKTOP. simpl in STACKTOP.
+        red; rewrite STACKTOP. left; auto.
+        intros o k p.
+        rewrite PERMRSB.
+        split; intro PERM.
+        eapply perm_alloc_1; eauto. eapply PERMUSB. 2: eauto. eapply perm_free_1; eauto.
+        eapply perm_free_3. eauto. eapply PERMUSB. eapply perm_alloc_4. eauto. auto. auto.
+      + intros b. unfold in_frame; simpl.
+        intros DIFF o k p PERM.
+        rewrite PERMRSB in PERM.
+        eapply perm_alloc_4 in PERM. 2:  eauto. 2: auto.
+        rewrite PERMUSB in PERM.
+        eapply perm_free_3 in PERM; eauto.
+      + destruct STACKTOP' as (r & STACKTOP').
+        rewrite STACKTOP'. constructor; simpl. reflexivity.
+      + red; red; simpl.
+        constructor; simpl; auto.
+        unfold F'. rewrite pred_dec_true; auto. intros b2 delta1 A; inv A.
+        rewrite peq_true.
+        eexists; split; eauto.
+        split; simpl; auto.
+      + unfold F'. intros b1 b2 delta1 N S.
+        destr_in S. inv S. intro IS. apply in_frames_valid in IS.
+        eapply fresh_block_alloc in IS; eauto.
+      + unfold F'. intros b1 b2 delta1 N S.
+        destr_in S. inv S. left; auto. 
+      + intros b [|[]]. subst. simpl in *. intro IFR.
+        exploit in_frames_valid. rewrite EQ. left; eauto.
+        unfold valid_block. rewrite <- NB'.
+        eapply fresh_block_alloc; eauto.
+      + intros b [|[]]. subst. simpl in *.
+        destruct (F stk0) eqn: AA; auto. destruct p. apply VALID in AA.
+        eapply valid_block_free_1 in AA. 2: now eauto.
+        unfold valid_block in AA. rewrite <- NB' in AA.
+        eapply fresh_block_alloc in AA; eauto. easy.
+      + erewrite <- free_stack_adt in STACKTOP. 2: now eauto.
+        rewrite EQ in STACKTOP. simpl in STACKTOP.
+        unfold in_frame. rewrite STACKTOP. intros b [|[]]; subst.
+        intros (o & k & p & PERM).
+        rewrite PERMRSB in PERM.
+        eapply perm_alloc_inv in PERM. 2:  eauto.
+        rewrite pred_dec_false in PERM.
+        rewrite PERMUSB in PERM.
+        exploit PERMstk; eauto.
+        eapply perm_free_3 in PERM; eauto.
+        intro RNG_stk.
+        eapply perm_free_2 in PERM; eauto.
+        intro; subst. clear PERM.
+        exploit in_frames_valid.
+        rewrite EQ. left; auto. red; rewrite STACKTOP. left; auto.
+        intro AA. unfold valid_block in AA. rewrite <- NB' in AA.
+        eapply fresh_block_alloc in AA; eauto.
+      + simpl. auto.
+  Qed.
+
+
+  Lemma in_range:
+    forall (a b c : Z),
+      (a <= b < c \/ ~ (a <= b < c))%Z.
+  Proof. intros; omega. Qed.
+
+  Lemma free_perm:
+    forall m1 b lo hi m2,
+      free m1 b lo hi = Some m2 ->
+      forall b' o k p,
+        perm m1 b' o k p ->
+        if peq b b' then ((lo <= o < hi)%Z) <-> forall k p, ~ perm m2 b' o k p else perm m2 b' o k p.
+  Proof.
+    intros m1 b lo hi m2 FREE b' o k p PERM.
+    destr.
+    - subst. 
+      eapply perm_free_inv in PERM; eauto.
+      destruct PERM as [(_ & RNG)|P].
+      split; intros; auto.
+      eapply perm_free_2; eauto.
+      split; intros; try congruence.
+      eapply perm_free_2; eauto.
+      apply H in P. easy.
+    - eapply perm_free_1; eauto.
+  Qed.
+
+  Lemma mem_inject_tailcall_inlined:
+    forall F g m m'0 stk szstk
+      (INJ: inject F g m m'0)
+      m' (FREE: Mem.free m stk 0 szstk = Some m') 
+      m'' (USB: Mem.unrecord_stack_block m' = Some m'' )
+      m'1 stk0 szstk0 (ALLOC: Mem.alloc m'' 0 szstk0 = (m'1, stk0))
+      stkreq m''0 (RSB: Mem.record_stack_blocks m'1 (make_singleton_frame_adt stk0 szstk0 stkreq) m''0)
+      sp' delta (Fstk: F stk = Some (sp', delta))
+      delta0
+      (LE: (delta <= delta0)%Z)
+      (PERMinjstk0: forall o, (0 <= o < szstk0)%Z -> Mem.perm m'0 sp' (o + delta0) Cur Freeable)
+      (DIV: Mem.inj_offset_aligned delta0 szstk0)
+      (G0 : g O = Some O)
+      (STACKTOP: get_stack_top_blocks (stack_adt m) = stk::nil)
+      (PERMstk: forall o k p, perm m stk o k p -> (0 <= o < szstk)%Z)
+      sz1 sz2
+      (STACKTOP':  exists r, stack_adt m'0 = make_singleton_frame_adt sp' sz1 sz2 :: r)
+      (RNG: forall o : Z, (0 <= o < szstk0)%Z -> (0 <= o + delta0 < sz1)%Z)
+      (JBstack: forall b, in_frames (stack_adt m) b -> exists b' delta, F b = Some (b', delta))
+      (SIZE: (sz2 <= stkreq)%Z)
+      (PERMsp': forall b d o p,
+          F b = Some (sp', d) -> b <> stk ->
+          perm m b o Max p ->
+          (o + d < delta)%Z)
+      (REPR: (0 <= szstk0 + delta0 <= Ptrofs.max_unsigned)%Z)
+    ,
+      let F' := fun b => if peq b stk0 then Some (sp', delta0) else F b in
+      inject F' g m''0 m'0.
+  Proof.
+    intros.
+    generalize (record_stack_blocks_mem_unchanged _ _ _ RSB).
+    intros (NB & PERMRSB & UNCH & LOAD).
+    generalize (unrecord_stack_block_mem_unchanged _ _ USB).
+    intros (NB' & PERMUSB & UNCH' & LOAD').
+    simpl in *.
+    inv INJ.
+    exploit mem_inj_tailcall_inlined; eauto.
+    - intros.
+      destruct (valid_block_dec m b1); auto.
+      apply mi_freeblocks0 in n; congruence.
+    - simpl. intro MINJ.
+      constructor; simpl; intros; eauto.
+      + unfold F'.
+        destr. subst.
+        exfalso; apply H. red. 
+        rewrite NB. eapply valid_new_block; eauto.
+        apply mi_freeblocks0. intro VB; apply H.
+        red. rewrite NB. eapply valid_block_alloc. eauto.
+        red. rewrite NB'. eapply valid_block_free_1; eauto.
+      + unfold F' in H.
+        repeat destr_in H.
+        eapply in_frames_valid. destruct STACKTOP' as (r & STACKTOP'); rewrite STACKTOP'. left; left; auto.
+        eapply mi_mappedblocks0; eauto.
+      + red. intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 DIFF F1 F2 P1 P2.
+        unfold F' in F1,  F2.
+        repeat destr_in F1; repeat destr_in F2.
+        * rewrite PERMRSB in P1.
+          eapply perm_alloc_inv in P1. 2:  eauto.
+          rewrite pred_dec_true in P1; auto.
+          rewrite PERMRSB in P2.
+          eapply perm_alloc_inv in P2. 2:  eauto.
+          rewrite pred_dec_false in P2 by auto.
+          rewrite PERMUSB in P2.
+          assert (b2 <> stk).
+          {
+            intro; subst.
+            exploit perm_free_3; eauto. intro P3.
+            eapply perm_free_2 in P2; eauto.
+          }
+          eapply perm_free_3 in P2; eauto.
+          destruct (peq b1' b2'); auto. subst.
+          right.
+          eapply PERMsp' in P2; eauto. 
+          intro A; rewrite <- A in P2.
+          omega.
+        * rewrite PERMRSB in P2.
+          eapply perm_alloc_inv in P2. 2:  eauto.
+          rewrite pred_dec_true in P2; auto.
+          rewrite PERMRSB in P1.
+          eapply perm_alloc_inv in P1. 2:  eauto.
+          rewrite pred_dec_false in P1 by auto.
+          rewrite PERMUSB in P1.
+          assert (b1 <> stk).
+          {
+            intro; subst.
+            exploit perm_free_3; eauto. intro P3.
+            eapply perm_free_2 in P1; eauto.
+          }
+          eapply perm_free_3 in P1; eauto.
+          destruct (peq b1' b2'); auto. subst.
+          right.
+          eapply PERMsp' in P1; eauto. 
+          intro A; rewrite A in P1.
+          omega.
+        * eapply mi_no_overlap0. 2: eauto. 2: eauto. auto.
+          rewrite PERMRSB in P1.
+          eapply perm_alloc_inv in P1. 2:  eauto.
+          rewrite pred_dec_false in P1 by auto.
+          rewrite PERMUSB in P1.
+          eapply perm_free_3; eauto.
+          rewrite PERMRSB in P2.
+          eapply perm_alloc_inv in P2. 2:  eauto.
+          rewrite pred_dec_false in P2 by auto.
+          rewrite PERMUSB in P2.
+          eapply perm_free_3; eauto.
+      + unfold F' in H. destr_in H.
+        * inv H. apply mi_representable0 in Fstk. destruct Fstk. split. omega.
+          intros. split.
+          generalize (Ptrofs.unsigned_range ofs); omega.
+          etransitivity. 2: apply REPR.
+          apply Z.add_le_mono_r.
+          rewrite ! PERMRSB in H1.
+          destruct H1 as [P1|P1]; eapply perm_alloc_3 in P1; eauto; omega.
+        * eapply mi_representable0 in H. destruct H as (POS & PERM).
+          split; auto.
+          intros ofs.
+          rewrite ! PERMRSB.
+          intros [P1|P1]; eapply (perm_alloc_4 _ _ _ _ _ ALLOC) in P1; eauto.
+          rewrite PERMUSB in P1.
+          eapply perm_free_3 in P1; eauto.
+          rewrite PERMUSB in P1.
+          eapply perm_free_3 in P1; eauto.
+      + rewrite ! PERMRSB.
+        unfold F' in H. repeat destr_in H.
+        * destruct (in_range 0 ofs szstk0) as [A|A].
+          -- left. eapply perm_cur. eapply perm_implies. eapply perm_alloc_2; eauto. constructor.
+          -- right. intro P; apply A. eapply perm_alloc_3; eauto.
+        * specialize (mi_perm_inv0 _ _ _ _ _ _ H2 H0).
+          destruct mi_perm_inv0 as [A|A].
+          -- generalize A; intro PP.
+             eapply free_perm in A. 2: eauto.
+             destr_in A.
+             ++ subst. rewrite Fstk in H2. inv H2.
+                destruct (in_range 0 ofs szstk) as [B|B].
+                ** right; intro NP.
+                   rewrite A in B.
+                   eapply perm_alloc_4 in NP; eauto.
+                   rewrite PERMUSB in NP.
+                   eapply B in NP; eauto.
+                ** destruct (perm_dec m'1 b1 ofs Max Nonempty); auto.
+                   left.
+                   eapply perm_alloc_1; eauto.
+                   rewrite PERMUSB.
+                   eapply perm_free_1; eauto.
+             ++ rewrite <- PERMUSB in A.
+                eapply perm_alloc_1 in A; eauto.
+          -- right; intro NP; apply A.
+             eapply perm_alloc_4 in NP. 2: eauto.
+             rewrite PERMUSB in NP.
+             eapply perm_free_3; eauto. auto.
+  Qed.
+  
+
 
 
 End WITHINJPERM.
@@ -8347,6 +8760,7 @@ Proof.
 
   intros; eapply record_stack_block_inject_flat; eauto.
   intros; eapply unrecord_stack_block_inject_parallel_flat; eauto.
+  intros; eapply mem_inject_tailcall_inlined; eauto.
 Qed.
 
 End Mem.

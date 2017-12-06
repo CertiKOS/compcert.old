@@ -1979,7 +1979,36 @@ unrecord_stack_block_inject_parallel_flat {injperm: InjectPerm}:
       unrecord_stack_block m2 = Some m2' /\
       inject j (flat_frameinj (length (Mem.stack_adt m1'))) m1' m2' /\
       (length (Mem.stack_adt m1) = length (Mem.stack_adt m2) ->
-       length (Mem.stack_adt m1') = length (Mem.stack_adt m2'))
+       length (Mem.stack_adt m1') = length (Mem.stack_adt m2'));
+
+mem_inject_tailcall_inlined {injperm: InjectPerm}:
+    forall F g m m'0 stk szstk
+      (INJ: inject F g m m'0)
+      m' (FREE: Mem.free m stk 0 szstk = Some m') 
+      m'' (USB: Mem.unrecord_stack_block m' = Some m'' )
+      m'1 stk0 szstk0 (ALLOC: Mem.alloc m'' 0 szstk0 = (m'1, stk0))
+      stkreq m''0 (RSB: Mem.record_stack_blocks m'1 (make_singleton_frame_adt stk0 szstk0 stkreq) m''0)
+      sp' delta (Fstk: F stk = Some (sp', delta))
+      delta0
+      (LE: (delta <= delta0)%Z)
+      (PERMinjstk0: forall o, (0 <= o < szstk0)%Z -> Mem.perm m'0 sp' (o + delta0) Cur Freeable)
+      (DIV: Mem.inj_offset_aligned delta0 szstk0)
+      (G0 : g O = Some O)
+      (STACKTOP: get_stack_top_blocks (stack_adt m) = stk::nil)
+      (PERMstk: forall o k p, perm m stk o k p -> (0 <= o < szstk)%Z)
+      sz1 sz2
+      (STACKTOP':  exists r, stack_adt m'0 = make_singleton_frame_adt sp' sz1 sz2 :: r)
+      (RNG: forall o : Z, (0 <= o < szstk0)%Z -> (0 <= o + delta0 < sz1)%Z)
+      (JBstack: forall b, in_frames (stack_adt m) b -> exists b' delta, F b = Some (b', delta))
+      (SIZE: (sz2 <= stkreq)%Z)
+      (PERMsp': forall b d o p,
+          F b = Some (sp', d) -> b <> stk ->
+          perm m b o Max p ->
+          (o + d < delta)%Z)
+      (REPR: (0 <= szstk0 + delta0 <= Ptrofs.max_unsigned)%Z)
+    ,
+      let F' := fun b => if peq b stk0 then Some (sp', delta0) else F b in
+      inject F' g m''0 m'0;
 
 }.
 

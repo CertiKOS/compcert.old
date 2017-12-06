@@ -310,15 +310,15 @@ Inductive tr_instr: context -> node -> instruction -> code -> Prop :=
       c!(spc ctx pc) = Some (Icall sg (sros ctx ros) (sregs ctx args) res s) ->
       ctx.(retinfo) = Some(s, res) ->
       tr_instr ctx pc (Itailcall sg ros args) c
-  (* | tr_tailcall_inlined: forall ctx pc sg id args c f pc1 ctx', *)
-  (*     fenv!id = Some f -> *)
-  (*     c!(spc ctx pc) = Some(Inop pc1) -> *)
-  (*     tr_moves c pc1 (sregs ctx args) (sregs ctx' f.(fn_params)) (spc ctx' f.(fn_entrypoint)) -> *)
-  (*     tr_funbody ctx' f c -> *)
-  (*     ctx'.(retinfo) = ctx.(retinfo) -> *)
-  (*     context_below ctx ctx' -> *)
-  (*     context_stack_tailcall ctx f ctx' -> *)
-  (*     tr_instr ctx pc (Itailcall sg (inr _ id) args) c *)
+  | tr_tailcall_inlined: forall ctx pc sg id args c f pc1 ctx',
+      fenv!id = Some f ->
+      c!(spc ctx pc) = Some(Inop pc1) ->
+      tr_moves c pc1 (sregs ctx args) (sregs ctx' f.(fn_params)) (spc ctx' f.(fn_entrypoint)) ->
+      tr_funbody ctx' f c ->
+      ctx'.(retinfo) = ctx.(retinfo) ->
+      context_below ctx ctx' ->
+      context_stack_tailcall ctx f ctx' ->
+      tr_instr ctx pc (Itailcall sg (inr _ id) args) c
   | tr_builtin: forall ctx pc c ef args res s,
       match res with BR r => Ple r ctx.(mreg) | _ => True end ->
       c!(spc ctx pc) = Some (Ibuiltin ef (map (sbuiltinarg ctx) args) (sbuiltinres ctx res) (spc ctx s)) ->
@@ -405,16 +405,16 @@ Proof.
         -- simpl. monadInv EQ1; simpl. auto.
       * monadInv EQ; simpl. monadInv EQ1; simpl. auto.
   - (* tailcall *)
-    (* destruct (can_inline fe s1). *)
+    destruct (can_inline fe s1).
     destruct (retinfo ctx) as [[rpc rreg]|]; eauto.
-    (* monadInv H. unfold inline_tail_function in EQ. monadInv EQ. *)
-    (* transitivity (s2.(st_code)!pc'). eauto. *)
-    (* transitivity (s5.(st_code)!pc'). eapply add_moves_unchanged; eauto. *)
-    (* left. inversion INCR5. inversion INCR3. monadInv EQ1; simpl in *. xomega. *)
-    (* transitivity (s4.(st_code)!pc'). eapply rec_unchanged; eauto. *)
-    (* simpl. monadInv EQ; simpl. monadInv EQ1; simpl. xomega. *)
-    (* simpl. monadInv EQ1; simpl. auto. *)
-    (* monadInv EQ; simpl. monadInv EQ1; simpl. auto. *)
+    monadInv H. unfold inline_tail_function in EQ. monadInv EQ.
+    transitivity (s2.(st_code)!pc'). eauto.
+    transitivity (s5.(st_code)!pc'). eapply add_moves_unchanged; eauto.
+    left. inversion INCR5. inversion INCR3. monadInv EQ1; simpl in *. xomega.
+    transitivity (s4.(st_code)!pc'). eapply rec_unchanged; eauto.
+    simpl. monadInv EQ; simpl. monadInv EQ1; simpl. xomega.
+    simpl. monadInv EQ1; simpl. auto.
+    monadInv EQ; simpl. monadInv EQ1; simpl. auto.
   - (* return *)
     destruct (retinfo ctx) as [[rpc rreg]|]; eauto.
 Qed.
@@ -530,7 +530,7 @@ Proof.
       * red; simpl. subst s2; simpl in *. xomega.
       * red; simpl. split. auto. apply align_le. apply min_alignment_pos.
   - (* tailcall *)
-    (* destruct (can_inline fe s1) as [|id f P Q]. *)
+    destruct (can_inline fe s1) as [|id f P Q].
     (* not inlined *)
     destruct (retinfo ctx) as [[rpc rreg] | ] eqn:?.
     (* turned into a call *)
@@ -538,28 +538,28 @@ Proof.
     (* preserved *)
     eapply tr_tailcall; eauto.
       (* (* inlined *) *)
-      (* subst s1. *)
-      (* monadInv EXP. unfold inline_function in EQ; monadInv EQ. *)
-      (* set (ctx' := tailcontext ctx x1 x2 (max_reg_function f) (fn_stacksize f)) in *. *)
-      (* inversion EQ0; inversion EQ1; inversion EQ. inv_incr. *)
-      (* apply tr_tailcall_inlined with (pc1 := x0) (ctx' := ctx') (f := f); auto. *)
-      (* eapply BASE; eauto. *)
-      (* eapply add_moves_spec; eauto. *)
-      (* intros. rewrite S1. eapply set_instr_other; eauto. unfold node; xomega. xomega. xomega. *)
-      (* eapply rec_spec; eauto. *)
-      (* red; intros. rewrite PTree.grspec in H. destruct (PTree.elt_eq id0 id); try discriminate. auto. *)
-      (* simpl. subst s3; simpl in *. subst s2; simpl in *. xomega. *)
-      (* simpl. subst s3; simpl in *; xomega. *)
-      (* simpl. xomega. *)
-      (* simpl. apply align_divides. apply min_alignment_pos. *)
-      (* assert (dstk ctx <= dstk ctx'). simpl. apply align_le. apply min_alignment_pos. omega. *)
-      (* omega. *)
-      (* intros. simpl in H. rewrite S1. *)
-      (* transitivity (s1.(st_code))!pc0. eapply set_instr_other; eauto. unfold node in *; xomega. *)
-      (* eapply add_moves_unchanged; eauto. unfold node in *; xomega. xomega. *)
-      (* red; simpl. *)
-      (* subst s2; simpl in *; xomega. *)
-      (* red; auto. *)
+      subst s1.
+      monadInv EXP. unfold inline_function in EQ; monadInv EQ.
+      set (ctx' := tailcontext ctx x1 x2 (max_reg_function f) (fn_stacksize f)) in *.
+      inversion EQ0; inversion EQ1; inversion EQ. inv_incr.
+      apply tr_tailcall_inlined with (pc1 := x0) (ctx' := ctx') (f := f); auto.
+      eapply BASE; eauto.
+      eapply add_moves_spec; eauto.
+      intros. rewrite S1. eapply set_instr_other; eauto. unfold node; xomega. xomega. xomega.
+      eapply rec_spec; eauto.
+      red; intros. rewrite PTree.grspec in H. destruct (PTree.elt_eq id0 id); try discriminate. auto.
+      simpl. subst s3; simpl in *. subst s2; simpl in *. xomega.
+      simpl. subst s3; simpl in *; xomega.
+      simpl. xomega.
+      simpl. apply align_divides. apply min_alignment_pos.
+      assert (dstk ctx <= dstk ctx'). simpl. apply align_le. apply min_alignment_pos. omega.
+      omega.
+      intros. simpl in H. rewrite S1.
+      transitivity (s1.(st_code))!pc0. eapply set_instr_other; eauto. unfold node in *; xomega.
+      eapply add_moves_unchanged; eauto. unfold node in *; xomega. xomega.
+      red; simpl.
+      subst s2; simpl in *; xomega.
+      red; auto.
   - (* builtin *)
     eapply tr_builtin; eauto. destruct b; eauto.
   - (* return *)
