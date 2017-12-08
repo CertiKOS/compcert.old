@@ -34,7 +34,7 @@ Require Cshmgen.
 Require Cminorgen.
 Require Selection.
 Require RTLgen.
-(* Require Tailcall. *)
+Require Tailcall.
 Require Inlining.
 Require Renumber.
 Require Constprop.
@@ -55,7 +55,7 @@ Require Cshmgenproof.
 Require Cminorgenproof.
 Require Selectionproof.
 Require RTLgenproof.
-(* Require Tailcallproof. *)
+Require Tailcallproof.
 Require Inliningproof.
 Require Renumberproof.
 Require Constpropproof.
@@ -125,8 +125,8 @@ Local Existing Instance ValueAnalysis.romem_for_wp_instance.
 Definition transf_rtl_program (f: RTL.program) : res Asm.program :=
    OK f
    @@ print (print_RTL 0)
-   (* @@ total_if Compopts.optim_tailcalls (time "Tail calls" Tailcall.transf_program) *)
-   (* @@ print (print_RTL 1) *)
+   @@ total_if Compopts.optim_tailcalls (time "Tail calls" Tailcall.transf_program)
+   @@ print (print_RTL 1)
   @@@ partial_if Compopts.optim_inlining (time "Inlining" Inlining.transf_program)
    @@ print (print_RTL 2)
    @@ time "Renumbering" Renumber.transf_program
@@ -248,7 +248,7 @@ Definition CompCert's_passes :=
   ::: mkpass Cminorgenproof.match_prog
   ::: mkpass Selectionproof.match_prog
   ::: mkpass RTLgenproof.match_prog
-  (* ::: mkpass (match_if Compopts.optim_tailcalls Tailcallproof.match_prog) *)
+  ::: mkpass (match_if Compopts.optim_tailcalls Tailcallproof.match_prog)
   ::: mkpass (match_if Compopts.optim_inlining Inliningproof.match_prog)
   ::: mkpass Renumberproof.match_prog
   ::: mkpass (match_if Compopts.optim_constprop Constpropproof.match_prog)
@@ -291,8 +291,8 @@ Proof.
   destruct (Selection.sel_program p4) as [p5|e] eqn:P5; simpl in T; try discriminate.
   destruct (RTLgen.transl_program p5) as [p6|e] eqn:P6; simpl in T; try discriminate.
   unfold transf_rtl_program, time in T. rewrite ! compose_print_identity in T. simpl in T.
-  (* set (p7 := total_if optim_tailcalls Tailcall.transf_program p6) in *. *)
-  destruct (partial_if optim_inlining Inlining.transf_program p6) as [p8|e] eqn:P8; simpl in T; try discriminate.
+  set (p7 := total_if optim_tailcalls Tailcall.transf_program p6) in *.
+  destruct (partial_if optim_inlining Inlining.transf_program p7) as [p8|e] eqn:P8; simpl in T; try discriminate.
   set (p9 := Renumber.transf_program p8) in *.
   set (p10 := total_if optim_constprop Constprop.transf_program p9) in *.
   set (p11 := total_if optim_constprop Renumber.transf_program p10) in *.
@@ -312,7 +312,7 @@ Proof.
   exists p4; split. apply Cminorgenproof.transf_program_match; auto.
   exists p5; split. apply Selectionproof.transf_program_match; auto.
   exists p6; split. apply RTLgenproof.transf_program_match; auto.
-  (* exists p7; split. apply total_if_match. apply Tailcallproof.transf_program_match. *)
+  exists p7; split. apply total_if_match. apply Tailcallproof.transf_program_match.
   exists p8; split. eapply partial_if_match; eauto. apply Inliningproof.transf_program_match; auto.
   exists p9; split. apply Renumberproof.transf_program_match; auto.
   exists p10; split. apply total_if_match. apply Constpropproof.transf_program_match.
@@ -382,6 +382,13 @@ Definition fn_stack_requirements (tp: Asm.program) (id: ident) : Z :=
     end
   | None => 0
   end.
+
+Definition printable_oracle (tp: Asm.program) : list (ident * Z) :=
+  fold_left (fun acc gd =>
+               match gd with
+                 (id,Some (Gfun (Internal f))) => (id, fn_stack_requirements tp id)::acc
+               | _ => acc
+               end) (prog_defs tp) nil.
 
 Lemma match_program_no_more_functions:
   forall {F1 V1 F2 V2}
@@ -475,8 +482,8 @@ Ltac DestructM :=
     eapply Selectionproof.transf_program_correct; eassumption.
   eapply compose_forward_simulations.
     eapply RTLgenproof.transf_program_correct; eassumption.
-  (* eapply compose_forward_simulations. *)
-  (*   eapply match_if_simulation. eassumption. exact Tailcallproof.transf_program_correct. *)
+  eapply compose_forward_simulations.
+    eapply match_if_simulation. eassumption. intros; eapply Tailcallproof.transf_program_correct; eauto.
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. eapply Inliningproof.transf_program_correct; eassumption.
   eapply compose_forward_simulations. eapply Renumberproof.transf_program_correct; eassumption.
@@ -501,18 +508,18 @@ Ltac DestructM :=
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. apply Debugvarproof.transf_program_correct.
   eapply compose_forward_simulations.
-    replace (fn_stack_requirements tp) with (Stackingproof.fn_stack_requirements p19).
+    replace (fn_stack_requirements tp) with (Stackingproof.fn_stack_requirements p20).
     eapply Stackingproof.transf_program_correct with (return_address_offset := Asmgenproof0.return_address_offset); try assumption.
     exact Asmgenproof.return_address_exists.
     {
-      clear - M18 MM0.
+      clear - M19 MM.
       subst.
       unfold Stackingproof.fn_stack_requirements, fn_stack_requirements.
       apply Axioms.extensionality.
       intros i.
       erewrite Asmgenproof.symbols_preserved; eauto.
-      destruct (Globalenvs.Genv.find_symbol (Globalenvs.Genv.globalenv p19) i) eqn:?; auto.
-      destruct (Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv p19) b) eqn:?; auto.
+      destruct (Globalenvs.Genv.find_symbol (Globalenvs.Genv.globalenv p20) i) eqn:?; auto.
+      destruct (Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv p20) b) eqn:?; auto.
       eapply Asmgenproof.functions_translated in Heqo0.
       destruct Heqo0 as (tf & FFP & TF); rewrite FFP.
       destruct f; simpl in *; monadInv TF; auto.
@@ -522,12 +529,12 @@ Ltac DestructM :=
     }
     subst. unfold init_sp.
     replace (Globalenvs.Genv.genv_next (Globalenvs.Genv.globalenv tp))
-      with (Asmgenproof.init_sp_block p19).
+      with (Asmgenproof.init_sp_block p20).
     eapply Asmgenproof.transf_program_correct. eassumption.
     eapply Stackingproof.stacking_frame_correct; eauto.
     unfold Asmgenproof.init_sp_block.
-    eapply Globalenvs.Genv.senv_transf_partial in M18.
-    destruct M18 as (NB & _). simpl in NB. auto.
+    eapply Globalenvs.Genv.senv_transf_partial in M19.
+    destruct M19 as (NB & _). simpl in NB. auto.
   }
   split. auto.
   apply forward_to_backward_simulation.
@@ -577,13 +584,13 @@ Proof.
   repeat DestructM. 
   red.
   intros.
-  destruct (Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv p19) b) eqn:?; auto.
-  eapply Asmgenproof.functions_translated in Heqo.
+  subst.
+  destruct (Globalenvs.Genv.find_funct_ptr (Globalenvs.Genv.globalenv p20) b) eqn:?; auto.
+  eapply Asmgenproof.functions_translated in Heqo. 2: eauto.
   destruct Heqo as (tf & FFP & TF); rewrite FFP in H. inv H.
   destruct f0; simpl in TF; monadInv TF; try congruence.
   eapply AsmFacts.asmgen_no_change_rsp; eauto.
-  subst; eauto.
-  eapply match_program_no_more_functions in Heqo; eauto. subst. congruence.
+  eapply match_program_no_more_functions in Heqo; eauto. congruence.
 Qed.
 
 Theorem c_semantic_preservation:

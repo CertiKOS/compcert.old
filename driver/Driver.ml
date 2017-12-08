@@ -73,7 +73,8 @@ let compile_c_ast sourcename csyntax ofile =
                  (Compiler.transf_c_program csyntax)
                  Asmexpand.expand_program with
       | Errors.OK asm ->
-          asm
+        List.iter (fun (i,z) -> Printf.printf "Function %s : %d\n" (Camlcoq.extern_atom i) (Camlcoq.Z.to_int z)) (Compiler.printable_oracle asm);
+        asm
       | Errors.Error msg ->
           eprintf "%s: %a" sourcename print_error msg;
           exit 2 in

@@ -192,4 +192,4 @@ Separate Extraction
    Floats.Float32.from_parsed Floats.Float.from_parsed
    Globalenvs.Senv.invert_symbol
    Parser.translation_unit_file StackADT.empty_frame Coqlib.sum_left_map
-   RockSaltAsmGen.transf_program.
+   RockSaltAsmGen.transf_program Compiler.printable_oracle.
