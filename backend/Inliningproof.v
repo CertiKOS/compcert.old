@@ -528,7 +528,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (SP: F sp = Some(sp', ctx.(dstk)))
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs < f'.(fn_stacksize))
         (SSZ3: forall ofs, Mem.perm m sp ofs Max Nonempty -> 0 <= ofs < f.(fn_stacksize))
         (RES: Ple res ctx.(mreg))
         (BELOW: Plt sp' bound)
@@ -542,7 +542,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (MS: match_stacks_inside F m m' n l stk stk' f' ctx sp' rs')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs < f'.(fn_stacksize))
         (RET: ctx.(retinfo) = Some (rpc, res))
         (BELOW: Plt sp' bound),
       match_stacks F m m'
@@ -1177,6 +1177,10 @@ Definition blocks_of_stackframe stk :=
   | _ => None
   end.
 
+Definition stack_injects j m :=
+  forall b : block, in_frames (Mem.stack_adt m) b -> exists (b' : block) (delta : Z), j b = Some (b', delta).
+
+
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
 | match_regular_states: forall stk f sp pc rs m stk' f' sp' rs' m' F g fenv ctx n l
         (MS: match_stacks_inside F m m' n l stk stk' f' ctx sp' rs')
@@ -1185,10 +1189,11 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (AG: agree_regs F ctx rs rs')
         (SP: F sp = Some(sp', ctx.(dstk)))
         (MINJ: Mem.inject F g m m')
+        (SI: stack_injects F m)
         (VB: Mem.valid_block m' sp')
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs < f'.(fn_stacksize))
         (SSZ3: forall ofs, Mem.perm m sp ofs Max Nonempty -> 0 <= ofs < f.(fn_stacksize))
         (MS1: match_stack_adt (Some (sp, fn_stacksize f) :: map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (Some (sp', fn_stacksize f') :: map blocks_of_stackframe stk') (Mem.stack_adt m'))
@@ -1201,6 +1206,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (FD: transf_fundef (funenv_program cunit) fd = OK fd')
         (VINJ: Val.inject_list F args args')
         (MINJ: Mem.inject F g m m')
+        (SI: stack_injects F m)
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (map blocks_of_stackframe stk') (Mem.stack_adt m'))
         (CFINJ: compat_frameinj g l),
@@ -1215,10 +1221,11 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (MOVES: tr_moves f'.(fn_code) pc1' (sregs ctx' rargs) (sregs ctx f.(fn_params)) (spc ctx f.(fn_entrypoint)))
         (VINJ: list_forall2 (val_reg_charact F ctx' rs') vargs rargs)
         (MINJ: Mem.inject F g m m')
+        (SI: stack_injects F m)
         (VB: Mem.valid_block m' sp')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs < f'.(fn_stacksize))
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (Some (sp', fn_stacksize f')::map blocks_of_stackframe stk') (Mem.stack_adt m'))
         (CFINJ: compat_frameinj g (n::l)),
@@ -1228,6 +1235,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (MS: match_stacks F m m' l stk stk' (Mem.nextblock m'))
         (VINJ: Val.inject F v v')
         (MINJ: Mem.inject F g m m')
+        (SI: stack_injects F m)
         (CFINJ: compat_frameinj g l)
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (map blocks_of_stackframe stk') (Mem.stack_adt m')),
@@ -1239,10 +1247,11 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (AT: f'.(fn_code)!pc' = Some(inline_return ctx or rinfo))
         (VINJ: match or with None => v = Vundef | Some r => Val.inject F v rs'#(sreg ctx r) end)
         (MINJ: Mem.inject F g m m')
+        (SI: stack_injects F m)
         (VB: Mem.valid_block m' sp')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs < f'.(fn_stacksize))
         (CFINJ: compat_frameinj g (n::l))
         (MS1: match_stack_adt (map blocks_of_stackframe stk) (Mem.stack_adt m))
         (MS1: match_stack_adt (Some (sp', fn_stacksize f')::map blocks_of_stackframe stk') (Mem.stack_adt m')),
@@ -1340,6 +1349,7 @@ Proof.
   rewrite H0 in H. inv H. auto.
 Qed.
 
+
 Theorem step_simulation:
   forall S1 t S2,
   step fn_stack_requirements ge S1 t S2 ->
@@ -1405,6 +1415,9 @@ Proof.
   destruct a'; simpl in U; try discriminate.
   econstructor; eauto.
   eapply match_stacks_inside_store; eauto.
+  {
+    red; intros. erewrite Mem.store_stack_blocks in H3; eauto.
+  }
   eapply Mem.store_valid_block_1; eauto.
   eapply range_private_invariant; eauto.
   intros; split; auto. eapply Mem.perm_store_2; eauto.
@@ -1487,6 +1500,14 @@ Proof.
   erewrite (Mem.unrecord_stack_block_nextblock _ _ H3), (Mem.nextblock_free _ _ _ _ _ H2); eauto. xomega.
   erewrite Mem.unrecord_stack_block_nextblock, Mem.nextblock_free; eauto. red in VB; xomega.
   eapply agree_val_regs; eauto.
+  {
+    red; intros b.
+    repeat rewrite_stack_blocks.
+    intro IFR.
+    eapply SI; eauto.
+    destruct (Mem.stack_adt m); simpl in IFR; auto.
+    right; auto.
+  }
   eapply match_stack_adt_free; eauto.
   eapply match_stack_adt_free; eauto.
   eapply compat_framinj_rec_pop. eauto.
@@ -1522,6 +1543,14 @@ Proof.
   destruct PRIV' as (P1 & P2). split; auto. intros. intro P3. eapply P2; eauto.
   eapply Mem.unrecord_stack_block_perm. eauto. eauto.
   eapply agree_val_regs; eauto.
+  {
+    red; intros b.
+    repeat rewrite_stack_blocks.
+    intro IFR.
+    eapply SI; eauto.
+    destruct (Mem.stack_adt m); simpl in IFR; auto.
+    right; auto.
+  }
   eapply match_stack_adt_free; eauto.
   eapply compat_framinj_rec_pop_left. eauto.
   
@@ -1552,6 +1581,14 @@ Proof.
     eapply range_private_invariant in PRIV'. eauto.
     intros. eapply Mem.unrecord_stack_block_perm in H4; eauto. tauto.
     apply agree_val_regs_gen; auto.
+    {
+      red; intros b.
+      repeat rewrite_stack_blocks.
+      intro IFR.
+      eapply SI; eauto.
+      destruct (Mem.stack_adt m); simpl in IFR; auto.
+      right; auto.
+    }
     eapply range_private_invariant in PRIV'.
     red; intros; apply PRIV'.
     assert (dstk ctx <= dstk ctx').
@@ -1694,13 +1731,16 @@ Proof.
           inv H9. cut (o < mstk ctx'). omega.
           rewrite H5. rewrite Z.max_l. omega. omega.
         + admit.
-        + admit.
         + intros.
           do 2 red in PRIV'.
           destruct (zlt (o + d) (dstk ctx)); auto.
           apply Zge_le in g0.
           exfalso.
-          destruct (zlt (o+d) (fn_stacksize f')).
+          assert (o + d < fn_stacksize f').
+          {
+            apply SSZ2. eapply Mem.perm_inject. eauto. eauto. eapply Mem.perm_implies; eauto.
+            constructor. constructor.
+          }
           generalize (PRIV' (o + d)). intro D.
           destruct D as [FREEABLE NPERM].
           split; auto.
@@ -1708,10 +1748,23 @@ Proof.
           replace (o + d - d) with o by omega.
           eapply Mem.perm_free_1; eauto.
           eapply Mem.perm_implies; eauto. constructor.
-          admit.
         + inv H9.
-          assert (0 <= fn_stacksize f0) by admit.
-          rewrite H5 in H13. rewrite Z.max_l in H13 by omega. omega.
+          rewrite H5 in H13. generalize (Z.le_max_r (fn_stacksize f0) 0). omega.
+      - red; intros b.
+        repeat rewrite_stack_blocks. simpl.
+        intros [[D|[]]|D]. simpl in D; inv D. unfold F'. rewrite peq_true; eauto.
+        unfold F'; rewrite pred_dec_false.
+        eapply SI; eauto.
+        destruct (Mem.stack_adt m); simpl in D; auto.
+        right; auto.
+        intro; subst.
+        assert (in_frames (Mem.stack_adt m) stk0).
+        destruct (Mem.stack_adt m); simpl in D; auto.
+        right; auto.
+        apply Mem.in_frames_valid in H1.
+        eapply Mem.fresh_block_alloc; eauto. red.
+        rewrite (Mem.unrecord_stack_block_nextblock _ _ H3).
+        rewrite (Mem.nextblock_free _ _ _ _ _ H2). auto.
       - intros ofs PERM.
         eapply Mem.record_stack_block_perm in PERM. 2: now eauto.
         eapply Mem.perm_alloc_inv in PERM. 2: now eauto.
@@ -1743,6 +1796,11 @@ Proof.
   eauto. auto.
   destruct res; simpl; [apply agree_set_reg;auto|idtac|idtac]; eapply agree_regs_incr; eauto.
   auto. eauto.
+  red; intro b.
+  erewrite <- external_call_stack_blocks; eauto.
+  intro INFR.
+  eapply SI in INFR.
+  destruct INFR as (b' & delta & FF); exists b', delta; eauto.
   eapply external_call_valid_block; eauto.
   eapply range_private_extcall; eauto.
     intros; eapply external_call_max_perm; eauto.
@@ -1818,6 +1876,14 @@ Proof.
     erewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.nextblock_free _ _ _ _ _ H0); eauto. xomega.
   erewrite Mem.unrecord_stack_block_nextblock, Mem.nextblock_free; eauto. red in VB; xomega.
   destruct or; simpl. apply agree_val_reg; auto. auto.
+  {
+    red; intros b.
+    repeat rewrite_stack_blocks.
+    intro IFR.
+    eapply SI; eauto.
+    destruct (Mem.stack_adt m); simpl in IFR; auto.
+    right; auto.
+  }
   eapply compat_framinj_rec_pop; eauto.
   eapply match_stack_adt_free; eauto.
   eapply match_stack_adt_free; eauto.
@@ -1848,8 +1914,17 @@ Proof.
     erewrite (Mem.unrecord_stack_block_nextblock _ _ H1), (Mem.nextblock_free _ _ _ _ _ H0); eauto. xomega.
   destruct or; simpl. apply agree_val_reg; auto. auto.
   inv FB. rewrite H7 in PRIV.
+  * {
+      red; intros b.
+      repeat rewrite_stack_blocks.
+      intro IFR.
+      eapply SI; eauto.
+      destruct (Mem.stack_adt m); simpl in IFR; auto.
+      right; auto.
+    }
   * eapply range_private_invariant.
     eapply range_private_free_left; eauto.
+    inv FB. rewrite <- H7; eauto.
     intros; split; auto. eapply Mem.unrecord_stack_block_perm; eauto. tauto.
   *  simpl. eapply compat_framinj_rec_pop_left. eauto.
   * eapply match_stack_adt_free; eauto. 
@@ -1930,6 +2005,12 @@ Proof.
          inv H2. auto.
       -- congruence.
       -- eauto.
+      -- intro b.
+         repeat rewrite_stack_blocks.
+         intros [[IFR|[]]|IFR].
+         ++ simpl in IFR; subst; eauto.
+         ++ rewrite E. eauto. eapply Mem.in_frames_valid in IFR.
+            intro; subst; eapply Mem.fresh_block_alloc. 2: eauto. eauto.
       -- red. erewrite Mem.record_stack_block_nextblock. eapply Mem.valid_new_block; eauto. eauto.
       -- red; intros. split.
          ++ eapply Mem.record_stack_block_perm'; eauto.
@@ -2020,6 +2101,12 @@ Proof.
   + apply agree_regs_incr with F; auto.
   + auto.
   + eauto.
+  + intro b.
+    repeat rewrite_stack_blocks.
+    intros [[IFR|[]]|IFR].
+    ++ simpl in IFR; subst; eauto.
+    ++ rewrite D. eauto. eapply Mem.in_frames_valid in IFR.
+       intro; subst; eapply Mem.fresh_block_alloc. 2: eauto. eauto.
   + auto.
   + rewrite H3.
     eapply range_private_invariant.
@@ -2059,7 +2146,13 @@ Proof.
     eapply external_call_nextblock; eauto.
     xomega.
     eapply external_call_nextblock; eauto.
-    auto. eauto. auto.
+    auto. eauto.
+    red; intro b.
+    erewrite <- external_call_stack_blocks; eauto.
+    intro INFR.
+    eapply SI in INFR.
+    destruct INFR as (b' & delta & FF); exists b', delta; eauto.
+    auto.
     erewrite <- external_call_stack_blocks; eauto.
     erewrite <- external_call_stack_blocks; eauto. 
     
@@ -2080,7 +2173,7 @@ Proof.
   eapply match_stacks_inside_set_reg; eauto.
   eauto. auto.
   apply agree_set_reg; auto.
-  auto. eauto. auto.
+  auto. eauto. auto. auto.
   red; intros. destruct (zlt ofs (dstk ctx)). apply PAD; omega. apply PRIV; omega.
   auto. auto. auto. auto. auto. auto.
     
@@ -2098,7 +2191,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 End WITHMEMINIT.
 
@@ -2186,7 +2279,11 @@ Proof.
               ** cut (Plt b0 (Mem.nextblock m0)). xomega. eapply Genv.find_symbol_not_fresh; eauto.
               ** cut (Plt b0 (Mem.nextblock m0)). xomega. eapply Genv.find_funct_ptr_not_fresh; eauto.
               ** cut (Plt b0 (Mem.nextblock m0)). xomega. eapply Genv.find_var_info_not_fresh; eauto.
-           ++ apply Ple_refl. 
+           ++ apply Ple_refl.
+        -- intro b0.
+           repeat rewrite_stack_blocks.
+           erewrite Genv.init_mem_stack_adt; eauto.
+           intros [[|[]]|[]]. simpl in H4; subst. eauto.
         -- constructor. 
         -- constructor. 
         -- erewrite Genv.init_mem_stack_adt; eauto.

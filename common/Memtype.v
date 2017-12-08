@@ -2005,7 +2005,7 @@ mem_inject_tailcall_inlined {injperm: InjectPerm}:
           F b = Some (sp', d) -> b <> stk ->
           perm m b o Max p ->
           (o + d < delta)%Z)
-      (REPR: (0 <= szstk0 + delta0 <= Ptrofs.max_unsigned)%Z)
+      (REPR: (0 <= Z.max szstk0 0 + delta0 <= Ptrofs.max_unsigned)%Z)
     ,
       let F' := fun b => if peq b stk0 then Some (sp', delta0) else F b in
       inject F' g m''0 m'0;

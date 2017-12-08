@@ -8349,7 +8349,7 @@ Qed.
           F b = Some (sp', d) -> b <> stk ->
           perm m b o Max p ->
           (o + d < delta)%Z)
-      (REPR: (0 <= szstk0 + delta0 <= Ptrofs.max_unsigned)%Z)
+      (REPR: (0 <= Z.max szstk0 0 + delta0 <= Ptrofs.max_unsigned)%Z)
     ,
       let F' := fun b => if peq b stk0 then Some (sp', delta0) else F b in
       inject F' g m''0 m'0.
@@ -8437,7 +8437,9 @@ Qed.
           etransitivity. 2: apply REPR.
           apply Z.add_le_mono_r.
           rewrite ! PERMRSB in H1.
-          destruct H1 as [P1|P1]; eapply perm_alloc_3 in P1; eauto; omega.
+          destruct H1 as [P1|P1]; eapply perm_alloc_3 in P1; eauto.
+          rewrite Z.max_l; omega.
+          rewrite Z.max_l; omega.
         * eapply mi_representable0 in H. destruct H as (POS & PERM).
           split; auto.
           intros ofs.
