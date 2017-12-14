@@ -1531,11 +1531,9 @@ Qed.
 Lemma transl_step:
   forall S1 t S2, Clight.step2 ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists w, (exists t', match_events_query _ w t t') /\
-  forall t', match_events cc_id w t t' ->
-  exists T2, plus step tge T1 t' T2 /\ match_states S2 T2.
+  exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
 Proof.
-  induction 1; intros T1 MST; inv MST; try stable_step.
+  induction 1; intros T1 MST; inv MST.
 
 - (* assign *)
   monadInv TR.
@@ -1784,6 +1782,34 @@ Proof.
   econstructor; eauto. instantiate (1 := prog_comp_env cu). constructor; auto. exact I.
 Qed.
 
+Lemma transl_external:
+  forall S R q1,
+    match_states S R ->
+    Clight.at_external S q1 ->
+    exists wA q2,
+      match_query cc_id wA q1 q2 /\
+      Csharpminor.at_external R q2 /\
+      forall r1 r2 S',
+        match_reply cc_id wA r1 r2 ->
+        Clight.after_external S r1 S' ->
+        exists R',
+          Csharpminor.after_external R r2 R' /\
+          match_states S' R'.
+Proof.
+  intros S R q HSR HS.
+  edestruct (match_cc_id q) as (w & Hq & H).
+  destruct HS. inv HSR.
+  exists w, (cq id sg vargs m); repeat apply conj; eauto.
+  - inv TR.
+    econstructor.
+  - intros r1 r2 H' Hr HS'.
+    specialize (H r1 r2 Hr); subst.
+    inv HS'.
+    eexists; split.
+    + constructor.
+    + econstructor; eauto.
+Qed.
+
 Lemma transl_final_states:
   forall w S R r1,
   match_states S R -> Clight.final_state S r1 ->
@@ -1802,8 +1828,9 @@ Theorem transl_program_correct:
 Proof.
   eapply forward_simulation_plus with (match_states := fun _ => match_states).
   apply senv_preserved.
-  eexact transl_initial_states.
-  eexact transl_final_states.
+  intros; eapply transl_initial_states; eauto.
+  intros; eapply transl_external; eauto.
+  intros; eapply transl_final_states; eauto.
   eauto using transl_step.
 Qed.
 
