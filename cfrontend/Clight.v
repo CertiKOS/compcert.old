@@ -683,11 +683,24 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
         (cq id (signature_of_type targs tres tcc) vargs m)
         (Callstate f vargs Kstop m).
 
-(** A final state is a [Returnstate] with an empty continuation. *)
+Inductive at_external: state -> query li_c -> Prop :=
+  | at_external_intro id sg targs tres cconv vargs k m:
+      at_external
+        (Callstate (External (EF_external id sg) targs tres cconv) vargs k m)
+        (cq id sg vargs m).
+
+Inductive after_external: state -> reply li_c -> state -> Prop :=
+  | after_external_intro f vargs k m vres m':
+      after_external
+        (Callstate f vargs k m)
+        (vres, m')
+        (Returnstate vres k m').
 
 Inductive final_state: state -> reply li_c -> Prop :=
   | final_state_intro: forall r m,
-      final_state (Returnstate r Kstop m) (r, m).
+      final_state
+        (Returnstate r Kstop m)
+        (r, m).
 
 End SEMANTICS.
 
@@ -720,11 +733,23 @@ Definition step2 (ge: genv) := step ge (function_entry2).
 
 Definition semantics1 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen li_c (fun _ => step1) (initial_state p) (fun _ => final_state) ge ge.
+  Semantics_gen li_c li_c
+    (fun _ => step1)
+    (initial_state p)
+    (fun _ => at_external)
+    (fun _ => after_external)
+    (fun _ => final_state)
+    ge ge.
 
 Definition semantics2 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen li_c (fun _ => step2) (initial_state p) (fun _ => final_state) ge ge.
+  Semantics_gen li_c li_c
+    (fun _ => step2)
+    (initial_state p)
+    (fun _ => at_external)
+    (fun _ => after_external)
+    (fun _ => final_state)
+    ge ge.
 
 (** This semantics is receptive to changes in events. *)
 
