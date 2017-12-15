@@ -710,9 +710,7 @@ Proof.
   intros; red; intros. inv TE.
   exploit H0; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
   exploit external_call_mem_extends; eauto.
-  intros (w & Hqw & Hw).
-  specialize (Hw E0 (match_events_E0 _)).
-  destruct Hw as [v' [tm2 [A [B [C DE]]]]].
+  intros [v' [tm2 [A [B [C DE]]]]].
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
   split. eapply star_right. eexact EX1.
@@ -744,9 +742,7 @@ Proof.
   intros; red; intros. inv TE.
   exploit H3; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
   exploit external_call_mem_extends; eauto.
-  intros (w & Hwq & Hw).
-  specialize (Hw E0 (match_events_E0 _)).
-  destruct Hw as [v' [tm2 [A [B [C DE]]]]].
+  intros [v' [tm2 [A [B [C DE]]]]].
   exploit function_ptr_translated; eauto. simpl. intros [tf [P Q]]. inv Q.
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
@@ -1309,13 +1305,11 @@ Qed.
 Theorem transl_step_correct:
   forall S1 t S2, CminorSel.step ge S1 t S2 ->
   forall R1, match_states S1 R1 ->
-  exists w, (exists t', match_events_query _ w t t') /\
-  forall t', match_events cc_extends w t t' ->
   exists R2,
-  (plus RTL.step tge R1 t' R2 \/ (star RTL.step tge R1 t' R2 /\ lt_state S2 S1))
+  (plus RTL.step tge R1 t R2 \/ (star RTL.step tge R1 t R2 /\ lt_state S2 S1))
   /\ match_states S2 R2.
 Proof.
-  induction 1; intros R1 MSTATE; inv MSTATE; try stable_step.
+  induction 1; intros R1 MSTATE; inv MSTATE.
 
   (* skip seq *)
   inv TS. inv TK. econstructor; split.
@@ -1437,10 +1431,7 @@ Proof.
   exploit (@eval_builtin_args_lessdef _ ge (fun r => rs'#r) (fun r => rs'#r)); eauto.
   intros (vargs'' & X & Y).
   assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
-  edestruct external_call_mem_extends as (w & Hwq & Hw); eauto.
-  exists w; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as [tv [tm'' [A [B [C D]]]]].
+  edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
   econstructor; split.
   left. eapply plus_right. eexact E.
   eapply exec_Ibuiltin. eauto.
@@ -1559,10 +1550,7 @@ Proof.
 
   (* external call *)
   monadInv TF.
-  edestruct external_call_mem_extends as (w & Hwq & Hw); eauto.
-  exists w; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as [tvres [tm' [A [B [C D]]]]].
+  edestruct external_call_mem_extends as [tvres [tm' [A [B [C D]]]]]; eauto.
   econstructor; split.
   left; apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -1597,6 +1585,33 @@ Proof.
   apply Mem.extends_refl.
 Qed.
 
+Lemma transl_external:
+  forall S R q1,
+    match_states S R ->
+    CminorSel.at_external S q1 ->
+    exists wA q2,
+      match_query cc_extends wA q1 q2 /\
+      RTL.at_external R q2 /\
+      forall r1 r2 S',
+        match_reply cc_extends wA r1 r2 ->
+        CminorSel.after_external S r1 S' ->
+        exists R',
+          RTL.after_external R r2 R' /\
+          match_states S' R'.
+Proof.
+  intros S R q HSR HS.
+  destruct HS. inv HSR. inv TF.
+  edestruct match_cc_extends as (w & Hq & H); eauto.
+  exists w, (cq id sg targs tm); repeat apply conj; eauto.
+  - constructor.
+  - intros r1 [vres2 m2'] H' Hr HS'.
+    inv HS'.
+    edestruct H as (Hvres & Hm' & Hunch); eauto.
+    eexists; split.
+    + econstructor.
+    + econstructor; eauto.
+Qed.
+
 Lemma transl_final_states:
   forall w S R r1,
   match_states S R -> CminorSel.final_state S r1 ->
@@ -1615,6 +1630,7 @@ Proof.
   eapply forward_simulation_star_wf with (match_states := fun _ => match_states) (order := lt_state).
   apply senv_preserved.
   eexact transl_initial_states.
+  auto using transl_external.
   eexact transl_final_states.
   apply lt_state_wf.
   auto using transl_step_correct.
