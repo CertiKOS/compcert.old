@@ -806,6 +806,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDA: Val.lessdef_list args args')
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m')
+        (NI: ef_inline ef = true)
         (EA: list_forall2 (CminorSel.eval_builtin_arg tge sp e' m') al args'),
       match_states
         (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
@@ -901,12 +902,10 @@ Definition measure (s: Cminor.state) : nat :=
 Lemma sel_step_correct:
   forall S1 t S2, Cminor.step ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists w, (exists t', match_events_query _ w t t') /\
-  forall t', match_events cc_extends w t t' ->
-  (exists T2, step tge T1 t' T2 /\ match_states S2 T2)
+  (exists T2, step tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
-  induction 1; intros T1 ME; inv ME; try (monadInv TS); try stable_step.
+  induction 1; intros T1 ME; inv ME; try (monadInv TS).
 - (* skip seq *)
   inv MC. left; econstructor; split. econstructor. econstructor; eauto.
 - (* skip block *)
@@ -932,7 +931,7 @@ Proof.
   econstructor; eauto.
 - (* Scall *)
   exploit classify_call_correct; eauto.
-  destruct (classify_call (prog_defmap cunit) a) as [ | id | ef].
+  destruct (classify_call (prog_defmap cunit) a) as [ | id | ef] eqn:Hcc.
 + (* indirect *)
   exploit sel_expr_correct; eauto. intros [vf' [A B]].
   exploit sel_exprlist_correct; eauto. intros [vargs' [C D]].
@@ -957,6 +956,10 @@ Proof.
   exploit sel_builtin_args_correct; eauto. intros [vargs' [C D]].
   right; split. simpl. omega. split. auto.
   econstructor; eauto.
+  unfold classify_call in Hcc.
+  destruct (expr_is_addrof_ident a) as [id|]; try discriminate.
+  destruct (_ ! id) as [[[|ef']|]|]; try discriminate.
+  destruct (ef_inline ef') eqn:Hinline; inv Hcc. assumption.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
@@ -975,9 +978,7 @@ Proof.
 - (* Sbuiltin *)
   exploit sel_builtin_args_correct; eauto. intros [vargs' [P Q]].
   exploit external_call_mem_extends; eauto.
-  intros (w & Hwq & Hw). exists w; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as [vres' [m2 [A [B [C D]]]]].
+  intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
@@ -1056,18 +1057,14 @@ Proof.
   destruct TF as (hf & HF & TF).
   monadInv TF.
   exploit external_call_mem_extends; eauto.
-  intros (w & Hwq & Hw). exists w; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as [vres' [m2 [A [B [C D]]]]].
+  intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
   exploit external_call_mem_extends; eauto.
-  intros (w & Hwq & Hw). exists w; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as [vres' [m2 [A [B [C D]]]]].
+  intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved. auto.
@@ -1105,6 +1102,36 @@ Proof.
   apply Mem.extends_refl.
 Qed.
 
+Lemma sel_external:
+  forall S R q1,
+    match_states S R ->
+    Cminor.at_external S q1 ->
+    exists wA q2,
+      match_query cc_extends wA q1 q2 /\
+      CminorSel.at_external R q2 /\
+      forall r1 r2 S',
+        match_reply cc_extends wA r1 r2 ->
+        Cminor.after_external S r1 S' ->
+        exists R',
+          CminorSel.after_external R r2 R' /\
+          match_states S' R'.
+Proof.
+  intros S R q HSR HS.
+  destruct HS. inv HSR.
+  - edestruct match_cc_extends as (w & Hq & H); eauto.
+    destruct TF as (hf & Hhf & Hf').
+    inv Hf'.
+    exists w, (cq id sg args' m'); repeat apply conj; eauto.
+    + constructor.
+    + intros r1 [vres2 m2'] H' Hr HS'.
+      inv HS'.
+      edestruct H as (Hvres & Hm' & Hunch); eauto.
+      eexists; split.
+      * econstructor.
+      * econstructor; eauto.
+  - discriminate NI.
+Qed.
+
 Lemma sel_final_states:
   forall w S R r1, match_states S R -> Cminor.final_state S r1 ->
   exists r2, match_reply cc_extends_triangle w r1 r2 /\ final_state R r2.
@@ -1123,6 +1150,7 @@ Proof.
   apply forward_simulation_opt with (match_states := fun _ => match_states) (measure := measure).
   apply senv_preserved.
   apply sel_initial_states; auto.
+  auto using sel_external.
   apply sel_final_states; auto.
   auto using sel_step_correct.
 Qed.
