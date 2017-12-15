@@ -326,7 +326,18 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       Val.has_type_list vargs (sig_args (funsig f)) ->
       initial_state p (cq id (funsig f) vargs m) (Callstate nil f vargs m).
 
-(** A final state is a [Returnstate] with an empty call stack. *)
+Inductive at_external: state -> query li_c -> Prop :=
+  | at_external_intro id sg s vargs m:
+      at_external
+        (Callstate s (External (EF_external id sg)) vargs m)
+        (cq id sg vargs m).
+
+Inductive after_external: state -> reply li_c -> state -> Prop :=
+  | after_external_intro id sg s vargs m vres m':
+      after_external
+        (Callstate s (External (EF_external id sg)) vargs m)
+        (vres, m')
+        (Returnstate s vres m').
 
 Inductive final_state: state -> reply li_c -> Prop :=
   | final_state_intro: forall r m,
@@ -335,7 +346,13 @@ Inductive final_state: state -> reply li_c -> Prop :=
 (** The small-step semantics for a program. *)
 
 Definition semantics (p: program) :=
-  Semantics li_c step (initial_state p) final_state (Genv.globalenv p).
+  Semantics li_c li_c
+    step
+    (initial_state p)
+    at_external
+    after_external
+    final_state
+    (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
