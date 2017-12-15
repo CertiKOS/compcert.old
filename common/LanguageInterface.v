@@ -320,7 +320,11 @@ Definition cc_inject_mr f :=
       Mem.unchanged_on (loc_unmapped f) m1 m1' /\
       Mem.unchanged_on (loc_out_of_reach f m1) m2 m2' /\
       inject_incr f f' /\
-      inject_separated f f' m1 m2.
+      inject_separated f f' m1 m2 /\
+      forall b ofs p,
+        Mem.valid_block m1 b ->
+        Mem.perm m1' b ofs Max p ->
+        Mem.perm m1 b ofs Max p.
 
 Definition cc_inject: callconv li_c li_c :=
   {|
@@ -343,7 +347,11 @@ Lemma match_cc_inject id sg f vargs1 m1 vargs2 m2:
         Mem.unchanged_on (loc_unmapped f) m1 m1' /\
         Mem.unchanged_on (loc_out_of_reach f m1) m2 m2' /\
         inject_incr f f' /\
-        inject_separated f f' m1 m2.
+        inject_separated f f' m1 m2 /\
+        forall b ofs p,
+          Mem.valid_block m1 b ->
+          Mem.perm m1' b ofs Max p ->
+          Mem.perm m1 b ofs Max p.
 Proof.
   intros Hvargs Hm.
   assert (match_query_def cc_inject f (cq id sg vargs1 m1) (cq id sg vargs2 m2)).
