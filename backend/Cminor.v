@@ -560,18 +560,39 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       Val.has_type_list vargs (sig_args (funsig f)) ->
-      initial_state p (cq id (funsig f) vargs m) (Callstate f vargs Kstop m).
+      initial_state p
+        (cq id (funsig f) vargs m)
+        (Callstate f vargs Kstop m).
 
-(** A final state is a [Returnstate] with an empty continuation. *)
+Inductive at_external: state -> query li_c -> Prop :=
+  | at_external_intro id sg vargs k m:
+      at_external
+        (Callstate (External (EF_external id sg)) vargs k m)
+        (cq id sg vargs m).
+
+Inductive after_external: state -> reply li_c -> state -> Prop :=
+  | after_external_intro f vargs k m vres m':
+      after_external
+        (Callstate f vargs k m)
+        (vres, m')
+        (Returnstate vres k m').
 
 Inductive final_state: state -> reply li_c -> Prop :=
   | final_state_intro: forall r m,
-      final_state (Returnstate r Kstop m) (r, m).
+      final_state
+       (Returnstate r Kstop m)
+       (r, m).
 
 (** The corresponding small-step semantics. *)
 
 Definition semantics (p: program) :=
-  Semantics li_c step (initial_state p) final_state (Genv.globalenv p).
+  Semantics li_c li_c
+    step
+    (initial_state p)
+    at_external
+    after_external
+    final_state
+    (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
@@ -832,6 +853,7 @@ End NATURALSEM.
 
 (** Big-step execution of a whole program *)
 
+(*
 Inductive bigstep_program_terminates (p: program):
   query li_c -> trace -> reply li_c -> Prop :=
   | bigstep_program_terminates_intro:
@@ -857,7 +879,7 @@ Inductive bigstep_program_diverges (p: program):
       bigstep_program_diverges p (cq id (funsig f) vargs m0) t.
 
 Definition bigstep_semantics (p: program) :=
-  Bigstep_semantics li_c
+  Bigstep_semantics (li_c ==> li_c)
     (bigstep_program_terminates p)
     (bigstep_program_diverges p).
 
@@ -1172,3 +1194,4 @@ Proof.
 Qed.
 
 End BIGSTEP_TO_TRANSITION.
+*)
