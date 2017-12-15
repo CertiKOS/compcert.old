@@ -457,12 +457,31 @@ Inductive initial_state (p: program): query li_c -> state -> Prop :=
       Val.has_type_list vargs (sig_args (funsig f)) ->
       initial_state p (cq id (funsig f) vargs m) (Callstate f vargs Kstop m).
 
+Inductive at_external: state -> query li_c -> Prop :=
+  | at_external_intro id sg vargs k m:
+      at_external
+        (Callstate (External (EF_external id sg)) vargs k m)
+        (cq id sg vargs m).
+
+Inductive after_external: state -> reply li_c -> state -> Prop :=
+  | after_external_intro id sg vargs k m vres m':
+      after_external
+        (Callstate (External (EF_external id sg)) vargs k m)
+        (vres, m')
+        (Returnstate vres k m').
+
 Inductive final_state: state -> reply li_c -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate r Kstop m) (r, m).
 
 Definition semantics (p: program) :=
-  Semantics li_c step (initial_state p) final_state (Genv.globalenv p).
+  Semantics li_c li_c
+    step
+    (initial_state p)
+    at_external
+    after_external
+    final_state
+    (Genv.globalenv p).
 
 Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
