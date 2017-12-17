@@ -26,6 +26,7 @@ Require Import Memory.
 Require Import Events.
 Require Import RTL.
 Require Import Conventions.
+Require Import LanguageInterface.
 
 (** * The type system *)
 

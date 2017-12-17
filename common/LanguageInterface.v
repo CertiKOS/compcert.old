@@ -204,6 +204,30 @@ Section COMPOSE.
     reflexivity.
   Qed.
 
+  Lemma match_cc_compose w12 w23 q1 q2 q3:
+    match_query cc12 w12 q1 q2 ->
+    match_query cc23 w23 q2 q3 ->
+    exists w,
+      match_query cc_compose w q1 q3 /\
+      forall r1 r3,
+        match_reply cc_compose w r1 r3 ->
+        exists r2,
+          match_reply cc12 w12 r1 r2 /\
+          match_reply cc23 w23 r2 r3.
+  Proof.
+    intros Hq12 Hq23.
+    destruct Hq12 as [w12 q1 q2 Hq12], Hq23 as [w23 q2 q3 Hq23].
+    assert (Hq: cc_compose_mq (w12, w23, q2) q1 q3).
+    {
+      constructor; eauto.
+    }
+    exists (mk_world cc_compose _ _ _ Hq); split.
+    - constructor.
+    - intros.
+      inv H. destruct H5 as (r2 & Hr12 & Hr23).
+      exists r2; split; econstructor; eauto.
+  Qed.
+
   Lemma match_query_cc_compose (P: _ -> _ -> _ -> _ -> Prop):
     (forall w12 q1 q2, match_query cc12 w12 q1 q2 ->
      forall w23 q2' q3, match_query cc23 w23 q2' q3 ->
@@ -254,6 +278,38 @@ Ltac inv_compose_query :=
   apply match_query_cc_compose.
 
 (** * Common calling conventions *)
+
+(** ** Well-typedness property *)
+
+Inductive cc_wt_mr: c_query -> c_query -> reply li_c -> reply li_c -> Prop :=
+  | cc_wt_mr_intro id sg vargs m vres m':
+      Val.has_type vres (proj_sig_res sg) ->
+      cc_wt_mr (cq id sg vargs m) (cq id sg vargs m) (vres, m') (vres, m').
+
+Definition cc_wt: callconv li_c li_c :=
+  {|
+    world_def := unit;
+    match_senv q := eq;
+    match_query_def q := eq;
+    match_reply_def q := cc_wt_mr;
+  |}.
+
+Lemma match_cc_wt id sg vargs m:
+  exists w,
+    match_query cc_wt w (cq id sg vargs m) (cq id sg vargs m) /\
+    forall vres1 m1' vres2 (m2': mem),
+      match_reply cc_wt w (vres1, m1') (vres2, m2') ->
+      vres1 = vres2 /\
+      m1' = m2' /\
+      Val.has_type vres2 (proj_sig_res sg).
+Proof.
+  eexists (mk_world cc_wt tt _ _ eq_refl).
+  split.
+  - constructor.
+  - intros.
+    inv H. inv H5.
+    eauto.
+Qed.
 
 (** ** Extension passes *)
 
