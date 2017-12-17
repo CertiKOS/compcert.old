@@ -569,12 +569,10 @@ Qed.
 Theorem transf_step_correct:
   forall s1 t s2, LTL.step init_ls ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  exists w, (exists t', match_events_query _ w t t') /\
-  forall t', match_events cc_id w t t' ->
-  (exists s2', plus (Linear.step init_ls) tge s1' t' s2' /\ match_states s2 s2')
+  (exists s2', plus (Linear.step init_ls) tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
-  induction 1; intros; try (inv MS); try stable_step.
+  induction 1; intros; try (inv MS).
 
   (* start of block, at an [add_branch] *)
   exploit find_label_lin; eauto. intros [k F].
@@ -735,6 +733,34 @@ Proof.
   constructor. constructor. auto.
 Qed.
 
+Lemma transf_external:
+  forall st1 st2 q1,
+    match_states st1 st2 ->
+    LTL.at_external st1 q1 ->
+    exists wA q2,
+      match_query cc_id wA q1 q2 /\
+      Linear.at_external st2 q2 /\
+      forall r1 r2 st1',
+        match_reply cc_id wA r1 r2 ->
+        LTL.after_external st1 r1 st1' ->
+        exists st2',
+          Linear.after_external st2 r2 st2' /\
+          match_states st1' st2'.
+Proof.
+  intros st1 st2 q Hst Hst1.
+  edestruct (match_cc_id q) as (w & Hq & H); eauto.
+  destruct Hst1.
+  inv Hst.
+  inv H6.
+  eexists w, _; intuition; eauto.
+  - econstructor.
+  - apply H in H0; subst.
+    inv H1.
+    eexists; split.
+    + constructor.
+    + constructor; eauto.
+Qed.
+
 Lemma transf_final_states:
   forall w st1 st2 r1, match_states st1 st2 -> LTL.final_state st1 r1 ->
   exists r2, match_reply cc_id w r1 r2 /\ Linear.final_state st2 r2.
@@ -752,6 +778,7 @@ Proof.
   eapply forward_simulation_star with (match_states := fun _ => match_states).
   apply senv_preserved.
   eexact transf_initial_states.
+  eauto using transf_external.
   eexact transf_final_states.
   setoid_rewrite cc_id_q. simpl in *.
   eauto 10 using transf_step_correct.
