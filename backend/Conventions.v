@@ -129,7 +129,6 @@ Canonical Structure li_locset: language_interface :=
   {|
     query := locset_query;
     reply := Locmap.t * mem;
-    dummy_query := lq EmptyString signature_main (Locmap.init Vundef) Mem.empty;
   |}.
 
 (** We now define the calling convention between C and locset languages. *)
@@ -146,7 +145,6 @@ Definition agree_callee_save (ls1 ls2: Locmap.t) : Prop :=
 Program Definition cc_locset: callconv li_c li_locset :=
   {|
     world_def := unit;
-    dummy_world_def := tt;
     match_senv w := eq;
     match_query_def w :=
       fun '(cq id1 sg1 args m1) '(lq id2 sg2 rs m2) =>
