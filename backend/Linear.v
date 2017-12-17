@@ -261,14 +261,29 @@ Inductive initial_state (p: program): query li_locset -> state -> Prop :=
       (forall l, Val.has_type (rs l) (Loc.type l)) ->
       initial_state p (lq id (funsig f) rs m) (Callstate nil f rs m).
 
+Inductive at_external: state -> query li_c -> Prop :=
+  | at_external_intro id sg s rs m:
+      at_external
+        (Callstate s (External (EF_external id sg)) rs m)
+        (cq id sg (map (fun p => Locmap.getpair p rs) (loc_arguments sg)) m).
+
+Inductive after_external: state -> reply li_c -> state -> Prop :=
+  | after_external_intro id sg s rs m vres m':
+      after_external
+        (Callstate s (External (EF_external id sg)) rs m)
+        (vres, m')
+        (Returnstate s (Locmap.setpair (loc_result sg) vres rs) m').
+
 Inductive final_state: state -> reply li_locset -> Prop :=
   | final_state_intro: forall rs m,
       final_state (Returnstate nil rs m) (rs, m).
 
 Definition semantics (p: program) :=
-  Semantics_gen li_locset
+  Semantics_gen li_c li_locset
     (fun q => step (lq_rs q))
     (initial_state p)
+    (fun _ => at_external)
+    (fun _ => after_external)
     (fun _ => final_state)
     (Genv.globalenv p)
     (Genv.globalenv p).
