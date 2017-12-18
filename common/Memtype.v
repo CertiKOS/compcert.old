@@ -41,6 +41,8 @@ Module Mem.
 
 Definition locset := block -> Z -> Prop.
 
+Close Scope nat_scope.
+
 Class MemoryModelOps
       (** The abstract type of memory states. *)
  (mem: Type)

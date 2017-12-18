@@ -1500,3 +1500,11 @@ Proof.
   destruct l1, l2; simpl in * ; try congruence.
 Qed.
 
+(* A richer version of the classic [Forall_impl] which includes the hypothesis
+  that the element is in the list. *)
+Lemma Forall_impl:
+  forall {A} (P Q: A -> Prop) l (IMPL: forall a, In a l -> P a -> Q a)
+    (FP: Forall P l), Forall Q l.
+Proof.
+  induction l; simpl; intros; inv FP; constructor; auto.
+Qed.
