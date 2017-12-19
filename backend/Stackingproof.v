@@ -50,7 +50,6 @@ Definition arguments_out_of_reach sg j m1 sp :=
 Program Definition cc_stacking: callconv li_locset li_mach :=
   {|
     world_def := meminj;
-    dummy_world_def := Mem.flat_inj (Mem.nextblock Mem.empty);
     match_senv := symbols_inject;
     match_query_def f :=
       fun '(lq id1 sg rs1 m1) '(mq id2 sp ra rs2 m2) =>
@@ -75,12 +74,6 @@ Program Definition cc_stacking: callconv li_locset li_mach :=
           inject_incr f f' /\
           inject_separated f f' m1 m2;
   |}.
-Next Obligation.
-  intuition.
-  - apply (Mem.neutral_inject Mem.empty).
-    apply Mem.empty_inject_neutral.
-  - discriminate.
-Qed.
 
 (** * Basic properties of the translation *)
 
@@ -2046,17 +2039,14 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step (lq_rs (world_q1 w)) ge s1 t s2 ->
   forall (WTS: wt_state (lq_rs (world_q1 w)) s1) s1' (MS: match_states s1 s1'),
-  exists w', (exists t', match_events_query cc_inject w' t t') /\
-  forall t', match_events cc_inject w' t t' ->
-  exists s2', plus step tge s1' t' s2' /\ match_states s2 s2'.
+  exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros;
   try inv MS;
   try rewrite transl_code_eq;
   try (generalize (function_is_within_bounds f _ (is_tail_in TAIL));
        intro BOUND; simpl in BOUND);
-  unfold transl_instr;
-  try stable_step.
+  unfold transl_instr.
 
 - (* Lgetstack *)
   destruct BOUND as [BOUND1 BOUND2].
@@ -2259,9 +2249,7 @@ Proof.
   pose proof SEP as SEP'.
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
-  intros (w' & Hwq & Hw). exists w'; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  clear SEP; destruct Hw as (j' & res' & m1' & EC & RES & U & SEP & INCR & ISEP).
+  clear SEP; intros (j' & res' & m1' & EC & RES & U & SEP & INCR & ISEP).
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
   apply plus_one. econstructor; eauto.
@@ -2366,9 +2354,7 @@ Proof.
   pose proof SEP as SEP'.
   rewrite sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
-  intros (w' & Hwq & Hw). exists w'; split; eauto.
-  intros t' Ht'. specialize (Hw t' Ht').
-  destruct Hw as (j' & res' & m1' & A & B & C & D & E & F).
+  intros (j' & res' & m1' & A & B & C & D & E & F).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -2432,6 +2418,58 @@ Proof.
   red; simpl; tauto.
 Admitted.
 
+Lemma transf_external:
+  forall w st1 st2 q1,
+    wt_state (lq_rs (world_q1 w)) st1 ->
+    match_states w st1 st2 ->
+    Linear.at_external st1 q1 ->
+    exists wA q2,
+      match_query (cc_wt @ cc_inject) wA q1 q2 /\
+      Mach.at_external tprog (world_q2 w) st2 q2 /\
+      forall r1 r2 st1',
+        match_reply (cc_wt @ cc_inject) wA r1 r2 ->
+        Linear.after_external st1 r1 st1' ->
+        exists st2',
+          Mach.after_external tprog st2 r2 st2' /\
+          match_states w st1' st2' /\
+          wt_state (lq_rs (world_q1 w)) st1'.
+Proof.
+  intros w st1 st2 q1 Hst1 Hst Hq1.
+  destruct Hq1; inv Hst.
+  simpl in TRANSL. inversion TRANSL; subst tf. simpl in STACKS.
+  pose proof (ii_incr _ _ _ SINV) as INCR.
+  pose proof SEP as (Hsc & (Hinj & Hge & _) & _).
+  simpl in Hinj.
+  edestruct transl_external_arguments as [vl [ARGS VINJ]]; eauto.
+  edestruct match_cc_wt as (wA12 & Hq12 & H12); eauto.
+  edestruct match_cc_inject as (wA23 & Hq23 & H23); eauto.
+  edestruct (match_cc_compose cc_wt cc_inject) as (wA & Hq & H); eauto.
+  eexists wA, _; repeat apply conj; eauto.
+  - constructor; eauto.
+  - intros [vres1 m1'] [vres3 m3'] st1' Hr13 Hst1'.
+    edestruct H as ([vres2 m2'] & Hr12 & Hr23); eauto.
+    edestruct H12 as (Hvres12 & Hm12 & Hwt); eauto; subst.
+    edestruct H23 as (j' & Hvres & Hm' & U1 & U2 & INCR' & ISEP & PERM); eauto.
+    inv Hst1'.
+    eexists. intuition.
+    + econstructor; eauto.
+    + eapply match_states_return with (j := j'); eauto.
+      eapply source_injection_invariant_step; eauto.
+      eapply match_stacks_change_meminj; eauto.
+      apply agree_regs_set_pair. apply agree_regs_inject_incr with j; auto. auto.
+      apply agree_callee_save_set_result; auto.
+      apply stack_contents_change_meminj with j; auto.
+      rewrite sep_comm, sep_assoc.
+      eapply minjection_incr; eauto.
+      rewrite sep_comm, sep_assoc.
+      eapply globalenv_inject_incr; eauto.
+      rewrite sep_comm, sep_assoc.
+      assumption.
+    + inv Hst1.
+      constructor; eauto.
+      eapply wt_setpair; eauto.
+Qed.
+
 Lemma transf_final_states:
   forall w st1 st2 r1, match_states w st1 st2 -> Linear.final_state st1 r1 ->
   exists r2, match_reply cc_stacking w r1 r2 /\ Mach.final_state st2 r2.
@@ -2466,7 +2504,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation cc_inject cc_stacking
+  forward_simulation (cc_wt @ cc_inject) cc_stacking
     (Linear.semantics prog)
     (Mach.semantics return_address_offset tprog).
 Proof.
@@ -2477,14 +2515,18 @@ Proof.
   exists st2; split; auto. split; auto.
   apply wt_initial_state with (prog := prog); auto. exact wt_prog.
   destruct H; eauto.
+- intros w s1 s2 q1 [Hwt Hs] Hq1.
+  edestruct transf_external as (wA & q2 & Hq & Hq2 & H); eauto.
+  exists wA, q2; intuition.
+  edestruct H as (s2' & Hs2' & Hs'); eauto.
+  exists s2'; intuition.
+  split; eauto.
 - destruct w.
   intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0.
   simpl in H.
   exploit transf_step_correct; eauto.
-  intros (w & Hwq & Hw). exists w; split; eauto.
-  intros t' Ht'; specialize (Hw t' Ht').
-  destruct Hw as [s2' [A B]].
+  intros [s2' [A B]].
   exists s2'; split. exact A. split.
   eapply step_type_preservation; eauto. eexact wt_prog.
   auto.
