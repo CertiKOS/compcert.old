@@ -431,8 +431,6 @@ Definition li_mach: language_interface :=
   {|
     query := mach_query;
     reply := regset * mem;
-    dummy_query :=
-      mq String.EmptyString Vundef Vundef (Regmap.init Vundef) Mem.empty;
   |}.
 
 Inductive initial_state (p: program): query li_mach -> state -> Prop :=
@@ -442,14 +440,35 @@ Inductive initial_state (p: program): query li_mach -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some fb ->
       initial_state p (mq id sp ra rs m) (Callstate nil fb rs m).
 
+Inductive at_external (p: program) q: state -> query li_c -> Prop :=
+  | at_external_intro id sg fb s rs m args:
+      let ge := Genv.globalenv p in
+      Genv.find_funct_ptr ge fb = Some (External (EF_external id sg)) ->
+      extcall_arguments rs m (parent_sp (mq_sp q) s) sg args ->
+      at_external p q
+        (Callstate s fb rs m)
+        (cq id sg args m).
+
+Inductive after_external (p: program): state -> reply li_c -> state -> Prop :=
+  | after_external_intro id sg fb s rs m vres m':
+      let ge := Genv.globalenv p in
+      Genv.find_funct_ptr ge fb = Some (External (EF_external id sg)) ->
+      let rs' := set_pair (loc_result sg) vres rs in (* XXX erase caller-save *)
+      after_external p
+        (Callstate s fb rs m)
+        (vres, m')
+        (Returnstate s rs' m').
+
 Inductive final_state: state -> reply li_mach -> Prop :=
   | final_state_intro: forall rs m ,
       final_state (Returnstate nil rs m) (rs, m).
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
-  Semantics_gen li_mach
+  Semantics_gen li_c li_mach
     (fun q => step (mq_sp q) (mq_ra q) rao)
     (initial_state p)
+    (at_external p)
+    (fun _ => after_external p)
     (fun _ => final_state)
     (Genv.globalenv p)
     (Genv.globalenv p).
