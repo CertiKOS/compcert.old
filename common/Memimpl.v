@@ -45,6 +45,8 @@ Require Export StackADT.
 Local Unset Elimination Schemes.
 Local Unset Case Analysis Schemes.
 
+Close Scope nat_scope.
+
 Lemma zle_zlt:
   forall lo hi o,
     zle lo o && zlt o hi = true <-> lo <= o < hi.
@@ -129,29 +131,30 @@ Record mem' : Type := mkmem {
   contents_default:
     forall b, fst mem_contents#b = Undef;
   stack_adt:
-    list frame_adt;
+    StackADT.stack_adt;
   stack_valid:
-    forall b, in_frames stack_adt b -> Plt b nextblock;
+    forall b, in_stack stack_adt b -> Plt b nextblock;
   stack_norepet:
     nodup stack_adt;
   stack_perms:
-    Forall (frame_agree_perms (fun b o k p => perm_order' ((mem_access#b) o k) p)) stack_adt;
+    stack_agree_perms (fun b o k p => perm_order' ((mem_access#b) o k) p) stack_adt;
   stack_below_limit:
     size_stack stack_adt < stack_limit;
   mem_bounds: PMap.t (Z*Z);
   mem_bounds_perm: forall b o k p,
       perm_order' ((mem_access#b) o k) p ->
-      in_bounds o (mem_bounds#b)
+      in_bounds o (mem_bounds#b);
+  mem_stack_wf: wf_stack (fun b o k p => perm_order' ((mem_access#b) o k) p) inject_id stack_adt;
   }.
 
 Definition mem := mem'.
 
 Lemma mkmem_ext:
   forall cont1 cont2 acc1 acc2 next1 next2
-    a1 a2 b1 b2 c1 c2 adt1 adt2 sv1 sv2 sssl1 sssl2 stk1 stk2 stkperm1 stkperm2 bnd1 bnd2 bndpf1 bndpf2,
+    a1 a2 b1 b2 c1 c2 adt1 adt2 sv1 sv2 sssl1 sssl2 stk1 stk2 stkperm1 stkperm2 bnd1 bnd2 bndpf1 bndpf2 wf1 wf2,
   cont1=cont2 -> acc1=acc2 -> next1=next2 -> adt1 = adt2 -> bnd1 = bnd2 ->
-  mkmem cont1 acc1 next1 a1 b1 c1 adt1 sv1 sssl1 stk1 stkperm1 bnd1 bndpf1 =
-  mkmem cont2 acc2 next2 a2 b2 c2 adt2 sv2 sssl2 stk2 stkperm2 bnd2 bndpf2.
+  mkmem cont1 acc1 next1 a1 b1 c1 adt1 sv1 sssl1 stk1 stkperm1 bnd1 bndpf1 wf1 =
+  mkmem cont2 acc2 next2 a2 b2 c2 adt2 sv2 sssl2 stk2 stkperm2 bnd2 bndpf2 wf2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -431,11 +434,9 @@ Qed.
 (** The initial store *)
 
 Lemma stack_perm m:
-  Forall (frame_agree_perms (perm m)) (stack_adt m).
+  stack_agree_perms (perm m) (stack_adt m).
 Proof.
-  eapply Forall_impl.
-  2: apply stack_perms.
-  unfold frame_agree_perms. unfold perm. tauto.
+  eapply stack_perms.
 Qed.
 
 Hint Resolve stack_norepet stack_perm.
@@ -443,7 +444,7 @@ Hint Resolve stack_norepet stack_perm.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        1%positive _ _ _ nil _ _ _ _ (PMap.init (0,0)) _.
+        1%positive _ _ _ nil _ _ _ _ (PMap.init (0,0)) _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
 Qed.
@@ -460,10 +461,16 @@ Next Obligation.
   constructor.
 Qed.
 Next Obligation.
+  red; intros. easy.
+Qed.
+Next Obligation.
   unfold stack_limit. omega.
 Qed. 
 Next Obligation.
   rewrite PMap.gi in H. inv H.
+Qed.
+Next Obligation.
+  constructor.
 Qed.
 
 (** Allocation of a fresh block with the given bounds.  Return an updated
@@ -480,7 +487,7 @@ Program Definition alloc (m: mem) (lo hi: Z) : (mem * block) :=
                    m.(mem_access))
          (Psucc m.(nextblock))
          _ _ _ 
-         (stack_adt m) _ _ _ _ (PMap.set m.(nextblock) (lo,hi) m.(mem_bounds)) _,
+         (stack_adt m) _ _ _ _ (PMap.set m.(nextblock) (lo,hi) m.(mem_bounds)) _ _,
    m.(nextblock)).
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b (nextblock m)).
@@ -500,16 +507,16 @@ Next Obligation.
   apply stack_valid in H. xomega.
 Qed.
 Next Obligation.
-  generalize (stack_perm m). rewrite ! Forall_forall.
-  intros F x IN.
-  red; intros.
-  eapply F; eauto.
-  rewrite PMap.gso in H0; eauto.
-  intro; subst. 
-  exploit in_frames_in_frame; eauto.
-  eapply in_frame_blocks_in_frame; eauto.
-  intro INS. apply stack_valid in INS.
-  xomega.
+  generalize (stack_perm m). unfold stack_agree_perms.
+  intros F x IN f AIN b fi o k p INB PERM.
+  rewrite PMap.gso in PERM; eauto.
+  - eapply F; eauto.
+  - intro; subst. 
+    exploit in_frames_in_stack; eauto.
+    eapply in_frame_ain_in_frames; eauto.
+    eapply in_frame_blocks_in_frame; eauto.
+    intro INS. apply stack_valid in INS.
+    xomega.
 Qed.
 Next Obligation.
   apply stack_below_limit.
@@ -519,6 +526,15 @@ Next Obligation.
   destr. destr_in H. apply zle_zlt in Heqb0. red. simpl. auto.
   inv H.
   eapply mem_bounds_perm; eauto.
+Qed.
+Next Obligation.
+  eapply Forall_impl. 2: apply mem_stack_wf.
+  red; intros. intro P. rewrite PMap.gso in P; eauto. eapply H0; eauto.
+  intro; subst.
+  rewrite PMap.gss in P.
+  destr_in P.
+  exploit stack_valid.
+  eapply in_frames_in_stack; eauto. xomega.
 Qed.
 
 (** Freeing a block between the given bounds.
@@ -531,7 +547,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
-        m.(nextblock) _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _.
+        m.(nextblock) _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _ _.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
   destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
@@ -549,13 +565,14 @@ Next Obligation.
   apply stack_valid; auto.
 Qed.
 Next Obligation.
-  generalize (stack_perm m). rewrite ! Forall_forall.
-  intros F x IN.
-  red; intros.
+  generalize (stack_perm m). unfold stack_agree_perms.
+  intros F x IN f AIN bb fi o k p INB PERM.
+  assert (perm_order' ((mem_access m)#bb o k) p).
+  {
+    rewrite PMap.gsspec in PERM; eauto.
+    repeat destr_in PERM.
+  }
   eapply F; eauto.
-  rewrite PMap.gsspec in H0; eauto.
-  destr_in H0; eauto. subst.
-  destr_in H0; eauto. inv H0.
 Qed.
 Next Obligation.
   apply stack_below_limit.
@@ -564,6 +581,12 @@ Next Obligation.
   rewrite PMap.gsspec in *. repeat destr_in H. subst.
   eapply mem_bounds_perm; eauto.
   eapply mem_bounds_perm; eauto.
+Qed.
+Next Obligation.
+  eapply Forall_impl. 2: apply mem_stack_wf.
+  red; intros. intro P.
+  eapply H0; eauto.
+  rewrite PMap.gsspec in P; destr_in P. destr_in P; subst; eauto. inv P. auto.
 Qed.
 
 Definition free (m: mem) (b: block) (lo hi: Z): option mem :=
@@ -706,7 +729,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
                           m.(mem_contents))
                 m.(mem_access)
                 m.(nextblock)
-                _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _)
+                _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _ _)
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -728,7 +751,9 @@ Qed.
 Next Obligation.
   eapply mem_bounds_perm; eauto.
 Qed.
-
+Next Obligation.
+  eapply mem_stack_wf; eauto.
+Qed.
 
 (** [storev chunk m addr v] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
@@ -750,7 +775,7 @@ Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) 
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
              m.(mem_access)
              m.(nextblock)
-                 _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _)
+                 _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _ _)
     else None
   else
     None.
@@ -773,6 +798,9 @@ Qed.
 Next Obligation.
   eapply mem_bounds_perm; eauto.
 Qed.
+Next Obligation.
+  eapply mem_stack_wf; eauto.
+Qed.
 
 (** [drop_perm m b lo hi p] sets the max permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have current permissions
@@ -785,7 +813,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
-                m.(nextblock) _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _)
+                m.(nextblock) _ _ _ (stack_adt m) _ _ _ _ m.(mem_bounds) _ _)
   else None.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
@@ -807,14 +835,18 @@ Next Obligation.
   apply stack_valid; auto.
 Qed.
 Next Obligation.
-  generalize (stack_perm m). rewrite ! Forall_forall.
-  intros F x IN.
-  red; intros.
-  rewrite PMap.gsspec in H1. destr_in H1; eauto.
-  - subst. destr_in H1. eapply F; eauto. 
-    apply H. apply zle_zlt; auto.
-    eapply F; eauto.
-  - eapply F; eauto.
+  generalize (stack_perm m). unfold stack_agree_perms.
+  intros F x IN f AIN bb fi o k pp INB PERM.
+  assert (perm_order' ((mem_access m)#bb o k) pp).
+  {
+    rewrite PMap.gsspec in PERM; eauto.
+    destr_in PERM.
+    destr_in PERM.
+    subst.
+    eapply perm_cur, perm_implies.
+    eapply H. apply zle_zlt; eauto. constructor.
+  }
+  eapply F; eauto.
 Qed.
 Next Obligation.
   apply stack_below_limit.
@@ -825,6 +857,13 @@ Next Obligation.
   apply zle_zlt; auto.
   subst. eapply mem_bounds_perm; eauto.
   eapply mem_bounds_perm; eauto.
+Qed.
+Next Obligation.
+  eapply Forall_impl. 2: apply mem_stack_wf.
+  red; intros. intro P.
+  eapply H1; eauto.
+  rewrite PMap.gsspec in P; destr_in P. destr_in P; subst; eauto.
+  eapply perm_cur, perm_implies. apply H. apply zle_zlt; auto. constructor. auto.
 Qed.
 
 Record mem_inj {injperm: InjectPerm} (f: meminj) (g: frameinj) (m1 m2: mem) : Prop :=
@@ -1049,80 +1088,112 @@ Proof.
 Qed.
 
 
-Lemma nodup_add:
-  forall s f,
-    nodup s ->
-    Forall (fun x => ~ in_frames s x) (map fst (frame_adt_blocks f)) ->
-    nodup (f::s).
-Proof.
-  intros.
-  constructor; auto. intros. rewrite Forall_forall in H0.
-  intro INS. eapply H0; eauto.
-Qed.
-
 Lemma valid_frames_add:
   forall s f thr,
-    (forall b, in_frames s b -> Plt b thr) ->
-    (forall b, in_frame f b -> Plt b thr) ->
-    forall b : block, in_frames (f :: s) b -> Plt b thr.
+    (forall b, in_stack s b -> Plt b thr) ->
+    (forall b, in_frames f b -> Plt b thr) ->
+    forall b : block, in_stack (f :: s) b -> Plt b thr.
 Proof.
-  simpl; intros; intuition.
+  intros s f thr SPECstack SPECframes b IS.
+  rewrite in_stack_cons in IS.
+  intuition.
 Qed.
 
-Lemma frame_agree_perms_add:
-  forall f s m,
-    Forall
-      (frame_agree_perms
-         (fun (b : block) (o : Z) (k : perm_kind) (p : permission) => perm_order' ((mem_access m) # b o k) p))
-      s ->
-    Forall (fun b => forall o k p, Mem.perm m (fst b) o k p ->
-                           0 <= o < frame_size (snd b))%Z (frame_adt_blocks f) ->
-    Forall
-      (frame_agree_perms
-         (fun (b : block) (o : Z) (k : perm_kind) (p : permission) => perm_order' ((mem_access m) # b o k) p))
-      (f :: s).
+Lemma valid_frame_add:
+  forall s f thr,
+    (forall b, in_stack s b -> Plt b thr) ->
+    (forall b, in_frame f b -> Plt b thr) ->
+    forall b : block, in_stack ((f,nil) :: s) b -> Plt b thr.
 Proof.
-  intros.
-  constructor; auto.
-  red; intros.
-  rewrite Forall_forall in H0. eapply H0 in H1; eauto.
+  intros s f thr SPECstack SPECframes b IS.
+  rewrite in_stack_cons in IS.
+  intuition.
+  eapply SPECframes. red in H.
+  setoid_rewrite app_nil_r in H. auto. 
+Qed.
+
+
+Lemma frame_agree_perms_add:
+  forall (f: frame_adt) (s: StackADT.stack_adt) m,
+    stack_agree_perms
+      (fun (b : block) (o : Z) (k : perm_kind) (p : permission) => perm_order' ((mem_access m) # b o k) p)
+      s ->
+    (Forall (fun b =>
+                forall o k p,
+                  Mem.perm m (fst b) o k p ->
+                  0 <= o < frame_size (snd b))%Z (frame_adt_blocks f))  ->
+    stack_agree_perms
+      (fun (b : block) (o : Z) (k : perm_kind) (p : permission) => perm_order' ((mem_access m) # b o k) p)
+      ((f,nil) :: s).
+Proof.
+  red.
+  intros f s m SAP NEW tf IN f0 AIN b fi o k p INB PERM.
+  destruct IN as [IN|IN]; eauto.
+  - rewrite Forall_forall in NEW. subst. destruct AIN. subst. simpl in *.
+    eapply NEW in INB; eauto.
+    simpl in H; easy.
+  - eapply SAP; eauto.
 Qed.
 
 Lemma size_stack_add:
   forall f s
-    (SZ: (size_stack s + align (Z.max 0 (frame_adt_size f)) 8 < stack_limit)%Z),
+    (SZ: (size_stack s + size_frames f < stack_limit)%Z),
     size_stack (f :: s) < stack_limit.
 Proof.
   simpl. intros. auto. 
 Qed.
 
+Lemma nodup_add:
+  forall f s,
+    nodup s ->
+    Forall (fun x => ~ in_stack s x) (map fst (frame_adt_blocks f)) ->
+    nodup ((f,nil)::s).
+Proof.
+  intros f s ND F.
+  constructor; auto.
+  unfold in_frames.
+  setoid_rewrite app_nil_r. simpl.
+  rewrite Forall_forall in F.
+  intros; eapply F; eauto.
+Qed.
+
+Definition mem_stack_wf_plus f m:
+  wf_stack (perm m) inject_id ((f,nil)::(stack_adt m)) .
+Proof.
+  constructor. 2: apply mem_stack_wf.
+  red; intros.
+  unfold in_frames, in_frame, get_frames_blocks in *. simpl in *.
+  rewrite app_nil_r in H0. congruence.
+Qed.
+
 Inductive record_stack_blocks (m: mem) (f: frame_adt) : mem -> Prop :=
 | rsb_intro:
     forall (VF:valid_frame f m)
-      (NOTIN: Forall (fun x => ~ in_frames (stack_adt m) x) (map fst (frame_adt_blocks f)))
+      (NOTIN: Forall (fun x => ~ in_stack (stack_adt m) x) (map fst (frame_adt_blocks f)))
       (RNG: Forall (fun b => forall o k p, Mem.perm m (fst b) o k p ->
                                    0 <= o < frame_size (snd b))%Z (frame_adt_blocks f))
-      (SZ: (size_stack (stack_adt m) + align (Z.max 0 (frame_adt_size f)) 8 < stack_limit)%Z),
+      (SZ: (size_stack (stack_adt m) + size_frames (f,nil) < stack_limit)%Z),
       record_stack_blocks m f (mkmem (mem_contents m)
                          (mem_access m)
                          (nextblock m)
                          (access_max m)
                          (nextblock_noaccess m)
                          (contents_default m)
-                         (f :: stack_adt m)
-                         (valid_frames_add _ _ _ (stack_valid m) VF)
+                         ((f,nil) :: stack_adt m)
+                         (valid_frame_add _ _ _ (stack_valid m) VF)
                          (nodup_add _ _ (stack_norepet m) NOTIN)
                          (frame_agree_perms_add _ _ _ (stack_perm m) RNG)
                          (size_stack_add _ _ SZ)
                          (mem_bounds m)
-                         (mem_bounds_perm m)).
+                         (mem_bounds_perm m)
+                         (mem_stack_wf_plus f m)).
 
 Program Definition record_stack_blocks_none (m: mem) bl sz
         (RNG: Forall (fun b => forall o k p, Mem.perm m (fst b) o k p ->
                                      0 <= o < frame_size (snd b))%Z bl)
   : option mem :=
   if (Forall_dec _ (fun b => valid_block_dec m (fst b)) bl)
-  then if (Forall_dec _ (fun x => sumbool_not (in_frames_dec (stack_adt m) (fst x))) bl)
+  then if (Forall_dec _ (fun x => sumbool_not (in_stack_dec (stack_adt m) (fst x))) bl)
        then if (zlt (size_stack (stack_adt m) + align (Z.max 0 sz) 8) stack_limit)
             then if (list_norepet_dec peq (map fst bl))
                  then Some
@@ -1132,20 +1203,25 @@ Program Definition record_stack_blocks_none (m: mem) bl sz
                                (access_max m)
                                (nextblock_noaccess m)
                                (contents_default m)
-                               ({| frame_adt_blocks := bl;
-                                   frame_adt_size := sz |} :: stack_adt m)
+                               (({| frame_adt_blocks := bl;
+                                    frame_adt_size := Z.max 0 sz |},nil) :: stack_adt m)
                                (valid_frames_add _ _ _ (stack_valid m) _)
                                (nodup_add _ _ (stack_norepet m) _)
                                (frame_agree_perms_add _ _ _ (stack_perm m) _)
                                (size_stack_add _ _ _)
                                (mem_bounds m)
-                               _)
+                               _
+                               (mem_stack_wf_plus _ m))
                  else None
             else None
        else None
   else None.
 Next Obligation.
-  red in H3. simpl in H3.
+  apply Z.le_max_l.
+Qed.
+Next Obligation.
+  red in H3. unfold get_frames_blocks in H3. simpl in H3.
+  rewrite app_nil_r in H3. unfold get_frame_blocks in H3. simpl in H3.
   rewrite Forall_forall in H. rewrite in_map_iff in H3.
   destruct H3 as ((bb,fi) & EQ & IN).
   apply H in IN. subst; simpl in *; auto.
@@ -1155,6 +1231,9 @@ Next Obligation.
   intros. rewrite in_map_iff in H3.
   destruct H3 as ((bb,fi) & EQ & IN).
   apply H0 in IN. subst; simpl in *; auto.
+Qed.
+Next Obligation.
+  unfold size_frames. simpl. omega.
 Qed.
 Next Obligation.
   eapply mem_bounds_perm; eauto.
@@ -1178,11 +1257,10 @@ Proof.
   intros; subst; congruence.
 Qed.
 
-
 Lemma record_stack_blocks_none_correct:
   forall m bl sz m',
   (exists pf, record_stack_blocks_none m bl sz pf = Some m') <->
-  (exists fa, record_stack_blocks m fa m' /\ frame_adt_blocks fa = bl /\ frame_adt_size fa = sz).
+  (exists fa, record_stack_blocks m fa m' /\ frame_adt_blocks fa = bl /\ frame_adt_size fa = Z.max 0 sz).
 Proof.
   unfold record_stack_blocks_none.
   split; intros.
@@ -1191,26 +1269,32 @@ Proof.
     split; reflexivity. 
   - destruct H as (fa & RSB & BLOCKS & SIZE). subst. inv RSB.
     exists RNG.
-    repeat destr. f_equal. apply mkmem_ext; auto.
-    f_equal. destruct fa. simpl. f_equal. apply proof_irr.
-    exfalso; apply n; destruct fa; auto.
-    exfalso; apply n.
-    rewrite Forall_forall in NOTIN |- *. intros; eapply NOTIN.
-    apply in_map. auto.
-    exfalso; apply n.
-    red in VF.
-    rewrite Forall_forall; intros. destruct x. apply VF. simpl.
-    eapply in_frame_blocks_in_frame; eauto.
+    repeat destr.
+    + simpl in *. f_equal. apply mkmem_ext; auto.
+      f_equal. destruct fa. simpl in *. f_equal. subst.  f_equal.
+      apply proof_irr.
+      apply proof_irr.
+    + exfalso; apply n; destruct fa; auto.
+    + exfalso.
+      unfold size_frames in SZ. simpl in SZ. rewrite SIZE in SZ.
+      omega.
+    + exfalso; apply n.
+      rewrite Forall_forall in NOTIN |- *. intros; eapply NOTIN.
+      apply in_map. auto.
+    + exfalso; apply n.
+      red in VF.
+      rewrite Forall_forall; intros. destruct x. apply VF. simpl.
+      eapply in_frame_blocks_in_frame; eauto.
     Unshelve.
-    + red; simpl; intros. rewrite Forall_forall in f.
+    * red; simpl; intros. rewrite Forall_forall in f.
       edestruct in_frame_info as (fi & IN); eauto. simpl in IN.
       apply f in IN. auto.
-    + simpl. 
+    * simpl. 
       rewrite Forall_forall in f0 |- *. intros.
       rewrite in_map_iff in H. destruct H as ((bb&ff) & EQ & IN). simpl in *; subst.
       intros; eapply f0 in IN. auto.
-    + simpl. auto.
-    + simpl. auto.
+    * simpl. auto.
+    * unfold size_frames; simpl. omega.
 Qed.
 
 Fixpoint do_stores (m: mem) (l: list (memory_chunk * val * val)) : option mem :=
@@ -1276,20 +1360,24 @@ Program Definition push_frame (m0: mem) (fi: frame_info) (l: list (memory_chunk 
                     (access_max m)
                     (nextblock_noaccess m)
                     (contents_default m)
-                    ({| frame_adt_blocks := (b,fi)::nil;
-                        frame_adt_size := frame_size fi |} :: stack_adt m)
+                    (({| frame_adt_blocks := (b,fi)::nil;
+                        frame_adt_size := Z.max 0 (frame_size fi) |},nil) :: stack_adt m)
                     (valid_frames_add _ _ _ (stack_valid m) _)
                     (nodup_add _ _ (stack_norepet m) _)
                     (frame_agree_perms_add _ _ _ (stack_perm m) _)
                     (size_stack_add _ _ _)
                     (mem_bounds m)
-                    (mem_bounds_perm m),b)
+                    (mem_bounds_perm m)
+                    (mem_stack_wf_plus _ m),b)
       | None => None
       end
     end
   else None.
 Next Obligation.
   repeat constructor. easy.
+Qed.
+Next Obligation.
+  apply Z.le_max_l.
 Qed.
 Next Obligation.
   simpl in *. red in H0. simpl in H0. destruct H0; try easy. subst.
@@ -1309,10 +1397,11 @@ Next Obligation.
   apply zle_zlt. auto.
 Qed.
 Next Obligation.
+  unfold size_frames; simpl.
   symmetry in Heq_anonymous.
-  eapply do_stores_stack_adt in Heq_anonymous. simpl in *. congruence.
+  eapply do_stores_stack_adt in Heq_anonymous. simpl in *.
+  injection Heq_anonymous0. intros -> ->. simpl in *. rewrite Heq_anonymous. omega.
 Qed.
-
 
 Inductive push_frame_spec: mem -> frame_info -> list (memory_chunk * ptrofs * val) -> mem -> block -> Prop :=
   pfs_intro:
@@ -1321,8 +1410,9 @@ Inductive push_frame_spec: mem -> frame_info -> list (memory_chunk * ptrofs * va
       do_stores malloc (store_spec_of_ofs_spec b l) = Some mstores ->
       size_stack (stack_adt m) + align (Z.max 0 (frame_size fi)) 8 < stack_limit ->
       record_stack_blocks mstores {| frame_adt_blocks := (b,fi)::nil;
-                                     frame_adt_size := frame_size fi;
-                                     frame_adt_blocks_norepet := norepet_1 _ |} mpf ->
+                                     frame_adt_size := Z.max 0 (frame_size fi);
+                                     frame_adt_blocks_norepet := norepet_1 _ ;
+                                     frame_adt_size_pos := Z.le_max_l _ _ |} mpf ->
       push_frame_spec m fi l mpf b.
 
 Lemma destr_dep_let:
@@ -1405,10 +1495,11 @@ Proof.
   eapply record_stack_blocks_ext.
   econstructor.
   apply mkmem_ext; auto.
-  f_equal. f_equal; apply proof_irr.
+  f_equal. f_equal. f_equal; apply proof_irr.
     Unshelve.
   + simpl. erewrite do_stores_stack_adt. 2: eauto.
     erewrite alloc_stack_adt; eauto.
+    unfold size_frames; simpl. omega.
   + simpl.
     constructor; auto. simpl.
     intros. eapply do_stores_perm_inv in H; eauto.
@@ -1438,7 +1529,7 @@ Proof.
   erewrite constr_match; eauto. Unshelve. 3: eauto.
   inv H3. f_equal. f_equal.
   apply mkmem_ext; auto.
-  f_equal; f_equal; auto.
+  f_equal; f_equal; f_equal; auto;
   apply proof_irr.
 Qed.
 
@@ -1446,7 +1537,7 @@ Lemma push_frame_alloc_record:
   forall m1 b fi l m4 fa,
     push_frame m1 fi l = Some (m4,b) ->
     frame_adt_blocks fa = (b,fi)::nil ->
-    frame_adt_size fa = frame_size fi ->
+    frame_adt_size fa = Z.max 0 (frame_size fi) ->
     exists m2,
       alloc m1 0 (frame_size fi) = (m2, b) /\
       exists m3,
@@ -1458,13 +1549,14 @@ Proof.
   eexists; split; eauto.
   eexists; split; eauto.
   destruct fa. simpl in *. subst.
-  rewrite <- (proof_irr (norepet_1 b) frame_adt_blocks_norepet). auto.
+  rewrite <- (proof_irr (norepet_1 b) frame_adt_blocks_norepet).
+  rewrite <- (proof_irr (Z.le_max_l _ _) frame_adt_size_pos); auto.
 Qed.
 
 Lemma alloc_record_push_frame:
   forall m1 m2 b fi l m3 m4 fa,
     frame_adt_blocks fa = (b,fi)::nil ->
-    frame_adt_size fa = frame_size fi ->
+    frame_adt_size fa = Z.max 0 (frame_size fi) ->
     alloc m1 0 (frame_size fi) = (m2, b) ->
     do_stores m2 (store_spec_of_ofs_spec b l) = Some m3 ->
     record_stack_blocks m3 fa  m4 ->
@@ -1472,12 +1564,13 @@ Lemma alloc_record_push_frame:
 Proof.
   intros.
   eapply push_frame_spec_complete. econstructor; eauto.
-  - replace (stack_adt m1) with (stack_adt m3). inv H3. rewrite H0 in SZ. auto.
+  - replace (stack_adt m1) with (stack_adt m3). inv H3.
+    unfold size_frames in SZ. simpl in SZ. rewrite H0 in SZ. omega.
     unfold alloc in H1. inv H1.
     eapply do_stores_stack_adt in H2. simpl in H2.  auto.
   - eapply record_stack_blocks_ext'. eauto.
     destruct fa; simpl in *; subst.
-    f_equal; auto. apply proof_irr.
+    f_equal; auto; apply proof_irr.
 Qed.
 
 Lemma record_stack_block_det:
@@ -1491,11 +1584,12 @@ Proof.
 Qed.
 
 Lemma in_frames_tl:
-  forall (l: list frame_adt)  b,
-    in_frames ((tl l)) b ->
-    in_frames (l) b.
+  forall (l: StackADT.stack_adt)  b,
+    in_stack ((tl l)) b ->
+    in_stack (l) b.
 Proof.
   destruct l; simpl; auto.
+  intros; rewrite in_stack_cons; auto.
 Qed.
 
 Lemma size_stack_tl:
@@ -1503,7 +1597,7 @@ Lemma size_stack_tl:
     size_stack (tl l) <= size_stack l.
 Proof.
   induction l; simpl; intros. omega.
-  generalize (align_le (Z.max 0 (frame_adt_size a)) 8) (Z.le_max_l 0 (frame_adt_size a)); omega.
+  generalize (size_frames_pos a); omega.
 Qed.
 
 Lemma Forall_tl:
@@ -1511,7 +1605,17 @@ Lemma Forall_tl:
     Forall P l ->
     Forall P (tl l).
 Proof.
-  induction 1; simpl; auto.
+  inversion 1; simpl; auto.
+Qed.
+
+Lemma stack_agree_perms_tl:
+  forall P (l: StackADT.stack_adt),
+    stack_agree_perms P l ->
+    stack_agree_perms P (tl l).
+Proof.
+  red; intros.
+  eapply H; eauto.
+  eapply In_tl; eauto.
 Qed.
 
 Definition unrecord_stack_block (m: mem) : option mem :=
@@ -1526,10 +1630,11 @@ Definition unrecord_stack_block (m: mem) : option mem :=
                    (tl (stack_adt m))
                    (fun b pf => stack_valid m b (in_frames_tl _ _ pf))
                    (nodup_tl _ (stack_norepet m))
-                   (Forall_tl _ _ (stack_perms m)) 
+                   (stack_agree_perms_tl _ _ (stack_perms m)) 
                    (Z.le_lt_trans _ _ _ (size_stack_tl _) (stack_below_limit m))
                    (mem_bounds m)
                    (mem_bounds_perm m)
+                   (Forall_tl _ _ (mem_stack_wf m))
                  ))
           end.
 
@@ -3053,19 +3158,19 @@ Lemma alloc_get_frame_info_new:
 Proof.
   unfold get_frame_info.
   erewrite alloc_stack_adt; eauto.
-  destruct (in_frames_dec ((stack_adt m1)) b).
+  destruct (in_stack_dec ((stack_adt m1)) b).
   apply stack_valid in i.
   apply fresh_block_alloc in i. easy.
-  apply not_in_frames_get_assoc; auto.
+  apply not_in_stack_get_assoc; auto.
 Qed.
 
 Lemma stack_top_in_frames:
   forall m b,
-    is_stack_top (stack_adt m) b -> in_frames (stack_adt m) b.
+    is_stack_top (stack_adt m) b -> in_stack (stack_adt m) b.
 Proof.
   intros.
   destruct (stack_adt m).
-  easy. red in H. simpl in H.
+  easy. red in H. rewrite in_stack_cons. simpl in H.
   left. eauto.
 Qed.
 
@@ -4258,9 +4363,8 @@ Lemma alloc_left_mapped_inj:
     (forall ofs k p, lo <= ofs < hi -> inject_perm_condition p -> perm m2 b2 (ofs + delta) k p) ->
     f b1 = Some(b2, delta) ->
     (~ Plt b1 (nextblock m1) ->
-     forall f2 fi,
-       In f2 (stack_adt m2) ->
-       In (b2,fi) (frame_adt_blocks f2) ->
+     forall fi,
+       in_stack' (stack_adt m2) (b2,fi) ->
        forall o k pp,
          perm m1' b1 o k pp ->
          inject_perm_condition pp ->
@@ -4295,12 +4399,12 @@ Proof.
       exploit perm_alloc_inv. eauto. eauto. destr.
       subst.
       apply alloc_result in H0. subst. xomega.
-    + rewrite Forall_forall; intros. eapply stack_valid. eapply in_frames_in_frame; eauto.
+    + rewrite Forall_forall; intros. eapply stack_valid. eapply in_frames_in_stack; eauto.
     + intros.
       exploit perm_alloc_inv; eauto.
       destr.
       * subst. intros. rewrite H4 in H5; inv H5. eapply PLT; eauto.
-      * inv mi_stack_blocks0. intros; eapply stack_inject_not_in_frames; eauto.
+      * inv mi_stack_blocks0. intros; eapply stack_inject_not_in_source; eauto.
         intro INF; apply stack_valid in INF; congruence.
 Qed.
 
@@ -4486,7 +4590,9 @@ Proof.
   intros. unfold inject_id in H; inv H. apply Z.divide_0_r.
   intros. unfold inject_id in H; inv H. replace (ofs + 0) with ofs by omega.
   apply memval_lessdef_refl.
-  apply stack_inject_id. auto. auto.
+  apply stack_inject_id.
+  apply mem_stack_wf.
+  auto. auto.
 Qed.
 
 Theorem load_extends:
@@ -4677,7 +4783,7 @@ Proof.
       eapply perm_implies with Freeable; auto with mem.
       eapply perm_alloc_2; eauto.
       omega.
-    + intros NPLT f2 fi INS INF o k p PERM IPC.
+    + intros NPLT fi INS o k p PERM IPC.
       erewrite alloc_stack_adt in INS. 2: eauto.
       exfalso; apply NPLT. rewrite mext_next0. apply stack_valid. eapply in_frames_in_frame; eauto.
       eapply in_frame_blocks_in_frame; eauto.
