@@ -114,6 +114,9 @@ Inductive stackframe : Type :=
              (sp: val)          (**r stack pointer in calling function *)
              (ls: locset)       (**r location state in calling function *)
              (bb: bblock),      (**r continuation in calling function *)
+      stackframe
+  | Parent:
+      forall (ls: locset),
       stackframe.
 
 Inductive state : Type :=
@@ -148,17 +151,6 @@ Inductive state : Type :=
 
 Section RELSEM.
 
-(** [parent_locset cs] returns the mapping of values for locations
-  of the caller function. *)
-
-Variable init_ls: locset.
-
-Definition parent_locset (stack: list stackframe) : locset :=
-  match stack with
-  | nil => init_ls
-  | Stackframe f sp ls bb :: stack' => ls
-  end.
-
 Variable ge: genv.
 
 Definition reglist (rs: locset) (rl: list mreg) : list val :=
@@ -184,6 +176,16 @@ Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
       | None => None
       | Some b => Genv.find_funct_ptr ge b
       end
+  end.
+
+(** [parent_locset cs] returns the mapping of values for locations
+  of the caller function. *)
+
+Definition parent_locset (stack: list stackframe) : locset :=
+  match stack with
+  | nil => Locmap.init Vundef
+  | Parent ls :: _ => ls
+  | Stackframe f sp ls bb :: stack' => ls
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -277,7 +279,9 @@ Inductive initial_state (p: program): query li_locset -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       (forall l, Val.has_type (rs l) (Loc.type l)) ->
-      initial_state p (lq id (funsig f) rs m) (Callstate nil f rs m).
+      initial_state p
+        (lq id (funsig f) rs m)
+        (Callstate (Parent rs :: nil) f rs m).
 
 Inductive at_external: state -> query li_c -> Prop :=
   | at_external_intro id sg s rs m:
@@ -293,17 +297,16 @@ Inductive after_external: state -> reply li_c -> state -> Prop :=
         (Returnstate s (Locmap.setpair (loc_result sg) vres rs) m').
 
 Inductive final_state: state -> reply li_locset -> Prop :=
-  | final_state_intro: forall rs m,
-      final_state (Returnstate nil rs m) (rs, m).
+  | final_state_intro: forall init_rs s rs m,
+      final_state (Returnstate (Parent init_rs :: s) rs m) (rs, m).
 
 Definition semantics (p: program) :=
-  Semantics_gen li_c li_locset
-    (fun q => step (lq_rs q))
+  Semantics li_c li_locset
+    step
     (initial_state p)
-    (fun _ => at_external)
-    (fun _ => after_external)
-    (fun _ => final_state)
-    (Genv.globalenv p)
+    at_external
+    after_external
+    final_state
     (Genv.globalenv p).
 
 (** * Operations over LTL *)

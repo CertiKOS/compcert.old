@@ -1845,10 +1845,6 @@ Proof.
   eapply function_ptr_translated; eauto.
 Qed.
 
-Section WITHINILS.
-
-Variable init_ls: locset.
-
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
   track_moves env mv e = Some e' ->
@@ -1856,7 +1852,7 @@ Lemma exec_moves:
   satisf rs ls e' ->
   wt_regset env rs ->
   exists ls',
-    star (step init_ls) tge (Block s f sp (expand_moves mv bb) ls m)
+    star step tge (Block s f sp (expand_moves mv bb) ls m)
                E0 (Block s f sp bb ls' m)
   /\ satisf rs ls' e.
 Proof.
@@ -1899,12 +1895,14 @@ Qed.
 
 (** The simulation relation *)
 
+Section WITHRESTYPE.
+Variable init_ls: locset.
 Variable restype: option typ.
 
 Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signature -> Prop :=
   | match_stackframes_nil: forall sg,
-      Some sg.(sig_res) = Some restype ->
-      match_stackframes nil nil sg
+      sg.(sig_res) = restype ->
+      match_stackframes nil (Parent init_ls :: nil) sg
   | match_stackframes_cons:
       forall res f sp pc rs s tf bb ls ts sg an e env
         (STACKS: match_stackframes s ts (fn_sig tf))
@@ -1919,7 +1917,7 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
            Val.has_type v (env res) ->
            agree_callee_save ls ls1 ->
            exists ls2,
-           star (LTL.step init_ls) tge (Block ts tf sp bb ls1 m)
+           star LTL.step tge (Block ts tf sp bb ls1 m)
                           E0 (State ts tf sp pc ls2 m)
            /\ satisf (rs#res <- v) ls2 e),
       match_stackframes
@@ -1945,7 +1943,7 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
         (STACKS: match_stackframes s ts (funsig tf))
         (FUN: transf_fundef f = OK tf)
         (ARGS: Val.lessdef_list args (map (fun p => Locmap.getpair p ls) (loc_arguments (funsig tf))))
-        (AG: agree_callee_save (parent_locset init_ls ts) ls)
+        (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTARGS: Val.has_type_list args (sig_args (funsig tf))),
       match_states (RTL.Callstate s f args m)
@@ -1954,7 +1952,7 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
       forall s res m ts ls m' sg
         (STACKS: match_stackframes s ts sg)
         (RES: Val.lessdef res (Locmap.getpair (map_rpair R (loc_result sg)) ls))
-        (AG: agree_callee_save (parent_locset init_ls ts) ls)
+        (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTRES: Val.has_type res (proj_sig_res sg)),
       match_states (RTL.Returnstate s res m)
@@ -1966,11 +1964,11 @@ Lemma match_stackframes_change_sig:
   sg'.(sig_res) = sg.(sig_res) ->
   match_stackframes s ts sg'.
 Proof.
-  intros. inv H.
+  intros. destruct H.
   constructor. congruence.
   econstructor; eauto.
   unfold proj_sig_res in *. rewrite H0; auto.
-  intros. rewrite (loc_result_exten sg' sg) in H by auto. eauto.
+  intros. rewrite (loc_result_exten sg' sg) in H1 by auto. eauto.
 Qed.
 
 Ltac UseShape :=
@@ -2001,7 +1999,7 @@ Qed.
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 -> wt_state restype S1 ->
   forall S1', match_states S1 S1' ->
-  exists S2', plus (LTL.step init_ls) tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', plus LTL.step tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros WT S1' MS; inv MS; try UseShape.
 
@@ -2433,7 +2431,7 @@ Proof.
   econstructor. eauto. eauto. traceEq.
   simpl. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
-                          (return_regs (parent_locset init_ls ts) ls1))
+                          (return_regs (parent_locset ts) ls1))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
   eapply add_equations_res_lessdef; eauto.
   rewrite H13. apply WTRS.
@@ -2493,7 +2491,7 @@ Proof.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
 Qed.
 
-End WITHINILS.
+End WITHRESTYPE.
 
 Let cc := cc_compose cc_extends_triangle cc_locset.
 
@@ -2516,7 +2514,7 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf rs m); split.
+  exists (LTL.Callstate (Parent rs :: nil) tf rs m); split.
   rewrite <- SIG.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved. assumption.
@@ -2646,7 +2644,7 @@ Proof.
 - intros. destruct H0.
   exploit step_simulation; eauto.
   intros [s2' [A B]].
-  exists s2'; split. rewrite comp_snd_q2 in A. exact A. split.
+  exists s2'; split. exact A. split.
   eapply subject_reduction; eauto. eexact wt_prog. eexact H.
   auto.
 Qed.

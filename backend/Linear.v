@@ -89,7 +89,11 @@ Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
   | i1 :: il => if is_label lbl i1 then Some il else find_label lbl il
   end.
 
-Definition find_function (ge: genv) (ros: mreg + ident) (rs: locset) : option fundef :=
+Section RELSEM.
+
+Variable ge: genv.
+
+Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
   match ros with
   | inl r => Genv.find_funct ge (rs (R r))
   | inr symb =>
@@ -107,6 +111,9 @@ Inductive stackframe: Type :=
              (sp: val)             (**r stack pointer in calling function *)
              (rs: locset)          (**r location state in calling function *)
              (c: code),            (**r program point in calling function *)
+      stackframe
+  | Parent:
+      forall (ls: locset),         (**r location state at module entry *)
       stackframe.
 
 Inductive state: Type :=
@@ -130,20 +137,14 @@ Inductive state: Type :=
              (m: mem),                (**r memory state *)
       state.
 
-Section RELSEM.
-
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
-
-Variable parent_lm: locset.
-
 Definition parent_locset (stack: list stackframe) : locset :=
   match stack with
-  | nil => parent_lm
+  | nil => Locmap.init Vundef
+  | Parent ls :: _ => ls
   | Stackframe f sp ls c :: stack' => ls
   end.
-
-Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Lgetstack:
@@ -178,14 +179,14 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b rs' m')
   | exec_Lcall:
       forall s f sp sig ros b rs m f',
-      find_function ge ros rs = Some f' ->
+      find_function ros rs = Some f' ->
       sig = funsig f' ->
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
-      find_function ge ros rs' = Some f' ->
+      find_function ros rs' = Some f' ->
       sig = funsig f' ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
@@ -259,7 +260,9 @@ Inductive initial_state (p: program): query li_locset -> state -> Prop :=
       Genv.find_symbol ge (str2ident id) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       (forall l, Val.has_type (rs l) (Loc.type l)) ->
-      initial_state p (lq id (funsig f) rs m) (Callstate nil f rs m).
+      initial_state p
+        (lq id (funsig f) rs m)
+        (Callstate (Parent rs :: nil) f rs m).
 
 Inductive at_external: state -> query li_c -> Prop :=
   | at_external_intro id sg s rs m:
@@ -275,15 +278,14 @@ Inductive after_external: state -> reply li_c -> state -> Prop :=
         (Returnstate s (Locmap.setpair (loc_result sg) vres rs) m').
 
 Inductive final_state: state -> reply li_locset -> Prop :=
-  | final_state_intro: forall rs m,
-      final_state (Returnstate nil rs m) (rs, m).
+  | final_state_intro: forall init_rs s rs m,
+      final_state (Returnstate (Parent init_rs :: s) rs m) (rs, m).
 
 Definition semantics (p: program) :=
-  Semantics_gen li_c li_locset
-    (fun q => step (lq_rs q))
+  Semantics li_c li_locset
+    step
     (initial_state p)
-    (fun _ => at_external)
-    (fun _ => after_external)
-    (fun _ => final_state)
-    (Genv.globalenv p)
+    at_external
+    after_external
+    final_state
     (Genv.globalenv p).

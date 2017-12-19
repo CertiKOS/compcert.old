@@ -124,6 +124,8 @@ Hypothesis return_address_offset_exists:
   is_tail (Mcall sg ros :: c) (fn_code f) ->
   exists ofs, return_address_offset f c ofs.
 
+Let step := Mach.step return_address_offset.
+
 Variable prog: Linear.program.
 Variable tprog: Mach.program.
 Hypothesis TRANSF: match_prog prog tprog.
@@ -137,11 +139,6 @@ Variable (w: world cc_stacking).
 Let init_ls := lq_rs (world_q1 w).
 Let init_sp := mq_sp (world_q2 w).
 Let init_ra := mq_ra (world_q2 w).
-
-Let step := Mach.step init_sp init_ra return_address_offset.
-Let parent_locset := parent_locset init_ls.
-Let parent_sp := parent_sp init_sp.
-Let parent_ra := parent_ra init_ra.
 
 Section FRAME_PROPERTIES.
 
@@ -1401,7 +1398,8 @@ Let init_m2 := mq_mem (world_q2 w).
 
 Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach.stackframe) : massert :=
   match cs, cs' with
-  | nil, nil => munchanged (loc_out_of_reach init_f init_m1) init_m2
+  | Linear.Parent _ :: nil, Mach.Parent _ _ :: nil =>
+      munchanged (loc_out_of_reach init_f init_m1) init_m2
   | Linear.Stackframe f _ ls c :: cs, Mach.Stackframe fb (Vptr sp' _) ra c' :: cs' =>
       frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs')
       ** stack_contents j cs cs'
@@ -1422,7 +1420,10 @@ Inductive match_stacks (j: meminj):
   | match_stacks_empty:
       forall sg
         (TP: tailcall_possible sg \/ sg = init_sg),
-      match_stacks j nil nil sg sg
+      match_stacks j
+                   (Linear.Parent init_ls :: nil)
+                   (Mach.Parent init_sp init_ra :: nil)
+                   sg sg
   | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg trf
         isg
         (TAIL: is_tail c (Linear.fn_code f))
@@ -1472,7 +1473,7 @@ Qed.
 
 Lemma match_stacks_change_sig:
   forall sg1 j cs cs' sg isg,
-  let isg1 := match cs with nil => sg1 | _ => isg end in
+  let isg1 := match cs with Linear.Parent _ :: _ => sg1 | _ => isg end in
   match_stacks j cs cs' sg isg ->
   tailcall_possible sg1 ->
   match_stacks j cs cs' sg1 isg1.
@@ -1907,14 +1908,16 @@ Lemma stack_contents_out_of_reach f cs cs' m2 P:
 Proof.
   intros (STACK & _ & _); clear P.
   revert cs' STACK.
-  induction cs; simpl; intros.
-  - destruct cs'; try contradiction; simpl in STACK.
-    eapply Mem.unchanged_on_implies; eauto.
-    simpl; eauto.
-  - destruct a, cs'; try contradiction.
-    destruct s, sp0; try contradiction.
+  induction cs; [contradiction | simpl; intros].
+  destruct a, cs'; try contradiction.
+  - destruct s, sp0; try contradiction.
     apply sep_proj2 in STACK.
     eauto.
+  - destruct cs; contradiction.
+  - destruct cs, s, cs'; try contradiction.
+    simpl in STACK.
+    eapply Mem.unchanged_on_implies; eauto.
+    simpl; eauto.
 Qed.
 
 (** For the source memory, we use the following invariant. *)
@@ -2037,8 +2040,8 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
                   (Mach.Returnstate cs' rs m').
 
 Theorem transf_step_correct:
-  forall s1 t s2, Linear.step (lq_rs (world_q1 w)) ge s1 t s2 ->
-  forall (WTS: wt_state (lq_rs (world_q1 w)) s1) s1' (MS: match_states s1 s1'),
+  forall s1 t s2, Linear.step ge s1 t s2 ->
+  forall (WTS: wt_state s1) s1' (MS: match_states s1 s1'),
   exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros;
@@ -2420,19 +2423,19 @@ Admitted.
 
 Lemma transf_external:
   forall w st1 st2 q1,
-    wt_state (lq_rs (world_q1 w)) st1 ->
+    wt_state st1 ->
     match_states w st1 st2 ->
     Linear.at_external st1 q1 ->
     exists wA q2,
       match_query (cc_wt @ cc_inject) wA q1 q2 /\
-      Mach.at_external tprog (world_q2 w) st2 q2 /\
+      Mach.at_external tprog st2 q2 /\
       forall r1 r2 st1',
         match_reply (cc_wt @ cc_inject) wA r1 r2 ->
         Linear.after_external st1 r1 st1' ->
         exists st2',
           Mach.after_external tprog st2 r2 st2' /\
           match_states w st1' st2' /\
-          wt_state (lq_rs (world_q1 w)) st1'.
+          wt_state st1'.
 Proof.
   intros w st1 st2 q1 Hst1 Hst Hq1.
   destruct Hq1; inv Hst.
@@ -2508,12 +2511,12 @@ Theorem transf_program_correct:
     (Linear.semantics prog)
     (Mach.semantics return_address_offset tprog).
 Proof.
-  set (ms := fun w s s' => wt_state (lq_rs (world_q1 w)) s /\ match_states w s s').
+  set (ms := fun w s s' => wt_state s /\ match_states w s s').
   eapply forward_simulation_plus with (match_states := ms).
 - apply senv_preserved.
 - intros. exploit transf_initial_states; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.
-  apply wt_initial_state with (prog := prog); auto. exact wt_prog.
+  eapply wt_initial_state with (prog := prog); auto. exact wt_prog.
   destruct H; eauto.
 - intros w s1 s2 q1 [Hwt Hs] Hq1.
   edestruct transf_external as (wA & q2 & Hq & Hq2 & H); eauto.

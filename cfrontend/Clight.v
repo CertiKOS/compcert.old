@@ -734,21 +734,21 @@ Definition step2 (ge: genv) := step ge (function_entry2).
 Definition semantics1 (p: program) :=
   let ge := globalenv p in
   Semantics_gen li_c li_c
-    (fun _ => step1)
+    step1
     (initial_state p)
-    (fun _ => at_external)
-    (fun _ => after_external)
-    (fun _ => final_state)
+    at_external
+    after_external
+    final_state
     ge ge.
 
 Definition semantics2 (p: program) :=
   let ge := globalenv p in
   Semantics_gen li_c li_c
-    (fun _ => step2)
+    step2
     (initial_state p)
-    (fun _ => at_external)
-    (fun _ => after_external)
-    (fun _ => final_state)
+    at_external
+    after_external
+    final_state
     ge ge.
 
 (** This semantics is receptive to changes in events. *)

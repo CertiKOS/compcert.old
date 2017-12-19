@@ -199,13 +199,10 @@ Definition wt_fundef (fd: fundef) :=
   | External ef => True
   end.
 
-Section WITHINITLS.
-Variable init_ls: locset.
-
 Inductive wt_callstack: list stackframe -> Prop :=
-  | wt_callstack_nil:
+  | wt_callstack_parent init_ls s:
       wt_locset init_ls ->
-      wt_callstack nil
+      wt_callstack (Parent init_ls :: s)
   | wt_callstack_cons: forall f sp rs c s
         (WTSTK: wt_callstack s)
         (WTF: wt_function f = true)
@@ -214,7 +211,7 @@ Inductive wt_callstack: list stackframe -> Prop :=
       wt_callstack (Stackframe f sp rs c :: s).
 
 Lemma wt_parent_locset:
-  forall s, wt_callstack s -> wt_locset (parent_locset init_ls s).
+  forall s, wt_callstack s -> wt_locset (parent_locset s).
 Proof.
   induction 1; simpl.
 - auto.
@@ -237,8 +234,6 @@ Inductive wt_state: state -> Prop :=
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs),
       wt_state (Returnstate s rs m).
-
-End WITHINITLS.
 
 (** Preservation of state typing by transitions *)
 
@@ -264,12 +259,8 @@ Proof.
   destruct X as [i IN]. eapply wt_prog; eauto.
 Qed.
 
-Section WITHINITLS.
-
-Variable init_ls: locset.
-
 Theorem step_type_preservation:
-  forall S1 t S2, step init_ls ge S1 t S2 -> wt_state init_ls S1 -> wt_state init_ls S2.
+  forall S1 t S2, step ge S1 t S2 -> wt_state S1 -> wt_state S2.
 Proof.
 Local Opaque mreg_type.
   induction 1; intros WTS; inv WTS.
@@ -349,10 +340,8 @@ Local Opaque mreg_type.
   inv WTSTK. econstructor; eauto.
 Qed.
 
-End WITHINITLS.
-
 Theorem wt_initial_state q:
-  forall S, initial_state prog q S -> wt_state (lq_rs q) S.
+  forall S, initial_state prog q S -> wt_state S.
 Proof.
   induction 1. econstructor. constructor.
   assumption.
@@ -365,12 +354,9 @@ End SOUNDNESS.
 
 (** Properties of well-typed states that are used in [Stackingproof]. *)
 
-Section WITHINITLS'.
-Variable init_ls: locset.
-
 Lemma wt_state_getstack:
   forall s f sp sl ofs ty rd c rs m,
-  wt_state init_ls (State s f sp (Lgetstack sl ofs ty rd :: c) rs m) ->
+  wt_state (State s f sp (Lgetstack sl ofs ty rd :: c) rs m) ->
   slot_valid f sl ofs ty = true.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. auto.
@@ -378,7 +364,7 @@ Qed.
 
 Lemma wt_state_setstack:
   forall s f sp sl ofs ty r c rs m,
-  wt_state init_ls (State s f sp (Lsetstack r sl ofs ty :: c) rs m) ->
+  wt_state (State s f sp (Lsetstack r sl ofs ty :: c) rs m) ->
   slot_valid f sl ofs ty = true /\ slot_writable sl = true.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. intuition.
@@ -386,7 +372,7 @@ Qed.
 
 Lemma wt_state_tailcall:
   forall s f sp sg ros c rs m,
-  wt_state init_ls (State s f sp (Ltailcall sg ros :: c) rs m) ->
+  wt_state (State s f sp (Ltailcall sg ros :: c) rs m) ->
   size_arguments sg = 0.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. auto.
@@ -394,7 +380,7 @@ Qed.
 
 Lemma wt_state_builtin:
   forall s f sp ef args res c rs m,
-  wt_state init_ls (State s f sp (Lbuiltin ef args res :: c) rs m) ->
+  wt_state (State s f sp (Lbuiltin ef args res :: c) rs m) ->
   forallb (loc_valid f) (params_of_builtin_args args) = true.
 Proof.
   intros. inv H. simpl in WTC; InvBooleans. auto.
@@ -402,10 +388,8 @@ Qed.
 
 Lemma wt_callstate_wt_regs:
   forall s f rs m,
-  wt_state init_ls (Callstate s f rs m) ->
+  wt_state (Callstate s f rs m) ->
   forall r, Val.has_type (rs (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTRS.
 Qed.
-
-End WITHINITLS'.

@@ -254,13 +254,12 @@ Qed.
 (** Correctness of the [starts_with] test. *)
 
 Lemma starts_with_correct:
-  forall lm,
   forall lbl c1 c2 c3 s f sp ls m,
   is_tail c1 c2 ->
   unique_labels c2 ->
   starts_with lbl c1 = true ->
   find_label lbl c2 = Some c3 ->
-  plus (step lm) tge (State s f sp c1 ls m)
+  plus step tge (State s f sp c1 ls m)
              E0 (State s f sp c3 ls m).
 Proof.
   induction c1.
@@ -460,12 +459,11 @@ Proof.
 Qed.
 
 Lemma add_branch_correct:
-  forall lm,
   forall lbl c k s f tf sp ls m,
   transf_function f = OK tf ->
   is_tail k tf.(fn_code) ->
   find_label lbl tf.(fn_code) = Some c ->
-  plus (step lm) tge (State s tf sp (add_branch lbl k) ls m)
+  plus step tge (State s tf sp (add_branch lbl k) ls m)
              E0 (State s tf sp c ls m).
 Proof.
   intros. unfold add_branch.
@@ -501,7 +499,12 @@ Inductive match_stackframes: LTL.stackframe -> Linear.stackframe -> Prop :=
       is_tail c tf.(fn_code) ->
       match_stackframes
         (LTL.Stackframe f sp ls bb)
-        (Linear.Stackframe tf sp ls (linearize_block bb c)).
+        (Linear.Stackframe tf sp ls (linearize_block bb c))
+  | match_parent_intro:
+      forall ls,
+      match_stackframes
+        (LTL.Parent ls)
+        (Linear.Parent ls).
 
 Inductive match_states: LTL.state -> Linear.state -> Prop :=
   | match_states_add_branch:
@@ -561,15 +564,15 @@ Section WITHINITLS.
 Variable init_ls: locset.
 
 Remark match_parent_locset:
-  forall s ts, list_forall2 match_stackframes s ts -> parent_locset init_ls ts = LTL.parent_locset init_ls s.
+  forall s ts, list_forall2 match_stackframes s ts -> parent_locset ts = LTL.parent_locset s.
 Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
 Theorem transf_step_correct:
-  forall s1 t s2, LTL.step init_ls ge s1 t s2 ->
+  forall s1 t s2, LTL.step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', plus (Linear.step init_ls) tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', plus Linear.step tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; try (inv MS).
@@ -725,12 +728,12 @@ Proof.
   intros w q1 q Hq. apply match_query_cc_id in Hq. subst.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf rs m); split.
+  exists (Callstate (Parent rs :: nil) tf rs m); split.
   erewrite <- sig_preserved by eauto.
   econstructor; eauto.
   fold tge. rewrite genv_next_preserved; eauto.
   rewrite symbols_preserved. eauto.
-  constructor. constructor. auto.
+  constructor. constructor. constructor. constructor. auto.
 Qed.
 
 Lemma transf_external:
@@ -765,7 +768,7 @@ Lemma transf_final_states:
   forall w st1 st2 r1, match_states st1 st2 -> LTL.final_state st1 r1 ->
   exists r2, match_reply cc_id w r1 r2 /\ Linear.final_state st2 r2.
 Proof.
-  intros. inv H0. inv H. inv H4. eexists. split.
+  intros. inv H0. inv H. inv H4. inv H1. eexists. split.
   apply match_reply_cc_id.
   econstructor; eauto.
 Qed.
@@ -780,8 +783,7 @@ Proof.
   eexact transf_initial_states.
   eauto using transf_external.
   eexact transf_final_states.
-  setoid_rewrite cc_id_q. simpl in *.
-  eauto 10 using transf_step_correct.
+  eauto using transf_step_correct.
 Qed.
 
 End LINEARIZATION.

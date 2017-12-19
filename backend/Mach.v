@@ -202,6 +202,12 @@ Proof.
   intros; red; intros. eapply is_tail_incl; eauto. eapply find_label_tail; eauto.
 Qed.
 
+Section RELSEM.
+
+Variable return_address_offset: function -> code -> ptrofs -> Prop.
+
+Variable ge: genv.
+
 Definition find_function_ptr
         (ge: genv) (ros: mreg + ident) (rs: regset) : option block :=
   match ros with
@@ -246,6 +252,10 @@ Inductive stackframe: Type :=
              (sp: val)        (**r stack pointer in calling function *)
              (retaddr: val)   (**r Asm return address in calling function *)
              (c: code),       (**r program point in calling function *)
+      stackframe
+  | Parent:
+      forall (sp: val)        (**r stack pointer at module entry *)
+             (retaddr: val),  (**r Asm return address at module entry *)
       stackframe.
 
 Inductive state: Type :=
@@ -269,24 +279,19 @@ Inductive state: Type :=
              (m: mem),                 (**r memory state *)
       state.
 
-Section RELSEM.
-Variables init_sp init_ra: val.
-
 Definition parent_sp (s: list stackframe) : val :=
   match s with
-  | nil => init_sp
+  | nil => Vundef
+  | Parent sp ra :: s' => sp
   | Stackframe f sp ra c :: s' => sp
   end.
 
 Definition parent_ra (s: list stackframe) : val :=
   match s with
-  | nil => init_ra
+  | nil => Vundef
+  | Parent sp ra :: s' => ra
   | Stackframe f sp ra c :: s' => ra
   end.
-
-Variable return_address_offset: function -> code -> ptrofs -> Prop.
-
-Variable ge: genv.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -438,14 +443,16 @@ Inductive initial_state (p: program): query li_mach -> state -> Prop :=
       let ge := Genv.globalenv p in
       Ple (Genv.genv_next ge) (Mem.nextblock m) ->
       Genv.find_symbol ge (str2ident id) = Some fb ->
-      initial_state p (mq id sp ra rs m) (Callstate nil fb rs m).
+      initial_state p
+        (mq id sp ra rs m)
+        (Callstate (Parent sp ra :: nil) fb rs m).
 
-Inductive at_external (p: program) q: state -> query li_c -> Prop :=
+Inductive at_external (p: program): state -> query li_c -> Prop :=
   | at_external_intro id sg fb s rs m args:
       let ge := Genv.globalenv p in
       Genv.find_funct_ptr ge fb = Some (External (EF_external id sg)) ->
-      extcall_arguments rs m (parent_sp (mq_sp q) s) sg args ->
-      at_external p q
+      extcall_arguments rs m (parent_sp s) sg args ->
+      at_external p
         (Callstate s fb rs m)
         (cq id sg args m).
 
@@ -460,17 +467,17 @@ Inductive after_external (p: program): state -> reply li_c -> state -> Prop :=
         (Returnstate s rs' m').
 
 Inductive final_state: state -> reply li_mach -> Prop :=
-  | final_state_intro: forall rs m ,
-      final_state (Returnstate nil rs m) (rs, m).
+  | final_state_intro: forall sp ra s rs m,
+      final_state
+        (Returnstate (Parent sp ra :: s) rs m) (rs, m).
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
-  Semantics_gen li_c li_mach
-    (fun q => step (mq_sp q) (mq_ra q) rao)
+  Semantics li_c li_mach
+    (step rao)
     (initial_state p)
     (at_external p)
-    (fun _ => after_external p)
-    (fun _ => final_state)
-    (Genv.globalenv p)
+    (after_external p)
+    final_state
     (Genv.globalenv p).
 
 (** * Leaf functions *)
@@ -496,7 +503,9 @@ Inductive wf_frame: stackframe -> Prop :=
         (CODE: Genv.find_funct_ptr ge fb = Some (Internal f))
         (LEAF: is_leaf_function f = false)
         (TAIL: is_tail c f.(fn_code)),
-      wf_frame (Stackframe fb sp ra c).
+      wf_frame (Stackframe fb sp ra c)
+  | wf_parent_intro sp ra:
+      wf_frame (Parent sp ra).
 
 Inductive wf_state: state -> Prop :=
   | wf_normal_state: forall s fb sp c rs m f
@@ -512,7 +521,7 @@ Inductive wf_state: state -> Prop :=
       wf_state (Returnstate s rs m).
 
 Lemma wf_step:
-  forall S1 t S2, step Vnullptr Vnullptr rao ge S1 t S2 -> wf_state S1 -> wf_state S2.
+  forall S1 t S2, step rao ge S1 t S2 -> wf_state S1 -> wf_state S2.
 Proof.
   induction 1; intros WF; inv WF; try (econstructor; now eauto with coqlib).
 - (* call *)
@@ -538,4 +547,5 @@ Lemma wf_initial:
   forall p q S, initial_state p q S -> wf_state (Genv.globalenv p) S.
 Proof.
   intros. inv H. fold ge. constructor. constructor.
+  constructor. constructor.
 Qed.
