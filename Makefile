@@ -100,7 +100,8 @@ BACKEND=\
   Bounds.v Stacklayout.v Stacking.v Stackingproof.v \
   Asm.v Asmgen.v Asmgenproof0.v Asmgenproof1.v Asmgenproof.v \
   Inlining.v Inliningspec.v Inliningproof.v \
-  AsmFacts.v RawAsmgen.v AsmExpand.v RockSaltAsm.v RockSaltAsmGen.v
+  AsmFacts.v RawAsmgen.v AsmExpand.v RockSaltAsm.v RockSaltAsmGen.v\
+  Sect.v FlatAsmGlobenv.v
 
 #  Tailcall.v Tailcallproof.v \
 

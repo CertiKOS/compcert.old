@@ -1,8 +1,9 @@
 (** Abstract syntax and semantics for IA32 assembly language with a flat memory space **)
 
 Require Import String Coqlib Maps.
-Require Import AST Integers Floats Values Memory Events Globalenvs Smallstep.
+Require Import AST Integers Floats Values Memory Events Smallstep.
 Require Import Locations Stacklayout Conventions EraseArgs.
+Require Import Sect FlatAsmGlobenv.
 
 (** * Abstract syntax *)
 
@@ -51,7 +52,6 @@ Notation SP := RSP (only parsing).
 
 (** ** Instruction set. *)
 
-Definition sect_id:Type := positive.
 Definition label:Type := sect_id * Z.
 
 (** General form of an addressing mode. *)
@@ -284,9 +284,6 @@ Inductive instruction: Type :=
 (* The block id of the flat memory *)
 Definition mem_block := 1%positive.
 
-(* A block of locations (offsets and sizes) in a section *)
-Definition sect_block:Type := sect_id * Z * Z.
-
 Definition instr_with_info:Type := instruction * sect_block.
 Definition code := list instr_with_info.
 Record function : Type := mkfunction { fn_sig: signature; fn_code: code; fn_frame: frame_info; range:sect_block}.
@@ -312,9 +309,6 @@ Definition get_sect_size (s:section) :=
   | DataSection _ sz => sz
   | CodeSection _ sz _ => sz
   end.
-
-
-Definition section_map := sect_id -> option Z.
 
 (* Translate a label to an offset in the flat memory space *)
 Definition label_to_ofs (smap: section_map) (l:label): option Z :=
@@ -445,13 +439,19 @@ Section RELSEM.
 (*   (is_label : label -> instructionx -> bool) *)
 (*   (fn_code : function -> list instructionx). *)
 
-(* (** Looking up instructions in a code sequence by position. *) *)
+(** Looking up instructions in a code sequence by position. *)
 
 (* Fixpoint find_instr `{Hfl: FindLabels} (pos: Z) (c: list instructionx) {struct c} : option instructionx := *)
 (*   match c with *)
 (*   | nil => None *)
 (*   | i :: il => if zeq pos 0 then Some i else find_instr (pos - 1) il *)
 (*   end. *)
+
+Fixpoint find_instr (smap: section_map) (ofs: Z) (c: code) : option instr_with_info :=
+  match gen_instrs_map smap c with
+  | None => None
+  | Some imap => imap ofs
+  end.
 
 (* (** Position corresponding to a label *) *)
 
@@ -483,10 +483,17 @@ Section RELSEM.
 (*       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c' *)
 (*   end. *)
 
-  Section WITHGE.
-    Context {F V : Type}.
-    Variable ge: Genv.t F V.
+Section WITHGE.
 
+Context {F V : Type}.
+Variable ge: Genv.t F V.
+
+Definition symbol_address id ofs :=
+  match (Genv.symbol_offset ge id (Ptrofs.unsigned ofs)) with
+  | None => Vundef
+  | Some o => Vptr mem_block (Ptrofs.repr o)
+  end.
+  
 (** Evaluating an addressing mode *)
 
 Definition eval_addrmode32 (a: addrmode) (rs: regset) : val :=
@@ -504,7 +511,7 @@ Definition eval_addrmode32 (a: addrmode) (rs: regset) : val :=
              end)
            (match const with
             | inl ofs => Vint (Int.repr ofs)
-            | inr(id, ofs) => Genv.symbol_address ge id ofs
+            | inr(id, ofs) => symbol_address id ofs
             end)).
 
 Definition eval_addrmode64 (a: addrmode) (rs: regset) : val :=
@@ -522,7 +529,7 @@ Definition eval_addrmode64 (a: addrmode) (rs: regset) : val :=
              end)
            (match const with
             | inl ofs => Vlong (Int64.repr ofs)
-            | inr(id, ofs) => Genv.symbol_address ge id ofs
+            | inr(id, ofs) => symbol_address id ofs
             end)).
 
 Definition eval_addrmode (a: addrmode) (rs: regset) : val :=
@@ -789,7 +796,7 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Pmovq_ri rd n =>
       Next (nextinstr_nf (rs#rd <- (Vlong n)) sz) m
   | Pmov_rs rd id =>
-      Next (nextinstr_nf (rs#rd <- (Genv.symbol_address ge id Ptrofs.zero)) sz) m
+      Next (nextinstr_nf (rs#rd <- (symbol_address ge id Ptrofs.zero)) sz) m
   | Pmovl_rm rd a =>
       exec_load _ _ ge Mint32 m a rs rd sz
   | Pmovq_rm rd a =>
@@ -1076,7 +1083,7 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
   | Pjmp_l lbl =>
       goto_label smap f lbl rs m
   | Pjmp_s id sg =>
-      Next (rs#PC <- (Genv.symbol_address ge id Ptrofs.zero)) m
+      Next (rs#PC <- (symbol_address ge id Ptrofs.zero)) m
   | Pjmp_r r sg =>
       Next (rs#PC <- (rs r)) m
   | Pjcc cond lbl =>
@@ -1272,27 +1279,28 @@ Definition loc_external_result (sg: signature) : rpair preg :=
 Inductive state {memory_model_ops: Mem.MemoryModelOps mem}: Type :=
   | State: regset -> mem -> state.
 
-Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} (ge: genv) : state -> trace -> state -> Prop :=
+Inductive step {exec_load exec_store} `{!MemAccessors exec_load exec_store} 
+  (smap: section_map) (ge: genv) : state -> trace -> state -> Prop :=
 | exec_step_internal:
     forall b ofs f i rs m rs' m',
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (Internal f) ->
-      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr ge f i rs m = Next rs' m' ->
-      step ge (State rs m) E0 (State rs' m')
+      Genv.find_funct_offset ge (Ptrofs.unsigned ofs) = Some (Internal f) ->
+      find_instr smap (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr smap ge f i rs m = Next rs' m' ->
+      step smap ge (State rs m) E0 (State rs' m')
 | exec_step_builtin:
-    forall b ofs f ef args res rs m vargs t vres rs' m',
+    forall b ofs f ef args res rs m vargs t vres rs' m' sz,
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (Internal f) ->
-      find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
+      Genv.find_funct_offset ge (Ptrofs.unsigned ofs) = Some (Internal f) ->
+      find_instr smap (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res, (_,_,sz)) ->
       eval_builtin_args ge rs (rs RSP) m args vargs ->
       external_call ef ge vargs m t vres m' ->
       forall BUILTIN_ENABLED: builtin_enabled ef,
         no_rsp_builtin_preg res ->
         rs' = nextinstr_nf
                 (set_res res vres
-                         (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
-        step ge (State rs m) t (State rs' m')
+                         (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) sz ->
+        step smap ge (State rs m) t (State rs' m')
 | exec_step_external:
     forall b ef args res rs m t rs' m',
       rs PC = Vptr b Ptrofs.zero ->
