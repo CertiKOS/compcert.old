@@ -228,7 +228,7 @@ Inductive instruction: Type :=
   | Pjcc (c: testcond)(l: label)
   | Pjcc2 (c1 c2: testcond)(l: label)   (**r pseudo *)
   | Pjmptbl (r: ireg) (tbl: list label) (**r pseudo *)
-  | Pcall_s (symb: ident) (sg: signature)
+  | Pcall_s (l: label) (sg: signature)
   | Pcall_r (r: ireg) (sg: signature)
   | Pret
   (** Saving and restoring registers *)
@@ -672,7 +672,7 @@ Definition nextinstr (rs: regset) (isz:Z) :=
 Definition nextinstr_nf (rs: regset) (isz:Z) : regset :=
   nextinstr (undef_regs (CR ZF :: CR CF :: CR PF :: CR SF :: CR OF :: nil) rs) isz.
 
-Definition goto_label {F V} (sects_map: section_map) (ge: Genv.t F V) (f: function) (lbl: label) (rs: regset) (m: mem) :=
+Definition goto_label (sects_map: section_map) (f: function) (lbl: label) (rs: regset) (m: mem) :=
   match (gen_instrs_map sects_map f.(fn_code)) with
   | None => Stuck
   | Some imap =>
@@ -1074,20 +1074,20 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
       Next (nextinstr_nf (rs#rd <- (Vsingle Float32.zero)) sz) m
   (** Branches and calls *)
   | Pjmp_l lbl =>
-      goto_label smap ge f lbl rs m
+      goto_label smap f lbl rs m
   | Pjmp_s id sg =>
       Next (rs#PC <- (Genv.symbol_address ge id Ptrofs.zero)) m
   | Pjmp_r r sg =>
       Next (rs#PC <- (rs r)) m
   | Pjcc cond lbl =>
       match eval_testcond cond rs with
-      | Some true => goto_label smap ge f lbl rs m
+      | Some true => goto_label smap f lbl rs m
       | Some false => Next (nextinstr rs sz) m
       | None => Stuck
       end
   | Pjcc2 cond1 cond2 lbl =>
       match eval_testcond cond1 rs, eval_testcond cond2 rs with
-      | Some true, Some true => goto_label smap ge f lbl rs m
+      | Some true, Some true => goto_label smap f lbl rs m
       | Some _, Some _ => Next (nextinstr rs sz) m
       | _, _ => Stuck
       end
@@ -1096,12 +1096,16 @@ Definition exec_instr {exec_load exec_store} `{!MemAccessors exec_load exec_stor
       | Vint n =>
           match list_nth_z tbl (Int.unsigned n) with
           | None => Stuck
-          | Some lbl => goto_label smap ge f lbl (rs #RAX <- Vundef #RDX <- Vundef) m
+          | Some lbl => goto_label smap f lbl (rs #RAX <- Vundef #RDX <- Vundef) m
           end
       | _ => Stuck
       end
-  | Pcall_s id sg =>
-      Next (rs#RA <- (Val.offset_ptr rs#PC Ptrofs.one) #PC <- (Genv.symbol_address ge id Ptrofs.zero)) m
+  | Pcall_s l sg =>
+    match (label_to_ofs smap l) with
+    | None => Stuck
+    | Some ofs => 
+      Next (rs#RA <- (Val.offset_ptr rs#PC Ptrofs.one) #PC <- (Vptr mem_block (Ptrofs.repr ofs))) m
+    end
   | Pcall_r r sg =>
       Next (rs#RA <- (Val.offset_ptr rs#PC Ptrofs.one) #PC <- (rs r)) m
   | Pret =>
